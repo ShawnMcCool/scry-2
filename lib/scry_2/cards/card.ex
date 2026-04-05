@@ -1,0 +1,44 @@
+defmodule Scry2.Cards.Card do
+  use Ecto.Schema
+  import Ecto.Changeset
+
+  schema "cards_cards" do
+    field :arena_id, :integer
+    field :lands17_id, :integer
+    field :name, :string
+    field :rarity, :string
+    field :color_identity, :string, default: ""
+    field :mana_value, :integer
+    field :types, :string
+    field :is_booster, :boolean, default: true
+    field :raw, :map
+
+    belongs_to :set, Scry2.Cards.Set
+
+    timestamps(type: :utc_datetime)
+  end
+
+  @doc """
+  Changeset for the 17lands import path. Accepts `lands17_id` as the
+  primary key and treats `arena_id` as optional (filled in later by the
+  Scryfall backfill — see ADR-014).
+  """
+  def lands17_changeset(card, attrs) do
+    card
+    |> cast(attrs, [
+      :arena_id,
+      :lands17_id,
+      :name,
+      :rarity,
+      :color_identity,
+      :mana_value,
+      :types,
+      :is_booster,
+      :raw,
+      :set_id
+    ])
+    |> validate_required([:lands17_id, :name])
+    |> unique_constraint(:lands17_id)
+    |> unique_constraint(:arena_id)
+  end
+end
