@@ -24,6 +24,7 @@ defmodule Scry2Web.Router do
     live "/drafts", DraftsLive, :index
     live "/drafts/:id", DraftsLive, :show
     live "/settings", SettingsLive, :index
+    live "/console", ConsolePageLive, :index
   end
 
   # Other scopes may use custom stacks.

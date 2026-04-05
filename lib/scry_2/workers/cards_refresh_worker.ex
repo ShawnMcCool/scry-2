@@ -16,7 +16,7 @@ defmodule Scry2.Workers.CardsRefreshWorker do
 
   alias Scry2.Cards.Lands17Importer
 
-  require Logger
+  require Scry2.Log, as: Log
 
   @impl Oban.Worker
   def perform(%Oban.Job{} = job) do
@@ -28,7 +28,7 @@ defmodule Scry2.Workers.CardsRefreshWorker do
 
     case Lands17Importer.run(opts) do
       {:ok, %{imported: count}} ->
-        Logger.info("cards refresh imported #{count} rows")
+        Log.info(:importer, "cards refresh imported #{count} rows")
         :ok
 
       {:error, reason} ->

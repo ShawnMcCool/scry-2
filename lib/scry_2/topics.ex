@@ -32,6 +32,16 @@ defmodule Scry2.Topics do
   @doc "Runtime configuration changed."
   def settings_updates, do: "settings:updates"
 
+  # ── Console ──────────────────────────────────────────────────────────────
+  @doc """
+  Console log events. Subscribers (ConsoleLive, ConsolePageLive) receive:
+    * `{:log_entry, %Scry2.Console.Entry{}}` — new entry appended
+    * `:buffer_cleared` — buffer emptied by user
+    * `{:buffer_resized, new_cap}` — buffer cap changed
+    * `{:filter_changed, %Scry2.Console.Filter{}}` — filter updated (cross-tab sync)
+  """
+  def console_logs, do: "console:logs"
+
   # ── Helpers ──────────────────────────────────────────────────────────────
   @doc "Subscribe the calling process to `topic`."
   def subscribe(topic) when is_binary(topic) do

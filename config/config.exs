@@ -11,6 +11,13 @@ config :scry_2,
   ecto_repos: [Scry2.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+# Log Ecto queries at :info (not the Ecto default of :debug). Scry2 is a
+# single-user desktop app — query visibility is a diagnostic feature, not
+# production noise. This applies in dev AND prod so the user can flip the
+# `ecto` chip in the Console drawer and immediately see queries without
+# also having to drop the level floor to :debug.
+config :scry_2, Scry2.Repo, log: :info
+
 # Oban (SQLite backend via Oban.Engines.Lite)
 config :scry_2, Oban,
   engine: Oban.Engines.Lite,

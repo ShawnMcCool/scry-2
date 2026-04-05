@@ -27,7 +27,7 @@ defmodule Scry2.MtgaLogs.Watcher do
   """
   use GenServer
 
-  require Logger
+  require Scry2.Log, as: Log
 
   alias Scry2.MtgaLogs
   alias Scry2.MtgaLogs.{EventParser, PathResolver, Tailer}
@@ -82,7 +82,7 @@ defmodule Scry2.MtgaLogs.Watcher do
         {:noreply, state}
 
       {:error, :not_found} ->
-        Logger.warning("MTGA Player.log not found — watcher idle until settings update")
+        Log.warning(:watcher, "Player.log not found — watcher idle until settings update")
         broadcast_status(:path_not_found)
         {:noreply, %{state | status: :path_not_found}}
     end
@@ -196,7 +196,7 @@ defmodule Scry2.MtgaLogs.Watcher do
         %{state | offset: new_offset, inode: inode}
 
       {:error, reason} ->
-        Logger.warning("watcher drain_file error: #{inspect(reason)}")
+        Log.warning(:watcher, "drain_file error: #{inspect(reason)}")
         state
     end
   end
@@ -213,7 +213,7 @@ defmodule Scry2.MtgaLogs.Watcher do
     })
   rescue
     error ->
-      Logger.warning("failed to persist event: #{inspect(error)}")
+      Log.warning(:watcher, "failed to persist event: #{inspect(error)}")
   end
 
   defp broadcast_status(status) do

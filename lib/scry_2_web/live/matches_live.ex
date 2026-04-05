@@ -32,6 +32,7 @@ defmodule Scry2Web.MatchesLive do
   @impl true
   def render(%{match: nil} = assigns) do
     ~H"""
+    <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash}>
       <h1 class="text-2xl font-semibold">Matches</h1>
 
@@ -77,6 +78,7 @@ defmodule Scry2Web.MatchesLive do
 
   def render(%{match: _} = assigns) do
     ~H"""
+    <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash}>
       <.link navigate={~p"/matches"} class="link text-sm">&larr; All matches</.link>
 

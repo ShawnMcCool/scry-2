@@ -41,6 +41,7 @@ defmodule Scry2Web.SettingsLive do
   @impl true
   def render(assigns) do
     ~H"""
+    <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash}>
       <h1 class="text-2xl font-semibold">Settings</h1>
 

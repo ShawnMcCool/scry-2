@@ -64,6 +64,19 @@ defmodule Scry2Web.Layouts do
   end
 
   @doc """
+  Renders the persistent Guake-style console LiveView as a sticky child of
+  the root layout. Mounted once from `root.html.heex` so it survives page
+  navigation within the `:browser` live_session.
+  """
+  attr :socket, :any, required: true
+
+  def console_mount(assigns) do
+    ~H"""
+    {live_render(@socket, Scry2Web.ConsoleLive, id: "console-sticky", sticky: true)}
+    """
+  end
+
+  @doc """
   Shows the flash group with standard titles and content.
 
   ## Examples
