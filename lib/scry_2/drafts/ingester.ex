@@ -6,15 +6,20 @@ defmodule Scry2.Drafts.Ingester do
   ## Wiring
 
   Subscribes to `Scry2.Topics.mtga_logs_events/0` at startup and receives
-  `{:event, id, type}` messages for draft-related events.
+  `{:event, id, type}` messages.
 
   ## Scope
 
-  Draft pick mapping requires real MTGA log fixtures to build correctly
-  — pack/pool snapshots and pick sequencing differ between event types.
-  This module is currently a **stub** that receives draft events, logs
-  their types, and marks them processed without writing to `drafts_*`.
-  Domain mapping lands in a follow-up when fixtures are available.
+  `@claimed_types` is intentionally empty — the draft-specific event
+  names MTGA emits are unknown until a user runs a draft with detailed
+  logs enabled and real fixtures can be collected. The original
+  speculative list (`DraftMakePick`, `DraftPack`, `DraftNotify`,
+  `EventGetPlayerCourse`) did not match observed logs. See
+  `TODO.md` → "Match ingestion follow-ups" → Drafts for the plan.
+
+  Structurally this module mirrors `Scry2.Matches.Ingester`: once real
+  draft event types are known, add them to `@claimed_types` and extend
+  `process_event/2`.
 
   See ADR-014 (arena_id stable key) and ADR-016 (idempotent ingestion).
   """
@@ -25,12 +30,7 @@ defmodule Scry2.Drafts.Ingester do
   alias Scry2.MtgaLogs
   alias Scry2.Topics
 
-  @claimed_types ~w(
-    DraftMakePick
-    DraftPack
-    DraftNotify
-    EventGetPlayerCourse
-  )
+  @claimed_types []
 
   def start_link(opts \\ []) do
     {name, opts} = Keyword.pop(opts, :name, __MODULE__)
@@ -45,15 +45,28 @@ defmodule Scry2.Drafts.Ingester do
 
   @impl true
   def handle_info({:event, id, type}, state) when type in @claimed_types do
-    Log.info(:ingester, "drafts received event id=#{id} type=#{type}")
+    try do
+      process_event(id, type)
+      MtgaLogs.mark_processed!(id)
+    rescue
+      error ->
+        Log.error(
+          :ingester,
+          "drafts failed to process id=#{id} type=#{type}: #{inspect(error)}"
+        )
 
-    # TODO: load Scry2.MtgaLogs.EventRecord id=id, dispatch on type,
-    # upsert via Scry2.Drafts (upsert_draft!, upsert_pick!), mark_processed!/1.
-    MtgaLogs.mark_processed!(id)
+        MtgaLogs.mark_error!(id, error)
+    end
 
     {:noreply, state}
   end
 
   def handle_info({:event, _id, _type}, state), do: {:noreply, state}
   def handle_info(_other, state), do: {:noreply, state}
+
+  # Placeholder — filled in when draft event fixtures exist.
+  defp process_event(id, type) do
+    Log.info(:ingester, "drafts received event id=#{id} type=#{type}")
+    :ok
+  end
 end

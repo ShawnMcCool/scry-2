@@ -64,4 +64,44 @@ defmodule Scry2.MtgaLogsTest do
       assert MtgaLogs.get_cursor(path).byte_offset == 250
     end
   end
+
+  describe "get_event!/1" do
+    test "returns the event record by id" do
+      record = TestFactory.create_event_record(%{event_type: "MatchGameRoomStateChangedEvent"})
+
+      loaded = MtgaLogs.get_event!(record.id)
+      assert loaded.id == record.id
+      assert loaded.event_type == "MatchGameRoomStateChangedEvent"
+      assert loaded.raw_json == record.raw_json
+    end
+
+    test "raises Ecto.NoResultsError when id does not exist" do
+      assert_raise Ecto.NoResultsError, fn -> MtgaLogs.get_event!(-1) end
+    end
+  end
+
+  describe "mark_error!/2" do
+    test "records processing_error without marking the event processed" do
+      record = TestFactory.create_event_record()
+
+      assert :ok = MtgaLogs.mark_error!(record.id, %ArgumentError{message: "bad payload"})
+
+      reloaded = MtgaLogs.get_event!(record.id)
+      assert reloaded.processed == false
+      assert reloaded.processing_error =~ "ArgumentError"
+      assert reloaded.processing_error =~ "bad payload"
+    end
+  end
+
+  describe "count_by_type/0" do
+    test "returns a map of event_type => count" do
+      TestFactory.create_event_record(%{event_type: "MatchGameRoomStateChangedEvent"})
+      TestFactory.create_event_record(%{event_type: "MatchGameRoomStateChangedEvent"})
+      TestFactory.create_event_record(%{event_type: "EventJoin"})
+
+      counts = MtgaLogs.count_by_type()
+      assert counts["MatchGameRoomStateChangedEvent"] == 2
+      assert counts["EventJoin"] == 1
+    end
+  end
 end

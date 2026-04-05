@@ -154,7 +154,7 @@ defmodule Scry2.TestFactory do
     |> Map.from_struct()
     |> Map.drop([:__meta__, :match])
     |> Map.put(:match_id, match.id)
-    |> Matches.insert_game!()
+    |> Matches.upsert_game!()
   end
 
   def create_draft(attrs \\ %{}) do

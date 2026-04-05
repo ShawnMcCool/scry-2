@@ -60,12 +60,23 @@ defmodule Scry2.Matches do
     match
   end
 
-  @doc "Inserts a single game under a match."
-  def insert_game!(attrs) do
+  @doc """
+  Upserts a single game under a match by the composite key
+  `(match_id, game_number)`. Idempotent per ADR-016 — reprocessing the
+  same event range yields identical rows.
+  """
+  def upsert_game!(attrs) do
+    attrs = Map.new(attrs)
+    match_id = attrs[:match_id] || attrs["match_id"]
+    game_number = attrs[:game_number] || attrs["game_number"]
+
     game =
-      %Game{}
-      |> Game.changeset(Map.new(attrs))
-      |> Repo.insert!()
+      case Repo.get_by(Game, match_id: match_id, game_number: game_number) do
+        nil -> %Game{}
+        existing -> existing
+      end
+      |> Game.changeset(attrs)
+      |> Repo.insert_or_update!()
 
     broadcast_update(game.match_id)
     game
