@@ -20,7 +20,7 @@ defmodule Scry2.Drafts.Ingester do
   """
   use GenServer
 
-  require Logger
+  require Scry2.Log, as: Log
 
   alias Scry2.MtgaLogs
   alias Scry2.Topics
@@ -45,7 +45,7 @@ defmodule Scry2.Drafts.Ingester do
 
   @impl true
   def handle_info({:event, id, type}, state) when type in @claimed_types do
-    Logger.info("drafts ingester received event id=#{id} type=#{type}")
+    Log.info(:ingester, "drafts received event id=#{id} type=#{type}")
 
     # TODO: load Scry2.MtgaLogs.EventRecord id=id, dispatch on type,
     # upsert via Scry2.Drafts (upsert_draft!, upsert_pick!), mark_processed!/1.

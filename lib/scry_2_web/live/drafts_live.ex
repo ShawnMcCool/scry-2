@@ -32,6 +32,7 @@ defmodule Scry2Web.DraftsLive do
   @impl true
   def render(%{draft: nil} = assigns) do
     ~H"""
+    <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash}>
       <h1 class="text-2xl font-semibold">Drafts</h1>
 
@@ -71,6 +72,7 @@ defmodule Scry2Web.DraftsLive do
 
   def render(%{draft: _} = assigns) do
     ~H"""
+    <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash}>
       <.link navigate={~p"/drafts"} class="link text-sm">&larr; All drafts</.link>
 

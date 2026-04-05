@@ -24,7 +24,7 @@ defmodule Scry2.Matches.Ingester do
   """
   use GenServer
 
-  require Logger
+  require Scry2.Log, as: Log
 
   alias Scry2.MtgaLogs
   alias Scry2.Topics
@@ -55,7 +55,7 @@ defmodule Scry2.Matches.Ingester do
 
   @impl true
   def handle_info({:event, id, type}, state) when type in @claimed_types do
-    Logger.info("matches ingester received event id=#{id} type=#{type}")
+    Log.info(:ingester, "matches received event id=#{id} type=#{type}")
 
     # TODO: load Scry2.MtgaLogs.EventRecord id=id, dispatch on type,
     # upsert via Scry2.Matches, mark_processed!/1. Requires real

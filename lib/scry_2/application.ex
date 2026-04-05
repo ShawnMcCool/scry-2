@@ -9,6 +9,8 @@ defmodule Scry2.Application do
   def start(_type, _args) do
     Scry2.Config.load!()
 
+    install_console_handler()
+
     children =
       [
         Scry2Web.Telemetry,
@@ -17,6 +19,11 @@ defmodule Scry2.Application do
          repos: Application.fetch_env!(:scry_2, :ecto_repos), skip: skip_migrations?()},
         {DNSCluster, query: Application.get_env(:scry_2, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: Scry2.PubSub},
+        # Buffer must start AFTER Repo and PubSub — it reads persisted filter
+        # + buffer size from Scry2.Settings in init/1 and broadcasts appends
+        # via PubSub. Logs emitted before this starts are dropped silently by
+        # Buffer.append/2's Process.whereis guard.
+        Scry2.Console.Buffer,
         {Oban, Application.fetch_env!(:scry_2, Oban)},
         Scry2Web.Endpoint
       ]
@@ -24,6 +31,20 @@ defmodule Scry2.Application do
 
     opts = [strategy: :one_for_one, name: Scry2.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # Install the Erlang :logger handler that funnels all log events into
+  # Scry2.Console.Buffer. Safe to call on reboot — re-adds cleanly if the
+  # previous handler was left behind (e.g. after a LiveReload crash).
+  defp install_console_handler do
+    _ = :logger.remove_handler(:scry2_console)
+
+    :ok =
+      :logger.add_handler(
+        :scry2_console,
+        Scry2.Console.Handler,
+        %{level: :all, config: %{}}
+      )
   end
 
   # Tell Phoenix to update the endpoint configuration

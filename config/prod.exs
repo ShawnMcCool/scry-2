@@ -22,5 +22,10 @@ config :scry_2, Scry2Web.Endpoint,
 # Do not print debug messages in production
 config :logger, level: :info
 
+# Use the same component-aware formatter as dev so thinking logs show [component]
+config :logger, :default_formatter,
+  format: {Scry2.Log.Formatter, :format},
+  metadata: [:component]
+
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.

@@ -23,14 +23,38 @@ import "phoenix_html"
 import {Socket} from "phoenix"
 import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/scry_2"
+import {Console} from "./hooks/console"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks},
+  hooks: {...colocatedHooks, Console},
 })
+
+// Global backtick hotkey to toggle the sticky console drawer. Registered in
+// the CAPTURE phase so it fires before any bubble-phase listeners elsewhere.
+// Skipped when focused in an input/textarea so the user can type backticks
+// in form fields normally.
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key !== "`") return
+    if (event.ctrlKey || event.metaKey || event.altKey) return
+
+    const target = event.target
+    const tag = target?.tagName
+    if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) {
+      return
+    }
+
+    event.preventDefault()
+    event.stopPropagation()
+    window.dispatchEvent(new CustomEvent("scry2:console:toggle"))
+  },
+  {capture: true}
+)
 
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
