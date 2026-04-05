@@ -1,15 +1,38 @@
 defmodule Scry2.MtgaLogs do
   @moduledoc """
-  Context module for raw MTGA log events and the tail cursor.
+  Context module for raw MTGA log events and the tail cursor — facade for
+  the Player.log ingestion pipeline.
 
   Owns tables: `mtga_logs_events`, `mtga_logs_cursor`.
 
   PubSub role: broadcasts `"mtga_logs:events"` (parsed events) and
   `"mtga_logs:status"` (watcher state changes).
 
+  ## The ingestion pipeline
+
   Raw log events are the single most important data-integrity invariant
   in Scry2 — every parsed event is persisted with its full raw JSON here
-  BEFORE any downstream context consumes it. See ADR-015.
+  BEFORE any downstream context consumes it (ADR-015).
+
+  The full pipeline, left to right:
+
+  | Stage | Module                          | Role                                             |
+  |-------|---------------------------------|--------------------------------------------------|
+  | 01    | `Scry2.MtgaLogs.PathResolver`   | Find `Player.log` via override or candidate scan |
+  | 02    | `Scry2.MtgaLogs.Watcher`        | Subscribe to inotify events, drive the pipeline  |
+  | 03    | `Scry2.MtgaLogs.Tailer`         | Read new bytes since the last cursor offset      |
+  | 04    | `Scry2.MtgaLogs.EventParser`    | Extract `%Event{}` structs from raw log text     |
+  | 05    | `Scry2.MtgaLogs.insert_event!`  | Persist raw event + broadcast `mtga_logs:events` |
+  | 06    | `Scry2.MtgaLogs.put_cursor!`    | Advance cursor durably (ADR-012)                 |
+  | 07    | `Scry2.Matches.Ingester`        | Subscribe to topic, dispatch on event_type       |
+  |       | `Scry2.Drafts.Ingester`         | (same, for draft events)                         |
+  | 08    | `Scry2.Matches.EventMapper`     | Pure map of parsed payload → upsert attrs        |
+  | 09    | `Scry2.Matches.upsert_match!`   | Idempotent upsert + broadcast `matches:updates`  |
+
+  Each stage is a narrow-contract module; read its `@moduledoc` to see
+  the input/output types and why it's shaped the way it is. Stages 01–06
+  live in this bounded context. Stages 07–09 live in `Scry2.Matches` /
+  `Scry2.Drafts` and consume via PubSub, not direct calls (ADR-011).
   """
 
   import Ecto.Query
@@ -50,6 +73,14 @@ defmodule Scry2.MtgaLogs do
 
     Repo.all(query)
   end
+
+  @doc """
+  Loads a single raw event record by id. Raises `Ecto.NoResultsError` if
+  the id is not found. Used by the matches/drafts ingesters when they
+  receive a `{:event, id, type}` message and need to dispatch on the
+  event's `raw_json` payload.
+  """
+  def get_event!(id) when is_integer(id), do: Repo.get!(EventRecord, id)
 
   @doc "Marks the given event id as processed."
   def mark_processed!(id) when is_integer(id) do
