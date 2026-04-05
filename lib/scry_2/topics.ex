@@ -42,6 +42,20 @@ defmodule Scry2.Topics do
   """
   def console_logs, do: "console:logs"
 
+  # ── Events (domain event log) ────────────────────────────────────────────
+  @doc """
+  Domain events from `Scry2.Events`. Every projector and real-time consumer
+  subscribes here. Messages:
+
+    * `{:domain_event, id, type_slug}` — new event appended to the log.
+      Consumers load the full struct via `Scry2.Events.get!/1`.
+
+  No downstream context should subscribe to `mtga_logs_events/0` directly —
+  domain events are the anti-corruption boundary (see ADR-018). If you need
+  MTGA information, it should be modeled as a domain event first.
+  """
+  def domain_events, do: "domain:events"
+
   # ── Helpers ──────────────────────────────────────────────────────────────
   @doc "Subscribe the calling process to `topic`."
   def subscribe(topic) when is_binary(topic) do
