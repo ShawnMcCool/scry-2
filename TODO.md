@@ -6,22 +6,18 @@ When picking up any of these, invoke the relevant thinking skill first (see `CLA
 
 ---
 
-## 1. Component-aware logging + Console drawer  — **NOT STARTED**
+## 1. Component-aware logging + Console drawer  — **DONE** (2026-04-05)
 
-`CLAUDE.md` documents `Scry2.Log` macros, `Scry2.Console.Buffer`, component tags (`:watcher`, `:parser`, `:ingester`, `:importer`, `:http`, `:system`, `:phoenix`, `:ecto`, `:live_view`), a Guake-style backtick drawer, and a `/console` route — but **none of it exists in `lib/`**. All current call sites still use stdlib `Logger`. This is the biggest gap against the documented architecture.
+Shipped in commit `f72aa1f4 feat: component-tagged logging with console drawer`. The full stack is live:
 
-Adapt verbatim-ish from `/home/shawn/src/media-centaur/backend/lib/media_centaur/log*` + the corresponding Console LiveView. Required pieces:
-
-- `lib/scry_2/log.ex` — `info/2`, `warning/2`, `error/2` macros.
-- `lib/scry_2/log/` — `formatter.ex`, `filter.ex`, any helpers from media-centaur.
-- `lib/scry_2/console/` — bounded context: `buffer.ex` (ring buffer GenServer, default 2 000 entries), `entry.ex`, `filter.ex`, handler module that plugs into Erlang `:logger`, public facade in `lib/scry_2/console.ex`.
-- `Scry2.Diagnostics.log_recent/1` for IEx/remote-shell access.
-- Wire the `:logger` handler from `application.ex`.
-- `lib/scry_2_web/live/console_live.ex` (+ helpers + tests) and full-page `/console` route.
-- Guake-style sticky drawer component bound to backtick key, mounted in the root layout.
-- Replace existing `Logger.info(...)` calls in `Scry2.Matches.Ingester`, `Scry2.Drafts.Ingester`, `Scry2.MtgaLogs.Watcher`, `Scry2.Workers.CardsRefreshWorker` with `Log.info(:ingester, …)` / `Log.info(:watcher, …)` / `Log.info(:importer, …)` etc.
-- Persist filter state + buffer size per-user to `Settings.Entry` with a 2-second debounce.
-- Add the `/console` route to `Scry2Web.Router`.
+- `Scry2.Log` macros (`info/2`, `warning/2`, `error/2`) with component tags
+- `Scry2.Console` bounded context (buffer, filter, handler, view, entry)
+- Erlang `:logger` handler wired from `application.ex`
+- Guake-style sticky drawer mounted in every LiveView via `Layouts.console_mount`
+- Full-page `/console` route
+- Filter state + buffer size persisted to `Settings.Entry` with 2-second debounce
+- All `Logger.*` call sites swapped to `Scry2.Log.*`
+- Backtick (`` ` ``) key binding wired in `assets/js/app.js`
 
 ---
 
@@ -52,20 +48,23 @@ Fixture expansion is append-only — grow organically as new edge cases surface:
 
 ---
 
-## 3. Ingester persistence logic  — **PARTIAL**
+## 3. Ingestion + projection pipeline  — **PARTIAL** (event-sourced)
 
-### Done in 2026-04-05 session (thin slice)
+### Done in 2026-04-05 sessions
 
-End-to-end pipeline is wired through for match creation:
+**Thin slice (first session):** direct mapper-based path for match creation. `MtgaLogs.get_event!/1`, `Matches.upsert_game!/1`, ingester error handling, `Scry2.Matches.EventMapper`, ingester dispatch wired, `mtga_self_user_id` config, 185 tests.
 
-- `Scry2.MtgaLogs.get_event!/1` added so ingesters can load raw events without reaching into `Repo` directly.
-- `Scry2.Matches.upsert_game!/1` replaces the old `insert_game!` — upserts by `(match_id, game_number)` composite unique index. ADR-016 compliance. (`Scry2.Matches.upsert_match!/1` and `Scry2.Matches.upsert_deck_submission!/1` were already idempotent.)
-- `Scry2.Matches.EventMapper` — pure module, one function per event type. Currently handles `MatchGameRoomStateChangedEvent` with state=Playing: extracts `mtga_match_id`, `event_name`, `opponent_screen_name`, `started_at`. MatchCompleted returns `:ignore` (handled in follow-up below).
-- `Scry2.Matches.Ingester` — claimed types rewritten to `["MatchGameRoomStateChangedEvent"]`, dispatch wired through `EventMapper` → `Matches.upsert_match!`. Try/rescue with `MtgaLogs.mark_error!/2` on failure so malformed payloads never crash the GenServer.
-- `Scry2.Drafts.Ingester` — empty `@claimed_types` (waiting for real draft fixtures) but structurally mirrors the matches ingester with error handling in place.
-- Configuration: `mtga_self_user_id` key added to `Scry2.Config` + documented in `defaults/scry_2.toml`. Used by the mapper to distinguish self from opponent in `reservedPlayers[]`. Falls back to `systemSeatId: 1` when nil.
-- Tests: 5 integration tests (`test/scry_2/matches/ingester_test.exs`) covering happy path, both Playing and MatchCompleted state handling, idempotency (replay produces one row), malformed JSON, and ignored event types. Plus 6 pure `EventMapper` tests. 185 total tests passing, zero warnings.
-- **Verified end-to-end against the real Player.log**: parsed 3,941 events from the 22 MB file, 2 of which were `MatchGameRoomStateChangedEvent`, the pipeline created one row in `matches_matches` with the correct `mtga_match_id`, `event_name: "Traditional_Ladder"`, opponent screen name, and `started_at` timestamp.
+**Event sourcing refactor (second session):** retrofitted the thin slice into an event-sourced architecture per ADR-017 and ADR-018. Both match creation AND completion now work end-to-end.
+
+- **New bounded context** `Scry2.Events` (table: `domain_events`, append-only): holds the domain event log plus the Translator (anti-corruption layer), IngestionWorker, and the `Event` protocol.
+- **Domain event catalog** under `lib/scry_2/events/`: `MatchCreated`, `MatchCompleted` (both wired); `GameCompleted`, `DeckSubmitted`, `DraftStarted`, `DraftPickMade` (struct + protocol defined, no translator clause yet).
+- **`Scry2.Events.Translator`** (pipeline stage 07, pure) — the ONLY place MTGA wire format is understood. Consumes `%MtgaLogs.EventRecord{}` + `self_user_id`, returns list of domain event structs. Handles `MatchGameRoomStateChangedEvent` with `Playing` → `%MatchCreated{}` and `MatchCompleted` → `%MatchCompleted{}` (including win/loss derivation from `finalMatchResult.resultList`).
+- **`Scry2.Events.IngestionWorker`** (pipeline stage 08) — GenServer, subscribes to `mtga_logs:events`, runs Translator, persists via `Events.append!/2`, marks raw events processed. Single subscriber of the raw topic.
+- **Projectors** — `Scry2.Matches.Projector` and `Scry2.Drafts.Projector` (pipeline stage 09) — GenServers subscribing to `domain:events`. Matches projector handles `%MatchCreated{}` and `%MatchCompleted{}` via `Matches.upsert_match!/1`. Drafts projector has empty `@claimed_slugs` pending draft fixtures.
+- **Rebuild tooling** — `Scry2.Events.replay_projections!/0` (drop projections, replay domain event log) and `Scry2.Events.retranslate_from_raw!/0` (drop domain events, re-run translator from raw log).
+- **Deleted** — `Scry2.Matches.EventMapper`, `Scry2.Matches.Ingester`, `Scry2.Drafts.Ingester` and their tests. Replaced by Translator + Projector infrastructure.
+- **ADRs** — ADR-017 (event sourcing core architecture), ADR-018 (anti-corruption layer).
+- **Tests** — 206 total (up from 185 pre-refactor). 6 new test files replacing 2 deleted. End-to-end path verified against real Player.log.
 
 ### See "Match ingestion follow-ups" below for everything still to do
 
@@ -83,24 +82,25 @@ Everything deferred from the thin slice. Ordered roughly by impact. Each bullet 
 - Real top-level event types observed: `GreToClientEvent` (2300+), `ClientToGreuimessage` (1200+), `ClientToGremessage` (360+), `GraphGetGraphState`, `MatchGameRoomStateChangedEvent` (2 per match), plus the usual lobby set.
 - The original speculative list from the bootstrap plan (`EventMatchCreated`, `MatchStart`, `MatchEnd`, `MatchCompleted`, `GameComplete`, `EventDeckSubmit`, `EventPayEntry`, `DraftMakePick`, `DraftPack`, `DraftNotify`, `EventGetPlayerCourse`, `PlayerInventoryGetPlayerCards`, `InventoryUpdate`) **does not exist** in observed logs. Those names were guesses and should not appear in future code.
 
-### Match completion / final results (next-most-valuable follow-up)
+### Pattern for adding a new domain event type
 
-`MatchGameRoomStateChangedEvent` with `stateType: "MatchGameRoomStateType_MatchCompleted"` carries:
+With the event-sourced architecture (ADR-017, ADR-018), every follow-up below follows the same recipe:
 
-- `finalMatchResult.matchId` — same id as the Playing-state event, ties completion to the initial row
-- `finalMatchResult.matchCompletedReason` — e.g. `MatchCompletedReasonType_Success`, `MatchCompletedReasonType_TimeOut`
-- `finalMatchResult.resultList` — array of per-game results AND one `MatchScope_Match` summary row with `winningTeamId` and `reason`
+1. **Define the struct** — `lib/scry_2/events/<name>.ex` with `@enforce_keys`, `@type t`, and `defimpl Scry2.Events.Event` (type_slug + mtga_timestamp). Stub structs for `GameCompleted`, `DeckSubmitted`, `DraftStarted`, `DraftPickMade` already exist.
+2. **Add a Translator clause** — in `lib/scry_2/events/translator.ex`, add a `translate/2` head for the relevant raw MTGA event type that produces the struct. Use real fixtures from `test/fixtures/mtga_logs/` (ADR-010).
+3. **Add a rehydration clause** — in `Scry2.Events.get/1` to deserialize the persisted payload back into the struct.
+4. **Add a projector handler** — in the relevant projector (`Matches.Projector`, `Drafts.Projector`, or a new one) pattern-match on the struct type and call the appropriate upsert. Add the slug to `@claimed_slugs`.
+5. **Test the slice** — struct test, translator test with fixture, projector test, end-to-end ingestion worker test.
 
-Work:
+### Match completion / final results — **DONE** (event-sourced refactor session)
 
-- Extend `EventMapper.match_attrs_from_game_room_state_changed/2` to handle both Playing and MatchCompleted states (return different attrs)
-- Populate `matches_matches.ended_at`, `won` (from `winningTeamId` vs self team), `num_games` (count from `resultList`)
-- Second upsert on the same `mtga_match_id` will enrich the existing row (idempotency already in place)
-- Test fixture already committed (`match_game_room_state_changed_completed.log`)
+`%Scry2.Events.MatchCompleted{}` wired end-to-end. Translator produces it from `MatchGameRoomStateChangedEvent` with `stateType: MatchCompleted`, computing `won` from `finalMatchResult.resultList[].winningTeamId` vs the self team (from `reservedPlayers[]`). Projector enriches the existing `matches_matches` row via `upsert_match!/1` (idempotent by `mtga_match_id`).
 
 ### Per-game results (games table)
 
-`GreToClientEvent.greToClientMessages[]` includes `type: "GREMessageType_GameStateMessage"` entries carrying:
+Domain event: `%Scry2.Events.GameCompleted{}` — struct already defined under `lib/scry_2/events/game_completed.ex`, slug `"game_completed"`.
+
+Data source: `GreToClientEvent.greToClientMessages[]` with `type: "GREMessageType_GameStateMessage"`:
 
 - `gameStateMessage.gameInfo.matchID`
 - `gameStateMessage.gameInfo.gameNumber`
@@ -110,33 +110,37 @@ Work:
 
 Work:
 
-- Dedicated `Scry2.MtgaLogs.GreMessageParser` pure module that takes a decoded `greToClientEvent` payload and returns a list of normalized `%GreMessage{}` structs (ConnectResp, GameStateMessage, DieRollResultsResp, ChooseStartingPlayerReq, etc.). Single place to version-gate the GRE protocol.
-- Map GameStateMessage → `Scry2.Matches.upsert_game!` attrs via a new EventMapper function
-- Track mulligans, turn count, on-play from the first GameStateMessage with `matchState: MatchState_GameInProgress`
-- Track game winner from `gameInfo.results[].winningTeamId` when `matchState: MatchState_GameComplete`
+- Add `Scry2.Events.GreMessageParser` helper (pure) that normalizes the nested `greToClientEvent.greToClientMessages[]` structure into a flat list of typed messages (ConnectResp, GameStateMessage, DieRollResultsResp, etc.). Shared infrastructure for per-game AND deck-submission work below.
+- Translator clause for raw `GreToClientEvent`: run through GreMessageParser, emit `%GameCompleted{}` for each GameStateMessage with `matchState: MatchState_GameComplete`.
+- Add `game_completed` handler to `Matches.Projector`, call `Matches.upsert_game!/1`.
+- Real fixture: mine a game-complete GRE message from Player.log (append-only per ADR-010).
 
 ### Deck submissions
 
-`GreToClientEvent.greToClientMessages[]` with `type: "GREMessageType_ConnectResp"` carries:
+Domain event: `%Scry2.Events.DeckSubmitted{}` — struct already defined under `lib/scry_2/events/deck_submitted.ex`, slug `"deck_submitted"`.
+
+Data source: `GreToClientEvent.greToClientMessages[]` with `type: "GREMessageType_ConnectResp"`:
 
 - `connectResp.deckMessage.deckCards` — flat array of grpIds (aka arena_ids), one entry per copy
 - `connectResp.deckMessage.sideboardCards` — same shape
 
 Work:
 
-- Transform flat array → `%{"cards" => [%{"arena_id" => ..., "count" => ...}]}` (the existing `matches_deck_submissions.main_deck` format)
-- `mtga_deck_id` derivation: not in the ConnectResp directly; options are (a) use `matchID` + `gameNumber: 1` as a synthetic key, (b) cross-reference with `DeckUpsertDeckV2` or `EventSetDeckV2` lobby events that fire before a match to get the real deck id
-- Alternative source: `DeckUpsertDeckV2` / `EventSetDeckV2` events carry the user's deck directly in a simpler structure, but only for the local player — opponent decks only come from GRE ConnectResp
-- Test fixture already committed (`gre_to_client_event_connect_resp.log`)
+- Translator clause for raw `GreToClientEvent`: find ConnectResp messages, transform flat arrays into `[%{arena_id: _, count: _}]` aggregated shape, emit `%DeckSubmitted{}`.
+- `mtga_deck_id` derivation: not in the ConnectResp directly; options are (a) synthetic key `matchID + "-g1"`, (b) cross-reference with `DeckUpsertDeckV2`/`EventSetDeckV2` lobby events fired before the match.
+- Add `deck_submitted` handler to `Matches.Projector`, call `Matches.upsert_deck_submission!/1`.
+- Real fixture already committed (`gre_to_client_event_connect_resp.log`).
 
 ### Drafts (entirely new, blocked on fixtures)
 
+Domain events: `%Scry2.Events.DraftStarted{}` and `%Scry2.Events.DraftPickMade{}` — structs already defined under `lib/scry_2/events/`, slugs `"draft_started"` and `"draft_pick_made"`.
+
 The user's current Player.log has no draft activity. Unblock by running a draft with detailed logs enabled, then:
 
-- Collect fixtures for: pack presentation (the moment cards appear for picking), pick submission, draft completion
-- Expected event types TBD — likely embedded in `GreToClientEvent` for draft state, plus separate lobby events. Until we see the real shape, don't guess.
-- Once fixtures exist, implement `Scry2.Drafts.EventMapper` mirroring `Scry2.Matches.EventMapper`
-- Wire `Scry2.Drafts.Ingester.@claimed_types` (currently empty), add dispatch to `Drafts.upsert_draft!/1` and `Drafts.upsert_pick!/1`
+- Collect fixtures for: draft start notification, pack presentation, pick submission, draft completion.
+- Expected raw event types TBD until we see real data — likely embedded in `GreToClientEvent` for draft state plus separate lobby events.
+- Add Translator clauses that produce `%DraftStarted{}` and `%DraftPickMade{}`.
+- Wire `Scry2.Drafts.Projector.@claimed_slugs` (currently empty), add handlers that call `Drafts.upsert_draft!/1` and `Drafts.upsert_pick!/1`.
 
 ### Player & opponent rank extraction
 
@@ -156,7 +160,7 @@ Rank data is in separate `RankGetCombinedRankInfo` and `RankGetSeasonAndRankDeta
 
 ### Self-user-id auto-detection
 
-Currently the user can set `mtga_logs.self_user_id` in `config.toml`, otherwise the mapper falls back to `systemSeatId: 1`. Better: parse the `authenticateResponse` block that appears at session start (visible on line ~300 of Player.log — `"clientId": "D0FECB2AF1E7FE24"`) and cache it in a lightweight GenServer or ETS table. Removes the need for user configuration.
+Currently the user can set `mtga_logs.self_user_id` in `config.toml`, otherwise the Translator falls back to `systemSeatId: 1`. Better: the Translator emits a synthetic `%Scry2.Events.AuthenticateResponded{client_id: ...}` event on session start, the `IngestionWorker` stores the current client_id in a lightweight ETS table or GenServer, and the Translator reads from there instead of Config on subsequent events. Removes the need for user configuration and handles the case where the user has multiple MTGA accounts.
 
 ### Inventory / collection tracking (new feature, not in current schema)
 
@@ -164,11 +168,13 @@ Collection snapshots come via `PlayerInventoryGetPlayerCards` / `InventoryUpdate
 
 ### GRE stream parsing infrastructure (foundational for games + decks)
 
-GRE messages are nested 4–5 levels deep inside `greToClientEvent.greToClientMessages[]`. Each message has a `type: GREMessageType_*` discriminator. Extract a dedicated `Scry2.MtgaLogs.GreMessageParser` pure module that takes a raw `greToClientEvent` payload and returns a list of normalized `%GreMessage{type, msg_id, payload}` structs. Single place to version-gate MTGA's GRE protocol changes. All game/deck follow-ups depend on this.
+GRE messages are nested 4–5 levels deep inside `greToClientEvent.greToClientMessages[]`. Each message has a `type: GREMessageType_*` discriminator. Extract a dedicated `Scry2.Events.GreMessageParser` pure module (lives inside the Events context since it's part of the anti-corruption boundary) that takes a raw `greToClientEvent` payload and returns a list of normalized `%GreMessage{type, msg_id, payload}` helper structs. Single place to version-gate MTGA's GRE protocol changes. All game-completed and deck-submission follow-ups depend on this.
 
-### Reprocess tooling
+Note: `%GreMessage{}` is a private parsing helper, NOT a domain event. It doesn't implement `Scry2.Events.Event` and is never persisted. It just exists to untangle the deep nesting before the Translator builds real domain events from it.
 
-Add `Scry2.MtgaLogs.reprocess_unprocessed/1` — iterates `list_unprocessed/1` in batches and re-broadcasts `{:event, id, type}` to the topic so ingesters re-process. Useful when parser/mapper changes land and historical data needs re-ingestion. Could be exposed as a button on the Settings page or an Oban job.
+### Reprocess / rebuild tooling (partially DONE)
+
+`Scry2.Events.replay_projections!/0` and `Scry2.Events.retranslate_from_raw!/0` already exist from the refactor session. Still to do: expose them as buttons on the Settings page, or trigger from an Oban job, so the user can rebuild projections without dropping into an IEx shell.
 
 ### Parser edge case: `<==` response lines
 
