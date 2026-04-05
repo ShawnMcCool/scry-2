@@ -20,9 +20,10 @@ if System.get_env("PHX_SERVER") do
   config :scry_2, Scry2Web.Endpoint, server: true
 end
 
-config :scry_2, Scry2Web.Endpoint, http: [port: String.to_integer(System.get_env("PORT", "4000"))]
-
 if config_env() == :prod do
+  config :scry_2, Scry2Web.Endpoint,
+    http: [port: String.to_integer(System.get_env("PORT", "4002"))]
+
   database_path =
     System.get_env("DATABASE_PATH") ||
       raise """
