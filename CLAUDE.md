@@ -1,5 +1,19 @@
 Read `AGENTS.md` for Elixir, Phoenix, LiveView, Ecto, and CSS/JS guidelines.
 
+## Design Philosophy
+
+**Only the best software design is worth building. No half-measures.** When in doubt, invest in structure over quick wins.
+
+This app has high ambitions — many real-time consumers, rich analytics, long-lived codebase. Every design decision is made with the assumption that the code will live longer than any individual feature. Prefer:
+
+- **Explicit contracts over implicit conventions.** Typed structs, named events, documented boundaries.
+- **Typed domain events over passing raw maps.** Every fact that crosses a context boundary is a named struct with `@enforce_keys` and a `@type t`.
+- **Bounded contexts over sprawling modules.** Each context owns its tables, its vocabulary, and its public API. Cross-context communication goes through PubSub.
+- **Persistent event logs + projections over direct writes.** See ADR-017 for the event-sourced architecture.
+- **Self-documenting code over external documentation.** Pipeline stages are visible from module @moduledocs; no mental reverse-engineering required.
+
+When two designs both work, pick the one that scales better, not the one that ships faster. If a refactor would pay back across multiple future sessions, do it now — waiting only increases the cost.
+
 ## Skills-First Development
 
 **Always invoke the appropriate thinking skill BEFORE exploring code or writing implementation.** Skills contain paradigm-shifting insights that guide what patterns to look for and what anti-patterns to avoid.
@@ -95,6 +109,9 @@ Every system — Elixir, JavaScript, or otherwise — must be designed so that C
 - **The watcher is a read-only consumer of `Player.log`.** Scry2 never writes to MTGA files.
 - **Every parsed log event retains its raw JSON in `mtga_logs_events` for replay.** This is the core data-integrity guarantee. See [ADR-015](decisions/architecture/2026-04-05-015-raw-event-replay.md).
 - **All match/draft upserts are idempotent via MTGA's own IDs** — reprocessing any log range must yield identical state. See [ADR-016](decisions/architecture/2026-04-05-016-idempotent-log-ingestion.md).
+- **Event sourcing is the core architecture for MTGA ingestion.** Raw events → Translator (anti-corruption layer) → domain events → projections. See [ADR-017](decisions/architecture/2026-04-05-017-event-sourcing-core-architecture.md) and [ADR-018](decisions/architecture/2026-04-05-018-anti-corruption-layer-mtga-domain.md).
+- **MTGA wire format lives in exactly one module: `Scry2.Events.Translator`.** Every downstream consumer works with typed domain event structs under `Scry2.Events.*` and subscribes to `domain:events`. No downstream context touches `mtga_logs_events` directly.
+- **Projections are disposable read models.** `matches_*` and `drafts_*` tables can be dropped and rebuilt from the domain event log at any time via `Scry2.Events.replay_projections!/0`.
 
 ## MTGA: Detailed Logs Required
 
@@ -120,15 +137,19 @@ See `decisions/architecture/2026-04-05-014-arena-id-as-stable-key.md` and the sc
 
 ## Bounded Contexts
 
-Each context owns its tables and communicates only via PubSub events. No context aliases another context's modules.
+Each context owns its tables and communicates only via PubSub events. No context aliases another context's modules. Ingestion is a two-context subsystem (`MtgaLogs` + `Events`); downstream projection contexts subscribe to `domain:events` only.
 
 | Context | Prefix | Owns | PubSub role |
 |---|---|---|---|
-| **MtgaLogs** | `mtga_logs_` | raw log events, file-watch state, parser cursor | Broadcasts `mtga_logs:events` and `mtga_logs:status` |
-| **Matches** | `matches_` | matches, games, deck submissions | Subscribes `mtga_logs:events`; broadcasts `matches:updates` |
-| **Drafts** | `drafts_` | drafts, draft picks | Subscribes `mtga_logs:events`; broadcasts `drafts:updates` |
+| **MtgaLogs** | `mtga_logs_` | raw log events (`mtga_logs_events`), parser cursor (`mtga_logs_cursor`) | Broadcasts `mtga_logs:events` (raw) and `mtga_logs:status` |
+| **Events** | `domain_events` | domain event log, Translator (anti-corruption layer), IngestionWorker | Subscribes `mtga_logs:events`; broadcasts `domain:events` |
+| **Matches** | `matches_` | matches, games, deck submissions (projection) | Subscribes `domain:events` via `Matches.Projector`; broadcasts `matches:updates` |
+| **Drafts** | `drafts_` | drafts, draft picks (projection) | Subscribes `domain:events` via `Drafts.Projector`; broadcasts `drafts:updates` |
 | **Cards** | `cards_` | cards, sets (from 17lands) | Broadcasts `cards:updates` |
 | **Settings** | `settings_` | runtime config entries | Broadcasts `settings:updates` |
+| **Console** | — | in-memory log ring buffer (dev observability) | Broadcasts `console:logs` |
+
+**Key rule:** Only `Scry2.Events.IngestionWorker` subscribes to `mtga_logs:events`. Every other projector, LiveView, or analytics tool subscribes to `domain:events` and works with typed `%Scry2.Events.*{}` structs. See ADR-018 for the anti-corruption boundary.
 
 Consumers (LiveViews, Oban workers) may read any context's public API freely. No context aliases another context's modules.
 
