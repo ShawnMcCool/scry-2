@@ -60,16 +60,26 @@ defmodule Scry2.Application do
     System.get_env("RELEASE_NAME") == nil
   end
 
-  # Only add the MTGA log watcher + ingesters if configuration says so.
-  # Off by default in the test env (see config/test.exs) so tests can
-  # start them explicitly via the public API when they need to.
+  # Only add the MTGA log watcher + event-sourced pipeline if configuration
+  # says so. Off by default in the test env (see config/test.exs) so tests
+  # can start pieces of the pipeline explicitly via the public API when
+  # they need to.
+  #
+  # Child order matters: IngestionWorker must start before projectors so
+  # domain events broadcast during boot are received by every subscriber.
+  # Watcher starts last so its first read doesn't fire events before
+  # downstream consumers are ready.
   defp maybe_add_watcher(children) do
     if Scry2.Config.get(:start_watcher) do
       children ++
         [
-          Scry2.MtgaLogs.Watcher,
-          Scry2.Matches.Ingester,
-          Scry2.Drafts.Ingester
+          # Stage 09: projectors subscribe first so they never miss an event.
+          Scry2.Matches.Projector,
+          Scry2.Drafts.Projector,
+          # Stage 08: ingestion worker translates raw events to domain events.
+          Scry2.Events.IngestionWorker,
+          # Stages 01–05: watcher reads Player.log and broadcasts raw events.
+          Scry2.MtgaLogs.Watcher
         ]
     else
       children
