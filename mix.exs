@@ -68,7 +68,9 @@ defmodule Scry2.MixProject do
       {:oban, "~> 2.19"},
       {:req, "~> 0.5"},
       {:nimble_csv, "~> 1.2"},
-      {:toml, "~> 0.7"}
+      {:toml, "~> 0.7"},
+      # Dev-only tooling
+      {:visualizer, path: "../visualizer"}
     ]
   end
 
