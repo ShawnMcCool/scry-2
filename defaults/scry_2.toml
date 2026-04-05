@@ -24,6 +24,14 @@ path = "~/.local/share/scry_2/scry_2.db"
 # debounce/flush interval, not a polling loop.
 poll_interval_ms = 500
 
+# Your MTGA Wizards user id — the 16-character hex string that appears
+# in log headers like `Match to D0FECB2AF1E7FE24: ...`. Setting this
+# lets the matches ingester reliably distinguish you from your opponent
+# in `reservedPlayers[]`. If unset, Scry2 falls back to assuming
+# `systemSeatId: 1` is you (the local player), which is correct for
+# the overwhelming majority of matches but not guaranteed by MTGA.
+# self_user_id = "D0FECB2AF1E7FE24"
+
 # ── Card reference data (17lands) ────────────────────────────────────────
 [cards]
 # URL for the 17lands public cards.csv. Override for air-gapped testing.
