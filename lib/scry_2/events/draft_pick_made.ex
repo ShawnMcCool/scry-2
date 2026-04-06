@@ -10,27 +10,27 @@ defmodule Scry2.Events.DraftPickMade do
 
   ## Source (future)
 
-  Will be produced by `Scry2.Events.Translator` once real draft fixtures
+  Will be produced by `Scry2.Events.IdentifyDomainEvents` once real draft fixtures
   exist. See `TODO.md` > "Match ingestion follow-ups" > Drafts.
 
   ## Projected by (future)
 
-  `Scry2.Drafts.Projector` will project to `drafts_picks` via
-  `Scry2.Drafts.upsert_pick!/1`, keyed on `(draft_id, pack_number, pick_number)`.
+  `Scry2.DraftListing.UpdateFromEvent` will project to `drafts_picks` via
+  `Scry2.DraftListing.upsert_pick!/1`, keyed on `(draft_id, pack_number, pick_number)`.
 
   ## Status
 
   Struct defined; no translator clause, no projector handler, no fixtures.
   """
 
-  @enforce_keys [:mtga_draft_id, :pack_number, :pick_number, :picked_arena_id, :picked_at]
+  @enforce_keys [:mtga_draft_id, :pack_number, :pick_number, :picked_arena_id, :occurred_at]
   defstruct [
     :mtga_draft_id,
     :pack_number,
     :pick_number,
     :picked_arena_id,
     :pack_arena_ids,
-    :picked_at
+    :occurred_at
   ]
 
   @type t :: %__MODULE__{
@@ -39,11 +39,11 @@ defmodule Scry2.Events.DraftPickMade do
           pick_number: pos_integer(),
           picked_arena_id: integer(),
           pack_arena_ids: [integer()],
-          picked_at: DateTime.t()
+          occurred_at: DateTime.t()
         }
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "draft_pick_made"
-    def mtga_timestamp(%{picked_at: ts}), do: ts
+    def mtga_timestamp(%{occurred_at: ts}), do: ts
   end
 end

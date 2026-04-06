@@ -16,7 +16,7 @@ defmodule Scry2.EventsTest do
         mtga_match_id: "m-1",
         event_name: "Traditional_Ladder",
         opponent_screen_name: "Opponent1",
-        started_at: ~U[2026-04-05 19:18:40Z]
+        occurred_at: ~U[2026-04-05 19:18:40Z]
       }
 
       record = Events.append!(event, source)
@@ -26,7 +26,7 @@ defmodule Scry2.EventsTest do
       assert record.mtga_timestamp == ~U[2026-04-05 19:18:40Z]
       assert record.payload["mtga_match_id"] == "m-1"
       assert record.payload["event_name"] == "Traditional_Ladder"
-      assert record.payload["started_at"] == "2026-04-05T19:18:40Z"
+      assert record.payload["occurred_at"] == "2026-04-05T19:18:40Z"
 
       assert_receive {:domain_event, id, "match_created"}
       assert id == record.id
@@ -36,7 +36,7 @@ defmodule Scry2.EventsTest do
       event = %MatchCreated{
         mtga_match_id: "m-2",
         event_name: "Test",
-        started_at: ~U[2026-04-05 12:00:00Z]
+        occurred_at: ~U[2026-04-05 12:00:00Z]
       }
 
       record = Events.append!(event, nil)
@@ -46,7 +46,7 @@ defmodule Scry2.EventsTest do
     test "persists a MatchCompleted with won/num_games fields" do
       event = %MatchCompleted{
         mtga_match_id: "m-3",
-        ended_at: ~U[2026-04-05 19:53:36Z],
+        occurred_at: ~U[2026-04-05 19:53:36Z],
         won: true,
         num_games: 3,
         reason: "MatchCompletedReasonType_Success"
@@ -66,7 +66,7 @@ defmodule Scry2.EventsTest do
         mtga_match_id: "m-round-1",
         event_name: "Traditional_Ladder",
         opponent_screen_name: "Opponent1",
-        started_at: ~U[2026-04-05 19:18:40Z]
+        occurred_at: ~U[2026-04-05 19:18:40Z]
       }
 
       record = Events.append!(original, nil)
@@ -75,13 +75,13 @@ defmodule Scry2.EventsTest do
       assert rehydrated.mtga_match_id == original.mtga_match_id
       assert rehydrated.event_name == original.event_name
       assert rehydrated.opponent_screen_name == original.opponent_screen_name
-      assert rehydrated.started_at == original.started_at
+      assert rehydrated.occurred_at == original.occurred_at
     end
 
     test "round-trips a MatchCompleted" do
       original = %MatchCompleted{
         mtga_match_id: "m-round-2",
-        ended_at: ~U[2026-04-05 19:53:36Z],
+        occurred_at: ~U[2026-04-05 19:53:36Z],
         won: false,
         num_games: 2,
         reason: "MatchCompletedReasonType_TimeOut"
@@ -91,7 +91,7 @@ defmodule Scry2.EventsTest do
 
       assert %MatchCompleted{} = rehydrated = Events.get!(record.id)
       assert rehydrated.mtga_match_id == original.mtga_match_id
-      assert rehydrated.ended_at == original.ended_at
+      assert rehydrated.occurred_at == original.occurred_at
       assert rehydrated.won == false
       assert rehydrated.num_games == 2
       assert rehydrated.reason == "MatchCompletedReasonType_TimeOut"
@@ -145,14 +145,14 @@ defmodule Scry2.EventsTest do
       mtga_match_id: match_id,
       event_name: "Traditional_Ladder",
       opponent_screen_name: "Opponent1",
-      started_at: ~U[2026-04-05 19:18:40Z]
+      occurred_at: ~U[2026-04-05 19:18:40Z]
     }
   end
 
   defp match_completed(match_id) do
     %MatchCompleted{
       mtga_match_id: match_id,
-      ended_at: ~U[2026-04-05 19:53:36Z],
+      occurred_at: ~U[2026-04-05 19:53:36Z],
       won: true,
       num_games: 2
     }

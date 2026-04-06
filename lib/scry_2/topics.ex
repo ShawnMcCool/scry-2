@@ -9,18 +9,18 @@ defmodule Scry2.Topics do
 
   @pubsub Scry2.PubSub
 
-  # ── MtgaLogs ─────────────────────────────────────────────────────────────
+  # ── MtgaLogIngestion ─────────────────────────────────────────────────────
   @doc "Parsed log events broadcast after persistence to `mtga_logs_events`."
   def mtga_logs_events, do: "mtga_logs:events"
 
   @doc "Watcher state changes (running, paused, path_not_found, detailed_logs_warning)."
   def mtga_logs_status, do: "mtga_logs:status"
 
-  # ── Matches ──────────────────────────────────────────────────────────────
+  # ── MatchListing ─────────────────────────────────────────────────────────
   @doc "Match/game/deck upserts."
   def matches_updates, do: "matches:updates"
 
-  # ── Drafts ───────────────────────────────────────────────────────────────
+  # ── DraftListing ─────────────────────────────────────────────────────────
   @doc "Draft/pick upserts."
   def drafts_updates, do: "drafts:updates"
 

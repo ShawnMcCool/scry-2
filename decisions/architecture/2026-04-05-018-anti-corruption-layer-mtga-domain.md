@@ -28,26 +28,28 @@ names the specific translation layer and its contracts.
 
 ## Decision Outcome
 
-Chosen option: **`Scry2.Events.Translator` is the ONLY module in scry_2
-that understands MTGA's wire format**, because a single translation
-point is easier to maintain, audit, and update when MTGA changes.
+Chosen option: **`Scry2.Events.IdentifyDomainEvents` is the ONLY module
+in scry_2 that understands MTGA's wire format**, because a single
+translation point is easier to maintain, audit, and update when MTGA
+changes.
 
 ### The rule
 
 MTGA event type names, nested MTGA JSON paths, and MTGA-specific
 vocabulary (`matchGameRoomStateChangedEvent`, `gameRoomInfo`,
 `MatchGameRoomStateType_Playing`, etc.) appear in exactly one file:
-`lib/scry_2/events/translator.ex`. Every other module in scry_2 works
-with typed domain event structs (`%Scry2.Events.MatchCreated{}`, etc.)
-and the `Scry2.Events.Event` protocol.
+`lib/scry_2/events/identify_domain_events.ex`. Every other module in
+scry_2 works with typed domain event structs
+(`%Scry2.Events.MatchCreated{}`, etc.) and the `Scry2.Events.Event`
+protocol.
 
 Test: grep the codebase for `matchGameRoomStateChangedEvent`. If it
-appears outside `translator.ex` or `translator_test.exs`, that's a
-leak and a bug.
+appears outside `identify_domain_events.ex` or
+`identify_domain_events_test.exs`, that's a leak and a bug.
 
-### What the Translator does
+### What IdentifyDomainEvents does
 
-Pure function module. Takes a `%Scry2.MtgaLogs.EventRecord{}` (which
+Pure function module. Takes a `%Scry2.MtgaLogIngestion.EventRecord{}` (which
 carries raw MTGA JSON) plus `self_user_id` for distinguishing self
 from opponent in `reservedPlayers[]`. Returns a list of domain event
 structs — zero, one, or many, depending on what the raw event means
@@ -81,7 +83,7 @@ our domain**, not **which MTGA event carried it**.
 
 1. Create `lib/scry_2/events/<name>.ex` with `defstruct`,
    `@enforce_keys`, `@type t :: ...`, and `defimpl Scry2.Events.Event`.
-2. Add a `translate/2` clause in `Scry2.Events.Translator` that
+2. Add a `translate/2` clause in `Scry2.Events.IdentifyDomainEvents` that
    consumes the relevant raw MTGA event type and produces the struct.
 3. Add a rehydration clause in `Scry2.Events.get/1` for the new slug.
 4. Add a projector handler in whichever context owns the projection
@@ -98,30 +100,28 @@ our domain**, not **which MTGA event carried it**.
 * **Good:** Domain events are the public contract. New consumers
   subscribe to `domain:events` and work with typed structs — they
   never see raw JSON, never know about MTGA's nesting.
-* **Good:** Testing is cleaner. Translator tests use real MTGA fixtures
-  (ADR-010); everything downstream uses struct literals.
-* **Good:** Refactoring the translator is a local operation. Changes
-  to MTGA wire format rarely touch anything else.
+* **Good:** Testing is cleaner. IdentifyDomainEvents tests use real MTGA
+  fixtures (ADR-010); everything downstream uses struct literals.
+* **Good:** Refactoring IdentifyDomainEvents is a local operation.
+  Changes to MTGA wire format rarely touch anything else.
 * **Bad:** One more layer of indirection. A reader tracing "how does
-  a match row get created from Player.log?" has to walk through the
-  Translator instead of jumping directly from the ingester to the
-  upsert.
+  a match row get created from Player.log?" has to walk through
+  IdentifyDomainEvents instead of jumping directly to the upsert.
 * **Bad:** The rehydration dispatch in `Scry2.Events.get/1` must stay
   in sync with the struct modules. Adding a new event type requires
   touching both. Mitigated: both live under `lib/scry_2/events/` and
   are small, focused files.
-* **Bad:** The translator can grow large as more event types are
-  supported. If it becomes unwieldy, split into submodules (e.g.
-  `Translator.MatchEvents`, `Translator.DraftEvents`) while keeping
-  the single public `translate/2` entry point.
+* **Bad:** IdentifyDomainEvents can grow large as more event types are
+  supported. If it becomes unwieldy, split into submodules while
+  keeping the single public `translate/2` entry point.
 
 ### Relationship to other ADRs
 
-* **ADR-015 (raw event replay)** — the translator reads from the raw
-  event store. If the translator has bugs, raw events can be
-  re-translated via `Scry2.Events.retranslate_from_raw!/0`.
-* **ADR-017 (event sourcing)** — the translator feeds the domain event
-  log. This ADR is the "how"; ADR-017 is the "why".
-* **ADR-010 (append-only parser tests)** — translator tests use real
-  fixtures from `test/fixtures/mtga_logs/`, same discipline as parser
-  tests. Every new event type ships with its fixture.
+* **ADR-015 (raw event replay)** — IdentifyDomainEvents reads from the
+  raw event store. If it has bugs, raw events can be re-translated
+  via `Scry2.Events.retranslate_from_raw!/0`.
+* **ADR-017 (event sourcing)** — IdentifyDomainEvents feeds the domain
+  event log. This ADR is the "how"; ADR-017 is the "why".
+* **ADR-010 (append-only parser tests)** — IdentifyDomainEvents tests
+  use real fixtures from `test/fixtures/mtga_logs/`, same discipline
+  as parser tests. Every new event type ships with its fixture.

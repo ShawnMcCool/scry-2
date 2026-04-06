@@ -2,7 +2,7 @@ defmodule Scry2Web.SettingsLive do
   use Scry2Web, :live_view
 
   alias Scry2.Config
-  alias Scry2.MtgaLogs.PathResolver
+  alias Scry2.MtgaLogIngestion.LocateLogFile
 
   @impl true
   def mount(_params, _session, socket) do
@@ -16,7 +16,7 @@ defmodule Scry2Web.SettingsLive do
   @impl true
   def handle_params(_params, _uri, socket) do
     resolved =
-      case PathResolver.resolve() do
+      case LocateLogFile.resolve() do
         {:ok, path} -> path
         {:error, :not_found} -> nil
       end
@@ -34,7 +34,7 @@ defmodule Scry2Web.SettingsLive do
     {:noreply,
      socket
      |> assign(:resolved_path, resolved)
-     |> assign(:candidates, PathResolver.default_candidates())
+     |> assign(:candidates, LocateLogFile.default_candidates())
      |> assign(:config_snapshot, snapshot)}
   end
 

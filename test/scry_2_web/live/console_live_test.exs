@@ -9,7 +9,7 @@ defmodule Scry2Web.ConsoleLiveTest do
     # The Buffer is an application-wide GenServer — tests share it. Reset
     # the filter to defaults before each test so assertions about filter
     # state are deterministic. Buffer contents are exercised directly in
-    # Scry2.Console.BufferTest and don't need isolation here.
+    # Scry2.Console.RecentEntriesTest and don't need isolation here.
     Console.update_filter(Filter.new_with_defaults())
     :ok
   end

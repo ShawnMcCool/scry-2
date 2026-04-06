@@ -7,7 +7,7 @@ defmodule Scry2.Console.Entry do
   message text, an optional module atom (from logger metadata), and a pruned
   scalar metadata map.
 
-  `component` is always set — never nil. `Scry2.Console.Handler` assigns a
+  `component` is always set — never nil. `Scry2.Console.CaptureLogOutput` assigns a
   component via classification rules (explicit `:component` metadata wins;
   otherwise the emitting module is classified). `module` may be nil when
   MFA metadata is not available.

@@ -4,13 +4,13 @@ defmodule Scry2Web.ConsolePageLive do
   different layout: full viewport instead of a half-height dropdown.
 
   Shares filter/buffer state with `Scry2Web.ConsoleLive` via
-  `Scry2.Console.Buffer` (single source of truth in the supervision tree).
+  `Scry2.Console.RecentEntries` (single source of truth in the supervision tree).
   PubSub keeps both in sync.
   """
   use Scry2Web, :live_view
 
   alias Scry2.Console
-  alias Scry2.Console.{Buffer, Filter, View}
+  alias Scry2.Console.{RecentEntries, Filter, DisplayHelpers}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -30,14 +30,14 @@ defmodule Scry2Web.ConsolePageLive do
       |> assign(:filter, snapshot.filter)
       |> assign(:paused, false)
       |> assign(:buffer_size, snapshot.cap)
-      |> assign(:app_components, View.app_components())
-      |> assign(:framework_components, View.framework_components())
+      |> assign(:app_components, DisplayHelpers.app_components())
+      |> assign(:framework_components, DisplayHelpers.framework_components())
       # See ConsoleLive.mount/3 — stream limit is pinned at max_cap and
       # never reconfigured. Phoenix LV forbids stream_configure after the
       # stream is populated.
       |> stream_configure(:entries,
         dom_id: &entry_dom_id/1,
-        limit: -Buffer.max_cap()
+        limit: -RecentEntries.max_cap()
       )
       |> stream(:entries, Enum.reverse(snapshot.entries))
 
@@ -97,7 +97,7 @@ defmodule Scry2Web.ConsolePageLive do
   def handle_info({:filter_changed, filter}, socket) do
     current_filter = socket.assigns.filter
 
-    if View.only_search_changed?(current_filter, filter) do
+    if DisplayHelpers.only_search_changed?(current_filter, filter) do
       {:noreply, assign(socket, :filter, filter)}
     else
       snapshot = Console.snapshot()
@@ -170,7 +170,7 @@ defmodule Scry2Web.ConsolePageLive do
   def handle_event("download_buffer", _params, socket) do
     snapshot = Console.snapshot()
     visible = Enum.filter(snapshot.entries, &Filter.matches?(&1, socket.assigns.filter))
-    payload = View.format_lines(visible)
+    payload = DisplayHelpers.format_lines(visible)
 
     timestamp = DateTime.utc_now() |> Calendar.strftime("%Y-%m-%dT%H-%M-%S")
     filename = "scry_2-#{timestamp}.log"
@@ -181,7 +181,7 @@ defmodule Scry2Web.ConsolePageLive do
   def handle_event("copy_visible", _params, socket) do
     snapshot = Console.snapshot()
     visible = Enum.filter(snapshot.entries, &Filter.matches?(&1, socket.assigns.filter))
-    payload = View.format_lines(visible)
+    payload = DisplayHelpers.format_lines(visible)
 
     {:noreply, push_event(socket, "console:copy", %{content: payload})}
   end

@@ -23,7 +23,7 @@ defmodule Scry2.Application do
         # + buffer size from Scry2.Settings in init/1 and broadcasts appends
         # via PubSub. Logs emitted before this starts are dropped silently by
         # Buffer.append/2's Process.whereis guard.
-        Scry2.Console.Buffer,
+        Scry2.Console.RecentEntries,
         {Oban, Application.fetch_env!(:scry_2, Oban)},
         Scry2Web.Endpoint
       ]
@@ -34,7 +34,7 @@ defmodule Scry2.Application do
   end
 
   # Install the Erlang :logger handler that funnels all log events into
-  # Scry2.Console.Buffer. Safe to call on reboot — re-adds cleanly if the
+  # Scry2.Console.RecentEntries. Safe to call on reboot — re-adds cleanly if the
   # previous handler was left behind (e.g. after a LiveReload crash).
   defp install_console_handler do
     _ = :logger.remove_handler(:scry2_console)
@@ -42,7 +42,7 @@ defmodule Scry2.Application do
     :ok =
       :logger.add_handler(
         :scry2_console,
-        Scry2.Console.Handler,
+        Scry2.Console.CaptureLogOutput,
         %{level: :all, config: %{}}
       )
   end
@@ -65,7 +65,7 @@ defmodule Scry2.Application do
   # can start pieces of the pipeline explicitly via the public API when
   # they need to.
   #
-  # Child order matters: IngestionWorker must start before projectors so
+  # Child order matters: IngestRawEvents must start before projectors so
   # domain events broadcast during boot are received by every subscriber.
   # Watcher starts last so its first read doesn't fire events before
   # downstream consumers are ready.
@@ -74,12 +74,12 @@ defmodule Scry2.Application do
       children ++
         [
           # Stage 09: projectors subscribe first so they never miss an event.
-          Scry2.Matches.Projector,
-          Scry2.Drafts.Projector,
+          Scry2.MatchListing.UpdateFromEvent,
+          Scry2.DraftListing.UpdateFromEvent,
           # Stage 08: ingestion worker translates raw events to domain events.
-          Scry2.Events.IngestionWorker,
+          Scry2.Events.IngestRawEvents,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.
-          Scry2.MtgaLogs.Watcher
+          Scry2.MtgaLogIngestion.Watcher
         ]
     else
       children

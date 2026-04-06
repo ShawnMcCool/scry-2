@@ -6,7 +6,7 @@ defmodule Scry2.Cards do
 
   PubSub role: broadcasts `"cards:updates"` after reference-data refreshes.
 
-  See `Scry2.Cards.Lands17Importer` for the bulk import path. See ADR-014
+  See `Scry2.Cards.SeventeenLands` for the bulk import path. See ADR-014
   for the `arena_id` identity invariant.
   """
 
