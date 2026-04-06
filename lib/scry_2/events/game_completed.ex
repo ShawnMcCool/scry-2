@@ -9,15 +9,15 @@ defmodule Scry2.Events.GameCompleted do
 
   ## Source (future)
 
-  Will be produced by `Scry2.Events.Translator` from `GreToClientEvent`
+  Will be produced by `Scry2.Events.IdentifyDomainEvents` from `GreToClientEvent`
   messages containing a `GREMessageType_GameStateMessage` with
   `matchState: "MatchState_GameComplete"`. See ADR-018 and
   `TODO.md` > "Match ingestion follow-ups" > per-game results.
 
   ## Projected by (future)
 
-  `Scry2.Matches.Projector` will project to `matches_games` via
-  `Scry2.Matches.upsert_game!/1`, keyed on `(match_id, game_number)`.
+  `Scry2.MatchListing.UpdateFromEvent` will project to `matches_games` via
+  `Scry2.MatchListing.upsert_game!/1`, keyed on `(match_id, game_number)`.
 
   ## Status
 
@@ -25,7 +25,7 @@ defmodule Scry2.Events.GameCompleted do
   The struct exists to document the vocabulary and reserve the slug.
   """
 
-  @enforce_keys [:mtga_match_id, :game_number, :completed_at]
+  @enforce_keys [:mtga_match_id, :game_number, :occurred_at]
   defstruct [
     :mtga_match_id,
     :game_number,
@@ -33,7 +33,7 @@ defmodule Scry2.Events.GameCompleted do
     :won,
     :num_mulligans,
     :num_turns,
-    :completed_at
+    :occurred_at
   ]
 
   @type t :: %__MODULE__{
@@ -43,11 +43,11 @@ defmodule Scry2.Events.GameCompleted do
           won: boolean() | nil,
           num_mulligans: non_neg_integer() | nil,
           num_turns: non_neg_integer() | nil,
-          completed_at: DateTime.t()
+          occurred_at: DateTime.t()
         }
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "game_completed"
-    def mtga_timestamp(%{completed_at: ts}), do: ts
+    def mtga_timestamp(%{occurred_at: ts}), do: ts
   end
 end

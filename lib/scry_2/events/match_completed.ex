@@ -10,7 +10,7 @@ defmodule Scry2.Events.MatchCompleted do
 
   ## Source
 
-  Produced by `Scry2.Events.Translator` from a raw
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
   `MatchGameRoomStateChangedEvent` with `stateType: "MatchGameRoomStateType_MatchCompleted"`.
   The translator computes `won` by comparing the `winningTeamId` from
   `finalMatchResult.resultList[]` (the `MatchScope_Match` row) to the
@@ -18,8 +18,8 @@ defmodule Scry2.Events.MatchCompleted do
 
   ## Projected by
 
-  `Scry2.Matches.Projector` — enriches the existing `matches_matches`
-  row (keyed on `mtga_match_id`) via `Scry2.Matches.upsert_match!/1`.
+  `Scry2.MatchListing.UpdateFromEvent` — enriches the existing `matches_matches`
+  row (keyed on `mtga_match_id`) via `Scry2.MatchListing.upsert_match!/1`.
   Idempotent — replaying produces the same row state.
 
   ## Fields
@@ -29,10 +29,10 @@ defmodule Scry2.Events.MatchCompleted do
   time using `self_user_id` config and the raw `reservedPlayers[]`.
   """
 
-  @enforce_keys [:mtga_match_id, :ended_at, :won, :num_games]
+  @enforce_keys [:mtga_match_id, :occurred_at, :won, :num_games]
   defstruct [
     :mtga_match_id,
-    :ended_at,
+    :occurred_at,
     :won,
     :num_games,
     :reason
@@ -40,7 +40,7 @@ defmodule Scry2.Events.MatchCompleted do
 
   @type t :: %__MODULE__{
           mtga_match_id: String.t(),
-          ended_at: DateTime.t(),
+          occurred_at: DateTime.t(),
           won: boolean(),
           num_games: non_neg_integer(),
           reason: String.t() | nil
@@ -48,6 +48,6 @@ defmodule Scry2.Events.MatchCompleted do
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "match_completed"
-    def mtga_timestamp(%{ended_at: ts}), do: ts
+    def mtga_timestamp(%{occurred_at: ts}), do: ts
   end
 end

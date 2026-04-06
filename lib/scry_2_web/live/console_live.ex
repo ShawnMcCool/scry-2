@@ -7,18 +7,18 @@ defmodule Scry2Web.ConsoleLive do
 
   ## Lifecycle notes
 
-  * `mount/3` only subscribes and reads the `Scry2.Console.Buffer` snapshot
+  * `mount/3` only subscribes and reads the `Scry2.Console.RecentEntries` snapshot
     (in-memory GenServer — no database query). `connected?/1` gate keeps the
     first HTTP mount cheap.
   * State-persisting actions (filter, buffer-size) flow through `Scry2.Console`
-    → `Buffer`, which debounces persistence to `Scry2.Settings` over 2s.
+    → `RecentEntries`, which debounces persistence to `Scry2.Settings` over 2s.
   * The `@open` flag lives on the server so morphdom never reverts drawer
     state on LiveView re-renders.
   """
   use Scry2Web, :live_view
 
   alias Scry2.Console
-  alias Scry2.Console.{Buffer, Filter, View}
+  alias Scry2.Console.{RecentEntries, Filter, DisplayHelpers}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -39,8 +39,8 @@ defmodule Scry2Web.ConsoleLive do
       |> assign(:paused, false)
       |> assign(:buffer_size, snapshot.cap)
       |> assign(:open, false)
-      |> assign(:app_components, View.app_components())
-      |> assign(:framework_components, View.framework_components())
+      |> assign(:app_components, DisplayHelpers.app_components())
+      |> assign(:framework_components, DisplayHelpers.framework_components())
       # Stream limit is pinned at the buffer's max_cap and never reconfigured.
       # Phoenix LiveView forbids stream_configure/3 after a stream has been
       # populated, so a dynamic limit would crash on resize. The buffer itself
@@ -48,7 +48,7 @@ defmodule Scry2Web.ConsoleLive do
       # the buffer delivers.
       |> stream_configure(:entries,
         dom_id: &entry_dom_id/1,
-        limit: -Buffer.max_cap()
+        limit: -RecentEntries.max_cap()
       )
       |> stream(:entries, Enum.reverse(snapshot.entries))
 
@@ -101,7 +101,7 @@ defmodule Scry2Web.ConsoleLive do
   def handle_info({:buffer_resized, new_cap}, socket) do
     # Phoenix LiveView does NOT allow stream_configure/3 after the stream
     # has been populated (raises ArgumentError). The stream limit was fixed
-    # at Buffer.max_cap() in mount; the Buffer itself enforces the user's
+    # at RecentEntries.max_cap() in mount; the Buffer itself enforces the user's
     # chosen cap. On resize we just reset the stream contents to match the
     # newly-truncated buffer.
     snapshot = Console.snapshot()
@@ -117,7 +117,7 @@ defmodule Scry2Web.ConsoleLive do
   def handle_info({:filter_changed, filter}, socket) do
     current_filter = socket.assigns.filter
 
-    if View.only_search_changed?(current_filter, filter) do
+    if DisplayHelpers.only_search_changed?(current_filter, filter) do
       # Text search is handled by the client-side hook via data-message
       # attributes — no server-side re-stream needed. Just update the
       # assign so cross-tab sync works without the cursor jump that a
@@ -201,7 +201,7 @@ defmodule Scry2Web.ConsoleLive do
   def handle_event("download_buffer", _params, socket) do
     snapshot = Console.snapshot()
     visible = Enum.filter(snapshot.entries, &Filter.matches?(&1, socket.assigns.filter))
-    payload = View.format_lines(visible)
+    payload = DisplayHelpers.format_lines(visible)
 
     timestamp = DateTime.utc_now() |> Calendar.strftime("%Y-%m-%dT%H-%M-%S")
     filename = "scry_2-#{timestamp}.log"
@@ -212,7 +212,7 @@ defmodule Scry2Web.ConsoleLive do
   def handle_event("copy_visible", _params, socket) do
     snapshot = Console.snapshot()
     visible = Enum.filter(snapshot.entries, &Filter.matches?(&1, socket.assigns.filter))
-    payload = View.format_lines(visible)
+    payload = DisplayHelpers.format_lines(visible)
 
     {:noreply, push_event(socket, "console:copy", %{content: payload})}
   end

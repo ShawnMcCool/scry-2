@@ -14,12 +14,12 @@ defmodule Scry2.TestFactory do
 
   alias Scry2.Cards
   alias Scry2.Cards.{Card, Set}
-  alias Scry2.Drafts
-  alias Scry2.Drafts.{Draft, Pick}
-  alias Scry2.Matches
-  alias Scry2.Matches.{DeckSubmission, Game, Match}
-  alias Scry2.MtgaLogs
-  alias Scry2.MtgaLogs.{Cursor, EventRecord}
+  alias Scry2.DraftListing
+  alias Scry2.DraftListing.{Draft, Pick}
+  alias Scry2.MatchListing
+  alias Scry2.MatchListing.{DeckSubmission, Game, Match}
+  alias Scry2.MtgaLogIngestion
+  alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
 
   # ── build_* (no DB) ─────────────────────────────────────────────────────
 
@@ -143,7 +143,7 @@ defmodule Scry2.TestFactory do
     |> build_match()
     |> Map.from_struct()
     |> Map.drop([:__meta__, :games, :deck_submissions])
-    |> Matches.upsert_match!()
+    |> MatchListing.upsert_match!()
   end
 
   def create_game(attrs \\ %{}) do
@@ -154,7 +154,7 @@ defmodule Scry2.TestFactory do
     |> Map.from_struct()
     |> Map.drop([:__meta__, :match])
     |> Map.put(:match_id, match.id)
-    |> Matches.upsert_game!()
+    |> MatchListing.upsert_game!()
   end
 
   def create_draft(attrs \\ %{}) do
@@ -162,7 +162,7 @@ defmodule Scry2.TestFactory do
     |> build_draft()
     |> Map.from_struct()
     |> Map.drop([:__meta__, :picks])
-    |> Drafts.upsert_draft!()
+    |> DraftListing.upsert_draft!()
   end
 
   def create_pick(attrs \\ %{}) do
@@ -173,7 +173,7 @@ defmodule Scry2.TestFactory do
     |> Map.from_struct()
     |> Map.drop([:__meta__, :draft])
     |> Map.put(:draft_id, draft.id)
-    |> Drafts.upsert_pick!()
+    |> DraftListing.upsert_pick!()
   end
 
   def create_event_record(attrs \\ %{}) do
@@ -181,7 +181,7 @@ defmodule Scry2.TestFactory do
     |> build_event_record()
     |> Map.from_struct()
     |> Map.drop([:__meta__])
-    |> MtgaLogs.insert_event!()
+    |> MtgaLogIngestion.insert_event!()
   end
 
   def create_cursor(attrs \\ %{}) do
@@ -191,7 +191,7 @@ defmodule Scry2.TestFactory do
       last_read_at: DateTime.utc_now(:second)
     }
 
-    attrs |> Map.new() |> then(&Map.merge(defaults, &1)) |> MtgaLogs.put_cursor!()
+    attrs |> Map.new() |> then(&Map.merge(defaults, &1)) |> MtgaLogIngestion.put_cursor!()
   end
 
   # ── helpers ─────────────────────────────────────────────────────────────

@@ -97,7 +97,7 @@ defmodule Scry2.Console.Filter do
   """
   @spec solo_component(t(), atom()) :: t()
   def solo_component(%__MODULE__{} = filter, component) do
-    known = Scry2.Console.View.known_components()
+    known = Scry2.Console.DisplayHelpers.known_components()
 
     updated_components =
       known
@@ -117,7 +117,7 @@ defmodule Scry2.Console.Filter do
   """
   @spec mute_component(t(), atom()) :: t()
   def mute_component(%__MODULE__{} = filter, component) do
-    known = Scry2.Console.View.known_components()
+    known = Scry2.Console.DisplayHelpers.known_components()
 
     updated_components =
       known

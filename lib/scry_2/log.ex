@@ -12,7 +12,7 @@ defmodule Scry2.Log do
 
   Log visibility is controlled in the browser via the Console drawer
   (press `` ` `` from any page) or the full-page `/console` route. All captured
-  entries land in `Scry2.Console.Buffer` and can be filtered at display
+  entries land in `Scry2.Console.RecentEntries` and can be filtered at display
   time by component, level, and text search.
 
   ## Components
@@ -29,7 +29,7 @@ defmodule Scry2.Log do
   | `:system`   | Fallback for anything without a tag               |
 
   Framework components (`:phoenix`, `:ecto`, `:live_view`) are assigned
-  automatically by `Scry2.Console.Handler` based on the emitting module.
+  automatically by `Scry2.Console.CaptureLogOutput` based on the emitting module.
 
   ## Message Format
 

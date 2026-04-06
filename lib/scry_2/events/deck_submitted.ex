@@ -9,7 +9,7 @@ defmodule Scry2.Events.DeckSubmitted do
 
   ## Source (future)
 
-  Will be produced by `Scry2.Events.Translator` from one of two raw
+  Will be produced by `Scry2.Events.IdentifyDomainEvents` from one of two raw
   MTGA sources:
 
     * `GreToClientEvent.greToClientMessages[]` with type
@@ -24,21 +24,21 @@ defmodule Scry2.Events.DeckSubmitted do
 
   ## Projected by (future)
 
-  `Scry2.Matches.Projector` will project to `matches_deck_submissions`
-  via `Scry2.Matches.upsert_deck_submission!/1`, keyed on `mtga_deck_id`.
+  `Scry2.MatchListing.UpdateFromEvent` will project to `matches_deck_submissions`
+  via `Scry2.MatchListing.upsert_deck_submission!/1`, keyed on `mtga_deck_id`.
 
   ## Status
 
   Struct defined; no translator clause or projector handler wired yet.
   """
 
-  @enforce_keys [:mtga_match_id, :main_deck, :submitted_at]
+  @enforce_keys [:mtga_match_id, :main_deck, :occurred_at]
   defstruct [
     :mtga_match_id,
     :mtga_deck_id,
     :main_deck,
     :sideboard,
-    :submitted_at
+    :occurred_at
   ]
 
   @type card_count :: %{arena_id: integer(), count: pos_integer()}
@@ -48,11 +48,11 @@ defmodule Scry2.Events.DeckSubmitted do
           mtga_deck_id: String.t() | nil,
           main_deck: [card_count()],
           sideboard: [card_count()],
-          submitted_at: DateTime.t()
+          occurred_at: DateTime.t()
         }
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "deck_submitted"
-    def mtga_timestamp(%{submitted_at: ts}), do: ts
+    def mtga_timestamp(%{occurred_at: ts}), do: ts
   end
 end

@@ -5,7 +5,7 @@ defprotocol Scry2.Events.Event do
   Domain events are the unit of communication between the ingestion
   subsystem (stages 01–08) and projectors / real-time consumers (stage 09+).
   Each struct represents a single thing that happened in the user's MTGA
-  domain, translated from raw MTGA events by `Scry2.Events.Translator`.
+  domain, translated from raw MTGA events by `Scry2.Events.IdentifyDomainEvents`.
 
   This protocol exposes the two pieces of metadata the persistence and
   replay machinery needs without requiring projectors to know about the
@@ -25,7 +25,7 @@ defprotocol Scry2.Events.Event do
      and `@type t :: ...`.
   2. Implement `Scry2.Events.Event` inside that file via `defimpl`.
   3. Pick a stable slug and document it at the top of the module.
-  4. Add a translator clause in `Scry2.Events.Translator` that produces
+  4. Add a translator clause in `Scry2.Events.IdentifyDomainEvents` that produces
      the struct from a raw MTGA event.
   5. Add a projector handler in whichever context owns the projection.
 

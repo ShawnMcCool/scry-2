@@ -109,8 +109,8 @@ Every system — Elixir, JavaScript, or otherwise — must be designed so that C
 - **The watcher is a read-only consumer of `Player.log`.** Scry2 never writes to MTGA files.
 - **Every parsed log event retains its raw JSON in `mtga_logs_events` for replay.** This is the core data-integrity guarantee. See [ADR-015](decisions/architecture/2026-04-05-015-raw-event-replay.md).
 - **All match/draft upserts are idempotent via MTGA's own IDs** — reprocessing any log range must yield identical state. See [ADR-016](decisions/architecture/2026-04-05-016-idempotent-log-ingestion.md).
-- **Event sourcing is the core architecture for MTGA ingestion.** Raw events → Translator (anti-corruption layer) → domain events → projections. See [ADR-017](decisions/architecture/2026-04-05-017-event-sourcing-core-architecture.md) and [ADR-018](decisions/architecture/2026-04-05-018-anti-corruption-layer-mtga-domain.md).
-- **MTGA wire format lives in exactly one module: `Scry2.Events.Translator`.** Every downstream consumer works with typed domain event structs under `Scry2.Events.*` and subscribes to `domain:events`. No downstream context touches `mtga_logs_events` directly.
+- **Event sourcing is the core architecture for MTGA ingestion.** Raw events → IdentifyDomainEvents (anti-corruption layer) → domain events → projections. See [ADR-017](decisions/architecture/2026-04-05-017-event-sourcing-core-architecture.md) and [ADR-018](decisions/architecture/2026-04-05-018-anti-corruption-layer-mtga-domain.md).
+- **MTGA wire format lives in exactly one module: `Scry2.Events.IdentifyDomainEvents`.** Every downstream consumer works with typed domain event structs under `Scry2.Events.*` and subscribes to `domain:events`. No downstream context touches `mtga_logs_events` directly.
 - **Projections are disposable read models.** `matches_*` and `drafts_*` tables can be dropped and rebuilt from the domain event log at any time via `Scry2.Events.replay_projections!/0`.
 
 ## MTGA: Detailed Logs Required
@@ -129,27 +129,27 @@ events lack the expected structured payloads.
 Card reference data is imported from 17lands' public dataset at
 <https://17lands-public.s3.amazonaws.com/analysis_data/cards/cards.csv>.
 Licensed CC BY 4.0. Attribution is required if this data is ever
-re-exposed. See `Scry2.Cards.Lands17Importer`.
+re-exposed. See `Scry2.Cards.SeventeenLands`.
 
 ## Data Model
 
-See `decisions/architecture/2026-04-05-014-arena-id-as-stable-key.md` and the schema modules under `lib/scry_2/cards/`, `lib/scry_2/matches/`, `lib/scry_2/drafts/` for the data model. Type-specific tables, no polymorphic entity table.
+See `decisions/architecture/2026-04-05-014-arena-id-as-stable-key.md` and the schema modules under `lib/scry_2/cards/`, `lib/scry_2/match_listing/`, `lib/scry_2/draft_listing/` for the data model. Type-specific tables, no polymorphic entity table.
 
 ## Bounded Contexts
 
-Each context owns its tables and communicates only via PubSub events. No context aliases another context's modules. Ingestion is a two-context subsystem (`MtgaLogs` + `Events`); downstream projection contexts subscribe to `domain:events` only.
+Each context owns its tables and communicates only via PubSub events. No context aliases another context's modules. Ingestion is a two-context subsystem (`MtgaLogIngestion` + `Events`); downstream projection contexts subscribe to `domain:events` only.
 
 | Context | Prefix | Owns | PubSub role |
 |---|---|---|---|
-| **MtgaLogs** | `mtga_logs_` | raw log events (`mtga_logs_events`), parser cursor (`mtga_logs_cursor`) | Broadcasts `mtga_logs:events` (raw) and `mtga_logs:status` |
-| **Events** | `domain_events` | domain event log, Translator (anti-corruption layer), IngestionWorker | Subscribes `mtga_logs:events`; broadcasts `domain:events` |
-| **Matches** | `matches_` | matches, games, deck submissions (projection) | Subscribes `domain:events` via `Matches.Projector`; broadcasts `matches:updates` |
-| **Drafts** | `drafts_` | drafts, draft picks (projection) | Subscribes `domain:events` via `Drafts.Projector`; broadcasts `drafts:updates` |
+| **MtgaLogIngestion** | `mtga_logs_` | raw log events (`mtga_logs_events`), parser cursor (`mtga_logs_cursor`) | Broadcasts `mtga_logs:events` (raw) and `mtga_logs:status` |
+| **Events** | `domain_events` | domain event log, IdentifyDomainEvents (anti-corruption layer), IngestRawEvents | Subscribes `mtga_logs:events`; broadcasts `domain:events` |
+| **MatchListing** | `matches_` | matches, games, deck submissions (projection) | Subscribes `domain:events` via `MatchListing.UpdateFromEvent`; broadcasts `matches:updates` |
+| **DraftListing** | `drafts_` | drafts, draft picks (projection) | Subscribes `domain:events` via `DraftListing.UpdateFromEvent`; broadcasts `drafts:updates` |
 | **Cards** | `cards_` | cards, sets (from 17lands) | Broadcasts `cards:updates` |
 | **Settings** | `settings_` | runtime config entries | Broadcasts `settings:updates` |
 | **Console** | — | in-memory log ring buffer (dev observability) | Broadcasts `console:logs` |
 
-**Key rule:** Only `Scry2.Events.IngestionWorker` subscribes to `mtga_logs:events`. Every other projector, LiveView, or analytics tool subscribes to `domain:events` and works with typed `%Scry2.Events.*{}` structs. See ADR-018 for the anti-corruption boundary.
+**Key rule:** Only `Scry2.Events.IngestRawEvents` subscribes to `mtga_logs:events`. Every other consumer subscribes to `domain:events` and works with typed `%Scry2.Events.*{}` structs. See ADR-018 for the anti-corruption boundary.
 
 Consumers (LiveViews, Oban workers) may read any context's public API freely. No context aliases another context's modules.
 
@@ -177,7 +177,7 @@ Load the `automated-testing` skill before writing any test — Elixir, JavaScrip
 
 ### Pure Function Tests vs Resource Tests
 
-- **Pure function modules** (EventParser, Serializer, Mapper) use `async: true` and build struct literals via factory — no database.
+- **Pure function modules** (ExtractEventsFromLog, IdentifyDomainEvents, etc.) use `async: true` and build struct literals via factory — no database.
 - **Resource tests** (Match, Draft, Card, WatchedFile) use `DataCase` and exercise against the real database.
 
 ### Shared Test Factory
@@ -201,7 +201,7 @@ All non-trivial logic in LiveViews and function components must be extracted int
 
 ### Parser Tests (Append-Only)
 
-**Test-first, mandatory.** Every change to `Scry2.MtgaLogs.EventParser` must have a corresponding test written *before* the implementation. The parser is the core of the application and bugs here are silent and cascading.
+**Test-first, mandatory.** Every change to `Scry2.MtgaLogIngestion.ExtractEventsFromLog` must have a corresponding test written *before* the implementation. The parser is the core of the application and bugs here are silent and cascading.
 
 - **Real log samples only** — every test fixture is a real MTGA log event block captured from `Player.log`. Fixtures live in `test/fixtures/mtga_logs/`.
 - **One test per event type.** Each distinct MTGA event type gets its own test case.
@@ -209,11 +209,11 @@ All non-trivial logic in LiveViews and function components must be extracted int
 
 ## Parser
 
-`Scry2.MtgaLogs.EventParser` is a pure function module — no GenServer, no DB, no side effects. Transforms a raw MTGA log event block into an `%Event{type:, mtga_timestamp:, payload:}` struct. See its `@moduledoc` for supported event types. Real log samples only in tests (`test/fixtures/mtga_logs/`). One test per event type. NEVER delete parser tests (see [ADR-010](decisions/architecture/2026-04-05-010-regression-tests-append-only.md)).
+`Scry2.MtgaLogIngestion.ExtractEventsFromLog` is a pure function module — no GenServer, no DB, no side effects. Transforms a raw MTGA log event block into an `%Event{type:, mtga_timestamp:, payload:}` struct. See its `@moduledoc` for supported event types. Real log samples only in tests (`test/fixtures/mtga_logs/`). One test per event type. NEVER delete parser tests (see [ADR-010](decisions/architecture/2026-04-05-010-regression-tests-append-only.md)).
 
 ## Thinking Logs
 
-The app has a component-tagged logging system for development visibility. All log entries flow through an Erlang `:logger` handler into an in-memory ring buffer (`Scry2.Console.Buffer`, default 2,000 entries) and are viewable in the browser via the Guake-style **Console** drawer (press `` ` `` backtick). Filter visibility is UI-driven — there is no source-level suppression.
+The app has a component-tagged logging system for development visibility. All log entries flow through an Erlang `:logger` handler into an in-memory ring buffer (`Scry2.Console.RecentEntries`, default 2,000 entries) and are viewable in the browser via the Guake-style **Console** drawer (press `` ` `` backtick). Filter visibility is UI-driven — there is no source-level suppression.
 
 ### Usage
 

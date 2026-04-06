@@ -15,9 +15,10 @@ Scry2 has multiple functional areas — log watching, event parsing, match and d
 Adopt bounded contexts with PubSub-only cross-context communication. Each context owns its own data and behavior; cross-context interaction happens exclusively through `Phoenix.PubSub` broadcasts, routed through `Scry2.Topics` helpers.
 
 **Context boundaries:**
-- `Scry2.MtgaLogs` — raw log events, file-watch state, parser cursor
-- `Scry2.Matches` — matches, games, deck submissions
-- `Scry2.Drafts` — drafts, draft picks
+- `Scry2.MtgaLogIngestion` — raw log events, file-watch state, parser cursor
+- `Scry2.Events` — domain event log, anti-corruption layer
+- `Scry2.MatchListing` — matches, games, deck submissions (projection)
+- `Scry2.DraftListing` — drafts, draft picks (projection)
 - `Scry2.Cards` — cards and sets (from 17lands + Scryfall)
 - `Scry2.Settings` — runtime config entries
 - `Scry2Web` — LiveViews, components, router

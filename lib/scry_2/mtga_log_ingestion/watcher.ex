@@ -1,0 +1,222 @@
+defmodule Scry2.MtgaLogIngestion.Watcher do
+  @moduledoc """
+  GenServer that tails MTGA's `Player.log` and persists raw events.
+
+  ## Lifecycle
+
+  1. `init/1` is intentionally lightweight — it stores options and
+     schedules work via `handle_continue/2` so the supervisor doesn't
+     block on file I/O at startup.
+  2. `handle_continue(:bootstrap, _)` resolves the log path, restores
+     the byte cursor from `mtga_logs_cursor`, and subscribes to
+     filesystem events via `FileSystem`.
+  3. On `:modified` events we read the new byte range, run it through
+     `ExtractEventsFromLog`, persist each event via `Scry2.MtgaLogIngestion.insert_event!/1`,
+     and advance the cursor.
+  4. On rotation (size shrinks or inode changes) we reset to offset 0.
+
+  ## Failure modes
+
+  * **No log file found.** We broadcast `{:status, :path_not_found}` to
+    `mtga_logs:status` and stay alive waiting for a settings update. We
+    don't crash — the user may start MTGA later.
+  * **Permission / I/O errors.** Logged, status broadcast, then retry
+    on the next tick.
+
+  See ADR-012 (durable process design) and ADR-015 (raw event replay).
+  """
+  use GenServer
+
+  require Scry2.Log, as: Log
+
+  alias Scry2.MtgaLogIngestion
+  alias Scry2.MtgaLogIngestion.{ExtractEventsFromLog, LocateLogFile, ReadNewBytes}
+  alias Scry2.Topics
+
+  @default_poll_interval 500
+
+  # ── Public API ──────────────────────────────────────────────────────────
+
+  def start_link(opts \\ []) do
+    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: name)
+  end
+
+  @doc "Returns the current watcher state for dashboard/settings UI."
+  def status do
+    GenServer.call(__MODULE__, :status)
+  catch
+    :exit, _ -> %{state: :not_running}
+  end
+
+  @doc """
+  Forces a re-resolution of the log path — used after the user updates
+  the path in the settings LiveView.
+  """
+  def reload_path do
+    GenServer.cast(__MODULE__, :reload_path)
+  end
+
+  # ── Callbacks ───────────────────────────────────────────────────────────
+
+  @impl true
+  def init(opts) do
+    state = %{
+      path: nil,
+      offset: 0,
+      inode: nil,
+      status: :starting,
+      fs_pid: nil,
+      poll_interval: Keyword.get(opts, :poll_interval, @default_poll_interval),
+      override_path: Keyword.get(opts, :path)
+    }
+
+    {:ok, state, {:continue, :bootstrap}}
+  end
+
+  @impl true
+  def handle_continue(:bootstrap, state) do
+    case resolve_path(state) do
+      {:ok, path} ->
+        state = start_watching(state, path)
+        {:noreply, state}
+
+      {:error, :not_found} ->
+        Log.warning(:watcher, "Player.log not found — watcher idle until settings update")
+        broadcast_status(:path_not_found)
+        {:noreply, %{state | status: :path_not_found}}
+    end
+  end
+
+  @impl true
+  def handle_call(:status, _from, state) do
+    payload = %{
+      state: state.status,
+      path: state.path,
+      offset: state.offset
+    }
+
+    {:reply, payload, state}
+  end
+
+  @impl true
+  def handle_cast(:reload_path, state) do
+    state = stop_fs(state)
+
+    case resolve_path(%{state | override_path: nil}) do
+      {:ok, path} ->
+        {:noreply, start_watching(state, path)}
+
+      {:error, :not_found} ->
+        broadcast_status(:path_not_found)
+        {:noreply, %{state | status: :path_not_found, path: nil}}
+    end
+  end
+
+  @impl true
+  def handle_info({:file_event, _fs_pid, {path, events}}, %{path: watched_path} = state)
+      when path == watched_path do
+    cond do
+      :modified in events or :created in events ->
+        {:noreply, drain_file(state)}
+
+      :deleted in events or :renamed in events ->
+        broadcast_status(:path_missing)
+        {:noreply, %{state | status: :path_missing}}
+
+      true ->
+        {:noreply, state}
+    end
+  end
+
+  @impl true
+  def handle_info({:file_event, _fs_pid, :stop}, state) do
+    {:noreply, stop_fs(state)}
+  end
+
+  @impl true
+  def handle_info(_other, state), do: {:noreply, state}
+
+  # ── Internals ───────────────────────────────────────────────────────────
+
+  defp resolve_path(%{override_path: path}) when is_binary(path) do
+    if File.regular?(path), do: {:ok, path}, else: {:error, :not_found}
+  end
+
+  defp resolve_path(_state), do: LocateLogFile.resolve()
+
+  defp start_watching(state, path) do
+    cursor = MtgaLogIngestion.get_cursor(path)
+    {offset, inode} = cursor_initial(cursor)
+
+    {:ok, fs_pid} = FileSystem.start_link(dirs: [Path.dirname(path)])
+    FileSystem.subscribe(fs_pid)
+
+    state =
+      %{
+        state
+        | path: path,
+          offset: offset,
+          inode: inode,
+          fs_pid: fs_pid,
+          status: :running
+      }
+
+    broadcast_status(:running)
+    drain_file(state)
+  end
+
+  defp cursor_initial(nil), do: {0, nil}
+  defp cursor_initial(%{byte_offset: offset, inode: inode}), do: {offset, inode}
+
+  defp stop_fs(%{fs_pid: nil} = state), do: state
+
+  defp stop_fs(%{fs_pid: fs_pid} = state) do
+    if Process.alive?(fs_pid), do: Process.exit(fs_pid, :normal)
+    %{state | fs_pid: nil}
+  end
+
+  defp drain_file(%{path: path, offset: offset} = state) when is_binary(path) do
+    case ReadNewBytes.read_since(path, offset) do
+      {:ok, %{bytes: "", new_offset: new_offset, inode: inode}} ->
+        %{state | offset: new_offset, inode: inode}
+
+      {:ok, %{bytes: bytes, new_offset: new_offset, rotated?: rotated, inode: inode}} ->
+        base_offset = if rotated, do: 0, else: offset
+
+        events = ExtractEventsFromLog.parse_chunk(bytes, path, base_offset)
+        Enum.each(events, &persist_event/1)
+
+        MtgaLogIngestion.put_cursor!(%{
+          file_path: path,
+          byte_offset: new_offset,
+          inode: inode
+        })
+
+        %{state | offset: new_offset, inode: inode}
+
+      {:error, reason} ->
+        Log.warning(:watcher, "drain_file error: #{inspect(reason)}")
+        state
+    end
+  end
+
+  defp drain_file(state), do: state
+
+  defp persist_event(%Scry2.MtgaLogIngestion.Event{} = event) do
+    MtgaLogIngestion.insert_event!(%{
+      event_type: event.type,
+      mtga_timestamp: event.mtga_timestamp,
+      file_offset: event.file_offset,
+      source_file: event.source_file,
+      raw_json: event.raw_json
+    })
+  rescue
+    error ->
+      Log.warning(:watcher, "failed to persist event: #{inspect(error)}")
+  end
+
+  defp broadcast_status(status) do
+    Topics.broadcast(Topics.mtga_logs_status(), {:status, status})
+  end
+end

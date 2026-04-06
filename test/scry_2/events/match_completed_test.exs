@@ -8,7 +8,7 @@ defmodule Scry2.Events.MatchCompletedTest do
     test "builds a valid MatchCompleted" do
       event = %MatchCompleted{
         mtga_match_id: "m-1",
-        ended_at: ~U[2026-04-05 19:53:36Z],
+        occurred_at: ~U[2026-04-05 19:53:36Z],
         won: true,
         num_games: 3,
         reason: "MatchCompletedReasonType_Success"
@@ -31,7 +31,7 @@ defmodule Scry2.Events.MatchCompletedTest do
     test "type_slug returns 'match_completed'" do
       event = %MatchCompleted{
         mtga_match_id: "x",
-        ended_at: DateTime.utc_now(),
+        occurred_at: DateTime.utc_now(),
         won: true,
         num_games: 2
       }
@@ -39,12 +39,12 @@ defmodule Scry2.Events.MatchCompletedTest do
       assert Event.type_slug(event) == "match_completed"
     end
 
-    test "mtga_timestamp returns the ended_at value" do
+    test "mtga_timestamp returns the occurred_at value" do
       ts = ~U[2026-04-05 19:53:36Z]
 
       event = %MatchCompleted{
         mtga_match_id: "x",
-        ended_at: ts,
+        occurred_at: ts,
         won: false,
         num_games: 3
       }

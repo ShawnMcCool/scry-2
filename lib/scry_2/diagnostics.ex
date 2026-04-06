@@ -11,7 +11,7 @@ defmodule Scry2.Diagnostics do
   """
 
   alias Scry2.Console
-  alias Scry2.Console.View
+  alias Scry2.Console.DisplayHelpers
 
   @doc """
   Prints the most recent `n` log entries to stdout (default 20) and returns
@@ -28,7 +28,7 @@ defmodule Scry2.Diagnostics do
 
     entries
     |> Enum.reverse()
-    |> Enum.each(fn entry -> IO.puts(View.format_line(entry)) end)
+    |> Enum.each(fn entry -> IO.puts(DisplayHelpers.format_line(entry)) end)
 
     entries
   end

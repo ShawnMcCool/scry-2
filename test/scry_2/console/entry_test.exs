@@ -50,11 +50,11 @@ defmodule Scry2.Console.EntryTest do
           level: :error,
           component: :importer,
           message: "boom",
-          module: Scry2.Cards.Lands17Importer,
+          module: Scry2.Cards.SeventeenLands,
           metadata: %{foo: "bar"}
         })
 
-      assert entry.module == Scry2.Cards.Lands17Importer
+      assert entry.module == Scry2.Cards.SeventeenLands
       assert entry.metadata == %{foo: "bar"}
     end
 

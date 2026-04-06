@@ -49,7 +49,7 @@ re-translation, and makes rebuild trivial.
    ground truth and is never mutated.
 
 2. **Domain event log** (`domain_events`) — NEW. Append-only table
-   storing typed domain events produced by the Translator from raw
+   storing typed domain events produced by IdentifyDomainEvents from raw
    events. Every row has a stable `event_type` slug (`"match_created"`,
    `"match_completed"`, etc.) and a JSON payload that rehydrates into a
    struct under `Scry2.Events.*`. See ADR-018 for the translator.
@@ -62,7 +62,7 @@ re-translation, and makes rebuild trivial.
 
 4. **Distribution** — downstream consumers (projectors, LiveViews,
    analytics, future overlays) subscribe to `domain:events` via PubSub.
-   None of them touch `mtga_logs_events` or the Translator directly.
+   None of them touch `mtga_logs_events` or IdentifyDomainEvents directly.
    The anti-corruption boundary (ADR-018) is enforced at the PubSub
    topic.
 
@@ -77,8 +77,8 @@ Two rebuild modes:
 
 * **`Scry2.Events.retranslate_from_raw!/0`** — truncates `domain_events`,
   resets the `processed` flag on raw events, lets the
-  `Scry2.Events.IngestionWorker` re-translate from scratch. Used when
-  the Translator's logic changes. The raw log (ADR-015) is the source
+  `Scry2.Events.IngestRawEvents` re-translate from scratch. Used when
+  IdentifyDomainEvents' logic changes. The raw log (ADR-015) is the source
   of truth; domain events are regenerated.
 
 Both modes are deterministic because projectors are idempotent by
@@ -138,5 +138,5 @@ Rejected because:
   broadcast `matches:updates` / `drafts:updates` after projection writes;
   that's unchanged. The `domain:events` topic is an additional layer
   *above* those, not a replacement.
-* **ADR-018 (anti-corruption layer)** — the Translator is the single
-  place MTGA's wire format is understood; see that ADR for the details.
+* **ADR-018 (anti-corruption layer)** — IdentifyDomainEvents is the
+  single place MTGA's wire format is understood; see that ADR for details.
