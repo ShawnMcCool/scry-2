@@ -289,6 +289,51 @@ defmodule Scry2.Events do
     }
   end
 
+  defp rehydrate(%EventRecord{event_type: "die_roll_completed", payload: payload}) do
+    %Scry2.Events.DieRollCompleted{
+      mtga_match_id: payload["mtga_match_id"],
+      self_roll: payload["self_roll"],
+      opponent_roll: payload["opponent_roll"],
+      self_goes_first: payload["self_goes_first"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "mulligan_offered", payload: payload}) do
+    %Scry2.Events.MulliganOffered{
+      mtga_match_id: payload["mtga_match_id"],
+      seat_id: payload["seat_id"],
+      hand_size: payload["hand_size"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "rank_snapshot", payload: payload}) do
+    %Scry2.Events.RankSnapshot{
+      constructed_class: payload["constructed_class"],
+      constructed_level: payload["constructed_level"],
+      constructed_step: payload["constructed_step"],
+      constructed_matches_won: payload["constructed_matches_won"],
+      constructed_matches_lost: payload["constructed_matches_lost"],
+      limited_class: payload["limited_class"],
+      limited_level: payload["limited_level"],
+      limited_step: payload["limited_step"],
+      limited_matches_won: payload["limited_matches_won"],
+      limited_matches_lost: payload["limited_matches_lost"],
+      season_ordinal: payload["season_ordinal"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "session_started", payload: payload}) do
+    %Scry2.Events.SessionStarted{
+      client_id: payload["client_id"],
+      screen_name: payload["screen_name"],
+      session_id: payload["session_id"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
   defp parse_datetime(nil), do: nil
 
   defp parse_datetime(iso) when is_binary(iso) do

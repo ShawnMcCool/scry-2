@@ -58,23 +58,24 @@ defmodule Scry2.Events.IngestRawEvents do
   @impl true
   def init(_opts) do
     Topics.subscribe(Topics.mtga_logs_events())
-    {:ok, %{}}
+    {:ok, %{match_context: %{current_match_id: nil, current_game_number: nil}}}
   end
 
   @impl true
   def handle_info({:event, %EventRecord{} = record}, state) do
-    try do
-      process_raw_event(record)
-      MtgaLogIngestion.mark_processed!(record.id)
-    rescue
-      error ->
-        Log.error(
-          :ingester,
-          "failed to process id=#{record.id} type=#{record.event_type}: #{inspect(error)}"
-        )
+    state =
+      try do
+        process_raw_event(record, state)
+      rescue
+        error ->
+          Log.error(
+            :ingester,
+            "failed to process id=#{record.id} type=#{record.event_type}: #{inspect(error)}"
+          )
 
-        MtgaLogIngestion.mark_error!(record.id, error)
-    end
+          MtgaLogIngestion.mark_error!(record.id, error)
+          state
+      end
 
     {:noreply, state}
   end
@@ -82,11 +83,14 @@ defmodule Scry2.Events.IngestRawEvents do
   def handle_info(_other, state), do: {:noreply, state}
 
   # Run the raw event through the translator, append each resulting
-  # domain event to the log. Zero domain events is a valid outcome
-  # (many raw event types don't map to anything we care about).
-  defp process_raw_event(record) do
+  # domain event to the log, and update match_context state from the
+  # produced events (ADR-022).
+  defp process_raw_event(record, state) do
     self_user_id = Config.get(:mtga_self_user_id)
-    domain_events = IdentifyDomainEvents.translate(record, self_user_id)
+    match_context = state.match_context
+
+    domain_events =
+      IdentifyDomainEvents.translate(record, self_user_id, match_context)
 
     unless IdentifyDomainEvents.recognized?(record.event_type) do
       Log.warning(:ingester, "unrecognized MTGA event type: #{record.event_type}")
@@ -94,19 +98,42 @@ defmodule Scry2.Events.IngestRawEvents do
 
     case domain_events do
       [] ->
-        :ok
+        MtgaLogIngestion.mark_processed!(record.id)
+        state
 
       events ->
         for event <- events do
           Events.append!(event, record)
         end
 
+        MtgaLogIngestion.mark_processed!(record.id)
+
         Log.info(
           :ingester,
           "translated raw id=#{record.id} type=#{record.event_type} → #{length(events)} domain events"
         )
-    end
 
-    :ok
+        update_match_context(state, events)
+    end
+  end
+
+  # Update match_context from produced domain events. MatchCreated sets
+  # the current match. DeckSubmitted signals a game start (ConnectResp
+  # fires per game). MatchCompleted clears both.
+  defp update_match_context(state, events) do
+    Enum.reduce(events, state, fn
+      %Scry2.Events.MatchCreated{mtga_match_id: match_id}, acc ->
+        put_in(acc, [:match_context, :current_match_id], match_id)
+
+      %Scry2.Events.DeckSubmitted{}, acc ->
+        current_game = get_in(acc, [:match_context, :current_game_number]) || 0
+        put_in(acc, [:match_context, :current_game_number], current_game + 1)
+
+      %Scry2.Events.MatchCompleted{}, acc ->
+        %{acc | match_context: %{current_match_id: nil, current_game_number: nil}}
+
+      _, acc ->
+        acc
+    end)
   end
 end
