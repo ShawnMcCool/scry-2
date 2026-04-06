@@ -1,11 +1,11 @@
-defmodule Scry2.DraftListing do
+defmodule Scry2.Drafts do
   @moduledoc """
   Context module for draft sessions and individual card picks.
 
   Owns tables: `drafts_drafts`, `drafts_picks`.
 
   PubSub role:
-    * subscribes to `"mtga_logs:events"` (via `Scry2.DraftListing.Ingester`)
+    * subscribes to `"mtga_logs:events"` (via `Scry2.Drafts.Ingester`)
     * broadcasts `"drafts:updates"` after any mutation
 
   Picks reference cards by `arena_id` value, not via a belongs_to — see
@@ -14,7 +14,7 @@ defmodule Scry2.DraftListing do
 
   import Ecto.Query
 
-  alias Scry2.DraftListing.{Draft, Pick}
+  alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Repo
   alias Scry2.Topics
 

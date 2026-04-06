@@ -74,8 +74,8 @@ defmodule Scry2.Application do
       children ++
         [
           # Stage 09: projectors subscribe first so they never miss an event.
-          Scry2.MatchListing.UpdateFromEvent,
-          Scry2.DraftListing.UpdateFromEvent,
+          Scry2.Matches.UpdateFromEvent,
+          Scry2.Drafts.UpdateFromEvent,
           # Stage 08: ingestion worker translates raw events to domain events.
           Scry2.Events.IngestRawEvents,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.

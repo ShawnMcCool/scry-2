@@ -15,8 +15,8 @@ defmodule Scry2.Events.DraftStarted do
 
   ## Projected by (future)
 
-  `Scry2.DraftListing.UpdateFromEvent` will project to `drafts_drafts` via
-  `Scry2.DraftListing.upsert_draft!/1`, keyed on `mtga_draft_id`.
+  `Scry2.Drafts.UpdateFromEvent` will project to `drafts_drafts` via
+  `Scry2.Drafts.upsert_draft!/1`, keyed on `mtga_draft_id`.
 
   ## Status
 

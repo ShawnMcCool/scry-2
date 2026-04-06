@@ -18,8 +18,8 @@ Name every module for what it does in the domain, not what design pattern it imp
 
 **Context names** describe the domain purpose of the bounded context:
 - `MtgaLogIngestion` (not `MtgaLogs`) — the context ingests MTGA logs
-- `MatchListing` (not `Matches`) — the context serves match listings (a projection read model)
-- `DraftListing` (not `Drafts`) — same pattern
+- `Matches` — the context owns match projection data
+- `Drafts` — same pattern
 
 **Internal module names** read as actions or domain descriptions:
 - `IdentifyDomainEvents` (not `Translator`) — identifies which domain events occurred in raw data

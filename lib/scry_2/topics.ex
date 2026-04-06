@@ -16,11 +16,11 @@ defmodule Scry2.Topics do
   @doc "Watcher state changes (running, paused, path_not_found, detailed_logs_warning)."
   def mtga_logs_status, do: "mtga_logs:status"
 
-  # ── MatchListing ─────────────────────────────────────────────────────────
+  # ── Matches ─────────────────────────────────────────────────────────
   @doc "Match/game/deck upserts."
   def matches_updates, do: "matches:updates"
 
-  # ── DraftListing ─────────────────────────────────────────────────────────
+  # ── Drafts ─────────────────────────────────────────────────────────
   @doc "Draft/pick upserts."
   def drafts_updates, do: "drafts:updates"
 

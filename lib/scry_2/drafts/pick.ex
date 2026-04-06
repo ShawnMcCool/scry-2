@@ -1,4 +1,4 @@
-defmodule Scry2.DraftListing.Pick do
+defmodule Scry2.Drafts.Pick do
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -12,7 +12,7 @@ defmodule Scry2.DraftListing.Pick do
     field :pool_arena_ids, :map
     field :picked_at, :utc_datetime
 
-    belongs_to :draft, Scry2.DraftListing.Draft
+    belongs_to :draft, Scry2.Drafts.Draft
 
     timestamps(type: :utc_datetime)
   end

@@ -1,8 +1,8 @@
-defmodule Scry2.DraftListing.UpdateFromEventTest do
+defmodule Scry2.Drafts.UpdateFromEventTest do
   use Scry2.DataCase
 
-  alias Scry2.DraftListing
-  alias Scry2.DraftListing.UpdateFromEvent
+  alias Scry2.Drafts
+  alias Scry2.Drafts.UpdateFromEvent
   alias Scry2.Events
   alias Scry2.Events.{DraftPickMade, DraftStarted}
 
@@ -26,7 +26,7 @@ defmodule Scry2.DraftListing.UpdateFromEventTest do
       Events.append!(event, nil)
       sync(name)
 
-      draft = DraftListing.get_by_mtga_id("QuickDraft_TST_20260406")
+      draft = Drafts.get_by_mtga_id("QuickDraft_TST_20260406")
       assert draft != nil
       assert draft.set_code == "TST"
       assert draft.started_at == ~U[2026-04-06 12:00:00Z]
@@ -58,9 +58,7 @@ defmodule Scry2.DraftListing.UpdateFromEventTest do
       sync(name)
 
       draft =
-        DraftListing.get_draft_with_picks(
-          DraftListing.get_by_mtga_id("QuickDraft_TST_20260406").id
-        )
+        Drafts.get_draft_with_picks(Drafts.get_by_mtga_id("QuickDraft_TST_20260406").id)
 
       assert length(draft.picks) == 1
 

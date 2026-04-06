@@ -3,8 +3,8 @@ defmodule Scry2.Events.IngestRawEventsTest do
 
   alias Scry2.Events
   alias Scry2.Events.IngestRawEvents
-  alias Scry2.MatchListing
-  alias Scry2.MatchListing.UpdateFromEvent
+  alias Scry2.Matches
+  alias Scry2.Matches.UpdateFromEvent
   alias Scry2.MtgaLogIngestion
 
   # Reads a real fixture and returns its bytes.
@@ -57,7 +57,7 @@ defmodule Scry2.Events.IngestRawEventsTest do
       assert counts["match_created"] == 1
 
       # The projection should have the row.
-      match = MatchListing.get_by_mtga_id("008b1926-09a8-40b4-872d-fa987588740c")
+      match = Matches.get_by_mtga_id("008b1926-09a8-40b4-872d-fa987588740c")
       assert match != nil
       assert match.event_name == "Traditional_Ladder"
       assert match.opponent_screen_name == "Opponent1"
@@ -79,8 +79,8 @@ defmodule Scry2.Events.IngestRawEventsTest do
       assert counts["match_completed"] == 1
 
       # One projected match row with both start and end data.
-      assert MatchListing.count() == 1
-      match = MatchListing.get_by_mtga_id("008b1926-09a8-40b4-872d-fa987588740c")
+      assert Matches.count() == 1
+      match = Matches.get_by_mtga_id("008b1926-09a8-40b4-872d-fa987588740c")
       assert match.started_at == ~U[2026-04-05 19:18:40Z]
       assert match.ended_at == ~U[2026-04-05 19:53:36Z]
       assert match.won == true

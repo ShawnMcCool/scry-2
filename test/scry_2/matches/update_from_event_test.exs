@@ -1,10 +1,10 @@
-defmodule Scry2.MatchListing.UpdateFromEventTest do
+defmodule Scry2.Matches.UpdateFromEventTest do
   use Scry2.DataCase
 
   alias Scry2.Events
   alias Scry2.Events.{DeckSubmitted, GameCompleted, MatchCompleted, MatchCreated}
-  alias Scry2.MatchListing
-  alias Scry2.MatchListing.UpdateFromEvent
+  alias Scry2.Matches
+  alias Scry2.Matches.UpdateFromEvent
 
   setup do
     # Start the projector under the test supervisor. Unique name per
@@ -29,7 +29,7 @@ defmodule Scry2.MatchListing.UpdateFromEventTest do
       Events.append!(event, nil)
       sync(name)
 
-      match = MatchListing.get_by_mtga_id("proj-1")
+      match = Matches.get_by_mtga_id("proj-1")
       assert match != nil
       assert match.event_name == "Traditional_Ladder"
       assert match.opponent_screen_name == "Opponent1"
@@ -58,8 +58,8 @@ defmodule Scry2.MatchListing.UpdateFromEventTest do
       Events.append!(completed, nil)
       sync(name)
 
-      assert MatchListing.count() == 1
-      match = MatchListing.get_by_mtga_id("proj-2")
+      assert Matches.count() == 1
+      match = Matches.get_by_mtga_id("proj-2")
       assert match.started_at == ~U[2026-04-05 19:18:40Z]
       assert match.ended_at == ~U[2026-04-05 19:53:36Z]
       assert match.won == true
@@ -80,7 +80,7 @@ defmodule Scry2.MatchListing.UpdateFromEventTest do
       Events.append!(event, nil)
       sync(name)
 
-      assert MatchListing.count() == 1
+      assert Matches.count() == 1
     end
   end
 
@@ -110,7 +110,7 @@ defmodule Scry2.MatchListing.UpdateFromEventTest do
       sync(name)
 
       match =
-        MatchListing.get_match_with_associations(MatchListing.get_by_mtga_id("proj-game-1").id)
+        Matches.get_match_with_associations(Matches.get_by_mtga_id("proj-game-1").id)
 
       assert length(match.games) == 1
 
@@ -148,10 +148,10 @@ defmodule Scry2.MatchListing.UpdateFromEventTest do
       Events.append!(deck, nil)
       sync(name)
 
-      match = MatchListing.get_by_mtga_id("proj-deck-1")
+      match = Matches.get_by_mtga_id("proj-deck-1")
 
       submission =
-        Scry2.Repo.get_by(MatchListing.DeckSubmission, mtga_deck_id: "proj-deck-1:seat1")
+        Scry2.Repo.get_by(Matches.DeckSubmission, mtga_deck_id: "proj-deck-1:seat1")
 
       assert submission != nil
       assert submission.match_id == match.id

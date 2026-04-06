@@ -1,4 +1,4 @@
-defmodule Scry2.DraftListing.Draft do
+defmodule Scry2.Drafts.Draft do
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -12,7 +12,7 @@ defmodule Scry2.DraftListing.Draft do
     field :wins, :integer
     field :losses, :integer
 
-    has_many :picks, Scry2.DraftListing.Pick
+    has_many :picks, Scry2.Drafts.Pick
 
     timestamps(type: :utc_datetime)
   end

@@ -1,11 +1,11 @@
-defmodule Scry2.MatchListing do
+defmodule Scry2.Matches do
   @moduledoc """
   Context module for recorded matches, games, and deck submissions.
 
   Owns tables: `matches_matches`, `matches_games`, `matches_deck_submissions`.
 
   PubSub role:
-    * subscribes to `"domain:events"` (via `Scry2.MatchListing.UpdateFromEvent`)
+    * subscribes to `"domain:events"` (via `Scry2.Matches.UpdateFromEvent`)
     * broadcasts `"matches:updates"` after any mutation
 
   All upserts target MTGA-provided ids (`mtga_match_id`, `mtga_deck_id`)
@@ -14,7 +14,7 @@ defmodule Scry2.MatchListing do
 
   import Ecto.Query
 
-  alias Scry2.MatchListing.{DeckSubmission, Game, Match}
+  alias Scry2.Matches.{DeckSubmission, Game, Match}
   alias Scry2.Repo
   alias Scry2.Topics
 

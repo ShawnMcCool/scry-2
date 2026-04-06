@@ -1,7 +1,7 @@
 defmodule Scry2Web.DraftsLive do
   use Scry2Web, :live_view
 
-  alias Scry2.DraftListing
+  alias Scry2.Drafts
   alias Scry2.Topics
   alias Scry2Web.MatchesHelpers, as: Helpers
 
@@ -14,17 +14,17 @@ defmodule Scry2Web.DraftsLive do
 
   @impl true
   def handle_params(%{"id" => id}, _uri, socket) do
-    draft = DraftListing.get_draft_with_picks(String.to_integer(id))
+    draft = Drafts.get_draft_with_picks(String.to_integer(id))
     {:noreply, assign(socket, draft: draft, drafts: [])}
   end
 
   def handle_params(_params, _uri, socket) do
-    {:noreply, assign(socket, drafts: DraftListing.list_drafts(limit: 100), draft: nil)}
+    {:noreply, assign(socket, drafts: Drafts.list_drafts(limit: 100), draft: nil)}
   end
 
   @impl true
   def handle_info({:draft_updated, _}, socket) do
-    {:noreply, assign(socket, drafts: DraftListing.list_drafts(limit: 100))}
+    {:noreply, assign(socket, drafts: Drafts.list_drafts(limit: 100))}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
