@@ -27,7 +27,7 @@ config :scry_2, Oban,
     {Oban.Plugins.Cron,
      crontab: [
        # Daily 04:00 UTC — refresh 17lands card reference data.
-       {"0 4 * * *", Scry2.Workers.CardsRefreshWorker}
+       {"0 4 * * *", Scry2.Workers.PeriodicallyUpdateCards}
      ]}
   ]
 

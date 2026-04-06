@@ -24,7 +24,7 @@ config :logger, level: :info
 
 # Use the same component-aware formatter as dev so thinking logs show [component]
 config :logger, :default_formatter,
-  format: {Scry2.Log.Formatter, :format},
+  format: {Scry2.Log.FormatForStdout, :format},
   metadata: [:component]
 
 # Runtime production configuration, including reading
