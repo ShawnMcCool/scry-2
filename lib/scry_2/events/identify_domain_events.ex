@@ -49,7 +49,15 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   event types waiting to be added.
   """
 
-  alias Scry2.Events.{DeckSubmitted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.{
+    DeckSubmitted,
+    DraftPickMade,
+    DraftStarted,
+    GameCompleted,
+    MatchCompleted,
+    MatchCreated
+  }
+
   alias Scry2.MtgaLogIngestion.EventRecord
 
   # ── Event type registry (ADR-020) ──────────────────────────────────
@@ -60,7 +68,9 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   @handled_event_types MapSet.new([
                          "MatchGameRoomStateChangedEvent",
-                         "GreToClientEvent"
+                         "GreToClientEvent",
+                         "BotDraftDraftPick",
+                         "BotDraftDraftStatus"
                        ])
 
   @ignored_event_types MapSet.new([
@@ -86,7 +96,22 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "PeriodicRewardsGetStatus",
                          "StartHook",
                          "GetFormats",
-                         "LogBusinessEvents"
+                         "LogBusinessEvents",
+                         # Connection lifecycle — internal MTGA networking
+                         "Client.TcpConnection.Close",
+                         "GREConnection.HandleWebSocketClosed",
+                         "FrontDoorConnection.Close",
+                         "Connecting",
+                         "Client.SceneChange",
+                         # Graph/store state queries — UI internals
+                         "Fetching",
+                         "Process",
+                         "Got",
+                         "GeneralStore",
+                         # Parser artifact — MatchGameRoomStateChangedEvent logged
+                         # without the UnityCrossThreadLogger prefix by a different
+                         # code path; the payload is a duplicate of the real event.
+                         "STATE"
                        ])
 
   @known_event_types MapSet.union(@handled_event_types, @ignored_event_types)
@@ -156,6 +181,62 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end
   end
 
+  # BotDraftDraftStatus marks the start of a quick-draft session.
+  # The payload carries a double-encoded JSON `request` string with the
+  # EventName (format identifier like "QuickDraft_FDN_20260323").
+  def translate(%EventRecord{event_type: "BotDraftDraftStatus"} = record, _self_user_id) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         {:ok, request} <- decode_request_field(payload) do
+      event_name = request["EventName"]
+      set_code = extract_set_code(event_name)
+
+      [
+        %DraftStarted{
+          mtga_draft_id: event_name,
+          event_name: event_name,
+          set_code: set_code,
+          occurred_at: occurred_at
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  # BotDraftDraftPick carries a single pick with pack/pick position and
+  # the picked card's arena_id. Pack contents are not available in bot
+  # drafts (bots pick from the same pool).
+  def translate(%EventRecord{event_type: "BotDraftDraftPick"} = record, _self_user_id) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         {:ok, request} <- decode_request_field(payload),
+         %{"PickInfo" => pick_info} <- request do
+      event_name = pick_info["EventName"] || request["EventName"]
+      card_ids = pick_info["CardIds"] || []
+      picked_arena_id = card_ids |> List.first() |> parse_arena_id()
+
+      if picked_arena_id do
+        [
+          %DraftPickMade{
+            mtga_draft_id: event_name,
+            pack_number: pick_info["PackNumber"] + 1,
+            pick_number: pick_info["PickNumber"] + 1,
+            picked_arena_id: picked_arena_id,
+            pack_arena_ids: [],
+            occurred_at: occurred_at
+          }
+        ]
+      else
+        []
+      end
+    else
+      _ -> []
+    end
+  end
+
   # Fall-through: raw event types we don't translate (yet or ever)
   # produce no domain events. The raw event is still preserved in
   # mtga_logs_events for future reprocessing via retranslate_from_raw!/0.
@@ -170,6 +251,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
     if is_binary(match_id) and match_id != "" do
       opponent = find_opponent(reserved, self_user_id)
+      self_entry = find_self_entry(reserved, self_user_id)
       event_name = find_event_name(reserved, self_user_id)
 
       [
@@ -177,6 +259,9 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           mtga_match_id: match_id,
           event_name: event_name,
           opponent_screen_name: opponent["playerName"],
+          opponent_user_id: opponent["userId"],
+          platform: self_entry && self_entry["platformId"],
+          opponent_platform: opponent["platformId"],
           occurred_at: record.mtga_timestamp || record.inserted_at
         }
       ]
@@ -199,6 +284,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          match_scope when is_map(match_scope) <- find_match_scope_result(result_list) do
       num_games = count_game_scope_results(result_list)
       winning_team = match_scope["winningTeamId"]
+      game_results = build_game_results(result_list)
 
       [
         %MatchCompleted{
@@ -206,7 +292,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           occurred_at: record.mtga_timestamp || record.inserted_at,
           won: winning_team == self_team,
           num_games: num_games,
-          reason: final_result["matchCompletedReason"]
+          reason: final_result["matchCompletedReason"],
+          game_results: game_results
         }
       ]
     else
@@ -270,6 +357,15 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     Enum.count(result_list, fn row -> row["scope"] == "MatchScope_Game" end)
   end
 
+  defp build_game_results(result_list) do
+    result_list
+    |> Enum.filter(fn row -> row["scope"] == "MatchScope_Game" end)
+    |> Enum.with_index(1)
+    |> Enum.map(fn {row, index} ->
+      %{game_number: index, winning_team_id: row["winningTeamId"], reason: row["reason"]}
+    end)
+  end
+
   # ── GRE message extraction ────────────────────────────────────────────
   #
   # GreToClientEvent.greToClientMessages[] is a flat array of typed
@@ -313,9 +409,43 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   defp maybe_build_deck_submitted(_messages, _match_id, _occurred_at), do: nil
 
-  # Stub — will be implemented when a real game-complete fixture is
-  # available. Needs a GameStateMessage with matchState:
-  # "MatchState_GameComplete" and results data.
+  # GameStateMessage with matchState "MatchState_GameComplete" carries
+  # per-game results including winner, game number, and player stats.
+  # Self is assumed to be systemSeatNumber 1 (same as match events).
+  defp maybe_build_game_completed(messages, match_id, occurred_at)
+       when is_binary(match_id) do
+    Enum.find_value(messages, fn
+      %{"type" => "GREMessageType_GameStateMessage", "gameStateMessage" => gsm} ->
+        game_info = gsm["gameInfo"] || %{}
+
+        if game_info["matchState"] == "MatchState_GameComplete" do
+          results = game_info["results"] || []
+          game_result = Enum.find(results, &(&1["scope"] == "MatchScope_Game"))
+          players = gsm["players"] || []
+          self_player = Enum.find(players, &(&1["systemSeatNumber"] == 1))
+          opponent_player = Enum.find(players, &(&1["systemSeatNumber"] != 1))
+          self_team = self_player && self_player["teamId"]
+
+          %GameCompleted{
+            mtga_match_id: match_id,
+            game_number: game_info["gameNumber"],
+            on_play: nil,
+            won: game_result && self_team && game_result["winningTeamId"] == self_team,
+            num_mulligans: nil,
+            num_turns: self_player && self_player["turnNumber"],
+            self_life_total: self_player && self_player["lifeTotal"],
+            opponent_life_total: opponent_player && opponent_player["lifeTotal"],
+            win_reason: game_result && game_result["reason"],
+            super_format: game_info["superFormat"],
+            occurred_at: occurred_at
+          }
+        end
+
+      _ ->
+        nil
+    end)
+  end
+
   defp maybe_build_game_completed(_messages, _match_id, _occurred_at), do: nil
 
   defp find_gre_message(messages, type) do
@@ -332,4 +462,36 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   end
 
   defp aggregate_card_list(_), do: []
+
+  # ── Draft event helpers ──────────────────────────────────────────────
+
+  # BotDraftDraftPick and BotDraftDraftStatus carry a double-encoded
+  # JSON string in the "request" field. Decode it to a map.
+  defp decode_request_field(%{"request" => request}) when is_binary(request) do
+    Jason.decode(request)
+  end
+
+  defp decode_request_field(_), do: :error
+
+  # Extract set code from event names like "QuickDraft_FDN_20260323"
+  # or "PremierDraft_LCI_20260401". The set code is the middle segment.
+  defp extract_set_code(event_name) when is_binary(event_name) do
+    case String.split(event_name, "_") do
+      [_, set_code, _] -> set_code
+      _ -> nil
+    end
+  end
+
+  defp extract_set_code(_), do: nil
+
+  # CardIds in draft picks come as strings ("93959"). Parse to integer.
+  defp parse_arena_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {int, ""} -> int
+      _ -> nil
+    end
+  end
+
+  defp parse_arena_id(id) when is_integer(id), do: id
+  defp parse_arena_id(_), do: nil
 end

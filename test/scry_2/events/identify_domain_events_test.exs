@@ -1,7 +1,16 @@
 defmodule Scry2.Events.IdentifyDomainEventsTest do
   use ExUnit.Case, async: true
 
-  alias Scry2.Events.{DeckSubmitted, IdentifyDomainEvents, MatchCompleted, MatchCreated}
+  alias Scry2.Events.{
+    DeckSubmitted,
+    DraftPickMade,
+    DraftStarted,
+    GameCompleted,
+    IdentifyDomainEvents,
+    MatchCompleted,
+    MatchCreated
+  }
+
   alias Scry2.MtgaLogIngestion.{Event, ExtractEventsFromLog, EventRecord}
 
   # The self_user_id baked into the captured fixtures.
@@ -33,6 +42,9 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert event.mtga_match_id == "008b1926-09a8-40b4-872d-fa987588740c"
       assert event.event_name == "Traditional_Ladder"
       assert event.opponent_screen_name == "Opponent1"
+      assert event.opponent_user_id == "OPPONENT_USER_ID_1"
+      assert event.platform == "SteamWindows"
+      assert event.opponent_platform == "Windows"
       assert event.occurred_at == ~U[2026-04-05 19:18:40Z]
     end
 
@@ -60,6 +72,27 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       # The fixture's resultList has 3 MatchScope_Game rows.
       assert event.num_games == 3
       assert event.reason == "MatchCompletedReasonType_Success"
+
+      # Per-game results breakdown from MatchScope_Game rows.
+      assert length(event.game_results) == 3
+
+      assert Enum.at(event.game_results, 0) == %{
+               game_number: 1,
+               winning_team_id: 2,
+               reason: "ResultReason_Concede"
+             }
+
+      assert Enum.at(event.game_results, 1) == %{
+               game_number: 2,
+               winning_team_id: 1,
+               reason: "ResultReason_Concede"
+             }
+
+      assert Enum.at(event.game_results, 2) == %{
+               game_number: 3,
+               winning_team_id: 1,
+               reason: "ResultReason_Concede"
+             }
     end
   end
 
@@ -148,6 +181,49 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       }
 
       assert IdentifyDomainEvents.translate(record, @self_user_id) == []
+    end
+  end
+
+  describe "translate/2 — GreToClientEvent, GameStateMessage → GameCompleted" do
+    test "produces a %GameCompleted{} from a game-complete fixture" do
+      record = record_from_fixture("gre_to_client_event_game_complete.log")
+
+      events = IdentifyDomainEvents.translate(record, @self_user_id)
+
+      game_event = Enum.find(events, &match?(%GameCompleted{}, &1))
+      assert game_event != nil
+      assert game_event.mtga_match_id == "55d092c5-fd8a-4af9-b295-cc0003454b2e"
+      assert game_event.game_number == 1
+      assert game_event.won == true
+      assert game_event.num_turns == 6
+      assert game_event.self_life_total == 3
+      assert game_event.opponent_life_total == 20
+      assert game_event.win_reason == "ResultReason_Concede"
+      assert game_event.super_format == "SuperFormat_Constructed"
+      assert game_event.occurred_at == ~U[2026-04-05 23:24:05Z]
+    end
+  end
+
+  describe "translate/2 — BotDraftDraftStatus → DraftStarted" do
+    test "produces a %DraftStarted{} from the draft status fixture" do
+      record = record_from_fixture("bot_draft_draft_status.log")
+
+      assert [%DraftStarted{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert event.mtga_draft_id == "QuickDraft_FDN_20260323"
+      assert event.event_name == "QuickDraft_FDN_20260323"
+      assert event.set_code == "FDN"
+    end
+  end
+
+  describe "translate/2 — BotDraftDraftPick → DraftPickMade" do
+    test "produces a %DraftPickMade{} from the draft pick fixture" do
+      record = record_from_fixture("bot_draft_draft_pick.log")
+
+      assert [%DraftPickMade{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert event.mtga_draft_id == "QuickDraft_FDN_20260323"
+      assert event.pack_number == 1
+      assert event.pick_number == 1
+      assert event.picked_arena_id == 93959
     end
   end
 

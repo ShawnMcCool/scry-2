@@ -29,6 +29,9 @@ defmodule Scry2.Events.MatchCreated do
     :mtga_match_id,
     :event_name,
     :opponent_screen_name,
+    :opponent_user_id,
+    :platform,
+    :opponent_platform,
     :occurred_at
   ]
 
@@ -36,6 +39,9 @@ defmodule Scry2.Events.MatchCreated do
           mtga_match_id: String.t(),
           event_name: String.t() | nil,
           opponent_screen_name: String.t() | nil,
+          opponent_user_id: String.t() | nil,
+          platform: String.t() | nil,
+          opponent_platform: String.t() | nil,
           occurred_at: DateTime.t()
         }
 

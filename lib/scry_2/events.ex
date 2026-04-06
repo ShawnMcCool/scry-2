@@ -225,6 +225,9 @@ defmodule Scry2.Events do
       mtga_match_id: payload["mtga_match_id"],
       event_name: payload["event_name"],
       opponent_screen_name: payload["opponent_screen_name"],
+      opponent_user_id: payload["opponent_user_id"],
+      platform: payload["platform"],
+      opponent_platform: payload["opponent_platform"],
       occurred_at: parse_datetime(payload["occurred_at"])
     }
   end
@@ -235,7 +238,8 @@ defmodule Scry2.Events do
       occurred_at: parse_datetime(payload["occurred_at"]),
       won: payload["won"],
       num_games: payload["num_games"],
-      reason: payload["reason"]
+      reason: payload["reason"],
+      game_results: payload["game_results"]
     }
   end
 
@@ -247,6 +251,10 @@ defmodule Scry2.Events do
       won: payload["won"],
       num_mulligans: payload["num_mulligans"],
       num_turns: payload["num_turns"],
+      self_life_total: payload["self_life_total"],
+      opponent_life_total: payload["opponent_life_total"],
+      win_reason: payload["win_reason"],
+      super_format: payload["super_format"],
       occurred_at: parse_datetime(payload["occurred_at"])
     }
   end
