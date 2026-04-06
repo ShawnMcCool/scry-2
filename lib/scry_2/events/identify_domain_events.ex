@@ -76,7 +76,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "BotDraftDraftPick",
                          "BotDraftDraftStatus",
                          "AuthenticateResponse",
-                         "RankGetSeasonAndRankDetails"
+                         "RankGetSeasonAndRankDetails",
+                         "RankGetCombinedRankInfo"
                        ])
 
   @ignored_event_types MapSet.new([
@@ -92,8 +93,6 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "DeckUpsertDeckV2",
                          "EventSetDeckV2",
                          "DeckGetDeckSummariesV2",
-                         # Rank requests (empty payload) — responses are handled
-                         "RankGetCombinedRankInfo",
                          # UI state / rewards / system — no domain value
                          "GraphGetGraphState",
                          "QuestGetQuests",
@@ -294,13 +293,17 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end
   end
 
-  # RankGetSeasonAndRankDetails RESPONSE carries the full rank state.
-  # REQUEST events have a "request" key and are skipped.
+  # Rank response events carry the full rank state. Both
+  # RankGetSeasonAndRankDetails and RankGetCombinedRankInfo share the
+  # same payload shape. REQUEST events have a "request" key and are
+  # skipped.
+  @rank_event_types ~w(RankGetSeasonAndRankDetails RankGetCombinedRankInfo)
   def translate(
-        %EventRecord{event_type: "RankGetSeasonAndRankDetails"} = record,
+        %EventRecord{event_type: event_type} = record,
         _self_user_id,
         _match_context
-      ) do
+      )
+      when event_type in @rank_event_types do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Jason.decode(record.raw_json),

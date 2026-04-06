@@ -210,5 +210,17 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
       assert connect_resp
       assert is_list(get_in(connect_resp, ["connectResp", "deckMessage", "deckCards"]))
     end
+
+    test "Format A response: RankGetCombinedRankInfo three-line pattern (timestamp + bare <== + JSON)" do
+      chunk = fixture("rank_get_combined_rank_info_response.log")
+
+      [event] = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
+
+      assert event.type == "RankGetCombinedRankInfo"
+      assert event.mtga_timestamp == ~U[2026-04-06 18:47:51Z]
+      assert event.payload["constructedClass"] == "Diamond"
+      assert event.payload["constructedLevel"] == 4
+      assert event.payload["limitedClass"] == "Silver"
+    end
   end
 end
