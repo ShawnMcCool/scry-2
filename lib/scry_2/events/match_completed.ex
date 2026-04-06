@@ -35,7 +35,8 @@ defmodule Scry2.Events.MatchCompleted do
     :occurred_at,
     :won,
     :num_games,
-    :reason
+    :reason,
+    :game_results
   ]
 
   @type t :: %__MODULE__{
@@ -43,7 +44,9 @@ defmodule Scry2.Events.MatchCompleted do
           occurred_at: DateTime.t(),
           won: boolean(),
           num_games: non_neg_integer(),
-          reason: String.t() | nil
+          reason: String.t() | nil,
+          game_results:
+            [%{game_number: pos_integer(), winning_team_id: integer(), reason: String.t()}] | nil
         }
 
   defimpl Scry2.Events.Event do

@@ -33,6 +33,10 @@ defmodule Scry2.Events.GameCompleted do
     :won,
     :num_mulligans,
     :num_turns,
+    :self_life_total,
+    :opponent_life_total,
+    :win_reason,
+    :super_format,
     :occurred_at
   ]
 
@@ -43,6 +47,10 @@ defmodule Scry2.Events.GameCompleted do
           won: boolean() | nil,
           num_mulligans: non_neg_integer() | nil,
           num_turns: non_neg_integer() | nil,
+          self_life_total: integer() | nil,
+          opponent_life_total: integer() | nil,
+          win_reason: String.t() | nil,
+          super_format: String.t() | nil,
           occurred_at: DateTime.t()
         }
 

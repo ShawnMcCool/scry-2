@@ -28,11 +28,12 @@ defmodule Scry2.DraftListing.UpdateFromEvent do
 
   require Scry2.Log, as: Log
 
+  alias Scry2.DraftListing
   alias Scry2.Events
   alias Scry2.Events.{DraftPickMade, DraftStarted}
   alias Scry2.Topics
 
-  @claimed_slugs []
+  @claimed_slugs ~w(draft_started draft_pick_made)
 
   def start_link(opts \\ []) do
     {name, opts} = Keyword.pop(opts, :name, __MODULE__)
@@ -64,8 +65,52 @@ defmodule Scry2.DraftListing.UpdateFromEvent do
   def handle_info({:domain_event, _id, _type_slug}, state), do: {:noreply, state}
   def handle_info(_other, state), do: {:noreply, state}
 
-  # Placeholder handlers. Once the translator produces these events and
-  # the @claimed_slugs list is populated, these clauses will be reached.
-  defp project(%DraftStarted{}), do: :ok
-  defp project(%DraftPickMade{}), do: :ok
+  defp project(%DraftStarted{} = event) do
+    attrs = %{
+      mtga_draft_id: event.mtga_draft_id,
+      event_name: event.event_name,
+      format: "quick_draft",
+      set_code: event.set_code,
+      started_at: event.occurred_at
+    }
+
+    draft = DraftListing.upsert_draft!(attrs)
+
+    Log.info(
+      :ingester,
+      "projected DraftStarted mtga_draft_id=#{draft.mtga_draft_id} set=#{event.set_code}"
+    )
+
+    :ok
+  end
+
+  defp project(%DraftPickMade{} = event) do
+    draft = DraftListing.get_by_mtga_id(event.mtga_draft_id)
+
+    if draft do
+      attrs = %{
+        draft_id: draft.id,
+        pack_number: event.pack_number,
+        pick_number: event.pick_number,
+        picked_arena_id: event.picked_arena_id,
+        pack_arena_ids: %{"cards" => event.pack_arena_ids || []},
+        pool_arena_ids: %{"cards" => []},
+        picked_at: event.occurred_at
+      }
+
+      pick = DraftListing.upsert_pick!(attrs)
+
+      Log.info(
+        :ingester,
+        "projected DraftPickMade draft=#{event.mtga_draft_id} p#{pick.pack_number}p#{pick.pick_number}"
+      )
+    else
+      Log.warning(
+        :ingester,
+        "DraftPickMade for unknown draft #{event.mtga_draft_id} — skipping projection"
+      )
+    end
+
+    :ok
+  end
 end
