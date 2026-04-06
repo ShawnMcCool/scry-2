@@ -110,19 +110,50 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
   end
 
   defp extract_event(header_line, remainder, source_file, file_offset) do
-    with {:ok, type, timestamp} <- parse_header(header_line),
-         {:ok, json_string} <- find_json_body(header_line, remainder) do
-      {:ok,
-       %Event{
-         type: type,
-         mtga_timestamp: timestamp,
-         payload: decode_json(json_string),
-         raw_json: json_string,
-         file_offset: file_offset,
-         source_file: source_file
-       }}
-    else
-      _ -> :skip
+    case parse_header(header_line) do
+      {:ok, type, timestamp} ->
+        case find_json_body(header_line, remainder) do
+          {:ok, json_string} ->
+            {:ok,
+             %Event{
+               type: type,
+               mtga_timestamp: timestamp,
+               payload: decode_json(json_string),
+               raw_json: json_string,
+               file_offset: file_offset,
+               source_file: source_file
+             }}
+
+          :none ->
+            :skip
+        end
+
+      # Format A response — three-line pattern:
+      #   [UnityCrossThreadLogger]<timestamp>     ← header (parse_header returns :skip)
+      #   <== EventType(uuid)                     ← bare response line in remainder
+      #   {JSON body}                             ← payload on next line
+      :skip ->
+        case parse_response_line(remainder) do
+          {:ok, type, timestamp, rest} ->
+            case grab_json_block(rest) do
+              {:ok, json_string} ->
+                {:ok,
+                 %Event{
+                   type: type,
+                   mtga_timestamp: timestamp || parse_timestamp_from_header(header_line),
+                   payload: decode_json(json_string),
+                   raw_json: json_string,
+                   file_offset: file_offset,
+                   source_file: source_file
+                 }}
+
+              :none ->
+                :skip
+            end
+
+          :skip ->
+            :skip
+        end
     end
   end
 
@@ -146,6 +177,38 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
       :none -> grab_json_block(remainder)
     end
   end
+
+  # ── Response line parsing ─────────────────────────────────────────────
+  #
+  # Format A responses use a three-line pattern where the response
+  # marker `<== EventType(uuid)` appears on a bare line (no UCTL prefix)
+  # after a timestamp-only header. The JSON body follows on the next line.
+
+  defp parse_response_line("<== " <> rest) do
+    type = take_identifier(rest)
+    # The rest after the <== line starts after the next newline
+    json_rest =
+      case :binary.match(rest, "\n") do
+        {nl_pos, _} -> binary_part(rest, nl_pos + 1, byte_size(rest) - nl_pos - 1)
+        :nomatch -> ""
+      end
+
+    if type != "" do
+      {:ok, type, nil, json_rest}
+    else
+      :skip
+    end
+  end
+
+  defp parse_response_line(_), do: :skip
+
+  # Extract timestamp from a bare timestamp header like
+  # "[UnityCrossThreadLogger]4/6/2026 6:47:51 PM"
+  defp parse_timestamp_from_header("[UnityCrossThreadLogger]" <> rest) do
+    parse_timestamp(String.trim(rest))
+  end
+
+  defp parse_timestamp_from_header(_), do: nil
 
   # ── Header parsing ────────────────────────────────────────────────────
   #

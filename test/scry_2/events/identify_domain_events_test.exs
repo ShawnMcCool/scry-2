@@ -266,7 +266,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     end
   end
 
-  describe "translate/2 — RankGetSeasonAndRankDetails → RankSnapshot" do
+  describe "translate/2 — Rank events → RankSnapshot" do
     test "produces a %RankSnapshot{} from a response event" do
       record = %EventRecord{
         id: 1,
@@ -309,6 +309,19 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       }
 
       assert IdentifyDomainEvents.translate(record, nil) == []
+    end
+
+    test "produces a %RankSnapshot{} from RankGetCombinedRankInfo response (parsed from <== three-line format)" do
+      record = record_from_fixture("rank_get_combined_rank_info_response.log")
+
+      assert [%RankSnapshot{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert event.constructed_class == "Diamond"
+      assert event.constructed_level == 4
+      assert event.constructed_step == 2
+      assert event.constructed_matches_won == 30
+      assert event.constructed_matches_lost == 18
+      assert event.limited_class == "Silver"
+      assert event.occurred_at == ~U[2026-04-06 18:47:51Z]
     end
   end
 
