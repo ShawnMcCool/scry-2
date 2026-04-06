@@ -68,9 +68,9 @@ config :scry_2, dev_routes: true
 
 # Use the component-aware formatter so thinking logs show [level][component].
 # The formatter is also used for stdout output; the in-browser Console drawer
-# has its own `Scry2.Console.Handler` that parses component metadata separately.
+# has its own `Scry2.Console.CaptureLogOutput` that parses component metadata separately.
 config :logger, :default_formatter,
-  format: {Scry2.Log.Formatter, :format},
+  format: {Scry2.Log.FormatForStdout, :format},
   metadata: [:component]
 
 # Set a higher stacktrace during development. Avoid configuring such

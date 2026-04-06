@@ -1,7 +1,8 @@
 defmodule Scry2Web.DashboardLive do
   use Scry2Web, :live_view
 
-  alias Scry2.{Cards, Drafts, Matches, MtgaLogs, Topics}
+  alias Scry2.{Cards, DraftListing, MatchListing, MtgaLogIngestion, Topics}
+  alias Scry2.Events.IdentifyDomainEvents
   alias Scry2Web.DashboardHelpers, as: Helpers
 
   @impl true
@@ -22,26 +23,33 @@ defmodule Scry2Web.DashboardLive do
 
   @impl true
   def handle_params(_params, _uri, socket) do
-    watcher = MtgaLogs.Watcher.status()
+    watcher = MtgaLogIngestion.Watcher.status()
+    events_by_type = MtgaLogIngestion.count_by_type()
+    known_types = IdentifyDomainEvents.known_event_types()
+
+    unrecognized =
+      events_by_type
+      |> Map.reject(fn {type, _count} -> MapSet.member?(known_types, type) end)
 
     counts = %{
-      matches: Matches.count(),
-      drafts: Drafts.count(),
+      matches: MatchListing.count(),
+      drafts: DraftListing.count(),
       cards: Cards.count(),
-      events_by_type: MtgaLogs.count_by_type()
+      events_by_type: events_by_type
     }
 
     {:noreply,
      socket
      |> assign(:watcher, watcher)
-     |> assign(:counts, counts)}
+     |> assign(:counts, counts)
+     |> assign(:unrecognized, unrecognized)}
   end
 
   @impl true
   def handle_event("refresh_cards", _params, socket) do
     {:ok, _job} =
       %{}
-      |> Scry2.Workers.CardsRefreshWorker.new()
+      |> Scry2.Workers.PeriodicallyUpdateCards.new()
       |> Oban.insert()
 
     {:noreply,
@@ -52,15 +60,15 @@ defmodule Scry2Web.DashboardLive do
 
   @impl true
   def handle_info({:status, _}, socket) do
-    {:noreply, assign(socket, :watcher, MtgaLogs.Watcher.status())}
+    {:noreply, assign(socket, :watcher, MtgaLogIngestion.Watcher.status())}
   end
 
   def handle_info({:match_updated, _}, socket) do
-    {:noreply, assign(socket, :counts, %{socket.assigns.counts | matches: Matches.count()})}
+    {:noreply, assign(socket, :counts, %{socket.assigns.counts | matches: MatchListing.count()})}
   end
 
   def handle_info({:draft_updated, _}, socket) do
-    {:noreply, assign(socket, :counts, %{socket.assigns.counts | drafts: Drafts.count()})}
+    {:noreply, assign(socket, :counts, %{socket.assigns.counts | drafts: DraftListing.count()})}
   end
 
   def handle_info({:cards_refreshed, count}, socket) do
@@ -102,6 +110,32 @@ defmodule Scry2Web.DashboardLive do
         <.stat_card title="Matches" value={@counts.matches} />
         <.stat_card title="Drafts" value={@counts.drafts} />
         <.stat_card title="Cards" value={@counts.cards} />
+      </section>
+
+      <section :if={map_size(@unrecognized) > 0} class="alert alert-warning">
+        <.icon name="hero-exclamation-triangle" class="size-5" />
+        <div>
+          <p class="font-semibold">Unrecognized event types</p>
+          <p class="text-sm mb-2">
+            These MTGA event types have no handler or ignore clause in IdentifyDomainEvents (ADR-020).
+          </p>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Event type</th>
+                  <th class="text-right">Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={{type, count} <- Helpers.sort_events_by_count(@unrecognized)}>
+                  <td><code>{type}</code></td>
+                  <td class="text-right tabular-nums">{count}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section :if={map_size(@counts.events_by_type) > 0}>

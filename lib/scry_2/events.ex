@@ -13,17 +13,17 @@ defmodule Scry2.Events do
 
   ## The ingestion subsystem
 
-  Raw MTGA events arrive via the pipeline documented in `Scry2.MtgaLogs`
+  Raw MTGA events arrive via the pipeline documented in `Scry2.MtgaLogIngestion`
   (stages 01–06). This context handles stages 07–11:
 
   | Stage | Module                          | Role                                              |
   |-------|---------------------------------|---------------------------------------------------|
-  | 07    | `Scry2.Events.Translator`       | Pure: raw event record → list of domain events    |
-  | 08    | `Scry2.Events.IngestionWorker`  | Subscribes to raw events, calls translator, appends |
+  | 07    | `Scry2.Events.IdentifyDomainEvents` | Pure: raw event record → list of domain events |
+  | 08    | `Scry2.Events.IngestRawEvents`     | Subscribes to raw events, calls translator, appends |
   |       | `Scry2.Events.append!/2`        | Persists domain event + broadcasts atomically     |
-  | 09    | `Scry2.Matches.Projector`       | Subscribes, updates `matches_*` projection tables |
-  |       | `Scry2.Drafts.Projector`        | (same, for draft projections)                     |
-  | 10    | `Scry2.Matches.upsert_*!`       | Idempotent projection writes                      |
+  | 09    | `Scry2.MatchListing.UpdateFromEvent` | Subscribes, updates `matches_*` projection tables |
+  |       | `Scry2.DraftListing.UpdateFromEvent` | (same, for draft projections)                |
+  | 10    | `Scry2.MatchListing.upsert_*!`  | Idempotent projection writes                      |
   | 11    | Context broadcasts              | `matches:updates`, `drafts:updates` (for LiveView)|
 
   ## Event sourcing guarantees (ADR-017)
@@ -45,7 +45,7 @@ defmodule Scry2.Events do
   | **Input**  | `Scry2.Events.Event` protocol impls (domain event structs) |
   | **Output** | `{:domain_event, id, type_slug}` broadcasts on `"domain:events"` |
   | **Nature** | Writes to DB; broadcasts via PubSub |
-  | **Called from** | `Scry2.Events.IngestionWorker` (stage 08 → stage 09) |
+  | **Called from** | `Scry2.Events.IngestRawEvents` (stage 08 → stage 09) |
   | **Hands off to** | Every subscriber of `Scry2.Topics.domain_events/0` |
   """
 
@@ -62,13 +62,13 @@ defmodule Scry2.Events do
   the broadcast only fires after the DB commit succeeds, so subscribers
   never see an event that didn't persist.
 
-  `source_record` is the `%Scry2.MtgaLogs.EventRecord{}` that produced
+  `source_record` is the `%Scry2.MtgaLogIngestion.EventRecord{}` that produced
   this domain event (soft reference via `mtga_source_id`); pass `nil`
   for synthetic events that weren't derived from a raw MTGA log entry.
 
   Returns the persisted `%EventRecord{}` on success.
   """
-  @spec append!(struct(), %Scry2.MtgaLogs.EventRecord{} | nil) :: %EventRecord{}
+  @spec append!(struct(), %Scry2.MtgaLogIngestion.EventRecord{} | nil) :: %EventRecord{}
   def append!(domain_event, source_record) when is_struct(domain_event) do
     attrs = %{
       event_type: Event.type_slug(domain_event),
@@ -180,24 +180,24 @@ defmodule Scry2.Events do
   @doc """
   Rebuilds the domain event log from raw MTGA events. Truncates
   `domain_events`, resets the `processed` flag on every raw event, and
-  lets the `IngestionWorker` re-translate from scratch (by re-broadcasting
+  lets the `IngestRawEvents` re-translate from scratch (by re-broadcasting
   each raw event on `mtga_logs:events`).
 
-  Use when the `Scry2.Events.Translator` has changed and historical
+  Use when the `Scry2.Events.IdentifyDomainEvents` has changed and historical
   domain events need to be regenerated.
   """
   @spec retranslate_from_raw!() :: :ok
   def retranslate_from_raw! do
     Repo.delete_all(EventRecord)
 
-    Scry2.MtgaLogs.EventRecord
+    Scry2.MtgaLogIngestion.EventRecord
     |> Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
 
-    Scry2.MtgaLogs.EventRecord
+    Scry2.MtgaLogIngestion.EventRecord
     |> order_by([e], asc: e.id)
     |> Repo.all()
     |> Enum.each(fn raw ->
-      Topics.broadcast(Topics.mtga_logs_events(), {:event, raw.id, raw.event_type})
+      Topics.broadcast(Topics.mtga_logs_events(), {:event, raw})
     end)
 
     :ok
@@ -225,14 +225,14 @@ defmodule Scry2.Events do
       mtga_match_id: payload["mtga_match_id"],
       event_name: payload["event_name"],
       opponent_screen_name: payload["opponent_screen_name"],
-      started_at: parse_datetime(payload["started_at"])
+      occurred_at: parse_datetime(payload["occurred_at"])
     }
   end
 
   defp rehydrate(%EventRecord{event_type: "match_completed", payload: payload}) do
     %Scry2.Events.MatchCompleted{
       mtga_match_id: payload["mtga_match_id"],
-      ended_at: parse_datetime(payload["ended_at"]),
+      occurred_at: parse_datetime(payload["occurred_at"]),
       won: payload["won"],
       num_games: payload["num_games"],
       reason: payload["reason"]
@@ -247,7 +247,7 @@ defmodule Scry2.Events do
       won: payload["won"],
       num_mulligans: payload["num_mulligans"],
       num_turns: payload["num_turns"],
-      completed_at: parse_datetime(payload["completed_at"])
+      occurred_at: parse_datetime(payload["occurred_at"])
     }
   end
 
@@ -257,7 +257,7 @@ defmodule Scry2.Events do
       mtga_deck_id: payload["mtga_deck_id"],
       main_deck: payload["main_deck"] || [],
       sideboard: payload["sideboard"] || [],
-      submitted_at: parse_datetime(payload["submitted_at"])
+      occurred_at: parse_datetime(payload["occurred_at"])
     }
   end
 
@@ -266,7 +266,7 @@ defmodule Scry2.Events do
       mtga_draft_id: payload["mtga_draft_id"],
       event_name: payload["event_name"],
       set_code: payload["set_code"],
-      started_at: parse_datetime(payload["started_at"])
+      occurred_at: parse_datetime(payload["occurred_at"])
     }
   end
 
@@ -277,7 +277,7 @@ defmodule Scry2.Events do
       pick_number: payload["pick_number"],
       picked_arena_id: payload["picked_arena_id"],
       pack_arena_ids: payload["pack_arena_ids"] || [],
-      picked_at: parse_datetime(payload["picked_at"])
+      occurred_at: parse_datetime(payload["occurred_at"])
     }
   end
 
