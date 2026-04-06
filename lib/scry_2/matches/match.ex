@@ -1,4 +1,4 @@
-defmodule Scry2.MatchListing.Match do
+defmodule Scry2.Matches.Match do
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -15,8 +15,8 @@ defmodule Scry2.MatchListing.Match do
     field :num_games, :integer
     field :raw_event_ids, :map
 
-    has_many :games, Scry2.MatchListing.Game
-    has_many :deck_submissions, Scry2.MatchListing.DeckSubmission
+    has_many :games, Scry2.Matches.Game
+    has_many :deck_submissions, Scry2.Matches.DeckSubmission
 
     timestamps(type: :utc_datetime)
   end

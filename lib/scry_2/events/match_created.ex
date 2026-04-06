@@ -14,8 +14,8 @@ defmodule Scry2.Events.MatchCreated do
 
   ## Projected by
 
-  `Scry2.MatchListing.UpdateFromEvent` — creates a row in `matches_matches` via
-  `Scry2.MatchListing.upsert_match!/1`.
+  `Scry2.Matches.UpdateFromEvent` — creates a row in `matches_matches` via
+  `Scry2.Matches.upsert_match!/1`.
 
   ## Real-time consumers
 

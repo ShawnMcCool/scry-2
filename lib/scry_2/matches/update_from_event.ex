@@ -1,4 +1,4 @@
-defmodule Scry2.MatchListing.UpdateFromEvent do
+defmodule Scry2.Matches.UpdateFromEvent do
   @moduledoc """
   Pipeline stage 09 — project domain events into the `matches_*` read
   models.
@@ -8,10 +8,10 @@ defmodule Scry2.MatchListing.UpdateFromEvent do
   | | |
   |---|---|
   | **Input**  | `{:domain_event, id, type_slug}` messages on `domain:events` |
-  | **Output** | Rows in `matches_matches` via `Scry2.MatchListing.upsert_match!/1` + broadcasts on `matches:updates` |
+  | **Output** | Rows in `matches_matches` via `Scry2.Matches.upsert_match!/1` + broadcasts on `matches:updates` |
   | **Nature** | GenServer (subscribes at init) |
   | **Called from** | Broadcast from `Scry2.Events.append!/2` |
-  | **Calls** | `Scry2.Events.get!/1` → `Scry2.MatchListing.upsert_match!/1` |
+  | **Calls** | `Scry2.Events.get!/1` → `Scry2.Matches.upsert_match!/1` |
 
   ## Claimed domain events
 
@@ -47,7 +47,7 @@ defmodule Scry2.MatchListing.UpdateFromEvent do
 
   alias Scry2.Events
   alias Scry2.Events.{DeckSubmitted, GameCompleted, MatchCompleted, MatchCreated}
-  alias Scry2.MatchListing
+  alias Scry2.Matches
   alias Scry2.Topics
 
   @claimed_slugs ~w(match_created match_completed deck_submitted game_completed)
@@ -96,7 +96,7 @@ defmodule Scry2.MatchListing.UpdateFromEvent do
       started_at: event.occurred_at
     }
 
-    match = MatchListing.upsert_match!(attrs)
+    match = Matches.upsert_match!(attrs)
 
     Log.info(
       :ingester,
@@ -114,7 +114,7 @@ defmodule Scry2.MatchListing.UpdateFromEvent do
       num_games: event.num_games
     }
 
-    match = MatchListing.upsert_match!(attrs)
+    match = Matches.upsert_match!(attrs)
 
     Log.info(
       :ingester,
@@ -125,7 +125,7 @@ defmodule Scry2.MatchListing.UpdateFromEvent do
   end
 
   defp project(%GameCompleted{} = event) do
-    match = MatchListing.get_by_mtga_id(event.mtga_match_id)
+    match = Matches.get_by_mtga_id(event.mtga_match_id)
 
     if match do
       attrs = %{
@@ -138,7 +138,7 @@ defmodule Scry2.MatchListing.UpdateFromEvent do
         ended_at: event.occurred_at
       }
 
-      game = MatchListing.upsert_game!(attrs)
+      game = Matches.upsert_game!(attrs)
 
       Log.info(
         :ingester,
@@ -155,7 +155,7 @@ defmodule Scry2.MatchListing.UpdateFromEvent do
   end
 
   defp project(%DeckSubmitted{} = event) do
-    match = MatchListing.get_by_mtga_id(event.mtga_match_id)
+    match = Matches.get_by_mtga_id(event.mtga_match_id)
 
     attrs = %{
       mtga_deck_id: event.mtga_deck_id,
@@ -165,7 +165,7 @@ defmodule Scry2.MatchListing.UpdateFromEvent do
       submitted_at: event.occurred_at
     }
 
-    submission = MatchListing.upsert_deck_submission!(attrs)
+    submission = Matches.upsert_deck_submission!(attrs)
 
     Log.info(
       :ingester,

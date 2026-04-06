@@ -1,7 +1,7 @@
 defmodule Scry2Web.MatchesLive do
   use Scry2Web, :live_view
 
-  alias Scry2.MatchListing
+  alias Scry2.Matches
   alias Scry2.Topics
   alias Scry2Web.MatchesHelpers, as: Helpers
 
@@ -14,17 +14,17 @@ defmodule Scry2Web.MatchesLive do
 
   @impl true
   def handle_params(%{"id" => id}, _uri, socket) do
-    match = MatchListing.get_match_with_associations(String.to_integer(id))
+    match = Matches.get_match_with_associations(String.to_integer(id))
     {:noreply, assign(socket, match: match, matches: [])}
   end
 
   def handle_params(_params, _uri, socket) do
-    {:noreply, assign(socket, matches: MatchListing.list_matches(limit: 100), match: nil)}
+    {:noreply, assign(socket, matches: Matches.list_matches(limit: 100), match: nil)}
   end
 
   @impl true
   def handle_info({:match_updated, _}, socket) do
-    {:noreply, assign(socket, :matches, MatchListing.list_matches(limit: 100))}
+    {:noreply, assign(socket, :matches, Matches.list_matches(limit: 100))}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}

@@ -1,4 +1,4 @@
-defmodule Scry2.MatchListing.DeckSubmission do
+defmodule Scry2.Matches.DeckSubmission do
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -11,7 +11,7 @@ defmodule Scry2.MatchListing.DeckSubmission do
     field :sideboard, :map, default: %{}
     field :submitted_at, :utc_datetime
 
-    belongs_to :match, Scry2.MatchListing.Match
+    belongs_to :match, Scry2.Matches.Match
 
     timestamps(type: :utc_datetime)
   end

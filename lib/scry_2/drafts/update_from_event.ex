@@ -1,4 +1,4 @@
-defmodule Scry2.DraftListing.UpdateFromEvent do
+defmodule Scry2.Drafts.UpdateFromEvent do
   @moduledoc """
   Pipeline stage 09 — project draft-related domain events into the
   `drafts_*` read models.
@@ -8,17 +8,17 @@ defmodule Scry2.DraftListing.UpdateFromEvent do
   | | |
   |---|---|
   | **Input**  | `{:domain_event, id, type_slug}` messages on `domain:events` |
-  | **Output** | Rows in `drafts_drafts` / `drafts_picks` via `Scry2.DraftListing.upsert_*!/1` |
+  | **Output** | Rows in `drafts_drafts` / `drafts_picks` via `Scry2.Drafts.upsert_*!/1` |
   | **Nature** | GenServer (subscribes at init) |
   | **Called from** | Broadcast from `Scry2.Events.append!/2` |
-  | **Calls** | `Scry2.Events.get!/1` → `Scry2.DraftListing.upsert_draft!/1` / `upsert_pick!/1` |
+  | **Calls** | `Scry2.Events.get!/1` → `Scry2.Drafts.upsert_draft!/1` / `upsert_pick!/1` |
 
   ## Status
 
   `@claimed_slugs` is empty — the translator does not yet produce any
   draft domain events because the user's Player.log contains no draft
   activity. This module exists as a structural placeholder matching
-  `Scry2.MatchListing.UpdateFromEvent`, so that once draft fixtures exist and the
+  `Scry2.Matches.UpdateFromEvent`, so that once draft fixtures exist and the
   translator learns `%DraftStarted{}` / `%DraftPickMade{}`, the projector
   pattern is already in place.
 
@@ -28,7 +28,7 @@ defmodule Scry2.DraftListing.UpdateFromEvent do
 
   require Scry2.Log, as: Log
 
-  alias Scry2.DraftListing
+  alias Scry2.Drafts
   alias Scry2.Events
   alias Scry2.Events.{DraftPickMade, DraftStarted}
   alias Scry2.Topics
@@ -74,7 +74,7 @@ defmodule Scry2.DraftListing.UpdateFromEvent do
       started_at: event.occurred_at
     }
 
-    draft = DraftListing.upsert_draft!(attrs)
+    draft = Drafts.upsert_draft!(attrs)
 
     Log.info(
       :ingester,
@@ -85,7 +85,7 @@ defmodule Scry2.DraftListing.UpdateFromEvent do
   end
 
   defp project(%DraftPickMade{} = event) do
-    draft = DraftListing.get_by_mtga_id(event.mtga_draft_id)
+    draft = Drafts.get_by_mtga_id(event.mtga_draft_id)
 
     if draft do
       attrs = %{
@@ -98,7 +98,7 @@ defmodule Scry2.DraftListing.UpdateFromEvent do
         picked_at: event.occurred_at
       }
 
-      pick = DraftListing.upsert_pick!(attrs)
+      pick = Drafts.upsert_pick!(attrs)
 
       Log.info(
         :ingester,

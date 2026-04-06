@@ -17,8 +17,8 @@ Adopt bounded contexts with PubSub-only cross-context communication. Each contex
 **Context boundaries:**
 - `Scry2.MtgaLogIngestion` — raw log events, file-watch state, parser cursor
 - `Scry2.Events` — domain event log, anti-corruption layer
-- `Scry2.MatchListing` — matches, games, deck submissions (projection)
-- `Scry2.DraftListing` — drafts, draft picks (projection)
+- `Scry2.Matches` — matches, games, deck submissions (projection)
+- `Scry2.Drafts` — drafts, draft picks (projection)
 - `Scry2.Cards` — cards and sets (from 17lands + Scryfall)
 - `Scry2.Settings` — runtime config entries
 - `Scry2Web` — LiveViews, components, router

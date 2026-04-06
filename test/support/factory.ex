@@ -14,10 +14,10 @@ defmodule Scry2.TestFactory do
 
   alias Scry2.Cards
   alias Scry2.Cards.{Card, Set}
-  alias Scry2.DraftListing
-  alias Scry2.DraftListing.{Draft, Pick}
-  alias Scry2.MatchListing
-  alias Scry2.MatchListing.{DeckSubmission, Game, Match}
+  alias Scry2.Drafts
+  alias Scry2.Drafts.{Draft, Pick}
+  alias Scry2.Matches
+  alias Scry2.Matches.{DeckSubmission, Game, Match}
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
 
@@ -143,7 +143,7 @@ defmodule Scry2.TestFactory do
     |> build_match()
     |> Map.from_struct()
     |> Map.drop([:__meta__, :games, :deck_submissions])
-    |> MatchListing.upsert_match!()
+    |> Matches.upsert_match!()
   end
 
   def create_game(attrs \\ %{}) do
@@ -154,7 +154,7 @@ defmodule Scry2.TestFactory do
     |> Map.from_struct()
     |> Map.drop([:__meta__, :match])
     |> Map.put(:match_id, match.id)
-    |> MatchListing.upsert_game!()
+    |> Matches.upsert_game!()
   end
 
   def create_draft(attrs \\ %{}) do
@@ -162,7 +162,7 @@ defmodule Scry2.TestFactory do
     |> build_draft()
     |> Map.from_struct()
     |> Map.drop([:__meta__, :picks])
-    |> DraftListing.upsert_draft!()
+    |> Drafts.upsert_draft!()
   end
 
   def create_pick(attrs \\ %{}) do
@@ -173,7 +173,7 @@ defmodule Scry2.TestFactory do
     |> Map.from_struct()
     |> Map.drop([:__meta__, :draft])
     |> Map.put(:draft_id, draft.id)
-    |> DraftListing.upsert_pick!()
+    |> Drafts.upsert_pick!()
   end
 
   def create_event_record(attrs \\ %{}) do

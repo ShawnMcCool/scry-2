@@ -1,7 +1,7 @@
 defmodule Scry2Web.DashboardLive do
   use Scry2Web, :live_view
 
-  alias Scry2.{Cards, DraftListing, MatchListing, MtgaLogIngestion, Topics}
+  alias Scry2.{Cards, Drafts, Matches, MtgaLogIngestion, Topics}
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2Web.DashboardHelpers, as: Helpers
 
@@ -32,8 +32,8 @@ defmodule Scry2Web.DashboardLive do
       |> Map.reject(fn {type, _count} -> MapSet.member?(known_types, type) end)
 
     counts = %{
-      matches: MatchListing.count(),
-      drafts: DraftListing.count(),
+      matches: Matches.count(),
+      drafts: Drafts.count(),
       cards: Cards.count(),
       events_by_type: events_by_type
     }
@@ -64,11 +64,11 @@ defmodule Scry2Web.DashboardLive do
   end
 
   def handle_info({:match_updated, _}, socket) do
-    {:noreply, assign(socket, :counts, %{socket.assigns.counts | matches: MatchListing.count()})}
+    {:noreply, assign(socket, :counts, %{socket.assigns.counts | matches: Matches.count()})}
   end
 
   def handle_info({:draft_updated, _}, socket) do
-    {:noreply, assign(socket, :counts, %{socket.assigns.counts | drafts: DraftListing.count()})}
+    {:noreply, assign(socket, :counts, %{socket.assigns.counts | drafts: Drafts.count()})}
   end
 
   def handle_info({:cards_refreshed, count}, socket) do

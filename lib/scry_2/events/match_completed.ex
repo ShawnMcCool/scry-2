@@ -18,8 +18,8 @@ defmodule Scry2.Events.MatchCompleted do
 
   ## Projected by
 
-  `Scry2.MatchListing.UpdateFromEvent` — enriches the existing `matches_matches`
-  row (keyed on `mtga_match_id`) via `Scry2.MatchListing.upsert_match!/1`.
+  `Scry2.Matches.UpdateFromEvent` — enriches the existing `matches_matches`
+  row (keyed on `mtga_match_id`) via `Scry2.Matches.upsert_match!/1`.
   Idempotent — replaying produces the same row state.
 
   ## Fields
