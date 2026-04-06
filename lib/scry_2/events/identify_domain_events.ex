@@ -51,11 +51,15 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   alias Scry2.Events.{
     DeckSubmitted,
+    DieRollCompleted,
     DraftPickMade,
     DraftStarted,
     GameCompleted,
     MatchCompleted,
-    MatchCreated
+    MatchCreated,
+    MulliganOffered,
+    RankSnapshot,
+    SessionStarted
   }
 
   alias Scry2.MtgaLogIngestion.EventRecord
@@ -70,15 +74,16 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "MatchGameRoomStateChangedEvent",
                          "GreToClientEvent",
                          "BotDraftDraftPick",
-                         "BotDraftDraftStatus"
+                         "BotDraftDraftStatus",
+                         "AuthenticateResponse",
+                         "RankGetSeasonAndRankDetails"
                        ])
 
   @ignored_event_types MapSet.new([
                          # GRE client messages — high-volume UI/input traffic, no domain value
                          "ClientToGreuimessage",
                          "ClientToGremessage",
-                         # Lobby/session lifecycle — no actionable domain events (yet)
-                         "AuthenticateResponse",
+                         # Lobby/session lifecycle
                          "EventJoin",
                          "EventGetCoursesV2",
                          "EventGetActiveMatches",
@@ -87,9 +92,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "DeckUpsertDeckV2",
                          "EventSetDeckV2",
                          "DeckGetDeckSummariesV2",
-                         # Rank queries — future domain events TBD
+                         # Rank requests (empty payload) — responses are handled
                          "RankGetCombinedRankInfo",
-                         "RankGetSeasonAndRankDetails",
                          # UI state / rewards / system — no domain value
                          "GraphGetGraphState",
                          "QuestGetQuests",
@@ -126,6 +130,11 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   @type self_user_id :: String.t() | nil
 
+  @type match_context :: %{
+          current_match_id: String.t() | nil,
+          current_game_number: non_neg_integer() | nil
+        }
+
   @doc """
   Translates a raw MTGA event record into a (possibly empty) list of
   domain event structs.
@@ -133,14 +142,23 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   `self_user_id` is the user's MTGA Wizards ID, used to distinguish
   self from opponent in `reservedPlayers[]`. When nil, the translator
   falls back to assuming `systemSeatId: 1` is the local player.
+
+  `match_context` carries the current match/game state from
+  IngestRawEvents (ADR-022), used to tag in-game events like
+  mulligans with their match ID.
   """
-  @spec translate(%EventRecord{}, self_user_id()) :: [struct()]
+  @spec translate(%EventRecord{}, self_user_id(), match_context()) :: [struct()]
+  def translate(record, self_user_id, match_context \\ %{})
 
   # MatchGameRoomStateChangedEvent produces different domain events based
   # on the nested stateType. Playing = match just created. MatchCompleted
   # = match just finished. Other stateTypes (Connected, ConnectingToGRE,
   # etc.) produce no domain events.
-  def translate(%EventRecord{event_type: "MatchGameRoomStateChangedEvent"} = record, self_user_id) do
+  def translate(
+        %EventRecord{event_type: "MatchGameRoomStateChangedEvent"} = record,
+        self_user_id,
+        _match_context
+      ) do
     with {:ok, payload} <- Jason.decode(record.raw_json),
          {:ok, info} <- extract_game_room_info(payload) do
       case info["stateType"] do
@@ -160,19 +178,26 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   # GreToClientEvent carries GRE messages in a nested array. A single
   # raw event can produce multiple domain events — e.g. a ConnectResp
-  # (deck submission) and a GameStateMessage (game completion) in the
-  # same batch.
-  def translate(%EventRecord{event_type: "GreToClientEvent"} = record, _self_user_id) do
+  # (deck submission), a DieRollResultsResp, a GameStateMessage (game
+  # completion), and/or MulliganReq messages in the same batch.
+  def translate(
+        %EventRecord{event_type: "GreToClientEvent"} = record,
+        _self_user_id,
+        match_context
+      ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
          messages when is_list(messages) <-
            get_in(payload, ["greToClientEvent", "greToClientMessages"]) do
       match_id = extract_match_id_from_gre(messages)
+      context_match_id = match_id || match_context[:current_match_id]
 
       [
         maybe_build_deck_submitted(messages, match_id, occurred_at),
-        maybe_build_game_completed(messages, match_id, occurred_at)
+        maybe_build_die_roll_completed(messages, match_id, occurred_at),
+        maybe_build_game_completed(messages, match_id, occurred_at),
+        build_mulligan_offered(messages, context_match_id, occurred_at)
       ]
       |> List.flatten()
       |> Enum.reject(&is_nil/1)
@@ -184,7 +209,11 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # BotDraftDraftStatus marks the start of a quick-draft session.
   # The payload carries a double-encoded JSON `request` string with the
   # EventName (format identifier like "QuickDraft_FDN_20260323").
-  def translate(%EventRecord{event_type: "BotDraftDraftStatus"} = record, _self_user_id) do
+  def translate(
+        %EventRecord{event_type: "BotDraftDraftStatus"} = record,
+        _self_user_id,
+        _match_context
+      ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
@@ -208,7 +237,11 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # BotDraftDraftPick carries a single pick with pack/pick position and
   # the picked card's arena_id. Pack contents are not available in bot
   # drafts (bots pick from the same pool).
-  def translate(%EventRecord{event_type: "BotDraftDraftPick"} = record, _self_user_id) do
+  def translate(
+        %EventRecord{event_type: "BotDraftDraftPick"} = record,
+        _self_user_id,
+        _match_context
+      ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
@@ -237,10 +270,66 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end
   end
 
+  # AuthenticateResponse carries the player's Wizards client_id and
+  # screen name. Emits a SessionStarted for auto-detecting self_user_id.
+  def translate(
+        %EventRecord{event_type: "AuthenticateResponse"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         %{"authenticateResponse" => auth} <- payload do
+      [
+        %SessionStarted{
+          client_id: auth["clientId"],
+          screen_name: auth["screenName"],
+          session_id: auth["sessionId"],
+          occurred_at: occurred_at
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
+  # RankGetSeasonAndRankDetails RESPONSE carries the full rank state.
+  # REQUEST events have a "request" key and are skipped.
+  def translate(
+        %EventRecord{event_type: "RankGetSeasonAndRankDetails"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         false <- Map.has_key?(payload, "request") do
+      [
+        %RankSnapshot{
+          constructed_class: payload["constructedClass"],
+          constructed_level: payload["constructedLevel"],
+          constructed_step: payload["constructedStep"],
+          constructed_matches_won: payload["constructedMatchesWon"],
+          constructed_matches_lost: payload["constructedMatchesLost"],
+          limited_class: payload["limitedClass"],
+          limited_level: payload["limitedLevel"],
+          limited_step: payload["limitedStep"],
+          limited_matches_won: payload["limitedMatchesWon"],
+          limited_matches_lost: payload["limitedMatchesLost"],
+          season_ordinal: payload["constructedSeasonOrdinal"],
+          occurred_at: occurred_at
+        }
+      ]
+    else
+      _ -> []
+    end
+  end
+
   # Fall-through: raw event types we don't translate (yet or ever)
   # produce no domain events. The raw event is still preserved in
   # mtga_logs_events for future reprocessing via retranslate_from_raw!/0.
-  def translate(%EventRecord{}, _self_user_id), do: []
+  def translate(%EventRecord{}, _self_user_id, _match_context), do: []
 
   # ── MatchCreated construction ───────────────────────────────────────
 
@@ -447,6 +536,61 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   end
 
   defp maybe_build_game_completed(_messages, _match_id, _occurred_at), do: nil
+
+  # DieRollResultsResp carries both players' roll values. The higher
+  # roll wins and chooses to play first (virtually always chooses play).
+  defp maybe_build_die_roll_completed(messages, match_id, occurred_at)
+       when is_binary(match_id) do
+    case find_gre_message(messages, "GREMessageType_DieRollResultsResp") do
+      %{"dieRollResultsResp" => %{"playerDieRolls" => rolls}} ->
+        self_roll_entry = Enum.find(rolls, &(&1["systemSeatId"] == 1))
+        opponent_roll_entry = Enum.find(rolls, &(&1["systemSeatId"] != 1))
+
+        if self_roll_entry && opponent_roll_entry do
+          self_roll = self_roll_entry["rollValue"]
+          opponent_roll = opponent_roll_entry["rollValue"]
+
+          %DieRollCompleted{
+            mtga_match_id: match_id,
+            self_roll: self_roll,
+            opponent_roll: opponent_roll,
+            self_goes_first: self_roll > opponent_roll,
+            occurred_at: occurred_at
+          }
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  defp maybe_build_die_roll_completed(_messages, _match_id, _occurred_at), do: nil
+
+  # MulliganReq messages offer a mulligan decision to a specific seat.
+  # Returns a list (not a single value) since a batch can contain
+  # multiple mulligan offers.
+  defp build_mulligan_offered(messages, match_id, occurred_at) do
+    messages
+    |> Enum.filter(&(&1["type"] == "GREMessageType_MulliganReq"))
+    |> Enum.map(fn message ->
+      seat_id = message["systemSeatIds"] |> List.first()
+
+      hand_size =
+        get_in(message, ["prompt", "parameters"])
+        |> List.wrap()
+        |> Enum.find_value(fn
+          %{"parameterName" => "NumberOfCards", "numberValue" => n} -> n
+          _ -> nil
+        end)
+
+      %MulliganOffered{
+        mtga_match_id: match_id,
+        seat_id: seat_id,
+        hand_size: hand_size || 7,
+        occurred_at: occurred_at
+      }
+    end)
+  end
 
   defp find_gre_message(messages, type) do
     Enum.find(messages, fn message -> message["type"] == type end)

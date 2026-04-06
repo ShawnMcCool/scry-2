@@ -3,12 +3,16 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
 
   alias Scry2.Events.{
     DeckSubmitted,
+    DieRollCompleted,
     DraftPickMade,
     DraftStarted,
     GameCompleted,
     IdentifyDomainEvents,
     MatchCompleted,
-    MatchCreated
+    MatchCreated,
+    MulliganOffered,
+    RankSnapshot,
+    SessionStarted
   }
 
   alias Scry2.MtgaLogIngestion.{Event, ExtractEventsFromLog, EventRecord}
@@ -96,13 +100,17 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     end
   end
 
-  describe "translate/2 — GreToClientEvent, ConnectResp → DeckSubmitted" do
-    test "produces a %DeckSubmitted{} with aggregated deck cards from the ConnectResp fixture" do
+  describe "translate/2 — GreToClientEvent, ConnectResp batch" do
+    test "produces DeckSubmitted + DieRollCompleted from the ConnectResp fixture" do
       record = record_from_fixture("gre_to_client_event_connect_resp.log")
 
       events = IdentifyDomainEvents.translate(record, @self_user_id)
 
-      assert [%DeckSubmitted{} = deck_event] = events
+      deck_event = Enum.find(events, &match?(%DeckSubmitted{}, &1))
+      die_event = Enum.find(events, &match?(%DieRollCompleted{}, &1))
+
+      assert deck_event != nil
+      assert die_event != nil
       assert deck_event.mtga_match_id == "008b1926-09a8-40b4-872d-fa987588740c"
       assert deck_event.mtga_deck_id == "008b1926-09a8-40b4-872d-fa987588740c:seat1"
       assert deck_event.occurred_at == ~U[2026-04-05 19:18:40Z]
@@ -118,6 +126,12 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       # Sideboard has 15 entries in the fixture.
       total_sb = Enum.reduce(deck_event.sideboard, 0, fn card, acc -> acc + card.count end)
       assert total_sb == 15
+
+      # DieRoll: fixture has seat 1 rolled 19, seat 2 rolled 6
+      assert die_event.mtga_match_id == "008b1926-09a8-40b4-872d-fa987588740c"
+      assert die_event.self_roll == 19
+      assert die_event.opponent_roll == 6
+      assert die_event.self_goes_first == true
     end
 
     test "returns [] when GreToClientEvent has no ConnectResp" do
@@ -224,6 +238,77 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert event.pack_number == 1
       assert event.pick_number == 1
       assert event.picked_arena_id == 93959
+    end
+  end
+
+  describe "translate/2 — AuthenticateResponse → SessionStarted" do
+    test "produces a %SessionStarted{} with client_id from the fixture" do
+      record = record_from_fixture("authenticate_response.log")
+
+      assert [%SessionStarted{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert event.client_id == "D0FECB2AF1E7FE24"
+      assert event.screen_name == "Shawn McCool"
+      assert event.session_id != nil
+    end
+
+    test "skips AuthenticateResponse with missing authenticateResponse key" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "AuthenticateResponse",
+        mtga_timestamp: ~U[2026-04-05 23:17:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: ~s({"other":"data"}),
+        processed: false
+      }
+
+      assert IdentifyDomainEvents.translate(record, nil) == []
+    end
+  end
+
+  describe "translate/2 — RankGetSeasonAndRankDetails → RankSnapshot" do
+    test "produces a %RankSnapshot{} from a response event" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "RankGetSeasonAndRankDetails",
+        mtga_timestamp: ~U[2026-04-05 20:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "constructedSeasonOrdinal" => 88,
+            "constructedClass" => "Diamond",
+            "constructedLevel" => 4,
+            "constructedStep" => 2,
+            "constructedMatchesWon" => 28,
+            "constructedMatchesLost" => 17,
+            "limitedSeasonOrdinal" => 88,
+            "limitedClass" => "Silver",
+            "limitedLevel" => 1
+          }),
+        processed: false
+      }
+
+      assert [%RankSnapshot{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert event.constructed_class == "Diamond"
+      assert event.constructed_level == 4
+      assert event.constructed_step == 2
+      assert event.constructed_matches_won == 28
+      assert event.limited_class == "Silver"
+      assert event.season_ordinal == 88
+    end
+
+    test "skips request events (those with a 'request' key)" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "RankGetSeasonAndRankDetails",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: ~s({"id":"uuid","request":"{}"}),
+        processed: false
+      }
+
+      assert IdentifyDomainEvents.translate(record, nil) == []
     end
   end
 
