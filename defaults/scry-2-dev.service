@@ -1,0 +1,21 @@
+[Unit]
+Description=Scry2 (Dev)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+# Patched by scripts/install-dev to the actual source directory.
+WorkingDirectory=/path/to/scry_2
+ExecStart=/usr/bin/mise exec -- mix phx.server
+Environment=MIX_ENV=dev
+Environment=MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8
+Environment=ELIXIR_ERL_OPTIONS="-name scry_2_dev@127.0.0.1"
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+LimitNOFILE=65536
+
+[Install]
+WantedBy=default.target

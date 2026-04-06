@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Install the dev systemd user service for scry_2.
+# Usage: scripts/install-dev
+
+cd "$(dirname "$0")/.."
+
+banner() { echo "==> $1"; }
+
+source_dir="$(pwd)"
+unit_src="defaults/scry-2-dev.service"
+unit_dst="$HOME/.config/systemd/user/scry-2-dev.service"
+service_name="scry-2-dev"
+
+# 1. Install patched systemd unit
+banner "Installing systemd unit to $unit_dst"
+mkdir -p "$(dirname "$unit_dst")"
+sed \
+  -e "s|WorkingDirectory=.*|WorkingDirectory=$source_dir|" \
+  "$unit_src" > "$unit_dst"
+
+# 2. Reload systemd and enable at login
+banner "Reloading systemd"
+systemctl --user daemon-reload
+systemctl --user enable "$service_name"
+
+# 3. Restart service if active, otherwise start it
+if systemctl --user is-active --quiet "$service_name"; then
+  banner "Restarting service"
+  systemctl --user restart "$service_name"
+else
+  banner "Starting service"
+  systemctl --user start "$service_name"
+fi
+
+# 4. Status summary
+banner "Install complete"
+echo "  Source:  $source_dir"
+echo "  Unit:    $unit_dst"
+echo "  URL:     http://localhost:4002"
+echo "  Logs:    journalctl --user -u $service_name -f"
+echo "  REPL:    iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1"
+echo ""
+systemctl --user status "$service_name" --no-pager 2>/dev/null || true
