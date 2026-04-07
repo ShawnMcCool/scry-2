@@ -26,6 +26,7 @@ defmodule Scry2.Events.MatchCreated do
 
   @enforce_keys [:mtga_match_id, :occurred_at]
   defstruct [
+    :player_id,
     :mtga_match_id,
     :event_name,
     :opponent_screen_name,
@@ -36,6 +37,7 @@ defmodule Scry2.Events.MatchCreated do
   ]
 
   @type t :: %__MODULE__{
+          player_id: String.t() | nil,
           mtga_match_id: String.t(),
           event_name: String.t() | nil,
           opponent_screen_name: String.t() | nil,

@@ -18,11 +18,13 @@ defmodule Scry2.Matches do
   alias Scry2.Repo
   alias Scry2.Topics
 
-  @doc "Returns the most recent matches, newest first."
+  @doc "Returns the most recent matches, newest first. Optionally filtered by player_id."
   def list_matches(opts \\ []) do
     limit_count = Keyword.get(opts, :limit, 50)
+    player_id = Keyword.get(opts, :player_id)
 
     Match
+    |> maybe_filter_by_player(player_id)
     |> order_by([m], desc: m.started_at)
     |> limit(^limit_count)
     |> Repo.all()
@@ -35,21 +37,25 @@ defmodule Scry2.Matches do
     |> Repo.preload([:games, :deck_submissions])
   end
 
-  @doc "Returns the match with the given MTGA id, or nil."
-  def get_by_mtga_id(mtga_match_id) when is_binary(mtga_match_id) do
-    Repo.get_by(Match, mtga_match_id: mtga_match_id)
+  @doc "Returns the match with the given MTGA id and optional player_id, or nil."
+  def get_by_mtga_id(mtga_match_id, player_id \\ nil) when is_binary(mtga_match_id) do
+    Match
+    |> where([m], m.mtga_match_id == ^mtga_match_id)
+    |> maybe_filter_by_player(player_id)
+    |> Repo.one()
   end
 
   @doc """
   Inserts a new match or updates the existing one with the same
-  `mtga_match_id`. Idempotent per ADR-016.
+  `(player_id, mtga_match_id)`. Idempotent per ADR-016.
   """
   def upsert_match!(attrs) do
     attrs = Map.new(attrs)
     mtga_id = attrs[:mtga_match_id] || attrs["mtga_match_id"]
+    player_id = attrs[:player_id] || attrs["player_id"]
 
     match =
-      case get_by_mtga_id(mtga_id) do
+      case get_by_mtga_id(mtga_id, player_id) do
         nil -> %Match{}
         existing -> existing
       end
@@ -101,8 +107,17 @@ defmodule Scry2.Matches do
     submission
   end
 
-  @doc "Returns the total number of recorded matches."
-  def count, do: Repo.aggregate(Match, :count, :id)
+  @doc "Returns the total number of recorded matches. Optionally filtered by player_id."
+  def count(opts \\ []) do
+    player_id = Keyword.get(opts, :player_id)
+
+    Match
+    |> maybe_filter_by_player(player_id)
+    |> Repo.aggregate(:count, :id)
+  end
+
+  defp maybe_filter_by_player(query, nil), do: query
+  defp maybe_filter_by_player(query, player_id), do: where(query, [m], m.player_id == ^player_id)
 
   defp broadcast_update(match_id) do
     Topics.broadcast(Topics.matches_updates(), {:match_updated, match_id})

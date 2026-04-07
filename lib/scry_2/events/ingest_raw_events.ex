@@ -23,10 +23,17 @@ defmodule Scry2.Events.IngestRawEvents do
   On each raw event broadcast:
 
     1. Load the `%EventRecord{}` via `MtgaLogIngestion.get_event!/1`
-    2. Feed it through `IdentifyDomainEvents.translate/2` with the configured
-       `mtga_self_user_id`
+    2. Feed it through `IdentifyDomainEvents.translate/2` with `self_user_id`
     3. For each resulting domain event struct, call `Events.append!/2`
     4. Mark the raw event `processed` so it doesn't re-translate on restart
+
+  ## Self-user auto-detection
+
+  `self_user_id` is seeded from `Config.get(:mtga_self_user_id)` at init.
+  When a `%SessionStarted{}` domain event is produced, the `client_id` is
+  captured into GenServer state and used for all subsequent translations.
+  This eliminates the need for manual config — the first
+  `AuthenticateResponse` in the log auto-detects the player.
 
   Translation errors are caught and logged via `MtgaLogIngestion.mark_error!/2`.
   The GenServer never crashes on bad data — malformed events are a
@@ -48,6 +55,7 @@ defmodule Scry2.Events.IngestRawEvents do
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.EventRecord
+  alias Scry2.Players
   alias Scry2.Topics
 
   def start_link(opts \\ []) do
@@ -58,7 +66,13 @@ defmodule Scry2.Events.IngestRawEvents do
   @impl true
   def init(_opts) do
     Topics.subscribe(Topics.mtga_logs_events())
-    {:ok, %{match_context: %{current_match_id: nil, current_game_number: nil}}}
+
+    {:ok,
+     %{
+       self_user_id: Config.get(:mtga_self_user_id),
+       player_id: nil,
+       match_context: %{current_match_id: nil, current_game_number: nil}
+     }}
   end
 
   @impl true
@@ -86,14 +100,27 @@ defmodule Scry2.Events.IngestRawEvents do
   # domain event to the log, and update match_context state from the
   # produced events (ADR-022).
   defp process_raw_event(record, state) do
-    self_user_id = Config.get(:mtga_self_user_id)
+    self_user_id = state.self_user_id
     match_context = state.match_context
 
-    domain_events =
+    {domain_events, translation_warnings} =
       IdentifyDomainEvents.translate(record, self_user_id, match_context)
 
     unless IdentifyDomainEvents.recognized?(record.event_type) do
       Log.warning(:ingester, "unrecognized MTGA event type: #{record.event_type}")
+    end
+
+    for warning <- translation_warnings do
+      Log.warning(
+        :ingester,
+        "translation: #{warning.category} raw_id=#{record.id} type=#{record.event_type} — #{warning.detail}"
+      )
+    end
+
+    # If a handled type produced no events but had warnings, record the error
+    if domain_events == [] and translation_warnings != [] and
+         IdentifyDomainEvents.recognized?(record.event_type) do
+      MtgaLogIngestion.mark_error!(record.id, translation_warnings)
     end
 
     case domain_events do
@@ -102,9 +129,16 @@ defmodule Scry2.Events.IngestRawEvents do
         state
 
       events ->
-        for event <- events do
-          Events.append!(event, record)
-        end
+        # Update state first so SessionStarted can discover the player
+        # before we stamp player_id on the events.
+        new_state = update_state(state, events)
+
+        events
+        |> stamp_player_id(new_state.player_id, record)
+        |> Enum.with_index()
+        |> Enum.each(fn {event, index} ->
+          Events.append!(event, record, sequence: index)
+        end)
 
         MtgaLogIngestion.mark_processed!(record.id)
 
@@ -113,15 +147,33 @@ defmodule Scry2.Events.IngestRawEvents do
           "translated raw id=#{record.id} type=#{record.event_type} → #{length(events)} domain events"
         )
 
-        update_match_context(state, events)
+        new_state
     end
   end
 
-  # Update match_context from produced domain events. MatchCreated sets
-  # the current match. DeckSubmitted signals a game start (ConnectResp
-  # fires per game). MatchCompleted clears both.
-  defp update_match_context(state, events) do
+  # Update GenServer state from produced domain events.
+  #
+  # SessionStarted: auto-detect self_user_id from client_id. This is
+  #   critical — without it, self/opponent identification falls back to
+  #   systemSeatId == 1, which is wrong whenever the player is seat 2.
+  #   The AuthenticateResponse that produces SessionStarted fires before
+  #   any match events, so the ID is always available in time.
+  #
+  # MatchCreated: set current_match_id for game-level event correlation.
+  # DeckSubmitted: increment game number (ConnectResp fires per game).
+  # MatchCompleted: clear match context for the next match.
+  defp update_state(state, events) do
     Enum.reduce(events, state, fn
+      %Scry2.Events.SessionStarted{client_id: client_id, screen_name: screen_name}, acc
+      when is_binary(client_id) ->
+        player = Players.find_or_create!(client_id, screen_name || client_id)
+
+        if acc.self_user_id != client_id do
+          Log.info(:ingester, "auto-detected player: #{player.screen_name} (#{client_id})")
+        end
+
+        %{acc | self_user_id: client_id, player_id: player.id}
+
       %Scry2.Events.MatchCreated{mtga_match_id: match_id}, acc ->
         put_in(acc, [:match_context, :current_match_id], match_id)
 
@@ -135,5 +187,18 @@ defmodule Scry2.Events.IngestRawEvents do
       _, acc ->
         acc
     end)
+  end
+
+  # Inject player_id into each domain event struct. SessionStarted events
+  # set the player_id (they discover the player), so they stamp themselves.
+  defp stamp_player_id(events, player_id, record) do
+    if is_nil(player_id) do
+      Log.warning(
+        :ingester,
+        "no player context for raw id=#{record.id} type=#{record.event_type} — events before first SessionStarted"
+      )
+    end
+
+    Enum.map(events, fn event -> %{event | player_id: player_id} end)
   end
 end

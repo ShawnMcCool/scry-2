@@ -46,7 +46,7 @@ defmodule Scry2Web.CardsLive do
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Cards</h1>
         <span class="text-sm text-base-content/60">{@total} total</span>

@@ -19,7 +19,10 @@ defmodule Scry2Web.MatchesLive do
   end
 
   def handle_params(_params, _uri, socket) do
-    {:noreply, assign(socket, matches: Matches.list_matches(limit: 100), match: nil)}
+    player_id = socket.assigns[:active_player_id]
+
+    {:noreply,
+     assign(socket, matches: Matches.list_matches(limit: 100, player_id: player_id), match: nil)}
   end
 
   @impl true
@@ -33,7 +36,7 @@ defmodule Scry2Web.MatchesLive do
   def render(%{match: nil} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <h1 class="text-2xl font-semibold">Matches</h1>
 
       <p :if={@matches == []} class="text-base-content/60">
@@ -79,7 +82,7 @@ defmodule Scry2Web.MatchesLive do
   def render(%{match: _} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <.link navigate={~p"/matches"} class="link text-sm">&larr; All matches</.link>
 
       <h1 class="text-2xl font-semibold">{@match.event_name}</h1>

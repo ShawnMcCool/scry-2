@@ -67,6 +67,7 @@ defmodule Scry2.Drafts.UpdateFromEvent do
 
   defp project(%DraftStarted{} = event) do
     attrs = %{
+      player_id: event.player_id,
       mtga_draft_id: event.mtga_draft_id,
       event_name: event.event_name,
       format: "quick_draft",
@@ -85,7 +86,7 @@ defmodule Scry2.Drafts.UpdateFromEvent do
   end
 
   defp project(%DraftPickMade{} = event) do
-    draft = Drafts.get_by_mtga_id(event.mtga_draft_id)
+    draft = Drafts.get_by_mtga_id(event.mtga_draft_id, event.player_id)
 
     if draft do
       attrs = %{

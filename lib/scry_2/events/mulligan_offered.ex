@@ -20,6 +20,7 @@ defmodule Scry2.Events.MulliganOffered do
 
   @enforce_keys [:seat_id, :hand_size, :occurred_at]
   defstruct [
+    :player_id,
     :mtga_match_id,
     :seat_id,
     :hand_size,
@@ -27,6 +28,7 @@ defmodule Scry2.Events.MulliganOffered do
   ]
 
   @type t :: %__MODULE__{
+          player_id: String.t() | nil,
           mtga_match_id: String.t() | nil,
           seat_id: integer(),
           hand_size: integer(),

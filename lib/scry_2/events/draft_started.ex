@@ -25,6 +25,7 @@ defmodule Scry2.Events.DraftStarted do
 
   @enforce_keys [:mtga_draft_id, :occurred_at]
   defstruct [
+    :player_id,
     :mtga_draft_id,
     :event_name,
     :set_code,
@@ -32,6 +33,7 @@ defmodule Scry2.Events.DraftStarted do
   ]
 
   @type t :: %__MODULE__{
+          player_id: String.t() | nil,
           mtga_draft_id: String.t(),
           event_name: String.t() | nil,
           set_code: String.t() | nil,

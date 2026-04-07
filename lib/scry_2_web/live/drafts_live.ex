@@ -19,7 +19,10 @@ defmodule Scry2Web.DraftsLive do
   end
 
   def handle_params(_params, _uri, socket) do
-    {:noreply, assign(socket, drafts: Drafts.list_drafts(limit: 100), draft: nil)}
+    player_id = socket.assigns[:active_player_id]
+
+    {:noreply,
+     assign(socket, drafts: Drafts.list_drafts(limit: 100, player_id: player_id), draft: nil)}
   end
 
   @impl true
@@ -33,7 +36,7 @@ defmodule Scry2Web.DraftsLive do
   def render(%{draft: nil} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <h1 class="text-2xl font-semibold">Drafts</h1>
 
       <p :if={@drafts == []} class="text-base-content/60">
@@ -73,7 +76,7 @@ defmodule Scry2Web.DraftsLive do
   def render(%{draft: _} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <.link navigate={~p"/drafts"} class="link text-sm">&larr; All drafts</.link>
 
       <h1 class="text-2xl font-semibold">{@draft.event_name}</h1>

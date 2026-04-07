@@ -25,6 +25,7 @@ defmodule Scry2.Events.DraftPickMade do
 
   @enforce_keys [:mtga_draft_id, :pack_number, :pick_number, :picked_arena_id, :occurred_at]
   defstruct [
+    :player_id,
     :mtga_draft_id,
     :pack_number,
     :pick_number,
@@ -34,6 +35,7 @@ defmodule Scry2.Events.DraftPickMade do
   ]
 
   @type t :: %__MODULE__{
+          player_id: String.t() | nil,
           mtga_draft_id: String.t(),
           pack_number: pos_integer(),
           pick_number: pos_integer(),

@@ -17,14 +17,16 @@ defmodule Scry2Web.Router do
   scope "/", Scry2Web do
     pipe_through :browser
 
-    live "/", DashboardLive, :index
-    live "/matches", MatchesLive, :index
-    live "/matches/:id", MatchesLive, :show
-    live "/cards", CardsLive, :index
-    live "/drafts", DraftsLive, :index
-    live "/drafts/:id", DraftsLive, :show
-    live "/settings", SettingsLive, :index
-    live "/console", ConsolePageLive, :index
+    live_session :default, on_mount: {Scry2Web.PlayerScope, :default} do
+      live "/", DashboardLive, :index
+      live "/matches", MatchesLive, :index
+      live "/matches/:id", MatchesLive, :show
+      live "/cards", CardsLive, :index
+      live "/drafts", DraftsLive, :index
+      live "/drafts/:id", DraftsLive, :show
+      live "/settings", SettingsLive, :index
+      live "/console", ConsolePageLive, :index
+    end
   end
 
   # Other scopes may use custom stacks.

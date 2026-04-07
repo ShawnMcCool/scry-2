@@ -3,6 +3,7 @@ defmodule Scry2.Drafts.Draft do
   import Ecto.Changeset
 
   schema "drafts_drafts" do
+    field :player_id, :integer
     field :mtga_draft_id, :string
     field :event_name, :string
     field :format, :string
@@ -20,6 +21,7 @@ defmodule Scry2.Drafts.Draft do
   def changeset(draft, attrs) do
     draft
     |> cast(attrs, [
+      :player_id,
       :mtga_draft_id,
       :event_name,
       :format,
@@ -30,6 +32,6 @@ defmodule Scry2.Drafts.Draft do
       :losses
     ])
     |> validate_required([:mtga_draft_id])
-    |> unique_constraint(:mtga_draft_id)
+    |> unique_constraint([:player_id, :mtga_draft_id])
   end
 end

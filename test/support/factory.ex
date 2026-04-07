@@ -20,8 +20,20 @@ defmodule Scry2.TestFactory do
   alias Scry2.Matches.{DeckSubmission, Game, Match}
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
+  alias Scry2.Players
+  alias Scry2.Players.Player
 
   # ── build_* (no DB) ─────────────────────────────────────────────────────
+
+  def build_player(attrs \\ %{}) do
+    defaults = %{
+      mtga_user_id: "TESTUSER" <> random_suffix(),
+      screen_name: "Test Player",
+      first_seen_at: DateTime.utc_now(:second)
+    }
+
+    struct(Player, Map.merge(defaults, Map.new(attrs)))
+  end
 
   def build_set(attrs \\ %{}) do
     defaults = %{code: "TST", name: "Test Set", released_at: ~D[2026-01-01]}
@@ -115,7 +127,7 @@ defmodule Scry2.TestFactory do
     defaults = %{
       event_type: "MatchStart",
       mtga_timestamp: DateTime.utc_now(:second),
-      file_offset: 0,
+      file_offset: System.unique_integer([:positive]),
       source_file: "/tmp/fixture-player.log",
       raw_json: ~s({"event":"MatchStart"}),
       processed: false,
@@ -126,6 +138,13 @@ defmodule Scry2.TestFactory do
   end
 
   # ── create_* (persisted) ────────────────────────────────────────────────
+
+  def create_player(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    mtga_user_id = attrs[:mtga_user_id] || "TESTUSER" <> random_suffix()
+    screen_name = attrs[:screen_name] || "Test Player"
+    Players.find_or_create!(mtga_user_id, screen_name)
+  end
 
   def create_set(attrs \\ %{}) do
     attrs |> build_set() |> Map.from_struct() |> Cards.upsert_set!()
@@ -177,11 +196,14 @@ defmodule Scry2.TestFactory do
   end
 
   def create_event_record(attrs \\ %{}) do
-    attrs
-    |> build_event_record()
-    |> Map.from_struct()
-    |> Map.drop([:__meta__])
-    |> MtgaLogIngestion.insert_event!()
+    record =
+      attrs
+      |> build_event_record()
+      |> Map.from_struct()
+      |> Map.drop([:__meta__])
+      |> MtgaLogIngestion.insert_event!()
+
+    record || raise "create_event_record: duplicate (source_file, file_offset)"
   end
 
   def create_cursor(attrs \\ %{}) do
@@ -199,5 +221,5 @@ defmodule Scry2.TestFactory do
   defp random_suffix, do: Integer.to_string(:rand.uniform(1_000_000_000), 36)
 
   # Silence unused-alias warnings for test support code.
-  @compile {:no_warn_unused, [Cursor, EventRecord, DeckSubmission]}
+  @compile {:no_warn_unused, [Cursor, EventRecord, DeckSubmission, Players]}
 end

@@ -34,6 +34,7 @@ defmodule Scry2.Events.DeckSubmitted do
 
   @enforce_keys [:mtga_match_id, :main_deck, :occurred_at]
   defstruct [
+    :player_id,
     :mtga_match_id,
     :mtga_deck_id,
     :main_deck,
@@ -44,6 +45,7 @@ defmodule Scry2.Events.DeckSubmitted do
   @type card_count :: %{arena_id: integer(), count: pos_integer()}
 
   @type t :: %__MODULE__{
+          player_id: String.t() | nil,
           mtga_match_id: String.t(),
           mtga_deck_id: String.t() | nil,
           main_deck: [card_count()],

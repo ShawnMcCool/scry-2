@@ -27,6 +27,7 @@ defmodule Scry2.Events.GameCompleted do
 
   @enforce_keys [:mtga_match_id, :game_number, :occurred_at]
   defstruct [
+    :player_id,
     :mtga_match_id,
     :game_number,
     :on_play,
@@ -41,6 +42,7 @@ defmodule Scry2.Events.GameCompleted do
   ]
 
   @type t :: %__MODULE__{
+          player_id: String.t() | nil,
           mtga_match_id: String.t(),
           game_number: pos_integer(),
           on_play: boolean() | nil,
