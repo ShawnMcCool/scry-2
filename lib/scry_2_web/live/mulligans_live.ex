@@ -6,6 +6,7 @@ defmodule Scry2Web.MulligansLive do
   use Scry2Web, :live_view
 
   alias Scry2.Events
+  alias Scry2.Matches
   alias Scry2.Topics
   alias Scry2Web.MulligansHelpers
 
@@ -13,14 +14,14 @@ defmodule Scry2Web.MulligansLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.domain_events())
 
-    {:ok, assign(socket, matches: [], reload_timer: nil)}
+    {:ok, assign(socket, events: [], reload_timer: nil)}
   end
 
   @impl true
   def handle_params(_params, _uri, socket) do
     player_id = socket.assigns[:active_player_id]
-    matches = load_mulligans(player_id)
-    {:noreply, assign(socket, matches: matches)}
+    events = load_mulligans(player_id)
+    {:noreply, assign(socket, events: events)}
   end
 
   @impl true
@@ -32,7 +33,7 @@ defmodule Scry2Web.MulligansLive do
 
   def handle_info(:reload_data, socket) do
     player_id = socket.assigns[:active_player_id]
-    {:noreply, assign(socket, matches: load_mulligans(player_id), reload_timer: nil)}
+    {:noreply, assign(socket, events: load_mulligans(player_id), reload_timer: nil)}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
@@ -42,53 +43,68 @@ defmodule Scry2Web.MulligansLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold mb-4">Mulligans</h1>
+      <h1 class="text-2xl font-semibold mb-6">Mulligans</h1>
 
-      <.empty_state :if={@matches == []}>
+      <.empty_state :if={@events == []}>
         No mulligan data recorded yet. Play a game with MTGA detailed logs enabled.
       </.empty_state>
 
-      <div :for={match <- @matches} class="mb-8">
-        <div class="flex items-center gap-2 mb-3">
-          <h2 class="text-sm font-semibold text-base-content/50 uppercase tracking-wider">
-            Match
+      <div class="flex flex-col gap-16">
+        <section :for={event <- @events}>
+          <h2 class="text-sm font-semibold text-base-content/40 uppercase tracking-wider mb-6">
+            {event.event_name}
           </h2>
-          <.link
-            :if={match.match_id}
-            navigate={~p"/events?match_id=#{match.match_id}"}
-            class="font-mono text-xs text-accent/70 hover:text-accent"
-          >
-            {truncate_id(match.match_id)}
-          </.link>
-        </div>
 
-        <div class="flex flex-col gap-2">
-          <div
-            :for={{offer, decision} <- match.hands}
-            class={[
-              "flex items-center gap-4 px-4 py-3 rounded-lg",
-              "bg-base-200/50 border-l-[3px]",
-              MulligansHelpers.decision_border_class(decision)
-            ]}
-          >
-            <div class="min-w-[80px]">
-              <span class={["badge badge-sm", MulligansHelpers.decision_badge_class(decision)]}>
-                {MulligansHelpers.decision_label(decision)}
-              </span>
+          <div class="flex flex-col gap-12">
+            <div :for={{game, game_index} <- Enum.with_index(event.games, 1)}>
+              <div class="text-center mb-4">
+                <span :if={length(event.games) > 1} class="text-xs text-base-content/25">
+                  Game {game_index} ·
+                </span>
+                <span class="text-xs text-base-content/25 tabular-nums">
+                  {format_game_time(game)}
+                </span>
+              </div>
+
+              <div class="flex flex-col gap-8">
+                <div
+                  :for={{offer, decision} <- game.hands}
+                  class={["flex flex-col items-center", decision == :mulliganed && "opacity-80"]}
+                >
+                  <div :if={offer.hand_arena_ids} class="mb-4">
+                    <.card_hand arena_ids={offer.hand_arena_ids} class="w-[13.5rem]" />
+                  </div>
+                  <span :if={!offer.hand_arena_ids} class="text-base-content/20 mb-4">
+                    Hand data not available in MTGA log
+                  </span>
+
+                  <div class="flex gap-8">
+                    <span class={[
+                      "px-8 py-2.5 rounded-xl text-lg font-bold tracking-wide",
+                      if(decision == :mulliganed,
+                        do: "bg-blue-500/90 text-white",
+                        else: "bg-base-content/10 text-base-content/25"
+                      )
+                    ]}>
+                      Mulligan
+                    </span>
+                    <span class={[
+                      "px-8 py-2.5 rounded-xl text-lg font-bold tracking-wide",
+                      if(decision == :kept,
+                        do: "bg-orange-500/90 text-white",
+                        else: "bg-base-content/10 text-base-content/25"
+                      )
+                    ]}>
+                      Keep
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
-
-            <div :if={offer.hand_arena_ids} class="flex-1">
-              <.card_hand arena_ids={offer.hand_arena_ids} class="w-12" />
-            </div>
-            <span :if={!offer.hand_arena_ids} class="flex-1 text-base-content/30">
-              —
-            </span>
-
-            <span class="text-xs text-base-content/40 tabular-nums whitespace-nowrap">
-              {offer.hand_size} cards
-            </span>
           </div>
-        </div>
+
+          <div class="border-t border-base-content/5 mt-10" />
+        </section>
       </div>
     </Layouts.app>
     """
@@ -99,6 +115,21 @@ defmodule Scry2Web.MulligansLive do
       Events.list_mulligans(player_id: player_id)
       |> MulligansHelpers.group_by_match()
 
+    # Build a lookup of match_id → Match for event name resolution.
+    match_ids = Enum.map(matches, & &1.match_id) |> Enum.reject(&is_nil/1)
+
+    match_lookup =
+      match_ids
+      |> Enum.reduce(%{}, fn match_id, acc ->
+        case Matches.get_by_mtga_id(match_id) do
+          nil -> acc
+          match -> Map.put(acc, match_id, match)
+        end
+      end)
+
+    events = MulligansHelpers.group_by_event(matches, match_lookup)
+
+    # Pre-cache card images.
     arena_ids =
       matches
       |> Enum.flat_map(fn %{hands: hands} ->
@@ -110,12 +141,13 @@ defmodule Scry2Web.MulligansLive do
 
     if arena_ids != [], do: Scry2.Cards.ImageCache.ensure_cached(arena_ids)
 
-    matches
+    events
   end
 
-  defp truncate_id(id) when is_binary(id) and byte_size(id) > 12 do
-    String.slice(id, 0, 12) <> "…"
+  defp format_game_time(%{hands: [{first, _} | _]}) do
+    first.occurred_at
+    |> Calendar.strftime("%b %d, %Y · %H:%M")
   end
 
-  defp truncate_id(id), do: id
+  defp format_game_time(_), do: ""
 end

@@ -43,7 +43,7 @@ defmodule Scry2Web.MulligansHelpersTest do
 
       result = MulligansHelpers.group_by_match([match_a_1, match_b_1, match_a_2])
 
-      assert [%{match_id: "match-b"}, %{match_id: "match-a"}] = result
+      assert [%{match_id: "match-a"}, %{match_id: "match-b"}] = result
 
       match_a = Enum.find(result, &(&1.match_id == "match-a"))
       assert [{_, :mulliganed}, {_, :kept}] = match_a.hands
@@ -52,22 +52,15 @@ defmodule Scry2Web.MulligansHelpersTest do
 
   describe "decision_label/1" do
     test "returns human labels" do
-      assert MulligansHelpers.decision_label(:kept) == "Kept"
-      assert MulligansHelpers.decision_label(:mulliganed) == "Mulliganed"
+      assert MulligansHelpers.decision_label(:kept) == "Keep"
+      assert MulligansHelpers.decision_label(:mulliganed) == "Mulligan"
     end
   end
 
   describe "decision_badge_class/1" do
     test "returns badge classes" do
-      assert MulligansHelpers.decision_badge_class(:kept) == "badge-warning badge-outline"
-      assert MulligansHelpers.decision_badge_class(:mulliganed) == "badge-info badge-outline"
-    end
-  end
-
-  describe "decision_border_class/1" do
-    test "returns border accent classes" do
-      assert MulligansHelpers.decision_border_class(:kept) == "border-warning"
-      assert MulligansHelpers.decision_border_class(:mulliganed) == "border-info"
+      assert MulligansHelpers.decision_badge_class(:kept) == "bg-orange-500/90 text-white"
+      assert MulligansHelpers.decision_badge_class(:mulliganed) == "bg-blue-500/90 text-white"
     end
   end
 

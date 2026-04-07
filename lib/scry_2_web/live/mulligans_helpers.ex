@@ -32,7 +32,8 @@ defmodule Scry2Web.MulligansHelpers do
   Groups mulligan events by match, returning a list of
   `%{match_id: String.t(), hands: [{MulliganOffered.t(), :kept | :mulliganed}]}`.
 
-  Each match's hands are ordered chronologically.
+  Games are sorted oldest-first (chronological play order within an event).
+  Hands within each game are sorted oldest-first (mulligan sequence order).
   """
   @spec group_by_match([MulliganOffered.t()]) :: [map()]
   def group_by_match(mulligan_events) do
@@ -43,28 +44,77 @@ defmodule Scry2Web.MulligansHelpers do
     end)
     |> Enum.sort_by(
       fn %{hands: [{first, _} | _]} -> first.occurred_at end,
+      {:asc, DateTime}
+    )
+  end
+
+  @doc """
+  Groups matches by event name, producing a two-level hierarchy:
+
+      [%{event_name: "Quick Draft — FDN", games: [%{match_id: ..., hands: ...}, ...]}]
+
+  `match_lookup` is a map of `%{mtga_match_id => %Match{}}` used to
+  resolve event names. Matches without a lookup entry are grouped under
+  "Unknown Event".
+
+  Events are sorted newest-first. Games within each event are also
+  newest-first.
+  """
+  def group_by_event(matches, match_lookup) do
+    matches
+    |> Enum.group_by(fn %{match_id: match_id} ->
+      case Map.get(match_lookup, match_id) do
+        %{event_name: name} when is_binary(name) and name != "" -> format_event_name(name)
+        _ -> "Unknown Event"
+      end
+    end)
+    |> Enum.map(fn {event_name, games} ->
+      %{event_name: event_name, games: games}
+    end)
+    |> Enum.sort_by(
+      fn %{games: [%{hands: [{first, _} | _]} | _]} -> first.occurred_at end,
       {:desc, DateTime}
     )
+  end
+
+  @doc """
+  Formats an MTGA event name into a readable label.
+
+  Examples:
+      "QuickDraft_FDN_20260323" → "Quick Draft — FDN"
+      "PremierDraft_LCI_20260401" → "Premier Draft — LCI"
+      "CompDraft_BLB_20260501" → "Comp Draft — BLB"
+      "Ladder" → "Ladder"
+  """
+  def format_event_name(event_name) when is_binary(event_name) do
+    case String.split(event_name, "_") do
+      [prefix, set_code | _] ->
+        label =
+          prefix
+          |> String.replace("QuickDraft", "Quick Draft")
+          |> String.replace("PremierDraft", "Premier Draft")
+          |> String.replace("CompDraft", "Comp Draft")
+          |> String.replace("TradDraft", "Traditional Draft")
+          |> String.replace("BotDraft", "Bot Draft")
+
+        "#{label} — #{set_code}"
+
+      _ ->
+        event_name
+    end
   end
 
   @doc """
   Returns a short label for the decision.
   """
   @spec decision_label(:kept | :mulliganed) :: String.t()
-  def decision_label(:kept), do: "Kept"
-  def decision_label(:mulliganed), do: "Mulliganed"
+  def decision_label(:kept), do: "Keep"
+  def decision_label(:mulliganed), do: "Mulligan"
 
   @doc """
   Returns a CSS class for the decision badge.
   """
   @spec decision_badge_class(:kept | :mulliganed) :: String.t()
-  def decision_badge_class(:kept), do: "badge-warning badge-outline"
-  def decision_badge_class(:mulliganed), do: "badge-info badge-outline"
-
-  @doc """
-  Returns a CSS border class for the hand row accent.
-  """
-  @spec decision_border_class(:kept | :mulliganed) :: String.t()
-  def decision_border_class(:kept), do: "border-warning"
-  def decision_border_class(:mulliganed), do: "border-info"
+  def decision_badge_class(:kept), do: "bg-orange-500/90 text-white"
+  def decision_badge_class(:mulliganed), do: "bg-blue-500/90 text-white"
 end
