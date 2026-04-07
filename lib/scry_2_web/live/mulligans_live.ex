@@ -2,11 +2,13 @@ defmodule Scry2Web.MulligansLive do
   @moduledoc """
   LiveView for browsing mulligan decisions — every opening hand seen
   and whether it was kept or mulliganed.
+
+  Data comes from the `mulligans_mulligan_listing` projection table
+  (ADR-026), not from the raw domain event log.
   """
   use Scry2Web, :live_view
 
-  alias Scry2.Events
-  alias Scry2.Matches
+  alias Scry2.Mulligans
   alias Scry2.Topics
   alias Scry2Web.MulligansHelpers
 
@@ -68,19 +70,42 @@ defmodule Scry2Web.MulligansLive do
 
               <div class="flex flex-col gap-8">
                 <div
-                  :for={{offer, decision} <- game.hands}
+                  :for={{hand, decision} <- game.hands}
                   class={["flex flex-col items-center", decision == :mulliganed && "opacity-80"]}
                 >
-                  <div :if={offer.hand_arena_ids} class="mb-4">
-                    <.card_hand arena_ids={offer.hand_arena_ids} class="w-[13.5rem]" />
+                  <div :if={hand.arena_ids != []} class="mb-3">
+                    <.card_hand arena_ids={hand.arena_ids} class="w-[10rem]" />
                   </div>
-                  <span :if={!offer.hand_arena_ids} class="text-base-content/20 mb-4">
+                  <span :if={hand.arena_ids == []} class="text-base-content/20 mb-3">
                     Hand data not available in MTGA log
                   </span>
 
+                  <div
+                    :if={hand.land_count}
+                    class="flex items-center gap-4 mb-3 text-xs text-base-content/40"
+                  >
+                    <span>
+                      {hand.land_count} lands · {hand.nonland_count} spells
+                    </span>
+                    <span :if={hand.total_cmc && hand.total_cmc > 0}>
+                      avg
+                      <span class="text-base-content/60 tabular-nums">
+                        {Float.round(hand.total_cmc / max(hand.nonland_count || 1, 1), 1)}
+                      </span>
+                      cmc
+                    </span>
+                    <span
+                      :for={{color, count} <- hand.color_distribution}
+                      class="flex items-center gap-0.5"
+                    >
+                      <span class={mana_color_class(color)}>{color}</span>
+                      <span class="text-base-content/25">×{count}</span>
+                    </span>
+                  </div>
+
                   <div class="flex gap-8">
                     <span class={[
-                      "px-8 py-2.5 rounded-xl text-lg font-bold tracking-wide",
+                      "px-6 py-2 rounded-xl text-base font-bold tracking-wide",
                       if(decision == :mulliganed,
                         do: "bg-blue-500/90 text-white",
                         else: "bg-base-content/10 text-base-content/25"
@@ -89,7 +114,7 @@ defmodule Scry2Web.MulligansLive do
                       Mulligan
                     </span>
                     <span class={[
-                      "px-8 py-2.5 rounded-xl text-lg font-bold tracking-wide",
+                      "px-6 py-2 rounded-xl text-base font-bold tracking-wide",
                       if(decision == :kept,
                         do: "bg-orange-500/90 text-white",
                         else: "bg-base-content/10 text-base-content/25"
@@ -111,31 +136,14 @@ defmodule Scry2Web.MulligansLive do
   end
 
   defp load_mulligans(player_id) do
-    matches =
-      Events.list_mulligans(player_id: player_id)
-      |> MulligansHelpers.group_by_match()
-
-    # Build a lookup of match_id → Match for event name resolution.
-    match_ids = Enum.map(matches, & &1.match_id) |> Enum.reject(&is_nil/1)
-
-    match_lookup =
-      match_ids
-      |> Enum.reduce(%{}, fn match_id, acc ->
-        case Matches.get_by_mtga_id(match_id) do
-          nil -> acc
-          match -> Map.put(acc, match_id, match)
-        end
-      end)
-
-    events = MulligansHelpers.group_by_event(matches, match_lookup)
+    hands = Mulligans.list_hands(player_id: player_id)
+    events = MulligansHelpers.group_for_display(hands)
 
     # Pre-cache card images.
     arena_ids =
-      matches
-      |> Enum.flat_map(fn %{hands: hands} ->
-        Enum.flat_map(hands, fn {offer, _decision} ->
-          offer.hand_arena_ids || []
-        end)
+      hands
+      |> Enum.flat_map(fn hand ->
+        (hand.hand_arena_ids && hand.hand_arena_ids["cards"]) || []
       end)
       |> Enum.uniq()
 
