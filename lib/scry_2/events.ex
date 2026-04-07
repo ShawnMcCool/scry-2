@@ -260,6 +260,53 @@ defmodule Scry2.Events do
   def subscribe, do: Topics.subscribe(Topics.domain_events())
 
   @doc """
+  Full reingest — clears all derived data and rebuilds from raw MTGA events.
+
+  1. Deletes all projections (matches, drafts, deck submissions, etc.)
+  2. Deletes all domain events
+  3. Re-marks raw events as unprocessed
+  4. Re-broadcasts each raw event for `IngestRawEvents` to retranslate
+
+  Call this whenever the translator has changed or domain events need
+  to be regenerated from scratch. Safe to call at any time — raw MTGA
+  events are never deleted.
+
+  Requires `IngestRawEvents` to be running (it is in the default
+  supervision tree). Blocks until all raw events have been re-broadcast.
+  """
+  @spec reingest!() :: :ok
+  def reingest! do
+    require Scry2.Log, as: Log
+    Log.info(:ingester, "reingest: starting full reingest from raw events")
+
+    # 1. Clear projections (FK-safe order: children before parents)
+    Repo.delete_all(Scry2.Matches.DeckSubmission)
+    Repo.delete_all(Scry2.Matches.Game)
+    Repo.delete_all(Scry2.Matches.Match)
+    Repo.delete_all(Scry2.Drafts.Pick)
+    Repo.delete_all(Scry2.Drafts.Draft)
+
+    # 2. Clear domain events
+    Repo.delete_all(EventRecord)
+
+    # 3. Re-mark raw events as unprocessed
+    {raw_count, _} =
+      Scry2.MtgaLogIngestion.EventRecord
+      |> Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
+
+    # 4. Re-broadcast each raw event for retranslation
+    Scry2.MtgaLogIngestion.EventRecord
+    |> order_by([e], asc: e.id)
+    |> Repo.all()
+    |> Enum.each(fn raw ->
+      Topics.broadcast(Topics.mtga_logs_events(), {:event, raw})
+    end)
+
+    Log.info(:ingester, "reingest: re-broadcast #{raw_count} raw events for retranslation")
+    :ok
+  end
+
+  @doc """
   Replays every persisted domain event through the current projectors
   by re-broadcasting them on `domain:events`. Used to rebuild projection
   tables after a projector's logic changes.
