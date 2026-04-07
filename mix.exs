@@ -70,6 +70,7 @@ defmodule Scry2.MixProject do
       {:nimble_csv, "~> 1.2"},
       {:toml, "~> 0.7"},
       # Dev-only tooling
+      {:tidewave, "~> 0.5", only: :dev},
       {:visualizer, path: "../visualizer"}
     ]
   end

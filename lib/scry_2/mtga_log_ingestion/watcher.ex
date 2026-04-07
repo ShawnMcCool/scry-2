@@ -184,14 +184,24 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
       {:ok, %{bytes: bytes, new_offset: new_offset, rotated?: rotated, inode: inode}} ->
         base_offset = if rotated, do: 0, else: offset
 
-        events = ExtractEventsFromLog.parse_chunk(bytes, path, base_offset)
-        Enum.each(events, &persist_event/1)
+        {events, warnings} = ExtractEventsFromLog.parse_chunk(bytes, path, base_offset)
 
-        MtgaLogIngestion.put_cursor!(%{
-          file_path: path,
-          byte_offset: new_offset,
-          inode: inode
-        })
+        for warning <- warnings do
+          Log.warning(
+            :parser,
+            "#{warning.category} at offset #{warning.file_offset}: #{warning.detail}"
+          )
+        end
+
+        Scry2.Repo.transaction(fn ->
+          Enum.each(events, &persist_event/1)
+
+          MtgaLogIngestion.put_cursor!(%{
+            file_path: path,
+            byte_offset: new_offset,
+            inode: inode
+          })
+        end)
 
         %{state | offset: new_offset, inode: inode}
 
