@@ -40,15 +40,29 @@ defmodule Scry2.MtgaLogIngestion do
 
   # ── Events ──────────────────────────────────────────────────────────────
 
-  @doc "Persists a raw parsed event and broadcasts `{:event, record}`."
-  def insert_event!(attrs) do
-    record =
-      %EventRecord{}
-      |> EventRecord.changeset(Map.new(attrs))
-      |> Repo.insert!()
+  @doc """
+  Persists a raw parsed event and broadcasts `{:event, record}`.
 
-    Topics.broadcast(Topics.mtga_logs_events(), {:event, record})
-    record
+  Idempotent — if a row with the same `(source_file, file_offset)` already
+  exists, the insert is silently skipped and no broadcast fires. This
+  prevents duplicate raw events when the watcher re-reads overlapping byte
+  ranges after a crash/restart.
+  """
+  def insert_event!(attrs) do
+    changeset = EventRecord.changeset(%EventRecord{}, Map.new(attrs))
+
+    case Repo.insert(changeset,
+           on_conflict: :nothing,
+           conflict_target: [:source_file, :file_offset]
+         ) do
+      {:ok, %{id: id} = record} when not is_nil(id) ->
+        Topics.broadcast(Topics.mtga_logs_events(), {:event, record})
+        record
+
+      {:ok, _record} ->
+        # Conflict — row already exists, skip broadcast
+        nil
+    end
   end
 
   @doc """
@@ -92,6 +106,9 @@ defmodule Scry2.MtgaLogIngestion do
 
   @doc "Records a processing error without marking the event as processed."
   def mark_error!(id, reason) when is_integer(id) do
+    require Scry2.Log, as: Log
+    Log.warning(:ingester, "processing error on event #{id}: #{inspect(reason)}")
+
     {1, _} =
       from(r in EventRecord, where: r.id == ^id)
       |> Repo.update_all(set: [processing_error: inspect(reason)])
@@ -104,6 +121,24 @@ defmodule Scry2.MtgaLogIngestion do
     from(r in EventRecord, group_by: r.event_type, select: {r.event_type, count(r.id)})
     |> Repo.all()
     |> Map.new()
+  end
+
+  @doc "Returns the count of events with a non-nil processing_error."
+  def count_errors do
+    from(r in EventRecord, where: not is_nil(r.processing_error))
+    |> Repo.aggregate(:count)
+  end
+
+  @doc "Returns recent errored events, newest first."
+  def list_errors(opts \\ []) do
+    limit_count = Keyword.get(opts, :limit, 20)
+
+    from(r in EventRecord,
+      where: not is_nil(r.processing_error),
+      order_by: [desc: r.id],
+      limit: ^limit_count
+    )
+    |> Repo.all()
   end
 
   # ── Cursor ──────────────────────────────────────────────────────────────
