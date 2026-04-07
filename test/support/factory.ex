@@ -13,7 +13,7 @@ defmodule Scry2.TestFactory do
   """
 
   alias Scry2.Cards
-  alias Scry2.Cards.{Card, Set}
+  alias Scry2.Cards.{Card, MtgaCard, ScryfallCard, Set}
   alias Scry2.Drafts
   alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Matches
@@ -140,6 +140,48 @@ defmodule Scry2.TestFactory do
     struct(MasteryProgress, Map.merge(defaults, Map.new(attrs)))
   end
 
+  def build_mtga_card(attrs \\ %{}) do
+    defaults = %{
+      arena_id: :rand.uniform(1_000_000),
+      name: "Test MTGA Card",
+      expansion_code: "TST",
+      collector_number: "1",
+      rarity: 2,
+      colors: "",
+      types: "2",
+      is_token: false,
+      is_digital_only: false,
+      art_id: 12_345,
+      power: "",
+      toughness: ""
+    }
+
+    struct(MtgaCard, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_scryfall_card(attrs \\ %{}) do
+    defaults = %{
+      scryfall_id: "scryfallid-" <> random_suffix(),
+      oracle_id: "oracleid-" <> random_suffix(),
+      arena_id: nil,
+      name: "Test Scryfall Card",
+      set_code: "tst",
+      collector_number: "1",
+      type_line: "Creature — Test",
+      oracle_text: "Test oracle text.",
+      mana_cost: "{1}{W}",
+      cmc: 2.0,
+      colors: "W",
+      color_identity: "W",
+      rarity: "common",
+      layout: "normal",
+      image_uris: %{"normal" => "https://example.com/card.jpg"},
+      raw: %{}
+    }
+
+    struct(ScryfallCard, Map.merge(defaults, Map.new(attrs)))
+  end
+
   def build_event_record(attrs \\ %{}) do
     defaults = %{
       event_type: "MatchStart",
@@ -212,6 +254,22 @@ defmodule Scry2.TestFactory do
     |> Drafts.upsert_pick!()
   end
 
+  def create_mtga_card(attrs \\ %{}) do
+    attrs
+    |> build_mtga_card()
+    |> Map.from_struct()
+    |> Map.drop([:__meta__])
+    |> then(&Cards.upsert_mtga_card!/1)
+  end
+
+  def create_scryfall_card(attrs \\ %{}) do
+    attrs
+    |> build_scryfall_card()
+    |> Map.from_struct()
+    |> Map.drop([:__meta__])
+    |> then(&Cards.upsert_scryfall_card!/1)
+  end
+
   def create_event_record(attrs \\ %{}) do
     record =
       attrs
@@ -238,5 +296,14 @@ defmodule Scry2.TestFactory do
   defp random_suffix, do: Integer.to_string(:rand.uniform(1_000_000_000), 36)
 
   # Silence unused-alias warnings for test support code.
-  @compile {:no_warn_unused, [Cursor, EventRecord, DeckSubmission, MasteryProgress, Players]}
+  @compile {:no_warn_unused,
+            [
+              Cursor,
+              EventRecord,
+              DeckSubmission,
+              MasteryProgress,
+              MtgaCard,
+              Players,
+              ScryfallCard
+            ]}
 end

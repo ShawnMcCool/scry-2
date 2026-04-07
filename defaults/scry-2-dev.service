@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=exec
 # Patched by scripts/install-dev to the actual source directory.
 WorkingDirectory=/path/to/scry_2
+ExecStartPre=/usr/bin/mise exec -- mix ecto.migrate
 ExecStart=/usr/bin/mise exec -- mix phx.server
 Environment=MIX_ENV=dev
 Environment=MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8

@@ -67,6 +67,148 @@ defmodule Scry2.CardsTest do
     end
   end
 
+  describe "backfill_arena_id!/2" do
+    test "sets arena_id on a card that lacks one" do
+      card = TestFactory.create_card(%{lands17_id: 9300, arena_id: nil, name: "Backfill Me"})
+      assert card.arena_id == nil
+
+      {:ok, updated} = Cards.backfill_arena_id!(card, 91_300)
+
+      assert updated.arena_id == 91_300
+      assert Cards.get_by_arena_id(91_300).id == card.id
+    end
+
+    test "no-ops on a card that already has an arena_id (ADR-014)" do
+      card = TestFactory.create_card(%{lands17_id: 9301, arena_id: 91_301, name: "Already Set"})
+
+      {:ok, unchanged} = Cards.backfill_arena_id!(card, 99_999)
+
+      assert unchanged.arena_id == 91_301
+      assert Cards.get_by_arena_id(91_301).id == card.id
+      assert Cards.get_by_arena_id(99_999) == nil
+    end
+  end
+
+  describe "get_by_name_and_set/2" do
+    test "returns cards matching name and set code" do
+      set = TestFactory.create_set(%{code: "LCI", name: "Lost Caverns"})
+      card = TestFactory.create_card(%{lands17_id: 9400, name: "Dinosaur", set_id: set.id})
+
+      results = Cards.get_by_name_and_set("Dinosaur", "LCI")
+      assert length(results) == 1
+      assert hd(results).id == card.id
+    end
+
+    test "returns empty list when no match" do
+      assert Cards.get_by_name_and_set("Nonexistent Card", "ZZZ") == []
+    end
+
+    test "does not match wrong set" do
+      set = TestFactory.create_set(%{code: "MKM", name: "Murders"})
+      TestFactory.create_card(%{lands17_id: 9401, name: "Detective", set_id: set.id})
+
+      assert Cards.get_by_name_and_set("Detective", "LCI") == []
+    end
+  end
+
+  describe "upsert_scryfall_card!/1" do
+    test "creates a new scryfall card" do
+      card =
+        Cards.upsert_scryfall_card!(%{
+          scryfall_id: "abc-123",
+          name: "Lightning Bolt",
+          set_code: "lci",
+          rarity: "common",
+          raw: %{"id" => "abc-123"}
+        })
+
+      assert card.scryfall_id == "abc-123"
+      assert card.name == "Lightning Bolt"
+    end
+
+    test "updates an existing card by scryfall_id (idempotent)" do
+      first =
+        Cards.upsert_scryfall_card!(%{
+          scryfall_id: "abc-456",
+          name: "Old Name",
+          set_code: "lci",
+          raw: %{}
+        })
+
+      second =
+        Cards.upsert_scryfall_card!(%{
+          scryfall_id: "abc-456",
+          name: "New Name",
+          set_code: "lci",
+          raw: %{}
+        })
+
+      assert first.id == second.id
+      assert second.name == "New Name"
+    end
+  end
+
+  describe "get_scryfall_by_arena_id/1" do
+    test "returns the scryfall card for a given arena_id" do
+      TestFactory.create_scryfall_card(%{arena_id: 91_500, name: "Found"})
+      card = Cards.get_scryfall_by_arena_id(91_500)
+      assert card.name == "Found"
+    end
+
+    test "returns nil for unknown arena_id" do
+      assert Cards.get_scryfall_by_arena_id(99_999_999) == nil
+    end
+  end
+
+  describe "scryfall_count/0" do
+    test "returns the count of scryfall cards" do
+      TestFactory.create_scryfall_card(%{name: "Card A"})
+      TestFactory.create_scryfall_card(%{name: "Card B"})
+      assert Cards.scryfall_count() >= 2
+    end
+  end
+
+  describe "upsert_mtga_card!/1" do
+    test "creates a new MTGA card" do
+      card =
+        Cards.upsert_mtga_card!(%{
+          arena_id: 91_500,
+          name: "Test Card",
+          expansion_code: "TST",
+          collector_number: "42"
+        })
+
+      assert card.arena_id == 91_500
+      assert card.name == "Test Card"
+    end
+
+    test "updates an existing card by arena_id (idempotent)" do
+      Cards.upsert_mtga_card!(%{arena_id: 91_501, name: "Old Name"})
+      second = Cards.upsert_mtga_card!(%{arena_id: 91_501, name: "New Name"})
+      assert second.name == "New Name"
+    end
+  end
+
+  describe "get_mtga_card/1" do
+    test "returns the card for a given arena_id" do
+      TestFactory.create_mtga_card(%{arena_id: 91_600, name: "Found"})
+      card = Cards.get_mtga_card(91_600)
+      assert card.name == "Found"
+    end
+
+    test "returns nil for unknown arena_id" do
+      assert Cards.get_mtga_card(99_999_999) == nil
+    end
+  end
+
+  describe "mtga_card_count/0" do
+    test "returns the count of MTGA cards" do
+      TestFactory.create_mtga_card(%{arena_id: 91_700})
+      TestFactory.create_mtga_card(%{arena_id: 91_701})
+      assert Cards.mtga_card_count() >= 2
+    end
+  end
+
   describe "list_cards/1" do
     setup do
       TestFactory.create_card(%{lands17_id: 9200, name: "Aardvark", rarity: "common"})

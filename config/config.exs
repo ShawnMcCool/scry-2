@@ -27,7 +27,9 @@ config :scry_2, Oban,
     {Oban.Plugins.Cron,
      crontab: [
        # Daily 04:00 UTC — refresh 17lands card reference data.
-       {"0 4 * * *", Scry2.Workers.PeriodicallyUpdateCards}
+       {"0 4 * * *", Scry2.Workers.PeriodicallyUpdateCards},
+       # Weekly Sunday 05:00 UTC — backfill arena_id from Scryfall bulk data.
+       {"0 5 * * 0", Scry2.Workers.PeriodicallyBackfillArenaIds}
      ]}
   ]
 
