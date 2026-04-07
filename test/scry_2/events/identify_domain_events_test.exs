@@ -10,9 +10,9 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     IdentifyDomainEvents,
     MatchCompleted,
     MatchCreated,
-    MulliganOffered,
     RankSnapshot,
-    SessionStarted
+    SessionStarted,
+    TranslationWarning
   }
 
   alias Scry2.MtgaLogIngestion.{Event, ExtractEventsFromLog, EventRecord}
@@ -25,7 +25,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   defp record_from_fixture(fixture_name) do
     path = Path.join([__DIR__, "..", "..", "fixtures", "mtga_logs", fixture_name])
     chunk = File.read!(path)
-    [%Event{} = event] = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
+    {[%Event{} = event], _warnings} = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
 
     %EventRecord{
       id: 1,
@@ -42,7 +42,9 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "produces a single %MatchCreated{} with the expected fields" do
       record = record_from_fixture("match_game_room_state_changed_playing.log")
 
-      assert [%MatchCreated{} = event] = IdentifyDomainEvents.translate(record, @self_user_id)
+      assert {[%MatchCreated{} = event], []} =
+               IdentifyDomainEvents.translate(record, @self_user_id)
+
       assert event.mtga_match_id == "008b1926-09a8-40b4-872d-fa987588740c"
       assert event.event_name == "Traditional_Ladder"
       assert event.opponent_screen_name == "Opponent1"
@@ -55,7 +57,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "falls back to systemSeatId != 1 for opponent when self_user_id is nil" do
       record = record_from_fixture("match_game_room_state_changed_playing.log")
 
-      assert [%MatchCreated{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert {[%MatchCreated{} = event], []} = IdentifyDomainEvents.translate(record, nil)
       assert event.opponent_screen_name == "Opponent1"
       assert event.event_name == "Traditional_Ladder"
     end
@@ -65,7 +67,9 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "produces a single %MatchCompleted{} with win/loss and game count" do
       record = record_from_fixture("match_game_room_state_changed_completed.log")
 
-      assert [%MatchCompleted{} = event] = IdentifyDomainEvents.translate(record, @self_user_id)
+      assert {[%MatchCompleted{} = event], []} =
+               IdentifyDomainEvents.translate(record, @self_user_id)
+
       assert event.mtga_match_id == "008b1926-09a8-40b4-872d-fa987588740c"
       assert event.occurred_at == ~U[2026-04-05 19:53:36Z]
 
@@ -104,7 +108,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "produces DeckSubmitted + DieRollCompleted from the ConnectResp fixture" do
       record = record_from_fixture("gre_to_client_event_connect_resp.log")
 
-      events = IdentifyDomainEvents.translate(record, @self_user_id)
+      {events, []} = IdentifyDomainEvents.translate(record, @self_user_id)
 
       deck_event = Enum.find(events, &match?(%DeckSubmitted{}, &1))
       die_event = Enum.find(events, &match?(%DieRollCompleted{}, &1))
@@ -152,12 +156,12 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         processed: false
       }
 
-      assert IdentifyDomainEvents.translate(record, nil) == []
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
     end
   end
 
   describe "translate/2 — fall-through" do
-    test "returns [] for an unrelated raw event type" do
+    test "returns {[], []} for an unrelated raw event type" do
       record = %EventRecord{
         id: 1,
         event_type: "GraphGetGraphState",
@@ -167,10 +171,10 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         processed: false
       }
 
-      assert IdentifyDomainEvents.translate(record, @self_user_id) == []
+      assert {[], []} = IdentifyDomainEvents.translate(record, @self_user_id)
     end
 
-    test "returns [] for MatchGameRoomStateChangedEvent with unknown stateType" do
+    test "returns {[], []} for MatchGameRoomStateChangedEvent with unknown stateType" do
       record = %EventRecord{
         id: 1,
         event_type: "MatchGameRoomStateChangedEvent",
@@ -181,10 +185,10 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         processed: false
       }
 
-      assert IdentifyDomainEvents.translate(record, @self_user_id) == []
+      assert {[], []} = IdentifyDomainEvents.translate(record, @self_user_id)
     end
 
-    test "returns [] on malformed JSON" do
+    test "emits warning on malformed JSON for a handled type" do
       record = %EventRecord{
         id: 1,
         event_type: "MatchGameRoomStateChangedEvent",
@@ -194,7 +198,8 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         processed: false
       }
 
-      assert IdentifyDomainEvents.translate(record, @self_user_id) == []
+      assert {[], [%TranslationWarning{category: :payload_extraction_failed}]} =
+               IdentifyDomainEvents.translate(record, @self_user_id)
     end
   end
 
@@ -202,7 +207,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "produces a %GameCompleted{} from a game-complete fixture" do
       record = record_from_fixture("gre_to_client_event_game_complete.log")
 
-      events = IdentifyDomainEvents.translate(record, @self_user_id)
+      {events, []} = IdentifyDomainEvents.translate(record, @self_user_id)
 
       game_event = Enum.find(events, &match?(%GameCompleted{}, &1))
       assert game_event != nil
@@ -222,7 +227,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "produces a %DraftStarted{} from the draft status fixture" do
       record = record_from_fixture("bot_draft_draft_status.log")
 
-      assert [%DraftStarted{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert {[%DraftStarted{} = event], []} = IdentifyDomainEvents.translate(record, nil)
       assert event.mtga_draft_id == "QuickDraft_FDN_20260323"
       assert event.event_name == "QuickDraft_FDN_20260323"
       assert event.set_code == "FDN"
@@ -233,7 +238,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "produces a %DraftPickMade{} from the draft pick fixture" do
       record = record_from_fixture("bot_draft_draft_pick.log")
 
-      assert [%DraftPickMade{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert {[%DraftPickMade{} = event], []} = IdentifyDomainEvents.translate(record, nil)
       assert event.mtga_draft_id == "QuickDraft_FDN_20260323"
       assert event.pack_number == 1
       assert event.pick_number == 1
@@ -245,13 +250,13 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "produces a %SessionStarted{} with client_id from the fixture" do
       record = record_from_fixture("authenticate_response.log")
 
-      assert [%SessionStarted{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert {[%SessionStarted{} = event], []} = IdentifyDomainEvents.translate(record, nil)
       assert event.client_id == "D0FECB2AF1E7FE24"
       assert event.screen_name == "Shawn McCool"
       assert event.session_id != nil
     end
 
-    test "skips AuthenticateResponse with missing authenticateResponse key" do
+    test "emits warning for AuthenticateResponse with missing authenticateResponse key" do
       record = %EventRecord{
         id: 1,
         event_type: "AuthenticateResponse",
@@ -262,7 +267,8 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         processed: false
       }
 
-      assert IdentifyDomainEvents.translate(record, nil) == []
+      assert {[], [%TranslationWarning{category: :payload_extraction_failed}]} =
+               IdentifyDomainEvents.translate(record, nil)
     end
   end
 
@@ -289,7 +295,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         processed: false
       }
 
-      assert [%RankSnapshot{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert {[%RankSnapshot{} = event], []} = IdentifyDomainEvents.translate(record, nil)
       assert event.constructed_class == "Diamond"
       assert event.constructed_level == 4
       assert event.constructed_step == 2
@@ -308,13 +314,13 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         processed: false
       }
 
-      assert IdentifyDomainEvents.translate(record, nil) == []
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
     end
 
     test "produces a %RankSnapshot{} from RankGetCombinedRankInfo response (parsed from <== three-line format)" do
       record = record_from_fixture("rank_get_combined_rank_info_response.log")
 
-      assert [%RankSnapshot{} = event] = IdentifyDomainEvents.translate(record, nil)
+      assert {[%RankSnapshot{} = event], []} = IdentifyDomainEvents.translate(record, nil)
       assert event.constructed_class == "Diamond"
       assert event.constructed_level == 4
       assert event.constructed_step == 2

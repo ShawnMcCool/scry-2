@@ -59,7 +59,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     MatchCreated,
     MulliganOffered,
     RankSnapshot,
-    SessionStarted
+    SessionStarted,
+    TranslationWarning
   }
 
   alias Scry2.MtgaLogIngestion.EventRecord
@@ -146,7 +147,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   IngestRawEvents (ADR-022), used to tag in-game events like
   mulligans with their match ID.
   """
-  @spec translate(%EventRecord{}, self_user_id(), match_context()) :: [struct()]
+  @spec translate(%EventRecord{}, self_user_id(), match_context()) ::
+          {[struct()], [TranslationWarning.t()]}
   def translate(record, self_user_id, match_context \\ %{})
 
   # MatchGameRoomStateChangedEvent produces different domain events based
@@ -162,16 +164,25 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          {:ok, info} <- extract_game_room_info(payload) do
       case info["stateType"] do
         "MatchGameRoomStateType_Playing" ->
-          maybe_build_match_created(info, record, self_user_id)
+          {maybe_build_match_created(info, record, self_user_id), []}
 
         "MatchGameRoomStateType_MatchCompleted" ->
-          maybe_build_match_completed(info, record, self_user_id)
+          {maybe_build_match_completed(info, record, self_user_id), []}
 
         _ ->
-          []
+          {[], []}
       end
     else
-      _ -> []
+      _ ->
+        {[],
+         [
+           %TranslationWarning{
+             category: :payload_extraction_failed,
+             raw_event_id: record.id,
+             event_type: record.event_type,
+             detail: "failed to decode/extract gameRoomInfo"
+           }
+         ]}
     end
   end
 
@@ -192,22 +203,35 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       match_id = extract_match_id_from_gre(messages)
       context_match_id = match_id || match_context[:current_match_id]
 
-      [
-        maybe_build_deck_submitted(messages, match_id, occurred_at),
-        maybe_build_die_roll_completed(messages, match_id, occurred_at),
-        maybe_build_game_completed(messages, match_id, occurred_at),
-        build_mulligan_offered(messages, context_match_id, occurred_at)
-      ]
-      |> List.flatten()
-      |> Enum.reject(&is_nil/1)
+      events =
+        [
+          maybe_build_deck_submitted(messages, match_id, occurred_at),
+          maybe_build_die_roll_completed(messages, match_id, occurred_at),
+          maybe_build_game_completed(messages, match_id, occurred_at),
+          build_mulligan_offered(messages, context_match_id, occurred_at)
+        ]
+        |> List.flatten()
+        |> Enum.reject(&is_nil/1)
+
+      {events, []}
     else
-      _ -> []
+      _ ->
+        {[],
+         [
+           %TranslationWarning{
+             category: :payload_extraction_failed,
+             raw_event_id: record.id,
+             event_type: record.event_type,
+             detail: "failed to decode/extract greToClientMessages"
+           }
+         ]}
     end
   end
 
-  # BotDraftDraftStatus marks the start of a quick-draft session.
-  # The payload carries a double-encoded JSON `request` string with the
+  # BotDraftDraftStatus has two wire formats (request ==> and response <==).
+  # The request carries a double-encoded JSON `request` string with the
   # EventName (format identifier like "QuickDraft_FDN_20260323").
+  # The response carries a "Payload" with draft state — we skip it silently.
   def translate(
         %EventRecord{event_type: "BotDraftDraftStatus"} = record,
         _self_user_id,
@@ -220,52 +244,53 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       event_name = request["EventName"]
       set_code = extract_set_code(event_name)
 
-      [
-        %DraftStarted{
-          mtga_draft_id: event_name,
-          event_name: event_name,
-          set_code: set_code,
-          occurred_at: occurred_at
-        }
-      ]
+      {[
+         %DraftStarted{
+           mtga_draft_id: event_name,
+           event_name: event_name,
+           set_code: set_code,
+           occurred_at: occurred_at
+         }
+       ], []}
     else
-      _ -> []
+      _ ->
+        case Jason.decode(record.raw_json) do
+          {:ok, %{"Payload" => _}} ->
+            {[], []}
+
+          _ ->
+            {[],
+             [
+               %TranslationWarning{
+                 category: :payload_extraction_failed,
+                 raw_event_id: record.id,
+                 event_type: record.event_type,
+                 detail: "failed to decode/extract draft status request"
+               }
+             ]}
+        end
     end
   end
 
-  # BotDraftDraftPick carries a single pick with pack/pick position and
-  # the picked card's arena_id. Pack contents are not available in bot
-  # drafts (bots pick from the same pool).
+  # BotDraftDraftPick has two wire formats:
+  #   Request (==>) — {"id", "request": "{\"PickInfo\": ...}"} — the pick itself
+  #   Response (<==) — {"CurrentModule", "Payload": "{\"DraftPack\": ...}"} — server ack with next pack
+  # We only need the request; the response is a server confirmation that
+  # carries the next pack state but requires stateful correlation to be useful.
   def translate(
         %EventRecord{event_type: "BotDraftDraftPick"} = record,
         _self_user_id,
         _match_context
       ) do
-    occurred_at = record.mtga_timestamp || record.inserted_at
-
     with {:ok, payload} <- Jason.decode(record.raw_json),
-         {:ok, request} <- decode_request_field(payload),
-         %{"PickInfo" => pick_info} <- request do
-      event_name = pick_info["EventName"] || request["EventName"]
-      card_ids = pick_info["CardIds"] || []
-      picked_arena_id = card_ids |> List.first() |> parse_arena_id()
-
-      if picked_arena_id do
-        [
-          %DraftPickMade{
-            mtga_draft_id: event_name,
-            pack_number: pick_info["PackNumber"] + 1,
-            pick_number: pick_info["PickNumber"] + 1,
-            picked_arena_id: picked_arena_id,
-            pack_arena_ids: [],
-            occurred_at: occurred_at
-          }
-        ]
-      else
-        []
-      end
+         {:ok, request} <- decode_request_field(payload) do
+      translate_draft_pick_request(request, record)
     else
-      _ -> []
+      _ ->
+        case Jason.decode(record.raw_json) do
+          {:ok, %{"Payload" => _}} -> {[], []}
+          _ -> draft_pick_warning(record)
+        end
     end
   end
 
@@ -280,16 +305,25 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
          %{"authenticateResponse" => auth} <- payload do
-      [
-        %SessionStarted{
-          client_id: auth["clientId"],
-          screen_name: auth["screenName"],
-          session_id: auth["sessionId"],
-          occurred_at: occurred_at
-        }
-      ]
+      {[
+         %SessionStarted{
+           client_id: auth["clientId"],
+           screen_name: auth["screenName"],
+           session_id: auth["sessionId"],
+           occurred_at: occurred_at
+         }
+       ], []}
     else
-      _ -> []
+      _ ->
+        {[],
+         [
+           %TranslationWarning{
+             category: :payload_extraction_failed,
+             raw_event_id: record.id,
+             event_type: record.event_type,
+             detail: "failed to decode/extract authenticateResponse"
+           }
+         ]}
     end
   end
 
@@ -308,31 +342,45 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
          false <- Map.has_key?(payload, "request") do
-      [
-        %RankSnapshot{
-          constructed_class: payload["constructedClass"],
-          constructed_level: payload["constructedLevel"],
-          constructed_step: payload["constructedStep"],
-          constructed_matches_won: payload["constructedMatchesWon"],
-          constructed_matches_lost: payload["constructedMatchesLost"],
-          limited_class: payload["limitedClass"],
-          limited_level: payload["limitedLevel"],
-          limited_step: payload["limitedStep"],
-          limited_matches_won: payload["limitedMatchesWon"],
-          limited_matches_lost: payload["limitedMatchesLost"],
-          season_ordinal: payload["constructedSeasonOrdinal"],
-          occurred_at: occurred_at
-        }
-      ]
+      {[
+         %RankSnapshot{
+           constructed_class: payload["constructedClass"],
+           constructed_level: payload["constructedLevel"],
+           constructed_step: payload["constructedStep"],
+           constructed_matches_won: payload["constructedMatchesWon"],
+           constructed_matches_lost: payload["constructedMatchesLost"],
+           limited_class: payload["limitedClass"],
+           limited_level: payload["limitedLevel"],
+           limited_step: payload["limitedStep"],
+           limited_matches_won: payload["limitedMatchesWon"],
+           limited_matches_lost: payload["limitedMatchesLost"],
+           season_ordinal: payload["constructedSeasonOrdinal"],
+           occurred_at: occurred_at
+         }
+       ], []}
     else
-      _ -> []
+      # `true` from Map.has_key? means this is a REQUEST event, not a response.
+      # Legitimately nothing to do — no warning.
+      true ->
+        {[], []}
+
+      _ ->
+        {[],
+         [
+           %TranslationWarning{
+             category: :payload_extraction_failed,
+             raw_event_id: record.id,
+             event_type: record.event_type,
+             detail: "failed to decode rank response payload"
+           }
+         ]}
     end
   end
 
   # Fall-through: raw event types we don't translate (yet or ever)
   # produce no domain events. The raw event is still preserved in
   # mtga_logs_events for future reprocessing via retranslate_from_raw!/0.
-  def translate(%EventRecord{}, _self_user_id, _match_context), do: []
+  def translate(%EventRecord{}, _self_user_id, _match_context), do: {[], []}
 
   # ── MatchCreated construction ───────────────────────────────────────
 
@@ -611,6 +659,42 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   defp aggregate_card_list(_), do: []
 
   # ── Draft event helpers ──────────────────────────────────────────────
+
+  defp translate_draft_pick_request(%{"PickInfo" => pick_info} = request, record) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+    event_name = pick_info["EventName"] || request["EventName"]
+    card_ids = pick_info["CardIds"] || []
+    picked_arena_id = card_ids |> List.first() |> parse_arena_id()
+
+    if picked_arena_id do
+      {[
+         %DraftPickMade{
+           mtga_draft_id: event_name,
+           pack_number: pick_info["PackNumber"] + 1,
+           pick_number: pick_info["PickNumber"] + 1,
+           picked_arena_id: picked_arena_id,
+           pack_arena_ids: [],
+           occurred_at: occurred_at
+         }
+       ], []}
+    else
+      {[], []}
+    end
+  end
+
+  defp translate_draft_pick_request(_request, record), do: draft_pick_warning(record)
+
+  defp draft_pick_warning(record) do
+    {[],
+     [
+       %TranslationWarning{
+         category: :payload_extraction_failed,
+         raw_event_id: record.id,
+         event_type: record.event_type,
+         detail: "failed to decode/extract draft pick request"
+       }
+     ]}
+  end
 
   # BotDraftDraftPick and BotDraftDraftStatus carry a double-encoded
   # JSON string in the "request" field. Decode it to a map.
