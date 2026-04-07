@@ -17,6 +17,7 @@ defmodule Scry2.Events.RankSnapshot do
 
   @enforce_keys [:occurred_at]
   defstruct [
+    :player_id,
     :constructed_class,
     :constructed_level,
     :constructed_step,
@@ -32,6 +33,7 @@ defmodule Scry2.Events.RankSnapshot do
   ]
 
   @type t :: %__MODULE__{
+          player_id: String.t() | nil,
           constructed_class: String.t() | nil,
           constructed_level: integer() | nil,
           constructed_step: integer() | nil,

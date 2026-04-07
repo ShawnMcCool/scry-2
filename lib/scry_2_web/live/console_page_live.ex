@@ -47,7 +47,7 @@ defmodule Scry2Web.ConsolePageLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <div class="console-fullpage-wrap" id="console-page">
         <Scry2Web.ConsoleComponents.chip_row
           filter={@filter}

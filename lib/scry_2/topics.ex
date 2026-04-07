@@ -24,6 +24,10 @@ defmodule Scry2.Topics do
   @doc "Draft/pick upserts."
   def drafts_updates, do: "drafts:updates"
 
+  # ── Players ─────────────────────────────────────────────────────────
+  @doc "Player auto-discovered or updated."
+  def players_updates, do: "players:updates"
+
   # ── Cards ────────────────────────────────────────────────────────────────
   @doc "Card reference data refreshed (17lands import ran)."
   def cards_updates, do: "cards:updates"

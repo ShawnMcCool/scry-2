@@ -90,6 +90,7 @@ defmodule Scry2.Matches.UpdateFromEvent do
 
   defp project(%MatchCreated{} = event) do
     attrs = %{
+      player_id: event.player_id,
       mtga_match_id: event.mtga_match_id,
       event_name: event.event_name,
       opponent_screen_name: event.opponent_screen_name,
@@ -108,6 +109,7 @@ defmodule Scry2.Matches.UpdateFromEvent do
 
   defp project(%MatchCompleted{} = event) do
     attrs = %{
+      player_id: event.player_id,
       mtga_match_id: event.mtga_match_id,
       ended_at: event.occurred_at,
       won: event.won,
@@ -125,7 +127,7 @@ defmodule Scry2.Matches.UpdateFromEvent do
   end
 
   defp project(%GameCompleted{} = event) do
-    match = Matches.get_by_mtga_id(event.mtga_match_id)
+    match = Matches.get_by_mtga_id(event.mtga_match_id, event.player_id)
 
     if match do
       attrs = %{
@@ -155,7 +157,7 @@ defmodule Scry2.Matches.UpdateFromEvent do
   end
 
   defp project(%DeckSubmitted{} = event) do
-    match = Matches.get_by_mtga_id(event.mtga_match_id)
+    match = Matches.get_by_mtga_id(event.mtga_match_id, event.player_id)
 
     attrs = %{
       mtga_deck_id: event.mtga_deck_id,

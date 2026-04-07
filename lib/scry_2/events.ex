@@ -68,27 +68,36 @@ defmodule Scry2.Events do
 
   Returns the persisted `%EventRecord{}` on success.
   """
-  @spec append!(struct(), %Scry2.MtgaLogIngestion.EventRecord{} | nil) :: %EventRecord{}
-  def append!(domain_event, source_record) when is_struct(domain_event) do
+  @spec append!(struct(), %Scry2.MtgaLogIngestion.EventRecord{} | nil, keyword()) ::
+          %EventRecord{} | nil
+  def append!(domain_event, source_record, opts \\ []) when is_struct(domain_event) do
+    type_slug = Event.type_slug(domain_event)
+    source_id = source_record && source_record.id
+    sequence = Keyword.get(opts, :sequence, 0)
+
     attrs = %{
-      event_type: Event.type_slug(domain_event),
+      event_type: type_slug,
       payload: struct_to_payload(domain_event),
-      mtga_source_id: source_record && source_record.id,
-      mtga_timestamp: Event.mtga_timestamp(domain_event)
+      mtga_source_id: source_id,
+      mtga_timestamp: Event.mtga_timestamp(domain_event),
+      sequence: sequence,
+      player_id: Map.get(domain_event, :player_id)
     }
 
-    {:ok, record} =
-      Repo.transaction(fn ->
-        %EventRecord{}
-        |> EventRecord.changeset(attrs)
-        |> Repo.insert!()
-      end)
+    changeset = EventRecord.changeset(%EventRecord{}, attrs)
 
-    # Broadcast outside the transaction so subscribers don't observe
-    # uncommitted state. The :ok result means the transaction committed.
-    Topics.broadcast(Topics.domain_events(), {:domain_event, record.id, record.event_type})
+    case Repo.insert(changeset,
+           on_conflict: :nothing,
+           conflict_target: [:mtga_source_id, :event_type, :sequence]
+         ) do
+      {:ok, %{id: id} = record} when not is_nil(id) ->
+        Topics.broadcast(Topics.domain_events(), {:domain_event, record.id, record.event_type})
+        record
 
-    record
+      {:ok, _record} ->
+        # Conflict — domain event already exists, skip broadcast
+        nil
+    end
   end
 
   @doc """
@@ -109,7 +118,9 @@ defmodule Scry2.Events do
   @doc "Raising variant of `get/1`."
   @spec get!(integer()) :: struct()
   def get!(id) when is_integer(id) do
-    id |> (&Repo.get!(EventRecord, &1)).() |> rehydrate()
+    record = Repo.get!(EventRecord, id)
+    event = rehydrate(record)
+    %{event | player_id: record.player_id}
   end
 
   @doc """
@@ -199,6 +210,51 @@ defmodule Scry2.Events do
     |> Enum.each(fn raw ->
       Topics.broadcast(Topics.mtga_logs_events(), {:event, raw})
     end)
+
+    :ok
+  end
+
+  @doc """
+  Clears domain events and all projections, then re-marks raw events as
+  unprocessed so they can be replayed through the pipeline.
+
+  Raw MTGA events (`mtga_logs_events`) are the permanent source of truth
+  (ADR-015) and are never deleted by this function. After calling this,
+  restart `IngestRawEvents` (and the watcher if raw events also need
+  re-reading from the log file) to trigger replay.
+
+  Use `reset_raw!()` for the exceptional case where raw event data itself
+  is corrupt and needs to be re-ingested from Player.log.
+  """
+  @spec reset_all!() :: :ok
+  def reset_all! do
+    # FK-safe order: children before parents
+    Repo.delete_all(Scry2.Matches.DeckSubmission)
+    Repo.delete_all(Scry2.Matches.Game)
+    Repo.delete_all(Scry2.Matches.Match)
+    Repo.delete_all(Scry2.Drafts.Pick)
+    Repo.delete_all(Scry2.Drafts.Draft)
+    Repo.delete_all(EventRecord)
+
+    # Re-mark raw events as unprocessed so replay picks them up
+    Scry2.MtgaLogIngestion.EventRecord
+    |> Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
+
+    :ok
+  end
+
+  @doc """
+  Nuclear reset — clears ALL data including raw events and cursor.
+  Forces the watcher to re-read Player.log from byte 0.
+
+  Only use when raw event parsing/storage is known to be broken.
+  Prefer `reset_all!/0` for normal replay scenarios.
+  """
+  @spec reset_raw!() :: :ok
+  def reset_raw! do
+    reset_all!()
+    Repo.delete_all(Scry2.MtgaLogIngestion.EventRecord)
+    Repo.delete_all(Scry2.MtgaLogIngestion.Cursor)
 
     :ok
   end

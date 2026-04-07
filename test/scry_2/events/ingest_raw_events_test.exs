@@ -16,7 +16,10 @@ defmodule Scry2.Events.IngestRawEventsTest do
   # real ExtractEventsFromLog so the test exercises the whole translation path.
   defp insert_raw_from_fixture!(fixture_name) do
     chunk = fixture(fixture_name)
-    [parsed] = Scry2.MtgaLogIngestion.ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
+    base_offset = System.unique_integer([:positive]) * 100_000
+
+    {[parsed], _warnings} =
+      Scry2.MtgaLogIngestion.ExtractEventsFromLog.parse_chunk(chunk, "Player.log", base_offset)
 
     MtgaLogIngestion.insert_event!(%{
       event_type: parsed.type,

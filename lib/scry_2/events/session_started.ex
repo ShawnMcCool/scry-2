@@ -17,6 +17,7 @@ defmodule Scry2.Events.SessionStarted do
 
   @enforce_keys [:client_id, :occurred_at]
   defstruct [
+    :player_id,
     :client_id,
     :screen_name,
     :session_id,
@@ -24,6 +25,7 @@ defmodule Scry2.Events.SessionStarted do
   ]
 
   @type t :: %__MODULE__{
+          player_id: String.t() | nil,
           client_id: String.t(),
           screen_name: String.t() | nil,
           session_id: String.t() | nil,

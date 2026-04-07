@@ -35,6 +35,15 @@ defmodule Scry2.Events.EventRecord do
     # When this event happened in MTGA time. Nullable.
     field :mtga_timestamp, :utc_datetime
 
+    # Disambiguates multiple domain events of the same type from the same
+    # raw source (e.g. multiple mulligan_offered from one GreToClientEvent).
+    # Part of the (mtga_source_id, event_type, sequence) unique constraint.
+    field :sequence, :integer, default: 0
+
+    # Which player this event belongs to. Set by IngestRawEvents from
+    # the active session's auto-detected player_id.
+    field :player_id, :integer
+
     field :inserted_at, :utc_datetime
   end
 
@@ -49,7 +58,15 @@ defmodule Scry2.Events.EventRecord do
   """
   def changeset(record, attrs) do
     record
-    |> cast(attrs, [:event_type, :payload, :mtga_source_id, :mtga_timestamp, :inserted_at])
+    |> cast(attrs, [
+      :event_type,
+      :payload,
+      :mtga_source_id,
+      :mtga_timestamp,
+      :sequence,
+      :player_id,
+      :inserted_at
+    ])
     |> validate_required([:event_type, :payload])
     |> ensure_inserted_at()
   end

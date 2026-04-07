@@ -3,6 +3,7 @@ defmodule Scry2.Matches.Match do
   import Ecto.Changeset
 
   schema "matches_matches" do
+    field :player_id, :integer
     field :mtga_match_id, :string
     field :event_name, :string
     field :format, :string
@@ -24,6 +25,7 @@ defmodule Scry2.Matches.Match do
   def changeset(match, attrs) do
     match
     |> cast(attrs, [
+      :player_id,
       :mtga_match_id,
       :event_name,
       :format,
@@ -37,6 +39,6 @@ defmodule Scry2.Matches.Match do
       :raw_event_ids
     ])
     |> validate_required([:mtga_match_id])
-    |> unique_constraint(:mtga_match_id)
+    |> unique_constraint([:player_id, :mtga_match_id])
   end
 end

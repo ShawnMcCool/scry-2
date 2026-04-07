@@ -18,11 +18,13 @@ defmodule Scry2.Drafts do
   alias Scry2.Repo
   alias Scry2.Topics
 
-  @doc "Returns the most recent drafts, newest first."
+  @doc "Returns the most recent drafts, newest first. Optionally filtered by player_id."
   def list_drafts(opts \\ []) do
     limit_count = Keyword.get(opts, :limit, 50)
+    player_id = Keyword.get(opts, :player_id)
 
     Draft
+    |> maybe_filter_by_player(player_id)
     |> order_by([d], desc: d.started_at)
     |> limit(^limit_count)
     |> Repo.all()
@@ -38,20 +40,24 @@ defmodule Scry2.Drafts do
     |> Repo.preload(picks: picks_query)
   end
 
-  @doc "Returns the draft with the given MTGA id, or nil."
-  def get_by_mtga_id(mtga_draft_id) when is_binary(mtga_draft_id) do
-    Repo.get_by(Draft, mtga_draft_id: mtga_draft_id)
+  @doc "Returns the draft with the given MTGA id and optional player_id, or nil."
+  def get_by_mtga_id(mtga_draft_id, player_id \\ nil) when is_binary(mtga_draft_id) do
+    Draft
+    |> where([d], d.mtga_draft_id == ^mtga_draft_id)
+    |> maybe_filter_by_player(player_id)
+    |> Repo.one()
   end
 
   @doc """
-  Upserts a draft session by `mtga_draft_id`. Idempotent per ADR-016.
+  Upserts a draft session by `(player_id, mtga_draft_id)`. Idempotent per ADR-016.
   """
   def upsert_draft!(attrs) do
     attrs = Map.new(attrs)
     mtga_id = attrs[:mtga_draft_id] || attrs["mtga_draft_id"]
+    player_id = attrs[:player_id] || attrs["player_id"]
 
     draft =
-      case get_by_mtga_id(mtga_id) do
+      case get_by_mtga_id(mtga_id, player_id) do
         nil -> %Draft{}
         existing -> existing
       end
@@ -84,8 +90,17 @@ defmodule Scry2.Drafts do
     Repo.get_by(Pick, draft_id: draft_id, pack_number: p, pick_number: n)
   end
 
-  @doc "Returns the total number of recorded drafts."
-  def count, do: Repo.aggregate(Draft, :count, :id)
+  @doc "Returns the total number of recorded drafts. Optionally filtered by player_id."
+  def count(opts \\ []) do
+    player_id = Keyword.get(opts, :player_id)
+
+    Draft
+    |> maybe_filter_by_player(player_id)
+    |> Repo.aggregate(:count, :id)
+  end
+
+  defp maybe_filter_by_player(query, nil), do: query
+  defp maybe_filter_by_player(query, player_id), do: where(query, [d], d.player_id == ^player_id)
 
   defp broadcast_update(draft_id) do
     Topics.broadcast(Topics.drafts_updates(), {:draft_updated, draft_id})

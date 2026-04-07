@@ -1,7 +1,7 @@
 defmodule Scry2Web.DashboardLive do
   use Scry2Web, :live_view
 
-  alias Scry2.{Cards, Drafts, Matches, MtgaLogIngestion, Topics}
+  alias Scry2.{Cards, Drafts, Events, Matches, MtgaLogIngestion, Topics}
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2Web.DashboardHelpers, as: Helpers
 
@@ -17,7 +17,17 @@ defmodule Scry2Web.DashboardLive do
     {:ok,
      socket
      |> assign(:watcher, %{state: :unknown})
-     |> assign(:counts, %{matches: 0, drafts: 0, cards: 0, events_by_type: %{}})
+     |> assign(:counts, %{
+       matches: 0,
+       drafts: 0,
+       cards: 0,
+       events_by_type: %{},
+       total_raw: 0,
+       total_domain: 0,
+       errors: 0
+     })
+     |> assign(:unrecognized, %{})
+     |> assign(:errors, [])
      |> assign(:refresh_result, nil)}
   end
 
@@ -31,18 +41,29 @@ defmodule Scry2Web.DashboardLive do
       events_by_type
       |> Map.reject(fn {type, _count} -> MapSet.member?(known_types, type) end)
 
+    total_raw = events_by_type |> Map.values() |> Enum.sum()
+    domain_counts = Events.count_by_type()
+    total_domain = domain_counts |> Map.values() |> Enum.sum()
+    error_count = MtgaLogIngestion.count_errors()
+
+    player_id = socket.assigns[:active_player_id]
+
     counts = %{
-      matches: Matches.count(),
-      drafts: Drafts.count(),
+      matches: Matches.count(player_id: player_id),
+      drafts: Drafts.count(player_id: player_id),
       cards: Cards.count(),
-      events_by_type: events_by_type
+      events_by_type: events_by_type,
+      total_raw: total_raw,
+      total_domain: total_domain,
+      errors: error_count
     }
 
     {:noreply,
      socket
      |> assign(:watcher, watcher)
      |> assign(:counts, counts)
-     |> assign(:unrecognized, unrecognized)}
+     |> assign(:unrecognized, unrecognized)
+     |> assign(:errors, if(error_count > 0, do: MtgaLogIngestion.list_errors(), else: []))}
   end
 
   @impl true
@@ -64,11 +85,20 @@ defmodule Scry2Web.DashboardLive do
   end
 
   def handle_info({:match_updated, _}, socket) do
-    {:noreply, assign(socket, :counts, %{socket.assigns.counts | matches: Matches.count()})}
+    player_id = socket.assigns[:active_player_id]
+
+    {:noreply,
+     assign(socket, :counts, %{
+       socket.assigns.counts
+       | matches: Matches.count(player_id: player_id)
+     })}
   end
 
   def handle_info({:draft_updated, _}, socket) do
-    {:noreply, assign(socket, :counts, %{socket.assigns.counts | drafts: Drafts.count()})}
+    player_id = socket.assigns[:active_player_id]
+
+    {:noreply,
+     assign(socket, :counts, %{socket.assigns.counts | drafts: Drafts.count(player_id: player_id)})}
   end
 
   def handle_info({:cards_refreshed, count}, socket) do
@@ -86,7 +116,7 @@ defmodule Scry2Web.DashboardLive do
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Dashboard</h1>
         <button class="btn btn-primary btn-sm" phx-click="refresh_cards">
@@ -112,6 +142,16 @@ defmodule Scry2Web.DashboardLive do
         <.stat_card title="Cards" value={@counts.cards} />
       </section>
 
+      <section class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <.stat_card title="Raw Events" value={@counts.total_raw} />
+        <.stat_card title="Domain Events" value={@counts.total_domain} />
+        <.stat_card
+          title="Errors"
+          value={@counts.errors}
+          class={if @counts.errors > 0, do: "text-error", else: ""}
+        />
+      </section>
+
       <section :if={map_size(@unrecognized) > 0} class="alert alert-warning">
         <.icon name="hero-exclamation-triangle" class="size-5" />
         <div>
@@ -131,6 +171,34 @@ defmodule Scry2Web.DashboardLive do
                 <tr :for={{type, count} <- Helpers.sort_events_by_count(@unrecognized)}>
                   <td><code>{type}</code></td>
                   <td class="text-right tabular-nums">{count}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section :if={@errors != []} class="alert alert-error">
+        <.icon name="hero-exclamation-circle" class="size-5" />
+        <div>
+          <p class="font-semibold">Processing errors ({@counts.errors})</p>
+          <p class="text-sm mb-2">
+            Raw events that failed translation. Check the console drawer for details.
+          </p>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Event type</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={error <- @errors}>
+                  <td class="tabular-nums">{error.id}</td>
+                  <td><code>{error.event_type}</code></td>
+                  <td class="text-sm max-w-md truncate">{error.processing_error}</td>
                 </tr>
               </tbody>
             </table>
@@ -163,13 +231,14 @@ defmodule Scry2Web.DashboardLive do
 
   attr :title, :string, required: true
   attr :value, :any, required: true
+  attr :class, :string, default: ""
 
   defp stat_card(assigns) do
     ~H"""
     <div class="card bg-base-200">
       <div class="card-body p-4">
         <p class="text-xs uppercase text-base-content/60">{@title}</p>
-        <p class="text-2xl font-semibold">{@value}</p>
+        <p class={"text-2xl font-semibold #{@class}"}>{@value}</p>
       </div>
     </div>
     """

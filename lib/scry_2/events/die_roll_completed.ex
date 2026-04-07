@@ -17,6 +17,7 @@ defmodule Scry2.Events.DieRollCompleted do
 
   @enforce_keys [:mtga_match_id, :self_roll, :opponent_roll, :self_goes_first, :occurred_at]
   defstruct [
+    :player_id,
     :mtga_match_id,
     :self_roll,
     :opponent_roll,
@@ -25,6 +26,7 @@ defmodule Scry2.Events.DieRollCompleted do
   ]
 
   @type t :: %__MODULE__{
+          player_id: String.t() | nil,
           mtga_match_id: String.t(),
           self_roll: integer(),
           opponent_roll: integer(),

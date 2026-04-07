@@ -31,6 +31,9 @@ defmodule Scry2Web.Layouts do
     default: nil,
     doc: "the current [scope](https://hexdocs.pm/phoenix/scopes.html)"
 
+  attr :players, :list, default: []
+  attr :active_player_id, :integer, default: nil
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -48,6 +51,9 @@ defmodule Scry2Web.Layouts do
           <li><.link navigate={~p"/drafts"}>Drafts</.link></li>
           <li><.link navigate={~p"/cards"}>Cards</.link></li>
           <li><.link navigate={~p"/settings"}>Settings</.link></li>
+          <li>
+            <.player_selector players={@players} active_player_id={@active_player_id} />
+          </li>
           <li><.theme_toggle /></li>
         </ul>
       </div>
@@ -116,6 +122,30 @@ defmodule Scry2Web.Layouts do
         <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
       </.flash>
     </div>
+    """
+  end
+
+  @doc """
+  Player filter dropdown. Always visible in the nav — shows "All Players"
+  plus one option per auto-discovered player.
+  """
+  attr :players, :list, required: true
+  attr :active_player_id, :integer, default: nil
+
+  def player_selector(assigns) do
+    ~H"""
+    <form phx-change="select_player">
+      <select name="player_id" class="select select-sm select-bordered w-40">
+        <option value="" selected={is_nil(@active_player_id)}>All Players</option>
+        <option
+          :for={player <- @players}
+          value={player.id}
+          selected={player.id == @active_player_id}
+        >
+          {player.screen_name}
+        </option>
+      </select>
+    </form>
     """
   end
 

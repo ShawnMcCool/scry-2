@@ -60,6 +60,74 @@ defmodule Scry2.EventsTest do
     end
   end
 
+  describe "append!/2 — idempotency (ADR-016)" do
+    test "duplicate domain event from same source is silently skipped" do
+      Topics.subscribe(Topics.domain_events())
+
+      source = TestFactory.create_event_record(%{event_type: "MatchGameRoomStateChangedEvent"})
+
+      event = %MatchCreated{
+        mtga_match_id: "dedup-1",
+        event_name: "Traditional_Ladder",
+        occurred_at: ~U[2026-04-05 19:18:40Z]
+      }
+
+      first = Events.append!(event, source)
+      assert first != nil
+      assert_receive {:domain_event, _, "match_created"}
+
+      second = Events.append!(event, source)
+      assert second == nil
+      refute_receive {:domain_event, _, _}
+    end
+
+    test "different event types from same source both persist" do
+      source = TestFactory.create_event_record(%{event_type: "GreToClientEvent"})
+
+      created = %MatchCreated{
+        mtga_match_id: "multi-1",
+        event_name: "Test",
+        occurred_at: ~U[2026-04-05 12:00:00Z]
+      }
+
+      completed = %MatchCompleted{
+        mtga_match_id: "multi-1",
+        occurred_at: ~U[2026-04-05 12:30:00Z],
+        won: true,
+        num_games: 2
+      }
+
+      assert Events.append!(created, source) != nil
+      assert Events.append!(completed, source) != nil
+    end
+
+    test "multiple same-type events from same source get sequential sequence numbers" do
+      source = TestFactory.create_event_record(%{event_type: "GreToClientEvent"})
+
+      event_a = %Events.MulliganOffered{
+        mtga_match_id: "seq-1",
+        seat_id: 1,
+        hand_size: 7,
+        occurred_at: ~U[2026-04-05 12:00:00Z]
+      }
+
+      event_b = %Events.MulliganOffered{
+        mtga_match_id: "seq-1",
+        seat_id: 2,
+        hand_size: 7,
+        occurred_at: ~U[2026-04-05 12:00:01Z]
+      }
+
+      first = Events.append!(event_a, source, sequence: 0)
+      second = Events.append!(event_b, source, sequence: 1)
+
+      assert first != nil
+      assert second != nil
+      assert first.sequence == 0
+      assert second.sequence == 1
+    end
+  end
+
   describe "get/1 and get!/1 — rehydration" do
     test "round-trips a MatchCreated back to the struct form" do
       original = %MatchCreated{
