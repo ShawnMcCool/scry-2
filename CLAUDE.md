@@ -28,6 +28,7 @@ When two designs both work, pick the one that scales better, not the one that sh
 | Writing tests — Elixir, JavaScript, or Playwright E2E | `automated-testing` |
 | General coding standards, naming, structure | `coding-guidelines` |
 | UI work — templates, components, CSS, styling, layout | `user-interface` |
+| Events, domain events, MTGA event types, anti-corruption layer | `events` |
 | Production debugging, service health, runtime logs | `troubleshoot` |
 
 Invoke the skill **first**, then explore the codebase, then write code.

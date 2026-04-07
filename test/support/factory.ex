@@ -18,6 +18,7 @@ defmodule Scry2.TestFactory do
   alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Matches
   alias Scry2.Matches.{DeckSubmission, Game, Match}
+  alias Scry2.Events.MasteryProgress
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
   alias Scry2.Players
@@ -123,6 +124,22 @@ defmodule Scry2.TestFactory do
     struct(Pick, Map.merge(defaults, Map.new(attrs)))
   end
 
+  def build_mastery_progress(attrs \\ %{}) do
+    defaults = %{
+      node_states: %{
+        "PlayFamiliar1" => %{"Status" => "Completed"},
+        "PlayFamiliar2" => %{"Status" => "Completed"},
+        "Reset" => %{"Status" => "Available"}
+      },
+      milestone_states: %{"TutorialComplete" => true},
+      total_nodes: 3,
+      completed_nodes: 2,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(MasteryProgress, Map.merge(defaults, Map.new(attrs)))
+  end
+
   def build_event_record(attrs \\ %{}) do
     defaults = %{
       event_type: "MatchStart",
@@ -221,5 +238,5 @@ defmodule Scry2.TestFactory do
   defp random_suffix, do: Integer.to_string(:rand.uniform(1_000_000_000), 36)
 
   # Silence unused-alias warnings for test support code.
-  @compile {:no_warn_unused, [Cursor, EventRecord, DeckSubmission, Players]}
+  @compile {:no_warn_unused, [Cursor, EventRecord, DeckSubmission, MasteryProgress, Players]}
 end

@@ -70,6 +70,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     QuestStatus,
     RankSnapshot,
     SessionStarted,
+    MasteryProgress,
     TranslationWarning
   }
 
@@ -100,7 +101,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          # Progress tracking
                          "QuestGetQuests",
                          "PeriodicRewardsGetStatus",
-                         "EventGetCoursesV2"
+                         "EventGetCoursesV2",
+                         "GraphGetGraphState"
                        ])
 
   @ignored_event_types MapSet.new([
@@ -120,7 +122,13 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          # Parser artifact — MatchGameRoomStateChangedEvent logged
                          # without the UnityCrossThreadLogger prefix by a different
                          # code path; the payload is a duplicate of the real event.
-                         "STATE"
+                         "STATE",
+                         # Deck deletion confirmation — no analytics value
+                         "DeckDeleteDeck",
+                         # Client startup lifecycle — empty payload, no domain semantics
+                         "StartHook",
+                         # Format catalogue — static reference data, not player activity
+                         "GetFormats"
                        ])
 
   @known_event_types MapSet.union(@handled_event_types, @ignored_event_types)
@@ -650,6 +658,45 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
       {[%ActiveCourses{courses: course_data, occurred_at: occurred_at}], []}
     else
+      _ -> {[], []}
+    end
+  end
+
+  # ── GraphGetGraphState → MasteryProgress ──────────────────────────
+
+  def translate(
+        %EventRecord{event_type: "GraphGetGraphState"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- JSON.decode(record.raw_json),
+         %{"NodeStates" => node_states} when is_map(node_states) <- payload do
+      total = map_size(node_states)
+
+      completed =
+        Enum.count(node_states, fn {_id, state} ->
+          is_map(state) and state["Status"] == "Completed"
+        end)
+
+      milestone_states =
+        case payload do
+          %{"MilestoneStates" => ms} when is_map(ms) -> ms
+          _ -> nil
+        end
+
+      event = %MasteryProgress{
+        node_states: node_states,
+        milestone_states: milestone_states,
+        total_nodes: total,
+        completed_nodes: completed,
+        occurred_at: occurred_at
+      }
+
+      {[event], []}
+    else
+      # Request event or missing NodeStates — skip
       _ -> {[], []}
     end
   end
