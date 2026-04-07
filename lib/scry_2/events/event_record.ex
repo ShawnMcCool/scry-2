@@ -44,6 +44,12 @@ defmodule Scry2.Events.EventRecord do
     # the active session's auto-detected player_id.
     field :player_id, :integer
 
+    # Correlation columns — promoted from payload for indexed querying.
+    # Nullable: not every event belongs to a match, draft, or session.
+    field :match_id, :string
+    field :draft_id, :string
+    field :session_id, :string
+
     field :inserted_at, :utc_datetime
   end
 
@@ -65,6 +71,9 @@ defmodule Scry2.Events.EventRecord do
       :mtga_timestamp,
       :sequence,
       :player_id,
+      :match_id,
+      :draft_id,
+      :session_id,
       :inserted_at
     ])
     |> validate_required([:event_type, :payload])

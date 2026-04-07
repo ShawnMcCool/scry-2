@@ -123,6 +123,20 @@ defmodule Scry2.MtgaLogIngestion do
     |> Map.new()
   end
 
+  @doc "Returns a map of event_type => count for deferred types that have at least one non-empty payload."
+  @spec deferred_types_with_payloads(MapSet.t(String.t())) :: %{String.t() => non_neg_integer()}
+  def deferred_types_with_payloads(deferred_types) do
+    types = MapSet.to_list(deferred_types)
+
+    from(r in EventRecord,
+      where: r.event_type in ^types and r.raw_json != "{}",
+      group_by: r.event_type,
+      select: {r.event_type, count(r.id)}
+    )
+    |> Repo.all()
+    |> Map.new()
+  end
+
   @doc "Returns the count of events with a non-nil processing_error."
   def count_errors do
     from(r in EventRecord, where: not is_nil(r.processing_error))

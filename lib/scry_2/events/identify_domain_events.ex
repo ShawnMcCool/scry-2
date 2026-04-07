@@ -125,17 +125,30 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "STATE",
                          # Deck deletion confirmation — no analytics value
                          "DeckDeleteDeck",
-                         # Client startup lifecycle — empty payload, no domain semantics
-                         "StartHook",
                          # Format catalogue — static reference data, not player activity
                          "GetFormats"
                        ])
 
-  @known_event_types MapSet.union(@handled_event_types, @ignored_event_types)
+  # Empty payload so far — deferred until we see a real body.
+  # When a deferred type arrives with raw_json other than "{}",
+  # the dashboard flags it so we know a handler can be written.
+  @deferred_event_types MapSet.new([
+                          "EventGetActiveMatches",
+                          # Client startup lifecycle — only empty payloads observed
+                          "StartHook"
+                        ])
+
+  @known_event_types @handled_event_types
+                     |> MapSet.union(@ignored_event_types)
+                     |> MapSet.union(@deferred_event_types)
 
   @doc "Returns the set of all recognized raw MTGA event types."
   @spec known_event_types() :: MapSet.t(String.t())
   def known_event_types, do: @known_event_types
+
+  @doc "Returns the set of event types deferred pending a non-empty payload."
+  @spec deferred_event_types() :: MapSet.t(String.t())
+  def deferred_event_types, do: @deferred_event_types
 
   @doc "Returns true if the event type has an explicit handler or ignore clause."
   @spec recognized?(String.t()) :: boolean()
@@ -944,7 +957,14 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # MulliganReq messages offer a mulligan decision to a specific seat.
   # Returns a list (not a single value) since a batch can contain
   # multiple mulligan offers.
+  #
+  # Hand card extraction: the accompanying GameStateMessage contains
+  # zones (ZoneType_Hand) with objectInstanceIds and gameObjects with
+  # grpId (arena_id). We map instance IDs → arena_ids for the player's
+  # seat to capture the actual opening hand.
   defp build_mulligan_offered(messages, match_id, occurred_at) do
+    game_state = extract_game_state_for_mulligans(messages)
+
     messages
     |> Enum.filter(&(&1["type"] == "GREMessageType_MulliganReq"))
     |> Enum.map(fn message ->
@@ -958,13 +978,47 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           _ -> nil
         end)
 
+      hand_arena_ids = extract_hand_arena_ids(game_state, seat_id)
+
       %MulliganOffered{
         mtga_match_id: match_id,
         seat_id: seat_id,
         hand_size: hand_size || 7,
+        hand_arena_ids: hand_arena_ids,
         occurred_at: occurred_at
       }
     end)
+  end
+
+  defp extract_game_state_for_mulligans(messages) do
+    messages
+    |> Enum.find_value(fn
+      %{"type" => "GREMessageType_GameStateMessage", "gameStateMessage" => gsm} -> gsm
+      _ -> nil
+    end)
+  end
+
+  defp extract_hand_arena_ids(nil, _seat_id), do: nil
+
+  defp extract_hand_arena_ids(game_state, seat_id) do
+    zones = game_state["zones"] || []
+    game_objects = game_state["gameObjects"] || []
+
+    hand_instance_ids =
+      zones
+      |> Enum.find_value(fn
+        %{"type" => "ZoneType_Hand", "ownerSeatId" => ^seat_id, "objectInstanceIds" => ids} -> ids
+        _ -> nil
+      end)
+
+    case hand_instance_ids do
+      nil ->
+        nil
+
+      ids ->
+        instance_to_grp = Map.new(game_objects, fn obj -> {obj["instanceId"], obj["grpId"]} end)
+        Enum.map(ids, fn id -> Map.get(instance_to_grp, id) end) |> Enum.reject(&is_nil/1)
+    end
   end
 
   defp find_gre_message(messages, type) do

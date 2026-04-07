@@ -24,6 +24,7 @@ defmodule Scry2.Events.MulliganOffered do
     :mtga_match_id,
     :seat_id,
     :hand_size,
+    :hand_arena_ids,
     :occurred_at
   ]
 
@@ -32,6 +33,7 @@ defmodule Scry2.Events.MulliganOffered do
           mtga_match_id: String.t() | nil,
           seat_id: integer(),
           hand_size: integer(),
+          hand_arena_ids: [integer()] | nil,
           occurred_at: DateTime.t()
         }
 

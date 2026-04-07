@@ -74,6 +74,7 @@ defmodule Scry2.Events do
     type_slug = Event.type_slug(domain_event)
     source_id = source_record && source_record.id
     sequence = Keyword.get(opts, :sequence, 0)
+    session_id = Keyword.get(opts, :session_id)
 
     attrs = %{
       event_type: type_slug,
@@ -81,7 +82,10 @@ defmodule Scry2.Events do
       mtga_source_id: source_id,
       mtga_timestamp: Event.mtga_timestamp(domain_event),
       sequence: sequence,
-      player_id: Map.get(domain_event, :player_id)
+      player_id: Map.get(domain_event, :player_id),
+      match_id: Map.get(domain_event, :mtga_match_id),
+      draft_id: Map.get(domain_event, :mtga_draft_id),
+      session_id: session_id
     }
 
     changeset = EventRecord.changeset(%EventRecord{}, attrs)
@@ -111,16 +115,14 @@ defmodule Scry2.Events do
   def get(id) when is_integer(id) do
     case Repo.get(EventRecord, id) do
       nil -> {:error, :not_found}
-      record -> {:ok, rehydrate(record)}
+      record -> {:ok, rehydrate_with_metadata(record)}
     end
   end
 
   @doc "Raising variant of `get/1`."
   @spec get!(integer()) :: struct()
   def get!(id) when is_integer(id) do
-    record = Repo.get!(EventRecord, id)
-    event = rehydrate(record)
-    %{event | player_id: record.player_id}
+    Repo.get!(EventRecord, id) |> rehydrate_with_metadata()
   end
 
   @doc """
@@ -152,6 +154,105 @@ defmodule Scry2.Events do
     |> select([e], {e.event_type, count(e.id)})
     |> Repo.all()
     |> Map.new()
+  end
+
+  @doc """
+  Lists domain events matching the given filters, with pagination.
+
+  Returns `{events, total_count}` where events are rehydrated typed structs.
+
+  ## Supported filters
+
+    * `:event_types` — list of type slugs, e.g. `["match_created", "game_completed"]`
+    * `:since` — `%DateTime{}`, lower bound on `mtga_timestamp` (inclusive)
+    * `:until` — `%DateTime{}`, upper bound on `mtga_timestamp` (inclusive)
+    * `:text_search` — string, `LIKE` search on serialized payload
+    * `:match_id` — string, filter by match correlation
+    * `:draft_id` — string, filter by draft correlation
+    * `:session_id` — string, filter by session correlation
+    * `:player_id` — integer, filter by player
+    * `:limit` — integer, default 50
+    * `:offset` — integer, default 0
+  """
+  @spec list_events(keyword()) :: {[struct()], non_neg_integer()}
+  def list_events(opts \\ []) do
+    limit = Keyword.get(opts, :limit, 50)
+    offset = Keyword.get(opts, :offset, 0)
+
+    base_query = opts |> build_filter_query()
+
+    total_count = Repo.aggregate(base_query, :count)
+
+    events =
+      base_query
+      |> order_by([e], desc: e.mtga_timestamp, desc: e.id)
+      |> limit(^limit)
+      |> offset(^offset)
+      |> Repo.all()
+      |> Enum.map(&rehydrate_with_metadata/1)
+
+    {events, total_count}
+  end
+
+  defp build_filter_query(opts) do
+    EventRecord
+    |> maybe_filter_event_types(opts[:event_types])
+    |> maybe_filter_since(opts[:since])
+    |> maybe_filter_until(opts[:until])
+    |> maybe_filter_text_search(opts[:text_search])
+    |> maybe_filter_match_id(opts[:match_id])
+    |> maybe_filter_draft_id(opts[:draft_id])
+    |> maybe_filter_session_id(opts[:session_id])
+    |> maybe_filter_player_id(opts[:player_id])
+  end
+
+  defp maybe_filter_event_types(query, nil), do: query
+  defp maybe_filter_event_types(query, []), do: query
+  defp maybe_filter_event_types(query, types), do: where(query, [e], e.event_type in ^types)
+
+  defp maybe_filter_since(query, nil), do: query
+  defp maybe_filter_since(query, since), do: where(query, [e], e.mtga_timestamp >= ^since)
+
+  defp maybe_filter_until(query, nil), do: query
+  defp maybe_filter_until(query, until_dt), do: where(query, [e], e.mtga_timestamp <= ^until_dt)
+
+  defp maybe_filter_text_search(query, nil), do: query
+  defp maybe_filter_text_search(query, ""), do: query
+
+  defp maybe_filter_text_search(query, text) do
+    pattern = "%#{text}%"
+    where(query, [e], fragment("CAST(? AS TEXT) LIKE ?", e.payload, ^pattern))
+  end
+
+  defp maybe_filter_match_id(query, nil), do: query
+  defp maybe_filter_match_id(query, match_id), do: where(query, [e], e.match_id == ^match_id)
+
+  defp maybe_filter_draft_id(query, nil), do: query
+  defp maybe_filter_draft_id(query, draft_id), do: where(query, [e], e.draft_id == ^draft_id)
+
+  defp maybe_filter_session_id(query, nil), do: query
+
+  defp maybe_filter_session_id(query, session_id),
+    do: where(query, [e], e.session_id == ^session_id)
+
+  defp maybe_filter_player_id(query, nil), do: query
+  defp maybe_filter_player_id(query, player_id), do: where(query, [e], e.player_id == ^player_id)
+
+  @doc """
+  Lists all mulligan_offered events, rehydrated as typed structs.
+
+  Supports `:player_id` and `:match_id` filters.
+  Returns events ordered by `mtga_timestamp` descending.
+  """
+  @spec list_mulligans(keyword()) :: [struct()]
+  def list_mulligans(opts \\ []) do
+    EventRecord
+    |> where([e], e.event_type == "mulligan_offered")
+    |> maybe_filter_player_id(opts[:player_id])
+    |> maybe_filter_match_id(opts[:match_id])
+    |> order_by([e], desc: e.mtga_timestamp, desc: e.id)
+    |> Repo.all()
+    |> Enum.map(&rehydrate_with_metadata/1)
   end
 
   @doc "Subscribes the calling process to `domain:events`."
@@ -276,6 +377,12 @@ defmodule Scry2.Events do
   defp serialize_value(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
   defp serialize_value(value), do: value
 
+  defp rehydrate_with_metadata(%EventRecord{} = record) do
+    event = rehydrate(record)
+    event = %{event | player_id: record.player_id}
+    Map.put(event, :id, record.id)
+  end
+
   defp rehydrate(%EventRecord{event_type: "match_created", payload: payload}) do
     %Scry2.Events.MatchCreated{
       mtga_match_id: payload["mtga_match_id"],
@@ -360,6 +467,7 @@ defmodule Scry2.Events do
       mtga_match_id: payload["mtga_match_id"],
       seat_id: payload["seat_id"],
       hand_size: payload["hand_size"],
+      hand_arena_ids: payload["hand_arena_ids"],
       occurred_at: parse_datetime(payload["occurred_at"])
     }
   end
@@ -386,6 +494,110 @@ defmodule Scry2.Events do
       client_id: payload["client_id"],
       screen_name: payload["screen_name"],
       session_id: payload["session_id"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "event_joined", payload: payload}) do
+    %Scry2.Events.EventJoined{
+      event_name: payload["event_name"],
+      course_id: payload["course_id"],
+      entry_currency_type: payload["entry_currency_type"],
+      entry_fee: payload["entry_fee"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "inventory_changed", payload: payload}) do
+    %Scry2.Events.InventoryChanged{
+      source: payload["source"],
+      source_id: payload["source_id"],
+      gold_delta: payload["gold_delta"],
+      gems_delta: payload["gems_delta"],
+      boosters: payload["boosters"],
+      gold_balance: payload["gold_balance"],
+      gems_balance: payload["gems_balance"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "prize_claimed", payload: payload}) do
+    %Scry2.Events.PrizeClaimed{
+      event_name: payload["event_name"],
+      course_id: payload["course_id"],
+      wins: payload["wins"],
+      losses: payload["losses"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "deck_selected", payload: payload}) do
+    %Scry2.Events.DeckSelected{
+      event_name: payload["event_name"],
+      deck_id: payload["deck_id"],
+      deck_name: payload["deck_name"],
+      main_deck: payload["main_deck"] || [],
+      sideboard: payload["sideboard"] || [],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "pairing_entered", payload: payload}) do
+    %Scry2.Events.PairingEntered{
+      event_name: payload["event_name"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "quest_status", payload: payload}) do
+    %Scry2.Events.QuestStatus{
+      quests: payload["quests"] || [],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "daily_wins_status", payload: payload}) do
+    %Scry2.Events.DailyWinsStatus{
+      daily_position: payload["daily_position"],
+      daily_reset_at: payload["daily_reset_at"],
+      weekly_position: payload["weekly_position"],
+      weekly_reset_at: payload["weekly_reset_at"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "active_courses", payload: payload}) do
+    %Scry2.Events.ActiveCourses{
+      courses: payload["courses"] || [],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "deck_inventory", payload: payload}) do
+    %Scry2.Events.DeckInventory{
+      decks: payload["decks"] || [],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "deck_updated", payload: payload}) do
+    %Scry2.Events.DeckUpdated{
+      deck_id: payload["deck_id"],
+      deck_name: payload["deck_name"],
+      format: payload["format"],
+      action_type: payload["action_type"],
+      main_deck: payload["main_deck"] || [],
+      sideboard: payload["sideboard"] || [],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "mastery_progress", payload: payload}) do
+    %Scry2.Events.MasteryProgress{
+      node_states: payload["node_states"],
+      milestone_states: payload["milestone_states"],
+      total_nodes: payload["total_nodes"],
+      completed_nodes: payload["completed_nodes"],
       occurred_at: parse_datetime(payload["occurred_at"])
     }
   end
