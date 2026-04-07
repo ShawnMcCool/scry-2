@@ -28,7 +28,8 @@ defmodule Scry2Web.DashboardLive do
      })
      |> assign(:unrecognized, %{})
      |> assign(:errors, [])
-     |> assign(:refresh_result, nil)}
+     |> assign(:refresh_result, nil)
+     |> assign(:reload_timer, nil)}
   end
 
   @impl true
@@ -85,29 +86,50 @@ defmodule Scry2Web.DashboardLive do
   end
 
   def handle_info({:match_updated, _}, socket) do
-    player_id = socket.assigns[:active_player_id]
-
-    {:noreply,
-     assign(socket, :counts, %{
-       socket.assigns.counts
-       | matches: Matches.count(player_id: player_id)
-     })}
+    {:noreply, schedule_reload(socket)}
   end
 
   def handle_info({:draft_updated, _}, socket) do
-    player_id = socket.assigns[:active_player_id]
-
-    {:noreply,
-     assign(socket, :counts, %{socket.assigns.counts | drafts: Drafts.count(player_id: player_id)})}
+    {:noreply, schedule_reload(socket)}
   end
 
   def handle_info({:cards_refreshed, count}, socket) do
-    counts = %{socket.assigns.counts | cards: Cards.count()}
+    {:noreply,
+     socket
+     |> put_flash(:info, "Imported #{count} cards.")
+     |> schedule_reload()}
+  end
+
+  def handle_info(:reload_data, socket) do
+    player_id = socket.assigns[:active_player_id]
+    events_by_type = MtgaLogIngestion.count_by_type()
+    known_types = IdentifyDomainEvents.known_event_types()
+
+    unrecognized =
+      events_by_type
+      |> Map.reject(fn {type, _count} -> MapSet.member?(known_types, type) end)
+
+    total_raw = events_by_type |> Map.values() |> Enum.sum()
+    domain_counts = Events.count_by_type()
+    total_domain = domain_counts |> Map.values() |> Enum.sum()
+    error_count = MtgaLogIngestion.count_errors()
+
+    counts = %{
+      matches: Matches.count(player_id: player_id),
+      drafts: Drafts.count(player_id: player_id),
+      cards: Cards.count(),
+      events_by_type: events_by_type,
+      total_raw: total_raw,
+      total_domain: total_domain,
+      errors: error_count
+    }
 
     {:noreply,
      socket
      |> assign(:counts, counts)
-     |> put_flash(:info, "Imported #{count} cards.")}
+     |> assign(:unrecognized, unrecognized)
+     |> assign(:errors, if(error_count > 0, do: MtgaLogIngestion.list_errors(), else: []))
+     |> assign(:reload_timer, nil)}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
@@ -119,7 +141,7 @@ defmodule Scry2Web.DashboardLive do
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <div class="flex items-center justify-between">
         <h1 class="text-2xl font-semibold">Dashboard</h1>
-        <button class="btn btn-primary btn-sm" phx-click="refresh_cards">
+        <button class="btn btn-soft btn-primary btn-sm" phx-click="refresh_cards">
           <.icon name="hero-arrow-path" class="size-4" /> Refresh cards from 17lands
         </button>
       </div>
@@ -226,21 +248,6 @@ defmodule Scry2Web.DashboardLive do
         </div>
       </section>
     </Layouts.app>
-    """
-  end
-
-  attr :title, :string, required: true
-  attr :value, :any, required: true
-  attr :class, :string, default: ""
-
-  defp stat_card(assigns) do
-    ~H"""
-    <div class="card bg-base-200">
-      <div class="card-body p-4">
-        <p class="text-xs uppercase text-base-content/60">{@title}</p>
-        <p class={"text-2xl font-semibold #{@class}"}>{@value}</p>
-      </div>
-    </div>
     """
   end
 end

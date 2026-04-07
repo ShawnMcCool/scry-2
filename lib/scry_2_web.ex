@@ -82,6 +82,9 @@ defmodule Scry2Web do
       # Core UI components
       import Scry2Web.CoreComponents
 
+      # Shared LiveView helpers (debounce, formatting)
+      import Scry2Web.LiveHelpers
+
       # Common modules used in templates
       alias Phoenix.LiveView.JS
       alias Scry2Web.Layouts

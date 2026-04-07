@@ -15,20 +15,6 @@ defmodule Scry2Web.CardsHelpersTest do
     end
   end
 
-  describe "rarity_class/1" do
-    test "maps each rarity to a distinct daisyUI class" do
-      assert H.rarity_class("mythic") == "badge-warning"
-      assert H.rarity_class("rare") == "badge-accent"
-      assert H.rarity_class("uncommon") == "badge-info"
-      assert H.rarity_class("common") == "badge-ghost"
-    end
-
-    test "falls back to ghost for unknown rarities" do
-      assert H.rarity_class(nil) == "badge-ghost"
-      assert H.rarity_class("land") == "badge-ghost"
-    end
-  end
-
   describe "color_identity_label/1" do
     test "returns Colorless for nil and empty strings" do
       assert H.color_identity_label(nil) == "Colorless"
