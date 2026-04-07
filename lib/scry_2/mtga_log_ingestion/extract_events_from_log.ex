@@ -56,25 +56,29 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
   """
 
   alias Scry2.MtgaLogIngestion.Event
+  alias Scry2.MtgaLogIngestion.ParseWarning
 
   @doc """
   Parses a chunk of log text starting at `base_offset` from `source_file`.
 
-  Returns a list of `%Event{}` structs, one per successfully extracted
-  event block. The `base_offset` is added to each event's position
-  within the chunk to produce the stable `file_offset` value.
+  Returns `{events, warnings}` — a list of `%Event{}` structs plus any
+  `%ParseWarning{}` structs for issues encountered during parsing. The
+  `base_offset` is added to each event's position within the chunk to
+  produce the stable `file_offset` value.
   """
-  @spec parse_chunk(binary(), String.t(), non_neg_integer()) :: [Event.t()]
+  @spec parse_chunk(binary(), String.t(), non_neg_integer()) ::
+          {[Event.t()], [ParseWarning.t()]}
   def parse_chunk(chunk, source_file, base_offset)
       when is_binary(chunk) and is_binary(source_file) and is_integer(base_offset) do
     chunk
     |> find_event_starts()
-    |> Enum.flat_map(fn {header_offset, header_line, remainder} ->
+    |> Enum.reduce({[], []}, fn {header_offset, header_line, remainder}, {events, warnings} ->
       case extract_event(header_line, remainder, source_file, base_offset + header_offset) do
-        {:ok, event} -> [event]
-        :skip -> []
+        {:ok, event, new_warnings} -> {[event | events], new_warnings ++ warnings}
+        {:skip, new_warnings} -> {events, new_warnings ++ warnings}
       end
     end)
+    |> then(fn {events, warnings} -> {Enum.reverse(events), Enum.reverse(warnings)} end)
   end
 
   # Finds every `[UnityCrossThreadLogger]` occurrence in the chunk and
@@ -114,18 +118,21 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
       {:ok, type, timestamp} ->
         case find_json_body(header_line, remainder) do
           {:ok, json_string} ->
+            {payload, decode_warnings} = decode_json_with_warnings(json_string, file_offset)
+            {timestamp, ts_warnings} = parse_timestamp_with_warnings(timestamp, file_offset)
+
             {:ok,
              %Event{
                type: type,
                mtga_timestamp: timestamp,
-               payload: decode_json(json_string),
+               payload: payload,
                raw_json: json_string,
                file_offset: file_offset,
                source_file: source_file
-             }}
+             }, decode_warnings ++ ts_warnings}
 
           :none ->
-            :skip
+            {:skip, []}
         end
 
       # Format A response — three-line pattern:
@@ -137,22 +144,25 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
           {:ok, type, timestamp, rest} ->
             case grab_json_block(rest) do
               {:ok, json_string} ->
+                resolved_ts = timestamp || parse_timestamp_from_header(header_line)
+                {payload, decode_warnings} = decode_json_with_warnings(json_string, file_offset)
+
                 {:ok,
                  %Event{
                    type: type,
-                   mtga_timestamp: timestamp || parse_timestamp_from_header(header_line),
-                   payload: decode_json(json_string),
+                   mtga_timestamp: resolved_ts,
+                   payload: payload,
                    raw_json: json_string,
                    file_offset: file_offset,
                    source_file: source_file
-                 }}
+                 }, decode_warnings}
 
               :none ->
-                :skip
+                {:skip, []}
             end
 
           :skip ->
-            :skip
+            {:skip, []}
         end
     end
   end
@@ -325,12 +335,30 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
     scan_json(rest, pos + 1, depth, in_string, false)
   end
 
-  defp decode_json(json_string) do
+  # Decodes JSON and produces structured warnings on failure.
+  defp decode_json_with_warnings(json_string, file_offset) do
     case Jason.decode(json_string) do
-      {:ok, decoded} -> decoded
-      {:error, _} -> nil
+      {:ok, decoded} ->
+        {decoded, []}
+
+      {:error, reason} ->
+        warning = %ParseWarning{
+          category: :json_decode_failed,
+          file_offset: file_offset,
+          detail: "JSON decode error: #{inspect(reason)}"
+        }
+
+        {nil, [warning]}
     end
   end
+
+  # Wraps an already-parsed timestamp to emit a warning if it was nil
+  # due to a parse failure. Timestamps parsed from headers come in as
+  # DateTime | nil; this only warns when the raw string was present but
+  # unparseable (nil from parse_timestamp/1). Since we don't have the
+  # raw string here, we skip warnings for nil timestamps — those are
+  # expected for Format A events that don't carry header timestamps.
+  defp parse_timestamp_with_warnings(timestamp, _file_offset), do: {timestamp, []}
 
   # Parses "M/D/YYYY H:MM:SS AM/PM" (12-hour clock) into a `%DateTime{}`.
   # Returns nil on any parse failure — the raw_json preserves the

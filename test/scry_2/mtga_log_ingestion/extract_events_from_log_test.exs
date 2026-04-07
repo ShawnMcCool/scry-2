@@ -1,7 +1,7 @@
 defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
   use ExUnit.Case, async: true
 
-  alias Scry2.MtgaLogIngestion.{Event, ExtractEventsFromLog}
+  alias Scry2.MtgaLogIngestion.{Event, ExtractEventsFromLog, ParseWarning}
 
   # These tests use synthetic fixtures that mimic the dominant
   # `UnityCrossThreadLogger` event header format. Real captured log
@@ -15,7 +15,8 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
       {"matchId":"abc-123","opponent":"Opponent#12345"}
       """
 
-      assert [%Event{} = event] = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
+      assert {[%Event{} = event], []} =
+               ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
 
       assert event.type == "EventMatchCreated"
       assert event.payload == %{"matchId" => "abc-123", "opponent" => "Opponent#12345"}
@@ -30,7 +31,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
       {"deckId":"deck-1","mainDeck":[{"id":91234,"count":4},{"id":91235,"count":3}],"name":"Mono Blue"}
       """
 
-      [event] = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
+      {[event], []} = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
 
       assert event.type == "EventDeckSubmit"
       assert event.payload["deckId"] == "deck-1"
@@ -43,7 +44,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
       {"name":"\\"Quoted\\" Name","deckId":"x"}
       """
 
-      [event] = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
+      {[event], []} = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
 
       assert event.type == "EventDeckSubmit"
       assert event.payload["name"] == ~s("Quoted" Name)
@@ -56,7 +57,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
       [info] regular Phoenix log
       """
 
-      assert ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0) == []
+      assert {[], _warnings} = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
     end
 
     test "file_offset is adjusted by base_offset" do
@@ -65,7 +66,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
       {"gameId":"g1"}
       """
 
-      [event] = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 1_000)
+      {[event], []} = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 1_000)
 
       assert event.file_offset >= 1_000
     end
@@ -81,7 +82,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
       {"gameId":"g1"}
       """
 
-      events = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
+      {events, []} = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
 
       assert length(events) == 2
       assert Enum.map(events, & &1.type) == ["EventMatchCreated", "MatchStart"]
@@ -92,7 +93,23 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
     test "skips header without a JSON block" do
       chunk = "[UnityCrossThreadLogger]==> EventMatchCreated\nno json here\n"
 
-      assert ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0) == []
+      assert {[], _warnings} = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 0)
+    end
+
+    test "emits json_decode_failed warning for syntactically-complete but invalid JSON" do
+      # Brace-balanced but not valid JSON — grab_json_block finds the block,
+      # then decode_json_with_warnings reports the failure.
+      chunk = "[UnityCrossThreadLogger]==> EventMatchCreated\n{not: valid}\n"
+
+      {[event], warnings} = ExtractEventsFromLog.parse_chunk(chunk, "/tmp/fake.log", 500)
+
+      assert event.type == "EventMatchCreated"
+      assert event.payload == nil
+      assert event.raw_json == "{not: valid}"
+
+      assert [%ParseWarning{category: :json_decode_failed} = warning] = warnings
+      assert warning.file_offset == 500
+      assert warning.detail =~ "JSON decode error"
     end
   end
 
@@ -114,7 +131,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
     test "Format A inline: EventJoin request (header + JSON on same line)" do
       chunk = fixture("event_join.log")
 
-      [event] = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
+      {[event], []} = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
 
       assert event.type == "EventJoin"
       assert event.mtga_timestamp == nil
@@ -128,7 +145,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
     test "Format B: MatchGameRoomStateChangedEvent state=Playing (match created from lobby)" do
       chunk = fixture("match_game_room_state_changed_playing.log")
 
-      [event] = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
+      {[event], []} = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
 
       assert event.type == "MatchGameRoomStateChangedEvent"
 
@@ -166,7 +183,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
     test "Format B: MatchGameRoomStateChangedEvent state=MatchCompleted (final result)" do
       chunk = fixture("match_game_room_state_changed_completed.log")
 
-      [event] = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
+      {[event], []} = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
 
       assert event.type == "MatchGameRoomStateChangedEvent"
       assert event.mtga_timestamp == ~U[2026-04-05 19:53:36Z]
@@ -195,7 +212,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
     test "Format B: GreToClientEvent connectResp (carries deck data for future mapper work)" do
       chunk = fixture("gre_to_client_event_connect_resp.log")
 
-      [event] = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
+      {[event], []} = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
 
       assert event.type == "GreToClientEvent"
       assert event.mtga_timestamp == ~U[2026-04-05 19:18:40Z]
@@ -214,7 +231,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
     test "Format A response: RankGetCombinedRankInfo three-line pattern (timestamp + bare <== + JSON)" do
       chunk = fixture("rank_get_combined_rank_info_response.log")
 
-      [event] = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
+      {[event], []} = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
 
       assert event.type == "RankGetCombinedRankInfo"
       assert event.mtga_timestamp == ~U[2026-04-06 18:47:51Z]
