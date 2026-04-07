@@ -24,6 +24,33 @@ defmodule Scry2.MtgaLogIngestionTest do
       assert_receive {:event, %{id: id, event_type: "MatchStart"}}
       assert id == record.id
     end
+
+    test "duplicate (source_file, file_offset) is silently skipped (ADR-016)" do
+      Topics.subscribe(Topics.mtga_logs_events())
+
+      attrs = %{
+        event_type: "MatchStart",
+        file_offset: 42,
+        source_file: "/tmp/dedup-test.log",
+        raw_json: ~s({"foo":"bar"})
+      }
+
+      first = MtgaLogIngestion.insert_event!(attrs)
+      assert first != nil
+      assert first.id != nil
+      assert_receive {:event, %{id: _}}
+
+      second = MtgaLogIngestion.insert_event!(attrs)
+      assert second == nil
+      refute_receive {:event, _}
+
+      all = MtgaLogIngestion.list_unprocessed()
+
+      dupes =
+        Enum.filter(all, &(&1.file_offset == 42 and &1.source_file == "/tmp/dedup-test.log"))
+
+      assert length(dupes) == 1
+    end
   end
 
   describe "list_unprocessed/1 and mark_processed!/1" do
