@@ -19,6 +19,10 @@ path = "~/.local/share/scry_2/scry_2.db"
 # and uses the first match. Uncomment to override.
 # player_log_path = "/home/you/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/2141910/pfx/drive_c/users/steamuser/AppData/LocalLow/Wizards Of The Coast/MTGA/Player.log"
 
+# Path to MTGA's data directory containing Raw_CardDatabase_*.mtga.
+# If unset, Scry2 derives it from the MTGA installation path.
+# data_dir = "/home/you/.local/share/Steam/steamapps/common/MTGA/MTGA_Data/Downloads/Raw"
+
 # How often (ms) the tailer polls after a filesystem event, to catch
 # buffered writes. The watcher is event-driven (inotify) — this is a
 # debounce/flush interval, not a polling loop.
@@ -40,6 +44,17 @@ lands17_url = "https://17lands-public.s3.amazonaws.com/analysis_data/cards/cards
 # Cron expression for the scheduled refresh (Oban.Plugins.Cron syntax).
 # Default: daily at 04:00 UTC.
 refresh_cron = "0 4 * * *"
+
+# Scryfall bulk-data catalog endpoint. The actual download URL rotates;
+# this endpoint returns JSON with a `download_uri` field.
+scryfall_bulk_url = "https://api.scryfall.com/bulk-data/default-cards"
+
+# ── Card images ──────────────────────────────────────────────────────────
+[images]
+# Directory to cache downloaded card images locally. Scryfall card art is
+# fetched on first access and stored here permanently. The directory can
+# be deleted — images re-download on demand.
+cache_dir = "~/.local/share/scry_2/images/"
 
 # ── Workers ──────────────────────────────────────────────────────────────
 # These toggles let a dev server and a production release coexist on one
