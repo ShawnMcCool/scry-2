@@ -554,6 +554,25 @@ defmodule Scry2Web.CoreComponents do
     """
   end
 
+  @doc """
+  Returns a CSS text color class for an MTG mana color symbol.
+
+  These are the canonical MTG color styles for the app — use them
+  wherever a mana color label appears (mulligan stats, deck breakdowns,
+  card filters, etc.).
+
+  ## Examples
+
+      <span class={mana_color_class("G")}>G</span>
+      <span class={mana_color_class("U")}>U×3</span>
+  """
+  def mana_color_class("W"), do: "text-amber-100"
+  def mana_color_class("U"), do: "text-sky-400"
+  def mana_color_class("B"), do: "text-violet-400"
+  def mana_color_class("R"), do: "text-red-400"
+  def mana_color_class("G"), do: "text-emerald-400"
+  def mana_color_class(_), do: "text-base-content/40"
+
   ## JS Commands
 
   def show(js \\ %JS{}, selector) do
