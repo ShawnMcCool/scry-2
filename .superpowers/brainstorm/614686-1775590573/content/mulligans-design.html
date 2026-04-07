@@ -1,0 +1,120 @@
+<h2>Mulligans View — Show Don't Hide</h2>
+<p class="subtitle">Each hand shows card images inline with a Keep/Mulligan badge. No clicking into rows.</p>
+
+<div class="cards">
+  <!-- Option A: Card-based layout -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 20px; background: #1a1a2e;">
+      <!-- Mockup of a mulligan match group -->
+      <div style="font-family: system-ui; color: #ccc;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+          <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #888;">Match</span>
+          <span style="font-family: monospace; font-size: 11px; color: #6d9eff;">a1b2c3d4e5f6…</span>
+        </div>
+
+        <!-- Hand 1: Mulliganed (7 cards) -->
+        <div style="display: flex; align-items: center; gap: 12px; padding: 10px; margin-bottom: 6px; background: rgba(255,255,255,0.03); border-radius: 8px; border-left: 3px solid #3b82f6;">
+          <div style="min-width: 90px;">
+            <span style="display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; background: rgba(59,130,246,0.15); color: #60a5fa; border: 1px solid rgba(59,130,246,0.3);">Mulligan</span>
+          </div>
+          <div style="display: flex; gap: 3px;">
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #4a3728, #2a1f15); border: 1px solid #5a4738;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #1a3a4a, #0f2530); border: 1px solid #2a4a5a;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #3a1a1a, #250f0f); border: 1px solid #5a2a2a;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #2a3a1a, #1a250f); border: 1px solid #3a5a2a;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #4a3728, #2a1f15); border: 1px solid #5a4738;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #1a1a3a, #0f0f25); border: 1px solid #2a2a5a;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #3a3a1a, #25250f); border: 1px solid #5a5a2a;"></div>
+          </div>
+          <span style="font-size: 11px; color: #666; margin-left: auto;">7 cards</span>
+        </div>
+
+        <!-- Hand 2: Kept (6 cards) -->
+        <div style="display: flex; align-items: center; gap: 12px; padding: 10px; background: rgba(255,255,255,0.03); border-radius: 8px; border-left: 3px solid #f59e0b;">
+          <div style="min-width: 90px;">
+            <span style="display: inline-block; padding: 2px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; background: rgba(245,158,11,0.15); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3);">Keep</span>
+          </div>
+          <div style="display: flex; gap: 3px;">
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #1a3a4a, #0f2530); border: 1px solid #2a4a5a;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #3a1a3a, #250f25); border: 1px solid #5a2a5a;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #4a3728, #2a1f15); border: 1px solid #5a4738;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #1a1a3a, #0f0f25); border: 1px solid #2a2a5a;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #2a3a1a, #1a250f); border: 1px solid #3a5a2a;"></div>
+            <div style="width: 38px; height: 53px; border-radius: 3px; background: linear-gradient(135deg, #3a1a1a, #250f0f); border: 1px solid #5a2a2a;"></div>
+          </div>
+          <span style="font-size: 11px; color: #666; margin-left: auto;">6 cards</span>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Card rows with left border</h3>
+      <p>Each hand is a row with a colored left border (blue=mulligan, orange=keep). Card images inline, badge on the left, hand size on the right. Grouped by match. Compact but rich.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Timeline/stacked layout -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 20px; background: #1a1a2e;">
+      <div style="font-family: system-ui; color: #ccc;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+          <span style="font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #888;">Match</span>
+          <span style="font-family: monospace; font-size: 11px; color: #6d9eff;">a1b2c3d4e5f6…</span>
+        </div>
+
+        <!-- Hand 1: Mulliganed -->
+        <div style="margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <span style="display: inline-block; padding: 3px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; background: rgba(59,130,246,0.2); color: #60a5fa; border: 1px solid rgba(59,130,246,0.4);">Mulligan</span>
+            <span style="font-size: 11px; color: #666;">7 cards</span>
+          </div>
+          <div style="display: flex; gap: 4px; padding-left: 4px;">
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #4a3728, #2a1f15); border: 1px solid #5a4738;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #1a3a4a, #0f2530); border: 1px solid #2a4a5a;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #3a1a1a, #250f0f); border: 1px solid #5a2a2a;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #2a3a1a, #1a250f); border: 1px solid #3a5a2a;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #4a3728, #2a1f15); border: 1px solid #5a4738;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #1a1a3a, #0f0f25); border: 1px solid #2a2a5a;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #3a3a1a, #25250f); border: 1px solid #5a5a2a;"></div>
+          </div>
+        </div>
+
+        <!-- Divider arrow -->
+        <div style="display: flex; align-items: center; padding-left: 20px; margin-bottom: 12px;">
+          <div style="width: 1px; height: 16px; background: #444;"></div>
+          <span style="font-size: 10px; color: #555; margin-left: 8px;">↓ mulliganed into</span>
+        </div>
+
+        <!-- Hand 2: Kept -->
+        <div>
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+            <span style="display: inline-block; padding: 3px 12px; border-radius: 6px; font-size: 12px; font-weight: 700; background: rgba(245,158,11,0.2); color: #fbbf24; border: 1px solid rgba(245,158,11,0.4);">Keep</span>
+            <span style="font-size: 11px; color: #666;">6 cards</span>
+          </div>
+          <div style="display: flex; gap: 4px; padding-left: 4px;">
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #1a3a4a, #0f2530); border: 1px solid #2a4a5a;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #3a1a3a, #250f25); border: 1px solid #5a2a5a;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #4a3728, #2a1f15); border: 1px solid #5a4738;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #1a1a3a, #0f0f25); border: 1px solid #2a2a5a;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #2a3a1a, #1a250f); border: 1px solid #3a5a2a;"></div>
+            <div style="width: 48px; height: 67px; border-radius: 4px; background: linear-gradient(135deg, #3a1a1a, #250f0f); border: 1px solid #5a2a2a;"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Timeline with "mulliganed into" flow</h3>
+      <p>Stacked vertically with a visual connector showing the mulligan progression. Badge above the hand, cards below. Tells the story of the decision sequence. Larger card images. More vertical space.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 24px;">
+  <h3>Shared design elements</h3>
+  <ul style="color: #aaa; font-size: 14px; line-height: 1.8;">
+    <li><strong style="color: #fbbf24;">Orange</strong> = Keep, <strong style="color: #60a5fa;">Blue</strong> = Mulligan (per UI-004)</li>
+    <li>Real card images via <code>&lt;.card_hand&gt;</code> component (placeholders shown here)</li>
+    <li>Grouped by match, newest first</li>
+    <li>Match ID links to event explorer</li>
+    <li>Real-time updates via PubSub (existing behavior preserved)</li>
+  </ul>
+</div>

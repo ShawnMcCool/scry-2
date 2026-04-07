@@ -1,0 +1,127 @@
+<h2>Event Explorer — Component Breakdown</h2>
+<p class="subtitle">How the pieces compose on the /events page and embed elsewhere</p>
+
+<div class="mockup">
+  <div class="mockup-header">/events — Full Event Explorer Page</div>
+  <div class="mockup-body" style="padding: 16px; font-family: monospace; font-size: 13px; background: #1a1a2e; color: #e0e0e0;">
+
+    <!-- Filter bar -->
+    <div style="background: #16213e; border: 1px solid #333; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+      <div style="color: #888; font-size: 11px; margin-bottom: 8px;">FILTERS</div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <div style="background: #0f3460; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px;">
+          Type: <span style="color: #7fdbca;">All ▾</span>
+        </div>
+        <div style="background: #0f3460; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px;">
+          Since: <span style="color: #7fdbca;">2026-04-06 ▾</span>
+        </div>
+        <div style="background: #0f3460; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px;">
+          Until: <span style="color: #7fdbca;">now ▾</span>
+        </div>
+        <div style="background: #0f3460; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px;">
+          🔍 <span style="color: #666;">Search payloads...</span>
+        </div>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 8px;">
+        <div style="background: #1a1a2e; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; font-size: 11px;">
+          Match: <span style="color: #c792ea;">none</span>
+        </div>
+        <div style="background: #1a1a2e; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; font-size: 11px;">
+          Draft: <span style="color: #c792ea;">none</span>
+        </div>
+        <div style="background: #1a1a2e; border: 1px solid #444; border-radius: 4px; padding: 4px 8px; font-size: 11px;">
+          Session: <span style="color: #c792ea;">none</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results summary -->
+    <div style="display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 11px; color: #888;">
+      <span>Showing 1–50 of 1,247 events</span>
+      <span>Page 1 of 25 &nbsp; ◀ ▶</span>
+    </div>
+
+    <!-- Event list table -->
+    <div style="border: 1px solid #333; border-radius: 4px; overflow: hidden;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+        <tr style="background: #16213e; color: #888; font-size: 11px;">
+          <td style="padding: 6px 8px; border-bottom: 1px solid #333;">TIME</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #333;">TYPE</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #333;">CORRELATION</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #333;">SUMMARY</td>
+        </tr>
+        <tr style="cursor: pointer; border-bottom: 1px solid #222;">
+          <td style="padding: 6px 8px; color: #888;">14:23:01</td>
+          <td style="padding: 6px 8px;"><span style="background: #2d4a22; color: #98c379; padding: 2px 6px; border-radius: 3px; font-size: 11px;">match_created</span></td>
+          <td style="padding: 6px 8px; font-size: 11px; color: #c792ea;">match:a8f3…</td>
+          <td style="padding: 6px 8px; color: #aaa;">vs. PlayerName — PremierDraft FDN</td>
+        </tr>
+        <tr style="cursor: pointer; border-bottom: 1px solid #222;">
+          <td style="padding: 6px 8px; color: #888;">14:23:02</td>
+          <td style="padding: 6px 8px;"><span style="background: #2d4a22; color: #98c379; padding: 2px 6px; border-radius: 3px; font-size: 11px;">die_roll_completed</span></td>
+          <td style="padding: 6px 8px; font-size: 11px; color: #c792ea;">match:a8f3…</td>
+          <td style="padding: 6px 8px; color: #aaa;">Won die roll (19 vs 4), going first</td>
+        </tr>
+        <tr style="cursor: pointer; border-bottom: 1px solid #222;">
+          <td style="padding: 6px 8px; color: #888;">14:23:03</td>
+          <td style="padding: 6px 8px;"><span style="background: #2d4a22; color: #98c379; padding: 2px 6px; border-radius: 3px; font-size: 11px;">deck_submitted</span></td>
+          <td style="padding: 6px 8px; font-size: 11px; color: #c792ea;">match:a8f3…</td>
+          <td style="padding: 6px 8px; color: #aaa;">60 cards main, 0 sideboard</td>
+        </tr>
+        <tr style="cursor: pointer; border-bottom: 1px solid #222; background: #1a1a35;">
+          <td style="padding: 6px 8px; color: #888;">14:22:45</td>
+          <td style="padding: 6px 8px;"><span style="background: #4a3d22; color: #e5c07b; padding: 2px 6px; border-radius: 3px; font-size: 11px;">rank_snapshot</span></td>
+          <td style="padding: 6px 8px; font-size: 11px; color: #666;">session:f02c…</td>
+          <td style="padding: 6px 8px; color: #aaa;">Gold 2, step 4 (Limited)</td>
+        </tr>
+        <tr style="cursor: pointer; border-bottom: 1px solid #222;">
+          <td style="padding: 6px 8px; color: #888;">14:15:30</td>
+          <td style="padding: 6px 8px;"><span style="background: #22384a; color: #61afef; padding: 2px 6px; border-radius: 3px; font-size: 11px;">draft_pick_made</span></td>
+          <td style="padding: 6px 8px; font-size: 11px; color: #c792ea;">draft:b71e…</td>
+          <td style="padding: 6px 8px; color: #aaa;">Pack 1, Pick 3 — Arena ID 12345</td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top: 32px;">Component Boundaries</h3>
+<p class="subtitle">Each box is a reusable piece</p>
+
+<div class="options">
+  <div class="option" data-choice="filters" onclick="toggleSelect(this)">
+    <div class="letter">F</div>
+    <div class="content">
+      <h3>event_filters/1</h3>
+      <p><strong>Function component.</strong> Renders the filter bar (type dropdown, time range, text search, correlation fields). Emits <code>phx-change</code> events. Stateless — receives current filter values as assigns.</p>
+      <p style="color: #888; font-size: 13px;">Embeddable anywhere a filter UI is needed. Host controls which filters are visible via an <code>:enabled</code> assign.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="list" onclick="toggleSelect(this)">
+    <div class="letter">L</div>
+    <div class="content">
+      <h3>event_list/1</h3>
+      <p><strong>Function component.</strong> Renders the table of events with pagination controls. Receives <code>@events</code>, <code>@total_count</code>, <code>@page</code>. Each row links to <code>/events/:id</code>.</p>
+      <p style="color: #888; font-size: 13px;">Embeddable in any page that has a list of events to display. Works with any filtered result set.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="row" onclick="toggleSelect(this)">
+    <div class="letter">R</div>
+    <div class="content">
+      <h3>event_row/1</h3>
+      <p><strong>Function component.</strong> Single event row — type badge, timestamp, correlation indicator, one-line summary. Used inside <code>event_list/1</code> but also independently (e.g., "recent events" widget).</p>
+      <p style="color: #888; font-size: 13px;">The summary line is computed by an extracted pure function: <code>EventsHelpers.event_summary/1</code></p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="explorer" onclick="toggleSelect(this)">
+    <div class="letter">E</div>
+    <div class="content">
+      <h3>EventExplorer (LiveComponent)</h3>
+      <p><strong>The composition shell.</strong> Owns filter state, calls <code>Events.list_events/1</code>, manages pagination. Composes <code>event_filters/1</code> + <code>event_list/1</code>. Host pages embed this with preset filters.</p>
+      <p style="color: #888; font-size: 13px;">Embedding: <code>&lt;.live_component module={EventExplorer} id="match-events" preset={%{match_id: @match_id}} /&gt;</code></p>
+    </div>
+  </div>
+</div>

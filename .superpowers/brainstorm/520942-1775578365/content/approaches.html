@@ -1,0 +1,76 @@
+<h2>Event Viewer — Component Architecture</h2>
+<p class="subtitle">How should the reusable pieces be structured?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>LiveComponent Kit</h3>
+      <p><strong>Reusable LiveComponents</strong> — each filter, the event list, and the detail view are separate <code>Phoenix.LiveComponent</code> modules. The <code>/events</code> page composes them. Other pages embed whichever components they need.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4>
+          <ul>
+            <li>Each component owns its own state and events</li>
+            <li>Embedding = <code>&lt;.live_component module={EventList} .../&gt;</code></li>
+            <li>Components can communicate via send/send_update</li>
+          </ul>
+        </div>
+        <div class="cons"><h4>Cons</h4>
+          <ul>
+            <li>LiveComponent state management adds complexity</li>
+            <li>Cross-component coordination (filters → list) requires message passing</li>
+            <li>LiveComponents are heavier than function components</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Context Query API + Function Components</h3>
+      <p><strong>Smart context, thin views.</strong> The <code>Events</code> context gets a rich query API (filter by type, time, correlation, text search). Function components render results. Each LiveView composes queries + components as needed. Filters live in URL params.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4>
+          <ul>
+            <li>Follows existing project pattern (Matches, Drafts, Cards)</li>
+            <li>URL-driven state — bookmarkable, shareable, survives reload</li>
+            <li>Function components are simple, testable, no hidden state</li>
+            <li>Any LiveView can call <code>Events.list_events(filters)</code> and render results</li>
+          </ul>
+        </div>
+        <div class="cons"><h4>Cons</h4>
+          <ul>
+            <li>Filter UI code may be duplicated across pages (mitigated by shared function components)</li>
+            <li>Each host LiveView must wire up filter → query → assign</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Hybrid — Query API + One LiveComponent Shell</h3>
+      <p><strong>Best of both.</strong> Rich <code>Events</code> query API (like B), but wrap the full "event explorer" (filters + list + pagination) in a single <code>EventExplorer</code> LiveComponent. Embedding pages drop in the component with preset filters. Detail view is a separate page.</p>
+      <div class="pros-cons">
+        <div class="pros"><h4>Pros</h4>
+          <ul>
+            <li>One-line embedding: <code>&lt;.live_component module={EventExplorer} filters={%{...}} /&gt;</code></li>
+            <li>Query API still available for custom compositions</li>
+            <li>Filter + list coordination stays encapsulated</li>
+          </ul>
+        </div>
+        <div class="cons"><h4>Cons</h4>
+          <ul>
+            <li>LiveComponent adds weight when only the query API is needed</li>
+            <li>Preset filters vs. user filters need clear ownership rules</li>
+            <li>More abstraction layers than the project currently uses</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
