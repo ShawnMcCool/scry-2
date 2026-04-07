@@ -1,81 +1,81 @@
 defmodule Scry2Web.MulligansHelpers do
   @moduledoc """
-  Pure functions for mulligan display — decision inference from event
-  sequences and hand formatting. Extracted per ADR-013 for unit testing.
+  Pure functions for mulligan display — decision inference, grouping,
+  and formatting. Extracted per ADR-013 for unit testing.
+
+  Works with `%Scry2.Mulligans.MulliganListing{}` projection rows.
   """
 
-  alias Scry2.Events.MulliganOffered
+  alias Scry2.Mulligans.MulliganListing
 
   @doc """
-  Given a list of MulliganOffered events for one game (ordered by occurred_at),
-  returns a list of `{event, :kept | :mulliganed}`.
+  Groups mulligan listing rows into a display hierarchy:
 
-  Under London mulligan rules, each successive offer has a smaller hand_size.
-  The last offer in the sequence was the kept hand. All prior offers were mulliganed.
+      [%{event_name: "Quick Draft — FDN", games: [%{hands: [{hand, :kept | :mulliganed}]}]}]
 
-  If there's only one offer, it was kept (player kept their opening 7).
+  Sort order per user spec:
+    1. Events (sets): newest first (desc by first game timestamp)
+    2. Games within event: oldest first (asc — chronological play order)
+    3. Hands within game: oldest first (asc — mulligan sequence order)
+
+  Each `hand` in the output is a map with `:arena_ids`, `:hand_size`,
+  and `:occurred_at` — extracted from the listing row for template use.
   """
-  @spec annotate_decisions([MulliganOffered.t()]) :: [{MulliganOffered.t(), :kept | :mulliganed}]
+  def group_for_display(listings) when is_list(listings) do
+    listings
+    |> Enum.group_by(& &1.mtga_match_id)
+    |> Enum.map(fn {match_id, rows} ->
+      hands = annotate_decisions(rows)
+      event_name = infer_event_name(rows)
+      %{match_id: match_id, event_name: event_name, hands: hands}
+    end)
+    |> Enum.group_by(& &1.event_name)
+    |> Enum.map(fn {event_name, games} ->
+      sorted_games =
+        games
+        |> Enum.sort_by(
+          fn %{hands: [{first, _} | _]} -> first.occurred_at end,
+          {:asc, DateTime}
+        )
+
+      %{event_name: event_name, games: sorted_games}
+    end)
+    |> Enum.sort_by(
+      fn %{games: games} ->
+        games
+        |> List.last()
+        |> then(fn %{hands: [{last, _} | _]} -> last.occurred_at end)
+      end,
+      {:desc, DateTime}
+    )
+  end
+
+  @doc """
+  Given a list of mulligan listing rows for one game (one match_id),
+  returns `[{hand_map, :kept | :mulliganed}]` sorted ascending by
+  `occurred_at`.
+
+  Under London mulligan rules, the last offer is the kept hand.
+  """
   def annotate_decisions([]), do: []
 
-  def annotate_decisions(offers) when is_list(offers) do
-    sorted = Enum.sort_by(offers, & &1.occurred_at, DateTime)
+  def annotate_decisions(rows) when is_list(rows) do
+    sorted = Enum.sort_by(rows, & &1.occurred_at, {:asc, DateTime})
     {all_but_last, [last]} = Enum.split(sorted, -1)
 
-    mulliganed = Enum.map(all_but_last, fn offer -> {offer, :mulliganed} end)
-    kept = [{last, :kept}]
+    mulliganed = Enum.map(all_but_last, &{to_hand(&1), :mulliganed})
+    kept = [{to_hand(last), :kept}]
 
     mulliganed ++ kept
   end
 
-  @doc """
-  Groups mulligan events by match, returning a list of
-  `%{match_id: String.t(), hands: [{MulliganOffered.t(), :kept | :mulliganed}]}`.
+  @doc "Returns a short label for the decision."
+  def decision_label(:kept), do: "Keep"
+  def decision_label(:mulliganed), do: "Mulligan"
 
-  Games are sorted oldest-first (chronological play order within an event).
-  Hands within each game are sorted oldest-first (mulligan sequence order).
-  """
-  @spec group_by_match([MulliganOffered.t()]) :: [map()]
-  def group_by_match(mulligan_events) do
-    mulligan_events
-    |> Enum.group_by(& &1.mtga_match_id)
-    |> Enum.map(fn {match_id, events} ->
-      %{match_id: match_id, hands: annotate_decisions(events)}
-    end)
-    |> Enum.sort_by(
-      fn %{hands: [{first, _} | _]} -> first.occurred_at end,
-      {:asc, DateTime}
-    )
-  end
-
-  @doc """
-  Groups matches by event name, producing a two-level hierarchy:
-
-      [%{event_name: "Quick Draft — FDN", games: [%{match_id: ..., hands: ...}, ...]}]
-
-  `match_lookup` is a map of `%{mtga_match_id => %Match{}}` used to
-  resolve event names. Matches without a lookup entry are grouped under
-  "Unknown Event".
-
-  Events are sorted newest-first. Games within each event are also
-  newest-first.
-  """
-  def group_by_event(matches, match_lookup) do
-    matches
-    |> Enum.group_by(fn %{match_id: match_id} ->
-      case Map.get(match_lookup, match_id) do
-        %{event_name: name} when is_binary(name) and name != "" -> format_event_name(name)
-        _ -> "Unknown Event"
-      end
-    end)
-    |> Enum.map(fn {event_name, games} ->
-      %{event_name: event_name, games: games}
-    end)
-    |> Enum.sort_by(
-      fn %{games: [%{hands: [{first, _} | _]} | _]} -> first.occurred_at end,
-      {:desc, DateTime}
-    )
-  end
+  @doc "Returns a CSS class for the decision badge."
+  def decision_badge_class(:kept), do: "bg-orange-500/90 text-white"
+  def decision_badge_class(:mulliganed), do: "bg-blue-500/90 text-white"
 
   @doc """
   Formats an MTGA event name into a readable label.
@@ -83,8 +83,6 @@ defmodule Scry2Web.MulligansHelpers do
   Examples:
       "QuickDraft_FDN_20260323" → "Quick Draft — FDN"
       "PremierDraft_LCI_20260401" → "Premier Draft — LCI"
-      "CompDraft_BLB_20260501" → "Comp Draft — BLB"
-      "Ladder" → "Ladder"
   """
   def format_event_name(event_name) when is_binary(event_name) do
     case String.split(event_name, "_") do
@@ -104,17 +102,25 @@ defmodule Scry2Web.MulligansHelpers do
     end
   end
 
-  @doc """
-  Returns a short label for the decision.
-  """
-  @spec decision_label(:kept | :mulliganed) :: String.t()
-  def decision_label(:kept), do: "Keep"
-  def decision_label(:mulliganed), do: "Mulligan"
+  # ── Internals ───────────────────────────────────────────────────────────
 
-  @doc """
-  Returns a CSS class for the decision badge.
-  """
-  @spec decision_badge_class(:kept | :mulliganed) :: String.t()
-  def decision_badge_class(:kept), do: "bg-orange-500/90 text-white"
-  def decision_badge_class(:mulliganed), do: "bg-blue-500/90 text-white"
+  defp to_hand(%MulliganListing{} = row) do
+    %{
+      arena_ids: (row.hand_arena_ids && row.hand_arena_ids["cards"]) || [],
+      hand_size: row.hand_size,
+      occurred_at: row.occurred_at,
+      land_count: row.land_count,
+      nonland_count: row.nonland_count,
+      total_cmc: row.total_cmc,
+      cmc_distribution: row.cmc_distribution || %{},
+      color_distribution: row.color_distribution || %{}
+    }
+  end
+
+  defp infer_event_name(rows) do
+    rows
+    |> Enum.find_value(fn row ->
+      if row.event_name && row.event_name != "", do: format_event_name(row.event_name)
+    end) || "Unknown Event"
+  end
 end
