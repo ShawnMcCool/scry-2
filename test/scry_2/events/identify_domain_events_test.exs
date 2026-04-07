@@ -15,6 +15,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     GameCompleted,
     IdentifyDomainEvents,
     InventoryChanged,
+    MasteryProgress,
     MatchCompleted,
     MatchCreated,
     PairingEntered,
@@ -174,7 +175,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "returns {[], []} for an unrelated raw event type" do
       record = %EventRecord{
         id: 1,
-        event_type: "GraphGetGraphState",
+        event_type: "EventGetActiveMatches",
         file_offset: 0,
         source_file: "Player.log",
         raw_json: ~s({"foo":"bar"}),
@@ -377,9 +378,47 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert IdentifyDomainEvents.recognized?("DeckGetDeckSummariesV2")
     end
 
-    test "recognized? returns false for unrecognized types (formerly ignored)" do
-      refute IdentifyDomainEvents.recognized?("GraphGetGraphState")
-      refute IdentifyDomainEvents.recognized?("StartHook")
+    test "recognized? returns true for newly handled/ignored types" do
+      assert IdentifyDomainEvents.recognized?("GraphGetGraphState")
+      assert IdentifyDomainEvents.recognized?("DeckDeleteDeck")
+      assert IdentifyDomainEvents.recognized?("StartHook")
+      assert IdentifyDomainEvents.recognized?("GetFormats")
+    end
+
+    test "recognized? returns false for deferred types" do
+      refute IdentifyDomainEvents.recognized?("EventGetActiveMatches")
+    end
+  end
+
+  # ── GraphGetGraphState → MasteryProgress ────────────────────────────
+
+  describe "translate/2 — GraphGetGraphState response → MasteryProgress" do
+    test "produces a %MasteryProgress{} from a response event" do
+      record = record_from_fixture("graph_get_graph_state_response.log")
+
+      assert {[%MasteryProgress{} = event], []} =
+               IdentifyDomainEvents.translate(record, @self_user_id)
+
+      assert event.total_nodes == 8
+      assert event.completed_nodes == 7
+      assert event.milestone_states == %{"TutorialComplete" => true}
+      assert %{"PlayFamiliar1" => %{"Status" => "Completed"}} = event.node_states
+      assert %{"Reset" => %{"Status" => "Available"}} = event.node_states
+    end
+
+    test "skips request events" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "GraphGetGraphState",
+        mtga_timestamp: ~U[2026-04-06 18:47:40Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          ~s({"id":"6112fce4-9905-4b58-82dc-7a7795f30d2e","request":"{\\"GraphId\\":\\"NPE_Tutorial\\"}"}),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, @self_user_id)
     end
   end
 
