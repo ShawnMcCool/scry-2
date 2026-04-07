@@ -19,6 +19,18 @@ defmodule Scry2.Cards.Card do
   end
 
   @doc """
+  Changeset for the Scryfall arena_id backfill path. Only touches
+  `arena_id` — all other fields remain under 17lands ownership.
+  See ADR-014.
+  """
+  def scryfall_changeset(card, attrs) do
+    card
+    |> cast(attrs, [:arena_id])
+    |> validate_required([:arena_id])
+    |> unique_constraint(:arena_id)
+  end
+
+  @doc """
   Changeset for the 17lands import path. Accepts `lands17_id` as the
   primary key and treats `arena_id` as optional (filled in later by the
   Scryfall backfill — see ADR-014).
