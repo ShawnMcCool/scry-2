@@ -2,14 +2,24 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   use ExUnit.Case, async: true
 
   alias Scry2.Events.{
+    ActiveCourses,
+    DailyWinsStatus,
+    DeckInventory,
+    DeckSelected,
     DeckSubmitted,
+    DeckUpdated,
     DieRollCompleted,
     DraftPickMade,
     DraftStarted,
+    EventJoined,
     GameCompleted,
     IdentifyDomainEvents,
+    InventoryChanged,
     MatchCompleted,
     MatchCreated,
+    PairingEntered,
+    PrizeClaimed,
+    QuestStatus,
     RankSnapshot,
     SessionStarted,
     TranslationWarning
@@ -340,8 +350,8 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
 
     test "known_event_types includes explicitly ignored types" do
       known = IdentifyDomainEvents.known_event_types()
-      assert MapSet.member?(known, "GraphGetGraphState")
       assert MapSet.member?(known, "ClientToGreuimessage")
+      assert MapSet.member?(known, "STATE")
     end
 
     test "recognized? returns false for unknown types" do
@@ -353,7 +363,446 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     end
 
     test "recognized? returns true for ignored types" do
-      assert IdentifyDomainEvents.recognized?("GraphGetGraphState")
+      assert IdentifyDomainEvents.recognized?("ClientToGreuimessage")
+    end
+
+    test "recognized? returns true for new handled types" do
+      assert IdentifyDomainEvents.recognized?("EventJoin")
+      assert IdentifyDomainEvents.recognized?("EventClaimPrize")
+      assert IdentifyDomainEvents.recognized?("EventSetDeckV2")
+      assert IdentifyDomainEvents.recognized?("EventEnterPairing")
+      assert IdentifyDomainEvents.recognized?("QuestGetQuests")
+      assert IdentifyDomainEvents.recognized?("PeriodicRewardsGetStatus")
+      assert IdentifyDomainEvents.recognized?("EventGetCoursesV2")
+      assert IdentifyDomainEvents.recognized?("DeckGetDeckSummariesV2")
+    end
+
+    test "recognized? returns false for unrecognized types (formerly ignored)" do
+      refute IdentifyDomainEvents.recognized?("GraphGetGraphState")
+      refute IdentifyDomainEvents.recognized?("StartHook")
+    end
+  end
+
+  # ── EventJoin → EventJoined + InventoryChanged ──────────────────────
+
+  describe "translate/2 — EventJoin response → EventJoined + InventoryChanged" do
+    test "produces EventJoined and InventoryChanged from a response" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventJoin",
+        mtga_timestamp: ~U[2026-04-06 16:30:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Course" => %{
+              "CourseId" => "e1a4b192-course-uuid",
+              "InternalEventName" => "QuickDraft_FDN_20260323"
+            },
+            "InventoryInfo" => %{
+              "Changes" => [
+                %{
+                  "Source" => "EventPayEntry",
+                  "SourceId" => "e1a4b192-course-uuid",
+                  "InventoryGold" => -5000
+                }
+              ],
+              "Gold" => 7150,
+              "Gems" => 4600
+            }
+          }),
+        processed: false
+      }
+
+      assert {events, []} = IdentifyDomainEvents.translate(record, nil)
+      assert [%EventJoined{} = joined, %InventoryChanged{} = inv] = events
+
+      assert joined.event_name == "QuickDraft_FDN_20260323"
+      assert joined.course_id == "e1a4b192-course-uuid"
+      assert joined.entry_currency_type == "Gold"
+      assert joined.entry_fee == 5000
+
+      assert inv.source == "EventPayEntry"
+      assert inv.gold_delta == -5000
+      assert inv.gold_balance == 7150
+      assert inv.gems_balance == 4600
+    end
+
+    test "skips request-format EventJoin records" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventJoin",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "id" => "uuid",
+            "request" => ~s({"EventName":"QuickDraft_FDN_20260323"})
+          }),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # ── EventClaimPrize → PrizeClaimed + InventoryChanged ───────────────
+
+  describe "translate/2 — EventClaimPrize response → PrizeClaimed + InventoryChanged" do
+    test "produces PrizeClaimed and InventoryChanged with boosters" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventClaimPrize",
+        mtga_timestamp: ~U[2026-04-06 19:20:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Course" => %{
+              "CourseId" => "e1a4b192-course-uuid",
+              "InternalEventName" => "QuickDraft_FDN_20260323",
+              "CurrentWins" => 3,
+              "CurrentLosses" => 3
+            },
+            "InventoryInfo" => %{
+              "Changes" => [
+                %{
+                  "Source" => "EventReward",
+                  "SourceId" => "e1a4b192-course-uuid",
+                  "InventoryGems" => 300,
+                  "Boosters" => [%{"SetCode" => "FDN", "Count" => 1}]
+                }
+              ],
+              "Gold" => 8200,
+              "Gems" => 4900
+            }
+          }),
+        processed: false
+      }
+
+      assert {events, []} = IdentifyDomainEvents.translate(record, nil)
+      assert [%PrizeClaimed{} = claimed, %InventoryChanged{} = inv] = events
+
+      assert claimed.event_name == "QuickDraft_FDN_20260323"
+      assert claimed.wins == 3
+      assert claimed.losses == 3
+
+      assert inv.source == "EventReward"
+      assert inv.gems_delta == 300
+      assert inv.boosters == [%{set_code: "FDN", count: 1}]
+      assert inv.gems_balance == 4900
+    end
+  end
+
+  # ── EventEnterPairing → PairingEntered ──────────────────────────────
+
+  describe "translate/2 — EventEnterPairing → PairingEntered" do
+    test "produces PairingEntered from a request" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventEnterPairing",
+        mtga_timestamp: ~U[2026-04-06 19:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "id" => "uuid",
+            "request" => ~s({"EventName":"QuickDraft_FDN_20260323","EventCode":null})
+          }),
+        processed: false
+      }
+
+      assert {[%PairingEntered{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert event.event_name == "QuickDraft_FDN_20260323"
+    end
+  end
+
+  # ── EventSetDeckV2 → DeckSelected ──────────────────────────────────
+
+  describe "translate/2 — EventSetDeckV2 → DeckSelected" do
+    test "produces DeckSelected with full deck list from request" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventSetDeckV2",
+        mtga_timestamp: ~U[2026-04-06 18:58:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "id" => "uuid",
+            "request" =>
+              Jason.encode!(%{
+                "EventName" => "QuickDraft_FDN_20260323",
+                "Summary" => %{
+                  "DeckId" => "4fdde14e-deck-uuid",
+                  "Name" => "Draft Deck"
+                },
+                "Deck" => %{
+                  "MainDeck" => [
+                    %{"cardId" => 93811, "quantity" => 3},
+                    %{"cardId" => 93939, "quantity" => 1}
+                  ],
+                  "Sideboard" => [
+                    %{"cardId" => 93959, "quantity" => 1}
+                  ]
+                }
+              })
+          }),
+        processed: false
+      }
+
+      assert {[%DeckSelected{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert event.event_name == "QuickDraft_FDN_20260323"
+      assert event.deck_id == "4fdde14e-deck-uuid"
+      assert event.deck_name == "Draft Deck"
+      assert length(event.main_deck) == 2
+      assert hd(event.main_deck) == %{arena_id: 93811, count: 3}
+      assert event.sideboard == [%{arena_id: 93959, count: 1}]
+    end
+  end
+
+  # ── DeckUpsertDeckV2 → DeckUpdated ──────────────────────────────────
+
+  describe "translate/2 — DeckUpsertDeckV2 → DeckUpdated" do
+    test "produces DeckUpdated with full deck and action type" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "DeckUpsertDeckV2",
+        mtga_timestamp: ~U[2026-04-07 07:21:54Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "id" => "uuid",
+            "request" =>
+              Jason.encode!(%{
+                "Summary" => %{
+                  "DeckId" => "c827dfd7-deck-uuid",
+                  "Name" => "WB TMT Draft (2)",
+                  "Attributes" => [
+                    %{"name" => "Format", "value" => "DirectGameLimited"}
+                  ]
+                },
+                "Deck" => %{
+                  "MainDeck" => [
+                    %{"cardId" => 100_534, "quantity" => 1},
+                    %{"cardId" => 100_514, "quantity" => 1}
+                  ],
+                  "Sideboard" => [
+                    %{"cardId" => 100_525, "quantity" => 1}
+                  ]
+                },
+                "ActionType" => "Cloned"
+              })
+          }),
+        processed: false
+      }
+
+      assert {[%DeckUpdated{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert event.deck_id == "c827dfd7-deck-uuid"
+      assert event.deck_name == "WB TMT Draft (2)"
+      assert event.format == "DirectGameLimited"
+      assert event.action_type == "Cloned"
+      assert length(event.main_deck) == 2
+      assert event.sideboard == [%{arena_id: 100_525, count: 1}]
+    end
+  end
+
+  # ── DeckGetDeckSummariesV2 → DeckInventory ─────────────────────────
+
+  describe "translate/2 — DeckGetDeckSummariesV2 → DeckInventory" do
+    test "produces DeckInventory from response" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "DeckGetDeckSummariesV2",
+        mtga_timestamp: ~U[2026-04-06 16:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Summaries" => [
+              %{
+                "DeckId" => "deck-1",
+                "Name" => "Mono Red",
+                "Attributes" => [%{"name" => "Format", "value" => "Standard"}]
+              },
+              %{
+                "DeckId" => "deck-2",
+                "Name" => "Draft Deck",
+                "Attributes" => [%{"name" => "Format", "value" => "Draft"}]
+              }
+            ]
+          }),
+        processed: false
+      }
+
+      assert {[%DeckInventory{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert length(event.decks) == 2
+      assert hd(event.decks) == %{deck_id: "deck-1", name: "Mono Red", format: "Standard"}
+    end
+
+    test "skips request-format records" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "DeckGetDeckSummariesV2",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: ~s({"id":"uuid","request":"{}"}),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # ── QuestGetQuests → QuestStatus ───────────────────────────────────
+
+  describe "translate/2 — QuestGetQuests → QuestStatus" do
+    test "produces QuestStatus from response" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "QuestGetQuests",
+        mtga_timestamp: ~U[2026-04-06 16:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "quests" => [
+              %{
+                "questId" => "quest-uuid-1",
+                "goal" => 30,
+                "endingProgress" => 7,
+                "questTrack" => "Default",
+                "chestDescription" => %{
+                  "locParams" => %{"number1" => 750, "number2" => 500}
+                }
+              }
+            ]
+          }),
+        processed: false
+      }
+
+      assert {[%QuestStatus{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert length(event.quests) == 1
+      quest = hd(event.quests)
+      assert quest.quest_id == "quest-uuid-1"
+      assert quest.goal == 30
+      assert quest.progress == 7
+      assert quest.reward_gold == 750
+      assert quest.reward_xp == 500
+    end
+
+    test "skips request-format records" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "QuestGetQuests",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: ~s({"id":"uuid","request":"{}"}),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # ── PeriodicRewardsGetStatus → DailyWinsStatus ─────────────────────
+
+  describe "translate/2 — PeriodicRewardsGetStatus → DailyWinsStatus" do
+    test "produces DailyWinsStatus from response" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "PeriodicRewardsGetStatus",
+        mtga_timestamp: ~U[2026-04-06 16:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "_dailyRewardSequenceId" => 1,
+            "_dailyRewardResetTimestamp" => "2026-04-07T09:00:00Z",
+            "_weeklyRewardSequenceId" => 15,
+            "_weeklyRewardResetTimestamp" => "2026-04-12T09:00:00Z",
+            "_dailyRewardChestDescriptions" => %{},
+            "_weeklyRewardChestDescriptions" => %{}
+          }),
+        processed: false
+      }
+
+      assert {[%DailyWinsStatus{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert event.daily_position == 1
+      assert event.daily_reset_at == ~U[2026-04-07 09:00:00Z]
+      assert event.weekly_position == 15
+      assert event.weekly_reset_at == ~U[2026-04-12 09:00:00Z]
+    end
+
+    test "skips request-format records" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "PeriodicRewardsGetStatus",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: ~s({"id":"uuid","request":"{}"}),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # ── EventGetCoursesV2 → ActiveCourses ──────────────────────────────
+
+  describe "translate/2 — EventGetCoursesV2 → ActiveCourses" do
+    test "produces ActiveCourses from response" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventGetCoursesV2",
+        mtga_timestamp: ~U[2026-04-06 16:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Courses" => [
+              %{
+                "CourseId" => "course-1",
+                "InternalEventName" => "QuickDraft_FDN_20260323",
+                "CurrentModule" => "BotDraft",
+                "CurrentWins" => 2,
+                "CurrentLosses" => 1
+              },
+              %{
+                "CourseId" => "course-2",
+                "InternalEventName" => "DualColorPrecons",
+                "CurrentModule" => "CreateMatch",
+                "CurrentWins" => 10,
+                "CurrentLosses" => 5
+              }
+            ]
+          }),
+        processed: false
+      }
+
+      assert {[%ActiveCourses{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert length(event.courses) == 2
+
+      draft = hd(event.courses)
+      assert draft.course_id == "course-1"
+      assert draft.event_name == "QuickDraft_FDN_20260323"
+      assert draft.current_module == "BotDraft"
+      assert draft.wins == 2
+      assert draft.losses == 1
+    end
+
+    test "skips request-format records" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventGetCoursesV2",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: ~s({"id":"uuid","request":"{}"}),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
     end
   end
 end

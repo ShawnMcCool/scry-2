@@ -50,14 +50,24 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   """
 
   alias Scry2.Events.{
+    ActiveCourses,
+    DailyWinsStatus,
+    DeckInventory,
+    DeckSelected,
     DeckSubmitted,
+    DeckUpdated,
     DieRollCompleted,
     DraftPickMade,
     DraftStarted,
+    EventJoined,
     GameCompleted,
+    InventoryChanged,
     MatchCompleted,
     MatchCreated,
     MulliganOffered,
+    PairingEntered,
+    PrizeClaimed,
+    QuestStatus,
     RankSnapshot,
     SessionStarted,
     TranslationWarning
@@ -78,36 +88,31 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "BotDraftDraftStatus",
                          "AuthenticateResponse",
                          "RankGetSeasonAndRankDetails",
-                         "RankGetCombinedRankInfo"
+                         "RankGetCombinedRankInfo",
+                         # Event participation + economy
+                         "EventJoin",
+                         "EventClaimPrize",
+                         "EventEnterPairing",
+                         # Deck management
+                         "EventSetDeckV2",
+                         "DeckGetDeckSummariesV2",
+                         "DeckUpsertDeckV2",
+                         # Progress tracking
+                         "QuestGetQuests",
+                         "PeriodicRewardsGetStatus",
+                         "EventGetCoursesV2"
                        ])
 
   @ignored_event_types MapSet.new([
-                         # GRE client messages — high-volume UI/input traffic, no domain value
+                         # GRE client messages — high-volume UI input traffic, no domain semantics
                          "ClientToGreuimessage",
                          "ClientToGremessage",
-                         # Lobby/session lifecycle
-                         "EventJoin",
-                         "EventGetCoursesV2",
-                         "EventGetActiveMatches",
-                         "EventEnterPairing",
-                         # Deck management — lobby-side, superseded by ConnectResp deck data
-                         "DeckUpsertDeckV2",
-                         "EventSetDeckV2",
-                         "DeckGetDeckSummariesV2",
-                         # UI state / rewards / system — no domain value
-                         "GraphGetGraphState",
-                         "QuestGetQuests",
-                         "PeriodicRewardsGetStatus",
-                         "StartHook",
-                         "GetFormats",
-                         "LogBusinessEvents",
-                         # Connection lifecycle — internal MTGA networking
+                         # Connection lifecycle — internal MTGA networking plumbing
                          "Client.TcpConnection.Close",
                          "GREConnection.HandleWebSocketClosed",
                          "FrontDoorConnection.Close",
                          "Connecting",
-                         "Client.SceneChange",
-                         # Graph/store state queries — UI internals
+                         # Internal state machine transitions — no domain semantics
                          "Fetching",
                          "Process",
                          "Got",
@@ -374,6 +379,278 @@ defmodule Scry2.Events.IdentifyDomainEvents do
              detail: "failed to decode rank response payload"
            }
          ]}
+    end
+  end
+
+  # ── Event participation + economy ────────────────────────────────────
+  #
+  # EventJoin and EventClaimPrize carry both course info and inventory
+  # changes. Each produces its primary event + InventoryChanged events
+  # from InventoryInfo.Changes[].
+
+  # EventJoin response carries Course (enrollment) + InventoryInfo (entry fee).
+  # Request format has {"id", "request"} — skip it.
+  def translate(
+        %EventRecord{event_type: "EventJoin"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         %{"Course" => course, "InventoryInfo" => inventory_info} <- payload do
+      event_name = course["InternalEventName"]
+
+      joined =
+        %EventJoined{
+          event_name: event_name,
+          course_id: course["CourseId"],
+          entry_currency_type: detect_entry_currency(inventory_info),
+          entry_fee: detect_entry_fee(inventory_info),
+          occurred_at: occurred_at
+        }
+
+      inventory_events = build_inventory_changed(inventory_info, occurred_at)
+
+      {[joined | inventory_events], []}
+    else
+      %{"request" => _} -> {[], []}
+      _ -> {[], translation_warning(record, "failed to decode EventJoin response")}
+    end
+  end
+
+  # EventClaimPrize response carries Course (final record) + InventoryInfo (rewards).
+  # Request format has {"id", "request"} — skip it.
+  def translate(
+        %EventRecord{event_type: "EventClaimPrize"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         %{"Course" => course, "InventoryInfo" => inventory_info} <- payload do
+      event_name = course["InternalEventName"]
+
+      claimed =
+        %PrizeClaimed{
+          event_name: event_name,
+          course_id: course["CourseId"],
+          wins: course["CurrentWins"],
+          losses: course["CurrentLosses"],
+          occurred_at: occurred_at
+        }
+
+      inventory_events = build_inventory_changed(inventory_info, occurred_at)
+
+      {[claimed | inventory_events], []}
+    else
+      %{"request" => _} -> {[], []}
+      _ -> {[], translation_warning(record, "failed to decode EventClaimPrize response")}
+    end
+  end
+
+  # EventEnterPairing request carries EventName — marks the moment the
+  # player clicked "Play" and entered the match queue.
+  def translate(
+        %EventRecord{event_type: "EventEnterPairing"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         {:ok, request} <- decode_request_field(payload) do
+      {[
+         %PairingEntered{
+           event_name: request["EventName"],
+           occurred_at: occurred_at
+         }
+       ], []}
+    else
+      _ -> {[], []}
+    end
+  end
+
+  # ── Deck management ──────────────────────────────────────────────────
+
+  # EventSetDeckV2 request carries the full deck list for an event.
+  def translate(
+        %EventRecord{event_type: "EventSetDeckV2"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         {:ok, request} <- decode_request_field(payload) do
+      summary = request["Summary"] || %{}
+      deck = request["Deck"] || %{}
+
+      main_deck = build_card_list(deck["MainDeck"] || [])
+      sideboard = build_card_list(deck["Sideboard"] || [])
+
+      {[
+         %DeckSelected{
+           event_name: request["EventName"],
+           deck_id: summary["DeckId"],
+           deck_name: summary["Name"],
+           main_deck: main_deck,
+           sideboard: sideboard,
+           occurred_at: occurred_at
+         }
+       ], []}
+    else
+      _ -> {[], []}
+    end
+  end
+
+  # DeckUpsertDeckV2 request carries a deck create/edit/clone operation
+  # with the full deck list and an ActionType discriminator.
+  def translate(
+        %EventRecord{event_type: "DeckUpsertDeckV2"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         {:ok, request} <- decode_request_field(payload) do
+      summary = request["Summary"] || %{}
+      deck = request["Deck"] || %{}
+      format = extract_attribute(summary["Attributes"], "Format")
+
+      main_deck = build_card_list(deck["MainDeck"] || [])
+      sideboard = build_card_list(deck["Sideboard"] || [])
+
+      {[
+         %DeckUpdated{
+           deck_id: summary["DeckId"],
+           deck_name: summary["Name"],
+           format: format,
+           action_type: request["ActionType"],
+           main_deck: main_deck,
+           sideboard: sideboard,
+           occurred_at: occurred_at
+         }
+       ], []}
+    else
+      _ -> {[], []}
+    end
+  end
+
+  # DeckGetDeckSummariesV2 response carries the full deck collection.
+  # Request format has {"id", "request"} — skip it.
+  def translate(
+        %EventRecord{event_type: "DeckGetDeckSummariesV2"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         %{"Summaries" => summaries} when is_list(summaries) <- payload do
+      decks =
+        Enum.map(summaries, fn summary ->
+          format = extract_attribute(summary["Attributes"], "Format")
+
+          %{
+            deck_id: summary["DeckId"],
+            name: summary["Name"],
+            format: format
+          }
+        end)
+
+      {[%DeckInventory{decks: decks, occurred_at: occurred_at}], []}
+    else
+      _ -> {[], []}
+    end
+  end
+
+  # ── Progress tracking ──────────────────────────────────────────────────
+
+  # QuestGetQuests response carries the current quest assignments.
+  # Request format has {"id", "request"} — skip it.
+  def translate(
+        %EventRecord{event_type: "QuestGetQuests"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         %{"quests" => quests} when is_list(quests) <- payload do
+      quest_data =
+        Enum.map(quests, fn quest ->
+          chest = quest["chestDescription"] || %{}
+          loc_params = chest["locParams"] || %{}
+
+          %{
+            quest_id: quest["questId"],
+            goal: quest["goal"],
+            progress: quest["endingProgress"] || 0,
+            quest_track: quest["questTrack"],
+            reward_gold: loc_params["number1"],
+            reward_xp: loc_params["number2"]
+          }
+        end)
+
+      {[%QuestStatus{quests: quest_data, occurred_at: occurred_at}], []}
+    else
+      _ -> {[], []}
+    end
+  end
+
+  # PeriodicRewardsGetStatus response carries daily/weekly win progress.
+  # Request format has {"id", "request"} — skip it.
+  def translate(
+        %EventRecord{event_type: "PeriodicRewardsGetStatus"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         daily when is_integer(daily) <- payload["_dailyRewardSequenceId"] do
+      {[
+         %DailyWinsStatus{
+           daily_position: daily,
+           daily_reset_at: parse_timestamp(payload["_dailyRewardResetTimestamp"]),
+           weekly_position: payload["_weeklyRewardSequenceId"],
+           weekly_reset_at: parse_timestamp(payload["_weeklyRewardResetTimestamp"]),
+           occurred_at: occurred_at
+         }
+       ], []}
+    else
+      _ -> {[], []}
+    end
+  end
+
+  # EventGetCoursesV2 response carries all active event enrollments.
+  # Request format has {"id", "request"} — skip it.
+  def translate(
+        %EventRecord{event_type: "EventGetCoursesV2"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         %{"Courses" => courses} when is_list(courses) <- payload do
+      course_data =
+        Enum.map(courses, fn course ->
+          %{
+            course_id: course["CourseId"],
+            event_name: course["InternalEventName"],
+            current_module: course["CurrentModule"],
+            wins: course["CurrentWins"],
+            losses: course["CurrentLosses"]
+          }
+        end)
+
+      {[%ActiveCourses{courses: course_data, occurred_at: occurred_at}], []}
+    else
+      _ -> {[], []}
     end
   end
 
@@ -657,6 +934,93 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   end
 
   defp aggregate_card_list(_), do: []
+
+  # ── Event participation + economy helpers ───────────────────────────
+
+  defp detect_entry_currency(inventory_info) do
+    case get_in(inventory_info, ["Changes", Access.at(0)]) do
+      %{"InventoryGold" => gold} when is_integer(gold) and gold < 0 -> "Gold"
+      %{"InventoryGems" => gems} when is_integer(gems) and gems < 0 -> "Gems"
+      _ -> nil
+    end
+  end
+
+  defp detect_entry_fee(inventory_info) do
+    case get_in(inventory_info, ["Changes", Access.at(0)]) do
+      %{"InventoryGold" => gold} when is_integer(gold) and gold < 0 -> abs(gold)
+      %{"InventoryGems" => gems} when is_integer(gems) and gems < 0 -> abs(gems)
+      _ -> nil
+    end
+  end
+
+  defp build_inventory_changed(inventory_info, occurred_at) do
+    changes = inventory_info["Changes"] || []
+    gold_balance = inventory_info["Gold"]
+    gems_balance = inventory_info["Gems"]
+
+    Enum.map(changes, fn change ->
+      boosters =
+        (change["Boosters"] || [])
+        |> Enum.map(fn booster ->
+          %{set_code: booster["SetCode"], count: booster["Count"]}
+        end)
+        |> case do
+          [] -> nil
+          list -> list
+        end
+
+      %InventoryChanged{
+        source: change["Source"],
+        source_id: change["SourceId"],
+        gold_delta: change["InventoryGold"],
+        gems_delta: change["InventoryGems"],
+        boosters: boosters,
+        gold_balance: gold_balance,
+        gems_balance: gems_balance,
+        occurred_at: occurred_at
+      }
+    end)
+  end
+
+  defp translation_warning(record, detail) do
+    [
+      %TranslationWarning{
+        category: :payload_extraction_failed,
+        raw_event_id: record.id,
+        event_type: record.event_type,
+        detail: detail
+      }
+    ]
+  end
+
+  # ── Deck management helpers ──────────────────────────────────────────
+
+  # Converts [{cardId, quantity}] maps to [%{arena_id, count}] structs.
+  defp build_card_list(cards) when is_list(cards) do
+    Enum.map(cards, fn card ->
+      %{arena_id: card["cardId"], count: card["quantity"]}
+    end)
+  end
+
+  defp extract_attribute(nil, _name), do: nil
+
+  defp extract_attribute(attributes, name) when is_list(attributes) do
+    Enum.find_value(attributes, fn
+      %{"name" => ^name, "value" => value} -> value
+      _ -> nil
+    end)
+  end
+
+  # ── Timestamp parsing ──────────────────────────────────────────────────
+
+  defp parse_timestamp(nil), do: nil
+
+  defp parse_timestamp(timestamp) when is_binary(timestamp) do
+    case DateTime.from_iso8601(timestamp) do
+      {:ok, datetime, _offset} -> datetime
+      _ -> nil
+    end
+  end
 
   # ── Draft event helpers ──────────────────────────────────────────────
 
