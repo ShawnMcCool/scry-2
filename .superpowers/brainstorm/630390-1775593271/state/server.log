@@ -1,0 +1,5 @@
+{"type":"server-started","port":58553,"host":"127.0.0.1","url_host":"localhost","url":"http://localhost:58553","screen_dir":"/home/shawn/src/scry_2/.superpowers/brainstorm/630390-1775593271/content","state_dir":"/home/shawn/src/scry_2/.superpowers/brainstorm/630390-1775593271/state"}
+{"type":"screen-added","file":"/home/shawn/src/scry_2/.superpowers/brainstorm/630390-1775593271/content/theme-options.html"}
+{"type":"screen-added","file":"/home/shawn/src/scry_2/.superpowers/brainstorm/630390-1775593271/content/mulligan-rows-v2.html"}
+{"type":"screen-added","file":"/home/shawn/src/scry_2/.superpowers/brainstorm/630390-1775593271/content/waiting-2.html"}
+{"type":"server-stopped","reason":"idle timeout"}

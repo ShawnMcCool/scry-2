@@ -1,0 +1,107 @@
+<h2>Dark Theme Direction</h2>
+<p class="subtitle">Replacing the orange/purple halloween palette with something minimal and clean</p>
+
+<div class="cards">
+  <!-- Option A: Cool neutral -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 24px; background: #1a1d23; font-family: system-ui;">
+      <!-- Simulated app chrome -->
+      <div style="display: flex; gap: 16px; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 12px;">
+        <span style="color: #e2e8f0; font-size: 13px; font-weight: 600;">Mulligans</span>
+        <span style="color: rgba(255,255,255,0.3); font-size: 13px;">Matches</span>
+        <span style="color: rgba(255,255,255,0.3); font-size: 13px;">Drafts</span>
+        <span style="color: rgba(255,255,255,0.3); font-size: 13px;">Cards</span>
+      </div>
+
+      <!-- Match group -->
+      <div style="font-size: 11px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Match</div>
+
+      <!-- Kept hand -->
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 6px; background: rgba(255,255,255,0.03); border-radius: 8px; border-left: 2px solid #60a5fa;">
+        <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 500; color: #60a5fa; border: 1px solid rgba(96,165,250,0.25);">Keep</span>
+        <div style="display: flex; gap: 3px;">
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #2a3441; border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #2a3441; border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #2a3441; border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #2a3441; border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #2a3441; border: 1px solid rgba(255,255,255,0.06);"></div>
+        </div>
+        <span style="font-size: 11px; color: rgba(255,255,255,0.25); margin-left: auto;">7 cards</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Cool Slate</h3>
+      <p>Base: deep blue-grey (#1a1d23). Accent: soft blue (#60a5fa). Text: slate white. Borders almost invisible. Very quiet, lets the card art be the color.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Warm neutral -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 24px; background: #1c1b1a; font-family: system-ui;">
+      <div style="display: flex; gap: 16px; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 12px;">
+        <span style="color: #e8e4df; font-size: 13px; font-weight: 600;">Mulligans</span>
+        <span style="color: rgba(255,255,255,0.3); font-size: 13px;">Matches</span>
+        <span style="color: rgba(255,255,255,0.3); font-size: 13px;">Drafts</span>
+        <span style="color: rgba(255,255,255,0.3); font-size: 13px;">Cards</span>
+      </div>
+
+      <div style="font-size: 11px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Match</div>
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 6px; background: rgba(255,255,255,0.025); border-radius: 8px; border-left: 2px solid #a3e635;">
+        <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 500; color: #a3e635; border: 1px solid rgba(163,230,53,0.25);">Keep</span>
+        <div style="display: flex; gap: 3px;">
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #28271f; border: 1px solid rgba(255,255,255,0.05);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #28271f; border: 1px solid rgba(255,255,255,0.05);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #28271f; border: 1px solid rgba(255,255,255,0.05);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #28271f; border: 1px solid rgba(255,255,255,0.05);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #28271f; border: 1px solid rgba(255,255,255,0.05);"></div>
+        </div>
+        <span style="font-size: 11px; color: rgba(255,255,255,0.25); margin-left: auto;">7 cards</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Warm Charcoal</h3>
+      <p>Base: dark warm grey (#1c1b1a). Accent: lime green (#a3e635). Text: warm white. Feels like a leather playmat. Earthy.</p>
+    </div>
+  </div>
+
+  <!-- Option C: True dark -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 24px; background: #111111; font-family: system-ui;">
+      <div style="display: flex; gap: 16px; margin-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 12px;">
+        <span style="color: #f0f0f0; font-size: 13px; font-weight: 600;">Mulligans</span>
+        <span style="color: rgba(255,255,255,0.3); font-size: 13px;">Matches</span>
+        <span style="color: rgba(255,255,255,0.3); font-size: 13px;">Drafts</span>
+        <span style="color: rgba(255,255,255,0.3); font-size: 13px;">Cards</span>
+      </div>
+
+      <div style="font-size: 11px; color: rgba(255,255,255,0.35); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;">Match</div>
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px; margin-bottom: 6px; background: rgba(255,255,255,0.03); border-radius: 8px; border-left: 2px solid #818cf8;">
+        <span style="display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 500; color: #818cf8; border: 1px solid rgba(129,140,248,0.25);">Keep</span>
+        <div style="display: flex; gap: 3px;">
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 44px; height: 62px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.06);"></div>
+        </div>
+        <span style="font-size: 11px; color: rgba(255,255,255,0.25); margin-left: auto;">7 cards</span>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C — Near Black + Indigo</h3>
+      <p>Base: near-black (#111). Accent: indigo (#818cf8). Text: pure white. Maximum contrast. Card art pops. Very modern, like a pro tool.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 20px;">
+  <h3>All options share</h3>
+  <ul style="color: #aaa; font-size: 14px; line-height: 1.8;">
+    <li>Minimal chrome — borders nearly invisible, backgrounds barely there</li>
+    <li>Card art provides all the color — UI stays neutral</li>
+    <li>No orange, no purple, no halloween</li>
+    <li>Single dark theme (no light mode toggle)</li>
+  </ul>
+</div>

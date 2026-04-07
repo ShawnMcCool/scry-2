@@ -1,0 +1,91 @@
+<h2>Mulligan Row Styles — No Left Border</h2>
+<p class="subtitle">Clean rows where the badge carries the decision, nothing decorates the row itself</p>
+
+<div class="cards">
+  <!-- Option A: Flat, no row background -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 24px 20px; background: #111; font-family: system-ui;">
+      <div style="font-size: 11px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px;">Match <span style="font-family: monospace; color: rgba(129,140,248,0.5); margin-left: 6px;">da6b5dfb…</span></div>
+
+      <!-- Kept hand -->
+      <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 12px;">
+        <span style="display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 600; color: #4ade80; background: rgba(74,222,128,0.1);">Kept</span>
+        <div style="display: flex; gap: 4px;">
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #2a3a2a, #1a2a1a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #2a2a3a, #1a1a2a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #3a2a2a, #2a1a1a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #2a3a3a, #1a2a2a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #3a3a2a, #2a2a1a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #3a2a3a, #2a1a2a); border: 1px solid rgba(255,255,255,0.06);"></div>
+        </div>
+      </div>
+
+      <!-- Mulliganed hand -->
+      <div style="display: flex; align-items: center; gap: 14px; opacity: 0.5;">
+        <span style="display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 600; color: #94a3b8; background: rgba(148,163,184,0.08);">Mull</span>
+        <div style="display: flex; gap: 4px;">
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A — Flat, no row decoration</h3>
+      <p>No backgrounds, no borders on rows. Just badge + cards on blank canvas. Mulliganed hands dimmed to 50% opacity. Pill badge carries the decision. Clean as possible.</p>
+    </div>
+  </div>
+
+  <!-- Option B: Subtle card background -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding: 24px 20px; background: #111; font-family: system-ui;">
+      <div style="font-size: 11px; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 14px;">Match <span style="font-family: monospace; color: rgba(129,140,248,0.5); margin-left: 6px;">da6b5dfb…</span></div>
+
+      <!-- Kept hand -->
+      <div style="display: flex; align-items: center; gap: 14px; padding: 14px; margin-bottom: 6px; background: rgba(255,255,255,0.02); border-radius: 10px;">
+        <span style="display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 600; color: #4ade80; background: rgba(74,222,128,0.1);">Kept</span>
+        <div style="display: flex; gap: 4px;">
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #2a3a2a, #1a2a1a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #2a2a3a, #1a1a2a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #3a2a2a, #2a1a1a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #2a3a3a, #1a2a2a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #3a3a2a, #2a2a1a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #2a2a2a, #1a1a1a); border: 1px solid rgba(255,255,255,0.06);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: linear-gradient(145deg, #3a2a3a, #2a1a2a); border: 1px solid rgba(255,255,255,0.06);"></div>
+        </div>
+      </div>
+
+      <!-- Mulliganed hand -->
+      <div style="display: flex; align-items: center; gap: 14px; padding: 14px; background: rgba(255,255,255,0.02); border-radius: 10px; opacity: 0.45;">
+        <span style="display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 10px; font-weight: 600; color: #94a3b8; background: rgba(148,163,184,0.08);">Mull</span>
+        <div style="display: flex; gap: 4px;">
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+          <div style="width: 52px; height: 73px; border-radius: 4px; background: #1a1a1a; border: 1px solid rgba(255,255,255,0.04);"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B — Barely-there row background</h3>
+      <p>Same as A but with a 2% white background to visually group each hand. Still no borders. Mulliganed dimmed. Gives rows just enough shape to scan.</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top: 20px;">
+  <h3>Both options</h3>
+  <ul style="color: #aaa; font-size: 14px; line-height: 1.8;">
+    <li>No left border accent — decision is carried by the pill badge only</li>
+    <li>Larger cards (~52px wide here, will be even bigger in real implementation)</li>
+    <li>Mulliganed hands dimmed (opacity) — kept hand is the hero</li>
+    <li>Green "Kept" pill, neutral grey "Mull" pill — minimal color, no orange</li>
+    <li>Near-black (#111) base</li>
+  </ul>
+</div>
