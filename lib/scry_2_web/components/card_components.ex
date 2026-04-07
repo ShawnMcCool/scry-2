@@ -32,7 +32,7 @@ defmodule Scry2Web.CardComponents do
   """
   attr :arena_id, :integer, required: true
   attr :name, :string, default: "Card image"
-  attr :class, :string, default: "w-20"
+  attr :class, :string, default: "w-[4.5rem]"
 
   def card_image(assigns) do
     assigns =
@@ -41,7 +41,15 @@ defmodule Scry2Web.CardComponents do
       |> assign(:cached?, ImageCache.cached?(assigns.arena_id))
 
     ~H"""
-    <img :if={@cached?} src={@src} alt={@name} loading="lazy" class={["rounded-sm", @class]} />
+    <img
+      :if={@cached?}
+      id={"card-img-#{@arena_id}"}
+      src={@src}
+      alt={@name}
+      loading="lazy"
+      class={["rounded-sm", @class]}
+      phx-hook="CardHover"
+    />
     <div
       :if={!@cached?}
       class={[
@@ -67,7 +75,7 @@ defmodule Scry2Web.CardComponents do
   """
   attr :arena_ids, :list, required: true
   attr :card_names, :map, default: %{}
-  attr :class, :string, default: "w-20"
+  attr :class, :string, default: "w-[4.5rem]"
 
   def card_hand(assigns) do
     ~H"""
