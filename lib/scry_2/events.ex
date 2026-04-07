@@ -285,6 +285,7 @@ defmodule Scry2.Events do
     Repo.delete_all(Scry2.Matches.Match)
     Repo.delete_all(Scry2.Drafts.Pick)
     Repo.delete_all(Scry2.Drafts.Draft)
+    Repo.delete_all(Scry2.Mulligans.MulliganListing)
 
     # 2. Clear domain events
     Repo.delete_all(EventRecord)
@@ -382,6 +383,7 @@ defmodule Scry2.Events do
     Repo.delete_all(Scry2.Matches.Match)
     Repo.delete_all(Scry2.Drafts.Pick)
     Repo.delete_all(Scry2.Drafts.Draft)
+    Repo.delete_all(Scry2.Mulligans.MulliganListing)
     Repo.delete_all(EventRecord)
 
     # Re-mark raw events as unprocessed so replay picks them up
