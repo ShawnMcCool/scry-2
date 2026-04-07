@@ -72,7 +72,11 @@ defmodule Scry2.Events.IngestRawEvents do
        self_user_id: Config.get(:mtga_self_user_id),
        player_id: nil,
        current_session_id: nil,
-       match_context: %{current_match_id: nil, current_game_number: nil}
+       match_context: %{
+         current_match_id: nil,
+         current_game_number: nil,
+         last_hand_game_objects: %{}
+       }
      }}
   end
 
@@ -100,8 +104,14 @@ defmodule Scry2.Events.IngestRawEvents do
   # Run the raw event through the translator, append each resulting
   # domain event to the log, and update match_context state from the
   # produced events (ADR-022).
+  #
+  # Before translation: cache any gameObjects from this raw event's GRE
+  # messages into match_context. MTGA sends hand card data (gameObjects)
+  # in a GameStateMessage that precedes the MulliganReq. The translator
+  # uses cached objects as fallback when the MulliganReq itself lacks them.
   defp process_raw_event(record, state) do
     self_user_id = state.self_user_id
+    state = maybe_cache_game_objects(record, state)
     match_context = state.match_context
 
     {domain_events, translation_warnings} =
@@ -191,12 +201,38 @@ defmodule Scry2.Events.IngestRawEvents do
         put_in(acc, [:match_context, :current_game_number], current_game + 1)
 
       %Scry2.Events.MatchCompleted{}, acc ->
-        %{acc | match_context: %{current_match_id: nil, current_game_number: nil}}
+        %{
+          acc
+          | match_context: %{
+              current_match_id: nil,
+              current_game_number: nil,
+              last_hand_game_objects: %{}
+            }
+        }
 
       _, acc ->
         acc
     end)
   end
+
+  # Cache the player's resolved hand from GreToClientEvent messages.
+  # MTGA sends the hand (zone + gameObjects) in a GameStateMessage that
+  # often precedes the MulliganReq by several events. The translator
+  # uses this cached hand as fallback when the MulliganReq's own
+  # GameStateMessage lacks gameObjects or the player's hand zone.
+  defp maybe_cache_game_objects(%EventRecord{event_type: "GreToClientEvent"} = record, state) do
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         messages when is_list(messages) <-
+           get_in(payload, ["greToClientEvent", "greToClientMessages"]),
+         {_seat_id, _hand} = resolved <-
+           IdentifyDomainEvents.extract_resolved_hand(messages) do
+      put_in(state, [:match_context, :last_hand_game_objects], resolved)
+    else
+      _ -> state
+    end
+  end
+
+  defp maybe_cache_game_objects(_record, state), do: state
 
   # Inject player_id into each domain event struct. SessionStarted events
   # set the player_id (they discover the player), so they stamp themselves.

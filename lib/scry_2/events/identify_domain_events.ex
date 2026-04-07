@@ -234,7 +234,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           maybe_build_deck_submitted(messages, match_id, occurred_at),
           maybe_build_die_roll_completed(messages, match_id, occurred_at),
           maybe_build_game_completed(messages, match_id, occurred_at),
-          build_mulligan_offered(messages, context_match_id, occurred_at)
+          build_mulligan_offered(messages, context_match_id, occurred_at, match_context)
         ]
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
@@ -962,8 +962,9 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # zones (ZoneType_Hand) with objectInstanceIds and gameObjects with
   # grpId (arena_id). We map instance IDs → arena_ids for the player's
   # seat to capture the actual opening hand.
-  defp build_mulligan_offered(messages, match_id, occurred_at) do
+  defp build_mulligan_offered(messages, match_id, occurred_at, match_context) do
     game_state = extract_game_state_for_mulligans(messages)
+    cached_objects = match_context[:last_hand_game_objects] || %{}
 
     messages
     |> Enum.filter(&(&1["type"] == "GREMessageType_MulliganReq"))
@@ -978,7 +979,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           _ -> nil
         end)
 
-      hand_arena_ids = extract_hand_arena_ids(game_state, seat_id)
+      hand_arena_ids = extract_hand_arena_ids(game_state, seat_id, cached_objects)
 
       %MulliganOffered{
         mtga_match_id: match_id,
@@ -998,28 +999,80 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end)
   end
 
-  defp extract_hand_arena_ids(nil, _seat_id), do: nil
+  @doc """
+  Extracts the player's hand as a resolved `{seat_id, [arena_id, ...]}`
+  tuple from a GreToClientEvent's GRE messages. Called by IngestRawEvents
+  to cache the most recently seen hand across sequential events.
 
-  defp extract_hand_arena_ids(game_state, seat_id) do
-    zones = game_state["zones"] || []
-    game_objects = game_state["gameObjects"] || []
-
-    hand_instance_ids =
-      zones
-      |> Enum.find_value(fn
-        %{"type" => "ZoneType_Hand", "ownerSeatId" => ^seat_id, "objectInstanceIds" => ids} -> ids
+  Only returns a result when the GameStateMessage contains both a
+  ZoneType_Hand zone and gameObjects to resolve instance IDs. Returns
+  nil otherwise.
+  """
+  def extract_resolved_hand(messages) when is_list(messages) do
+    gsm =
+      Enum.find_value(messages, fn
+        %{"type" => "GREMessageType_GameStateMessage", "gameStateMessage" => gsm} -> gsm
         _ -> nil
       end)
 
-    case hand_instance_ids do
-      nil ->
-        nil
+    with %{"zones" => zones, "gameObjects" => objects}
+         when is_list(zones) and is_list(objects) and objects != [] <- gsm do
+      instance_to_grp = Map.new(objects, fn obj -> {obj["instanceId"], obj["grpId"]} end)
 
-      ids ->
-        instance_to_grp = Map.new(game_objects, fn obj -> {obj["instanceId"], obj["grpId"]} end)
-        Enum.map(ids, fn id -> Map.get(instance_to_grp, id) end) |> Enum.reject(&is_nil/1)
+      Enum.find_value(zones, fn
+        %{"type" => "ZoneType_Hand", "ownerSeatId" => seat_id, "objectInstanceIds" => ids}
+        when is_list(ids) ->
+          resolved = Enum.map(ids, &Map.get(instance_to_grp, &1)) |> Enum.reject(&is_nil/1)
+          if resolved != [], do: {seat_id, resolved}
+
+        _ ->
+          nil
+      end)
+    else
+      _ -> nil
     end
   end
+
+  def extract_resolved_hand(_), do: nil
+
+  defp extract_hand_arena_ids(nil, _seat_id, _cached_hand), do: nil
+
+  defp extract_hand_arena_ids(game_state, seat_id, cached_hand) do
+    zones = game_state["zones"] || []
+    game_objects = game_state["gameObjects"] || []
+
+    # Try to resolve from this message's own data first.
+    instance_to_grp =
+      case game_objects do
+        [] -> %{}
+        objs -> Map.new(objs, fn obj -> {obj["instanceId"], obj["grpId"]} end)
+      end
+
+    hand_instance_ids =
+      Enum.find_value(zones, fn
+        %{"type" => "ZoneType_Hand", "ownerSeatId" => ^seat_id, "objectInstanceIds" => ids} ->
+          ids
+
+        _ ->
+          nil
+      end)
+
+    case {hand_instance_ids, instance_to_grp} do
+      {ids, mapping} when is_list(ids) and map_size(mapping) > 0 ->
+        resolved = Enum.map(ids, &Map.get(mapping, &1)) |> Enum.reject(&is_nil/1)
+        if resolved != [], do: resolved, else: use_cached_hand(cached_hand, seat_id)
+
+      _ ->
+        # No resolvable hand in this message — fall back to cached hand
+        # from a preceding GameStateMessage.
+        use_cached_hand(cached_hand, seat_id)
+    end
+  end
+
+  # The cached hand is `{seat_id, [arena_id, ...]}` from the most recent
+  # GameStateMessage that had gameObjects. Only use it if the seat matches.
+  defp use_cached_hand({cached_seat, hand}, seat_id) when cached_seat == seat_id, do: hand
+  defp use_cached_hand(_, _), do: nil
 
   defp find_gre_message(messages, type) do
     Enum.find(messages, fn message -> message["type"] == type end)
