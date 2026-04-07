@@ -1,36 +1,29 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="csrf-token" content={get_csrf_token()} />
-    <.live_title default="Scry2" suffix=" · Phoenix Framework">
+    <.live_title default="Scry2" suffix=" · Scry2">
       {assigns[:page_title]}
     </.live_title>
     <link phx-track-static rel="stylesheet" href={~p"/assets/css/app.css"} />
     <script defer phx-track-static type="text/javascript" src={~p"/assets/js/app.js"}>
     </script>
-    <script>
-      (() => {
-        const setTheme = (theme) => {
-          if (theme === "system") {
-            localStorage.removeItem("phx:theme");
-            document.documentElement.removeAttribute("data-theme");
-          } else {
-            localStorage.setItem("phx:theme", theme);
-            document.documentElement.setAttribute("data-theme", theme);
-          }
-        };
-        if (!document.documentElement.hasAttribute("data-theme")) {
-          setTheme(localStorage.getItem("phx:theme") || "system");
-        }
-        window.addEventListener("storage", (e) => e.key === "phx:theme" && setTheme(e.newValue || "system"));
-        
-        window.addEventListener("phx:set-theme", (e) => setTheme(e.target.dataset.phxTheme));
-      })();
-    </script>
   </head>
   <body>
     {@inner_content}
+    <!-- Shared card hover popup — repositioned by CardHover hook -->
+    <div
+      id="card-hover-popup"
+      style="display:none; position:fixed; z-index:100; pointer-events:none;"
+    >
+      <img
+        id="card-hover-popup-img"
+        src=""
+        alt=""
+        style="width:clamp(250px, 25vw, 450px); border-radius:10px; box-shadow: 0 12px 40px rgba(0,0,0,0.7);"
+      />
+    </div>
   </body>
 </html>
