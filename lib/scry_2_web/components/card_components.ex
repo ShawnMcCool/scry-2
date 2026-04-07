@@ -1,0 +1,84 @@
+defmodule Scry2Web.CardComponents do
+  @moduledoc """
+  Reusable function components for displaying card images.
+
+  These components render `<img>` tags pointing to the card image
+  Plug route (`/images/cards/{arena_id}.jpg`). Call
+  `Scry2.Cards.ImageCache.ensure_cached/2` in your LiveView mount
+  before rendering — this ensures images are on disk before the
+  browser requests them.
+
+  ## Usage
+
+      # In mount:
+      ImageCache.ensure_cached(arena_ids)
+
+      # In template:
+      <.card_image arena_id={91001} name="Lightning Bolt" />
+      <.card_hand arena_ids={[91001, 91002, 91003]} />
+  """
+
+  use Phoenix.Component
+
+  alias Scry2.Cards.ImageCache
+
+  @doc """
+  Renders a single card image.
+
+  ## Examples
+
+      <.card_image arena_id={91001} />
+      <.card_image arena_id={91001} name="Lightning Bolt" class="w-24" />
+  """
+  attr :arena_id, :integer, required: true
+  attr :name, :string, default: "Card image"
+  attr :class, :string, default: "w-20"
+
+  def card_image(assigns) do
+    assigns =
+      assigns
+      |> assign(:src, ImageCache.url_for(assigns.arena_id))
+      |> assign(:cached?, ImageCache.cached?(assigns.arena_id))
+
+    ~H"""
+    <img :if={@cached?} src={@src} alt={@name} loading="lazy" class={["rounded-sm", @class]} />
+    <div
+      :if={!@cached?}
+      class={[
+        "rounded-sm bg-base-300 flex items-center justify-center text-base-content/20 aspect-[488/680]",
+        @class
+      ]}
+    >
+      <Scry2Web.CoreComponents.icon name="hero-photo" class="size-4" />
+    </div>
+    """
+  end
+
+  @doc """
+  Renders a horizontal row of card images.
+
+  Used for mulligan hands, opening hands, deck displays — any
+  context where multiple cards are shown inline.
+
+  ## Examples
+
+      <.card_hand arena_ids={[91001, 91002, 91003]} />
+      <.card_hand arena_ids={hand} card_names={%{91001 => "Bolt"}} class="w-16" />
+  """
+  attr :arena_ids, :list, required: true
+  attr :card_names, :map, default: %{}
+  attr :class, :string, default: "w-20"
+
+  def card_hand(assigns) do
+    ~H"""
+    <div class="flex gap-1 items-start">
+      <.card_image
+        :for={arena_id <- @arena_ids}
+        arena_id={arena_id}
+        name={Map.get(@card_names, arena_id, "Card image")}
+        class={@class}
+      />
+    </div>
+    """
+  end
+end

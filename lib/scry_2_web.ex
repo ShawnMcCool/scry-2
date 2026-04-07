@@ -81,6 +81,7 @@ defmodule Scry2Web do
       import Phoenix.HTML
       # Core UI components
       import Scry2Web.CoreComponents
+      import Scry2Web.CardComponents
 
       # Shared LiveView helpers (debounce, formatting)
       import Scry2Web.LiveHelpers
