@@ -24,6 +24,8 @@ defmodule Scry2.Application do
         # via PubSub. Logs emitted before this starts are dropped silently by
         # Buffer.append/2's Process.whereis guard.
         Scry2.Console.RecentEntries,
+        # Card image cache — ensures cache directory exists on startup.
+        Scry2.Cards.ImageCache,
         {Oban, Application.fetch_env!(:scry_2, Oban)},
         Scry2Web.Endpoint
       ]
