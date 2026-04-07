@@ -444,6 +444,116 @@ defmodule Scry2Web.CoreComponents do
     """
   end
 
+  @doc """
+  Renders a stat card with a muted title and large value ([UIDR-003]).
+
+  ## Examples
+
+      <.stat_card title="Matches" value={42} />
+      <.stat_card title="Errors" value={3} class="text-error" />
+  """
+  attr :title, :string, required: true
+  attr :value, :any, required: true
+  attr :class, :string, default: ""
+
+  def stat_card(assigns) do
+    ~H"""
+    <div class="card bg-base-200">
+      <div class="card-body p-4">
+        <p class="text-xs uppercase text-base-content/60">{@title}</p>
+        <p class={["text-2xl font-semibold", @class]}>{@value}</p>
+      </div>
+    </div>
+    """
+  end
+
+  @doc """
+  Renders a centered empty-state message with an icon.
+
+  ## Examples
+
+      <.empty_state>No matches recorded yet.</.empty_state>
+      <.empty_state icon="hero-beaker">No cards imported.</.empty_state>
+  """
+  attr :icon, :string, default: "hero-inbox"
+  slot :inner_block, required: true
+
+  def empty_state(assigns) do
+    ~H"""
+    <div class="flex flex-col items-center justify-center py-12 text-base-content/50">
+      <.icon name={@icon} class="size-8 mb-3" />
+      <p class="text-sm">{render_slot(@inner_block)}</p>
+    </div>
+    """
+  end
+
+  @doc """
+  Renders a back-navigation link with a left arrow.
+
+  ## Examples
+
+      <.back_link navigate={~p"/matches"} label="All matches" />
+  """
+  attr :navigate, :string, required: true
+  attr :label, :string, required: true
+
+  def back_link(assigns) do
+    ~H"""
+    <.link navigate={@navigate} class="link text-sm">&larr; {@label}</.link>
+    """
+  end
+
+  @doc """
+  Renders a win/loss result badge ([UIDR-001]).
+
+  ## Examples
+
+      <.result_badge won={true} />
+      <.result_badge won={nil} />
+  """
+  attr :won, :boolean, default: nil
+
+  def result_badge(assigns) do
+    {class, label} =
+      case assigns.won do
+        true -> {"badge-success", "Won"}
+        false -> {"badge-error", "Lost"}
+        nil -> {"badge-ghost", "—"}
+      end
+
+    assigns = Phoenix.Component.assign(assigns, badge_class: class, badge_label: label)
+
+    ~H"""
+    <span class={["badge badge-sm", @badge_class]}>{@badge_label}</span>
+    """
+  end
+
+  @doc """
+  Renders a card rarity badge ([UIDR-001]).
+
+  ## Examples
+
+      <.rarity_badge rarity="mythic" />
+      <.rarity_badge rarity="common" />
+  """
+  attr :rarity, :string, required: true
+
+  def rarity_badge(assigns) do
+    class =
+      case assigns.rarity do
+        "mythic" -> "badge-warning"
+        "rare" -> "badge-accent"
+        "uncommon" -> "badge-info"
+        _other -> "badge-ghost"
+      end
+
+    assigns = Phoenix.Component.assign(assigns, badge_class: class)
+
+    ~H"""
+    <span class={["badge badge-sm", @badge_class]}>{@rarity}</span>
+    """
+  end
+
   ## JS Commands
 
   def show(js \\ %JS{}, selector) do

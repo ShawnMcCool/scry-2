@@ -13,7 +13,8 @@ defmodule Scry2Web.CardsLive do
      socket
      |> assign(:cards, [])
      |> assign(:filters, %{name_like: "", rarity: nil, set_code: nil})
-     |> assign(:total, 0)}
+     |> assign(:total, 0)
+     |> assign(:reload_timer, nil)}
   end
 
   @impl true
@@ -36,8 +37,12 @@ defmodule Scry2Web.CardsLive do
 
   @impl true
   def handle_info({:cards_refreshed, _}, socket) do
+    {:noreply, schedule_reload(socket)}
+  end
+
+  def handle_info(:reload_data, socket) do
     cards = Cards.list_cards(Map.put(socket.assigns.filters, :limit, 200))
-    {:noreply, assign(socket, cards: cards, total: Cards.count())}
+    {:noreply, assign(socket, cards: cards, total: Cards.count(), reload_timer: nil)}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
@@ -88,11 +93,7 @@ defmodule Scry2Web.CardsLive do
             <tr :for={card <- @cards}>
               <td class="font-medium">{card.name}</td>
               <td>{Helpers.set_code(card)}</td>
-              <td>
-                <span class={"badge badge-sm #{Helpers.rarity_class(card.rarity)}"}>
-                  {card.rarity}
-                </span>
-              </td>
+              <td><.rarity_badge rarity={card.rarity} /></td>
               <td class="tabular-nums">{card.mana_value}</td>
               <td>{Helpers.color_identity_label(card.color_identity)}</td>
               <td class="tabular-nums text-base-content/60">{card.arena_id || "—"}</td>

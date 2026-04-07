@@ -27,6 +27,7 @@ When two designs both work, pick the one that scales better, not the one that sh
 | Oban, background jobs, workflows, scheduling | `oban-thinking` |
 | Writing tests — Elixir, JavaScript, or Playwright E2E | `automated-testing` |
 | General coding standards, naming, structure | `coding-guidelines` |
+| UI work — templates, components, CSS, styling, layout | `user-interface` |
 | Production debugging, service health, runtime logs | `troubleshoot` |
 
 Invoke the skill **first**, then explore the codebase, then write code.
@@ -162,6 +163,7 @@ See the layout and components under `lib/scry_2_web/components/` for the UI patt
 Decision records live in `decisions/` using [MADR 4.0](https://adr.github.io/madr/). See `decisions/README.md` for the category index. **Filename convention:** `YYYY-MM-DD-NNN-short-title.md`, numbered per category.
 
 - **Architecture** (`decisions/architecture/`): system design, data model, integration patterns, engineering standards
+- **User Interface** (`decisions/user-interface/`): component conventions, styling rules, visual design decisions
 
 ## Defaults
 

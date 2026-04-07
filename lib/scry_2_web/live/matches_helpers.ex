@@ -2,6 +2,9 @@ defmodule Scry2Web.MatchesHelpers do
   @moduledoc """
   Pure helper functions for `Scry2Web.MatchesLive`. Extracted per
   ADR-013.
+
+  Shared formatters (`format_datetime/1`, `format_label/1`) live in
+  `Scry2Web.LiveHelpers`.
   """
 
   @doc "Returns a badge class for the win/loss state."
@@ -15,27 +18,4 @@ defmodule Scry2Web.MatchesHelpers do
   def result_label(true), do: "Won"
   def result_label(false), do: "Lost"
   def result_label(nil), do: "—"
-
-  @doc "Formats a UTC datetime for display in the match list."
-  @spec format_started_at(DateTime.t() | nil) :: String.t()
-  def format_started_at(nil), do: "—"
-
-  def format_started_at(%DateTime{} = dt) do
-    "#{pad(dt.year)}-#{pad(dt.month)}-#{pad(dt.day)} #{pad(dt.hour)}:#{pad(dt.minute)}"
-  end
-
-  @doc """
-  Returns a human label for a match format string (e.g. `premier_draft`
-  → `Premier Draft`).
-  """
-  @spec format_label(String.t() | nil) :: String.t()
-  def format_label(nil), do: "—"
-
-  def format_label(format) when is_binary(format) do
-    format
-    |> String.split("_")
-    |> Enum.map_join(" ", &String.capitalize/1)
-  end
-
-  defp pad(value), do: value |> Integer.to_string() |> String.pad_leading(2, "0")
 end

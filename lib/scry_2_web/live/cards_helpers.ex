@@ -10,14 +10,6 @@ defmodule Scry2Web.CardsHelpers do
   def set_code(%Card{set: %{code: code}}) when is_binary(code), do: code
   def set_code(_), do: "—"
 
-  @doc "Returns a daisyUI badge color class for the given rarity."
-  @spec rarity_class(String.t() | nil) :: String.t()
-  def rarity_class("mythic"), do: "badge-warning"
-  def rarity_class("rare"), do: "badge-accent"
-  def rarity_class("uncommon"), do: "badge-info"
-  def rarity_class("common"), do: "badge-ghost"
-  def rarity_class(_), do: "badge-ghost"
-
   @doc """
   Renders a short human label for a color identity string. An empty
   string or nil renders as "Colorless".
