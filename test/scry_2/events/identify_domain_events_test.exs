@@ -381,12 +381,18 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "recognized? returns true for newly handled/ignored types" do
       assert IdentifyDomainEvents.recognized?("GraphGetGraphState")
       assert IdentifyDomainEvents.recognized?("DeckDeleteDeck")
-      assert IdentifyDomainEvents.recognized?("StartHook")
       assert IdentifyDomainEvents.recognized?("GetFormats")
     end
 
-    test "recognized? returns false for deferred types" do
-      refute IdentifyDomainEvents.recognized?("EventGetActiveMatches")
+    test "recognized? returns true for deferred types" do
+      assert IdentifyDomainEvents.recognized?("EventGetActiveMatches")
+      assert IdentifyDomainEvents.recognized?("StartHook")
+    end
+
+    test "deferred_event_types returns a MapSet of deferred types" do
+      deferred = IdentifyDomainEvents.deferred_event_types()
+      assert MapSet.member?(deferred, "EventGetActiveMatches")
+      assert MapSet.member?(deferred, "StartHook")
     end
   end
 

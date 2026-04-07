@@ -71,6 +71,7 @@ defmodule Scry2.Events.IngestRawEvents do
      %{
        self_user_id: Config.get(:mtga_self_user_id),
        player_id: nil,
+       current_session_id: nil,
        match_context: %{current_match_id: nil, current_game_number: nil}
      }}
   end
@@ -137,7 +138,10 @@ defmodule Scry2.Events.IngestRawEvents do
         |> stamp_player_id(new_state.player_id, record)
         |> Enum.with_index()
         |> Enum.each(fn {event, index} ->
-          Events.append!(event, record, sequence: index)
+          Events.append!(event, record,
+            sequence: index,
+            session_id: new_state.current_session_id
+          )
         end)
 
         MtgaLogIngestion.mark_processed!(record.id)
@@ -164,7 +168,12 @@ defmodule Scry2.Events.IngestRawEvents do
   # MatchCompleted: clear match context for the next match.
   defp update_state(state, events) do
     Enum.reduce(events, state, fn
-      %Scry2.Events.SessionStarted{client_id: client_id, screen_name: screen_name}, acc
+      %Scry2.Events.SessionStarted{
+        client_id: client_id,
+        screen_name: screen_name,
+        session_id: session_id
+      },
+      acc
       when is_binary(client_id) ->
         player = Players.find_or_create!(client_id, screen_name || client_id)
 
@@ -172,7 +181,7 @@ defmodule Scry2.Events.IngestRawEvents do
           Log.info(:ingester, "auto-detected player: #{player.screen_name} (#{client_id})")
         end
 
-        %{acc | self_user_id: client_id, player_id: player.id}
+        %{acc | self_user_id: client_id, player_id: player.id, current_session_id: session_id}
 
       %Scry2.Events.MatchCreated{mtga_match_id: match_id}, acc ->
         put_in(acc, [:match_context, :current_match_id], match_id)

@@ -27,6 +27,7 @@ defmodule Scry2Web.DashboardLive do
        errors: 0
      })
      |> assign(:unrecognized, %{})
+     |> assign(:deferred_with_payloads, %{})
      |> assign(:errors, [])
      |> assign(:refresh_result, nil)
      |> assign(:reload_timer, nil)}
@@ -41,6 +42,10 @@ defmodule Scry2Web.DashboardLive do
     unrecognized =
       events_by_type
       |> Map.reject(fn {type, _count} -> MapSet.member?(known_types, type) end)
+
+    deferred_with_payloads =
+      IdentifyDomainEvents.deferred_event_types()
+      |> MtgaLogIngestion.deferred_types_with_payloads()
 
     total_raw = events_by_type |> Map.values() |> Enum.sum()
     domain_counts = Events.count_by_type()
@@ -64,6 +69,7 @@ defmodule Scry2Web.DashboardLive do
      |> assign(:watcher, watcher)
      |> assign(:counts, counts)
      |> assign(:unrecognized, unrecognized)
+     |> assign(:deferred_with_payloads, deferred_with_payloads)
      |> assign(:errors, if(error_count > 0, do: MtgaLogIngestion.list_errors(), else: []))}
   end
 
@@ -109,6 +115,10 @@ defmodule Scry2Web.DashboardLive do
       events_by_type
       |> Map.reject(fn {type, _count} -> MapSet.member?(known_types, type) end)
 
+    deferred_with_payloads =
+      IdentifyDomainEvents.deferred_event_types()
+      |> MtgaLogIngestion.deferred_types_with_payloads()
+
     total_raw = events_by_type |> Map.values() |> Enum.sum()
     domain_counts = Events.count_by_type()
     total_domain = domain_counts |> Map.values() |> Enum.sum()
@@ -128,6 +138,7 @@ defmodule Scry2Web.DashboardLive do
      socket
      |> assign(:counts, counts)
      |> assign(:unrecognized, unrecognized)
+     |> assign(:deferred_with_payloads, deferred_with_payloads)
      |> assign(:errors, if(error_count > 0, do: MtgaLogIngestion.list_errors(), else: []))
      |> assign(:reload_timer, nil)}
   end
@@ -191,6 +202,33 @@ defmodule Scry2Web.DashboardLive do
               </thead>
               <tbody>
                 <tr :for={{type, count} <- Helpers.sort_events_by_count(@unrecognized)}>
+                  <td><code>{type}</code></td>
+                  <td class="text-right tabular-nums">{count}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section :if={map_size(@deferred_with_payloads) > 0} class="alert alert-info">
+        <.icon name="hero-light-bulb" class="size-5" />
+        <div>
+          <p class="font-semibold">Deferred events now have payloads</p>
+          <p class="text-sm mb-2">
+            These event types were deferred because all prior payloads were empty.
+            They now have non-empty data and may be ready for a handler.
+          </p>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Event type</th>
+                  <th class="text-right">Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={{type, count} <- Helpers.sort_events_by_count(@deferred_with_payloads)}>
                   <td><code>{type}</code></td>
                   <td class="text-right tabular-nums">{count}</td>
                 </tr>

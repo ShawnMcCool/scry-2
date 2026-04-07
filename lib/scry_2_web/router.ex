@@ -14,6 +14,10 @@ defmodule Scry2Web.Router do
     plug :accepts, ["json"]
   end
 
+  # Card image cache — served from disk with immutable browser caching.
+  # Outside the :browser pipeline (no CSRF, no session — just a static file).
+  get "/images/cards/:arena_id", Scry2Web.Plugs.CardImage, :call
+
   scope "/", Scry2Web do
     pipe_through :browser
 
@@ -24,6 +28,9 @@ defmodule Scry2Web.Router do
       live "/cards", CardsLive, :index
       live "/drafts", DraftsLive, :index
       live "/drafts/:id", DraftsLive, :show
+      live "/events", EventsLive, :index
+      live "/events/:id", EventsLive, :show
+      live "/mulligans", MulligansLive, :index
       live "/settings", SettingsLive, :index
       live "/console", ConsolePageLive, :index
     end
