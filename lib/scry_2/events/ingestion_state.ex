@@ -132,7 +132,10 @@ defmodule Scry2.Events.IngestionState do
       version: state.version,
       last_raw_event_id: state.last_raw_event_id,
       session: Jason.decode!(Jason.encode!(state.session)),
-      match: Jason.decode!(Jason.encode!(state.match))
+      match:
+        Jason.decode!(
+          Jason.encode!(%{state.match | last_hand_game_objects: %{}, pending_deck: nil})
+        )
     }
 
     case Repo.get(Snapshot, @singleton_id) do
