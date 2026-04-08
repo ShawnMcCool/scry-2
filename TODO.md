@@ -123,9 +123,46 @@ life total changes, zone transitions.
 - Mana efficiency tracking
 - Decision tree analysis
 
+### Domain events to design
+
+These are the core domain events that game replay data produces. Each
+should be enriched at ingestion (ADR-030) with card metadata so
+projectors are pure writers.
+
+1. **TurnCompleted** — one per turn. Turn number, active player, lands
+   played, spells cast (arena_ids), attacks made, life total changes,
+   cards drawn. The backbone of replay.
+
+2. **SpellCast** — each spell/ability resolution. Card arena_id, mana
+   paid, targets (arena_ids), turn number, zone transition
+   (hand → stack → battlefield/graveyard).
+
+3. **CombatResolved** — per combat phase. Attackers + arena_ids,
+   blockers + assignments, damage dealt per creature, creatures
+   destroyed, life total changes.
+
+4. **ZoneTransition** — card movement between zones: draw
+   (library → hand), play (hand → battlefield), destroy
+   (battlefield → graveyard), exile, return. Full card lifecycle.
+
+### UI features these events enable
+
+- **Game replay timeline** — scrub through turns like a video. See
+  every land drop, spell, attack. Understand why you won or lost.
+- **Decision analytics** — "you attacked into open mana 4 times and
+  got blown out twice" / "you consistently curve out by turn 4"
+- **Mana curve efficiency** — mana spent vs available per turn. Curve
+  analysis across games to find deck construction issues.
+- **Card performance** — which cards you cast most, which sat in hand,
+  which won games vs lost. Data-driven card evaluation from your own
+  games.
+- **Combat analytics** — attack/block patterns, damage efficiency,
+  trade quality.
+
 ### Prerequisites
 
 - ADR-025 cumulative game state is the foundation — already implemented
 - Need to extend `match_context` to maintain full zone state across GameStateMessages
-- Need to define domain events for turns, spells cast, combat phases
 - `diffDeletedInstanceIds` handling needed for proper zone tracking
+- Turn boundary detection from GameStateMessage sequences
+- Annotation parsing for triggers, combat, and spell resolution
