@@ -241,9 +241,9 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
       events =
         [
-          maybe_build_deck_submitted(messages, match_id, occurred_at),
-          maybe_build_die_roll_completed(messages, match_id, occurred_at),
-          maybe_build_game_completed(messages, match_id, occurred_at),
+          maybe_build_deck_submitted(messages, context_match_id, occurred_at),
+          maybe_build_die_roll_completed(messages, context_match_id, occurred_at),
+          maybe_build_game_completed(messages, context_match_id, occurred_at),
           build_mulligan_offered(messages, context_match_id, occurred_at, match_context),
           build_turn_actions(messages, context_match_id, occurred_at, match_context)
         ]
@@ -975,8 +975,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   # ConnectResp carries the deck list as flat arrays of arena_ids (one
   # entry per copy). Aggregate into [%{arena_id, count}] shape.
-  defp maybe_build_deck_submitted(messages, match_id, occurred_at)
-       when is_binary(match_id) do
+  defp maybe_build_deck_submitted(messages, match_id, occurred_at) do
     case find_gre_message(messages, "GREMessageType_ConnectResp") do
       %{"connectResp" => connect_resp} = message ->
         deck_message = connect_resp["deckMessage"] || %{}
@@ -985,9 +984,11 @@ defmodule Scry2.Events.IdentifyDomainEvents do
         main_deck = aggregate_card_list(deck_message["deckCards"] || [])
         sideboard = aggregate_card_list(deck_message["sideboardCards"] || [])
 
+        deck_id = if match_id, do: "#{match_id}:seat#{seat_id}", else: "pending:seat#{seat_id}"
+
         %DeckSubmitted{
           mtga_match_id: match_id,
-          mtga_deck_id: "#{match_id}:seat#{seat_id}",
+          mtga_deck_id: deck_id,
           main_deck: main_deck,
           sideboard: sideboard,
           occurred_at: occurred_at
@@ -997,8 +998,6 @@ defmodule Scry2.Events.IdentifyDomainEvents do
         nil
     end
   end
-
-  defp maybe_build_deck_submitted(_messages, _match_id, _occurred_at), do: nil
 
   # GameStateMessage with matchState "MatchState_GameComplete" carries
   # per-game results including winner, game number, and player stats.
