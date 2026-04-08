@@ -213,6 +213,22 @@ defmodule Scry2.MatchesTest do
       assert br.wins == 1
     end
 
+    test "breaks down by deck name" do
+      TestFactory.create_match(%{won: true, deck_name: "Mono Red Aggro"})
+      TestFactory.create_match(%{won: false, deck_name: "Mono Red Aggro"})
+      TestFactory.create_match(%{won: true, deck_name: "Azorius Control"})
+
+      stats = Matches.aggregate_stats()
+
+      mono_red = Enum.find(stats.by_deck_name, &(&1.key == "Mono Red Aggro"))
+      assert mono_red.total == 2
+      assert mono_red.wins == 1
+
+      azorius = Enum.find(stats.by_deck_name, &(&1.key == "Azorius Control"))
+      assert azorius.total == 1
+      assert azorius.wins == 1
+    end
+
     test "excludes matches where won is nil" do
       TestFactory.create_match(%{won: true})
       TestFactory.create_match(%{won: nil})

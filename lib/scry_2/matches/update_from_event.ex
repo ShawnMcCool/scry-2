@@ -48,14 +48,15 @@ defmodule Scry2.Matches.UpdateFromEvent do
       started_at: event.occurred_at,
       player_rank: event.player_rank,
       format: event.format,
-      format_type: event.format_type
+      format_type: event.format_type,
+      deck_name: event.deck_name
     }
 
     match = Matches.upsert_match!(attrs)
 
     Log.info(
       :ingester,
-      "projected MatchCreated mtga_match_id=#{match.mtga_match_id} opponent=#{inspect(event.opponent_screen_name)}"
+      "projected MatchCreated mtga_match_id=#{match.mtga_match_id} opponent=#{inspect(event.opponent_screen_name)} deck=#{inspect(event.deck_name)}"
     )
 
     :ok

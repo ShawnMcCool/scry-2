@@ -127,6 +127,35 @@ defmodule Scry2Web.StatsLive do
             </table>
           </div>
         </section>
+
+        <%!-- By deck name breakdown --%>
+        <section :if={@stats.by_deck_name != []}>
+          <h2 class="text-lg font-semibold mb-3">By Deck</h2>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Deck</th>
+                  <th class="text-right">Matches</th>
+                  <th class="text-right">Record</th>
+                  <th class="text-right">Win Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={row <- @stats.by_deck_name}>
+                  <td>{row.key}</td>
+                  <td class="text-right tabular-nums">{row.total}</td>
+                  <td class="text-right tabular-nums">
+                    {StatsHelpers.record(row.wins, row.losses)}
+                  </td>
+                  <td class={["text-right tabular-nums", StatsHelpers.win_rate_class(row.win_rate)]}>
+                    {StatsHelpers.format_win_rate(row.win_rate)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </Layouts.app>
     """

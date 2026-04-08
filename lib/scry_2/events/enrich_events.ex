@@ -33,7 +33,9 @@ defmodule Scry2.Events.EnrichEvents do
         _ -> state[:constructed_rank] || state[:limited_rank]
       end
 
-    %{event | player_rank: rank, format: format, format_type: format_type}
+    deck_name = get_in(state, [:match_context, :last_deck_name])
+
+    %{event | player_rank: rank, format: format, format_type: format_type, deck_name: deck_name}
   end
 
   defp enrich_one(%MulliganOffered{hand_arena_ids: nil} = event, _state), do: event

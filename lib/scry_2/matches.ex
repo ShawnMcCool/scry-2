@@ -126,8 +126,9 @@ defmodule Scry2.Matches do
     * `:win_rate` — float 0.0–100.0, or nil if no completed matches
     * `:avg_turns` — average total_turns per match, or nil
     * `:avg_mulligans` — average total_mulligans per match, or nil
-    * `:by_format` — list of `%{format: string, total: int, wins: int, win_rate: float}`
-    * `:by_deck_colors` — list of `%{deck_colors: string, total: int, wins: int, win_rate: float}`
+    * `:by_format` — list of `%{key: string, total: int, wins: int, win_rate: float}`
+    * `:by_deck_colors` — same shape
+    * `:by_deck_name` — same shape
   """
   def aggregate_stats(opts \\ []) do
     player_id = Keyword.get(opts, :player_id)
@@ -140,8 +141,13 @@ defmodule Scry2.Matches do
     overall = overall_stats(base)
     by_format = breakdown_by(base, :format)
     by_deck_colors = breakdown_by(base, :deck_colors)
+    by_deck_name = breakdown_by(base, :deck_name)
 
-    Map.merge(overall, %{by_format: by_format, by_deck_colors: by_deck_colors})
+    Map.merge(overall, %{
+      by_format: by_format,
+      by_deck_colors: by_deck_colors,
+      by_deck_name: by_deck_name
+    })
   end
 
   defp overall_stats(query) do
