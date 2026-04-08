@@ -12,7 +12,9 @@ defmodule Scry2.Events.EnrichEvents do
   """
 
   alias Scry2.Cards
-  alias Scry2.Events.{DeckSubmitted, MatchCreated, MulliganOffered}
+  alias Scry2.Events.Deck.DeckSubmitted
+  alias Scry2.Events.Gameplay.MulliganOffered
+  alias Scry2.Events.Match.MatchCreated
 
   @doc """
   Enriches a list of domain events using the current ingestion state.

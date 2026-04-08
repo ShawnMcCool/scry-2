@@ -16,7 +16,8 @@ defmodule Scry2.Mulligans.UpdateFromEvent do
     claimed_slugs: ~w(mulligan_offered match_created),
     projection_tables: [Scry2.Mulligans.MulliganListing]
 
-  alias Scry2.Events.{MatchCreated, MulliganOffered}
+  alias Scry2.Events.Gameplay.MulliganOffered
+  alias Scry2.Events.Match.MatchCreated
   alias Scry2.Mulligans
 
   defp project(%MulliganOffered{} = event) do

@@ -2,7 +2,8 @@ defmodule Scry2.Matches.UpdateFromEventTest do
   use Scry2.DataCase
 
   alias Scry2.Events
-  alias Scry2.Events.{DeckSubmitted, GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Deck.DeckSubmitted
+  alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.Matches
   alias Scry2.Matches.UpdateFromEvent
 

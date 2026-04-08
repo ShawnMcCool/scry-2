@@ -19,7 +19,8 @@ defmodule Scry2.MatchListing.UpdateFromEvent do
     claimed_slugs: ~w(match_created match_completed game_completed deck_submitted),
     projection_tables: [Scry2.MatchListing.MatchListing]
 
-  alias Scry2.Events.{DeckSubmitted, GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Deck.DeckSubmitted
+  alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.MatchListing
 
   # ── Projection handlers ─────────────────────────────────────────────

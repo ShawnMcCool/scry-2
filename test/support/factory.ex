@@ -18,7 +18,7 @@ defmodule Scry2.TestFactory do
   alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Matches
   alias Scry2.Matches.{DeckSubmission, Game, Match}
-  alias Scry2.Events.MasteryProgress
+  alias Scry2.Events.Progression.MasteryProgress
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
   alias Scry2.Players

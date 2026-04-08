@@ -50,7 +50,8 @@ defmodule Scry2.Matches.UpdateFromEvent do
       Scry2.Matches.Match
     ]
 
-  alias Scry2.Events.{DeckSubmitted, GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Deck.DeckSubmitted
+  alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.Matches
 
   # ── Projection handlers ─────────────────────────────────────────────
