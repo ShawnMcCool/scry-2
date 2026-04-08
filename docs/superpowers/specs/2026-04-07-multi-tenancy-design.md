@@ -30,7 +30,7 @@ New bounded context `Scry2.Players` with a `players` table:
 1. On `SessionStarted` → call `Players.find_or_create!(client_id, screen_name)` → store `player_id` in state
 2. Every domain event struct gains a `player_id` field (required, `@enforce_keys`)
 3. `domain_events` table gains an indexed `player_id` column
-4. Projection handlers (`Matches.UpdateFromEvent`, `Drafts.UpdateFromEvent`) pass `player_id` through
+4. Projection handlers (`Matches.Match`, `Drafts.Draft`) pass `player_id` through
 
 Events before the first `SessionStarted` in a log lack a player. In practice this doesn't happen — `AuthenticateResponse` is always the first meaningful event. If it does, log a warning and skip (don't persist playerless domain events).
 

@@ -31,10 +31,10 @@ Meanwhile, the ingestion service (`IngestRawEvents`) already maintains rich stat
 | Data | Currently computed in | Moves to |
 |------|----------------------|----------|
 | `player_rank` | Not captured | `IngestRawEvents` state → stamp on `MatchCreated` |
-| `deck_colors` | `MatchListing.UpdateFromEvent` | `IngestRawEvents` or translator → stamp on `DeckSubmitted` |
-| `land_count`, `cmc_distribution`, etc. | `Mulligans.UpdateFromEvent` | Translator → stamp on `MulliganOffered` |
-| `event_name` on mulligans | `Mulligans.UpdateFromEvent` via match lookup | Already on `MatchCreated` → projector writes directly |
-| `format`, `format_type` | `MatchListing.UpdateFromEvent` | Translator → infer from `event_name`, stamp on `MatchCreated` |
+| `deck_colors` | `Matches.Match` | `IngestRawEvents` or translator → stamp on `DeckSubmitted` |
+| `land_count`, `cmc_distribution`, etc. | `Mulligans.MulliganListing` | Translator → stamp on `MulliganOffered` |
+| `event_name` on mulligans | `Mulligans.MulliganListing` via match lookup | Already on `MatchCreated` → projector writes directly |
+| `format`, `format_type` | `Matches.Match` | Translator → infer from `event_name`, stamp on `MatchCreated` |
 
 ### Consequences
 

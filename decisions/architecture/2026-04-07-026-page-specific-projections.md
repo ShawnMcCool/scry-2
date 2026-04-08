@@ -20,7 +20,7 @@ Each page that displays projected data should have its own **read-optimized proj
 
 2. **Projections are disposable.** Any projection table can be dropped and rebuilt from the domain event log via `Events.replay_projections!/0`. This makes it safe to change projection schemas as UI needs evolve.
 
-3. **Projections subscribe to `domain:events`.** Each projection is an `UpdateFromEvent` GenServer that consumes domain events and writes to its own tables. This is the existing pattern used by `Matches.UpdateFromEvent` and `Drafts.UpdateFromEvent`.
+3. **Projections subscribe to `domain:events`.** Each projection schema module is a GenServer that consumes domain events and writes to its own tables via `update_from_event/1`. This is the existing pattern used by `Matches.Match` and `Drafts.Draft`.
 
 4. **No shared "master" projection.** Don't build one large denormalized table that every page queries with different filters. Each page gets exactly the data it needs in exactly the shape it needs.
 
@@ -32,4 +32,4 @@ Each page that displays projected data should have its own **read-optimized proj
 * Good, because projection schemas can evolve independently per page without affecting other pages
 * Good, because projections are disposable and rebuildable — schema changes are cheap
 * Neutral, because more tables exist — but they're small, indexed, and read-optimized
-* Neutral, because each new page may need a new projection — but the UpdateFromEvent pattern is mechanical
+* Neutral, because each new page may need a new projection — but the schema-as-projector pattern is mechanical
