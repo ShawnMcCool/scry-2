@@ -28,6 +28,10 @@ defmodule Scry2.Topics do
   @doc "Player auto-discovered or updated."
   def players_updates, do: "players:updates"
 
+  # ── Ranks ───────────────────────────────────────────────────────────
+  @doc "Rank snapshot inserts."
+  def ranks_updates, do: "ranks:updates"
+
   # ── Cards ────────────────────────────────────────────────────────────────
   @doc "Card reference data refreshed (17lands import ran)."
   def cards_updates, do: "cards:updates"
