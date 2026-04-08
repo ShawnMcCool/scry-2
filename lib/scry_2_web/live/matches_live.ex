@@ -97,6 +97,10 @@ defmodule Scry2Web.MatchesLive do
                 <.mana_pips colors={match.deck_colors} />
               </span>
 
+              <span :if={match.deck_name} class="text-sm text-base-content/60 truncate">
+                {match.deck_name}
+              </span>
+
               <span class="badge badge-sm badge-ghost shrink-0">
                 {format_label(match.format)}
               </span>

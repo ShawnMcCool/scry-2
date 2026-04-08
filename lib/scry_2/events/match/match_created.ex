@@ -37,7 +37,8 @@ defmodule Scry2.Events.Match.MatchCreated do
     # Enriched at ingestion (ADR-030)
     :player_rank,
     :format,
-    :format_type
+    :format_type,
+    :deck_name
   ]
 
   @type t :: %__MODULE__{
@@ -51,7 +52,8 @@ defmodule Scry2.Events.Match.MatchCreated do
           occurred_at: DateTime.t(),
           player_rank: String.t() | nil,
           format: String.t() | nil,
-          format_type: String.t() | nil
+          format_type: String.t() | nil,
+          deck_name: String.t() | nil
         }
 
   defimpl Scry2.Events.Event do
