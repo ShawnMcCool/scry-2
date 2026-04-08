@@ -2,7 +2,8 @@ defmodule Scry2.EventsTest do
   use Scry2.DataCase
 
   alias Scry2.Events
-  alias Scry2.Events.{EventRecord, MatchCreated, MatchCompleted}
+  alias Scry2.Events.EventRecord
+  alias Scry2.Events.Match.{MatchCompleted, MatchCreated}
   alias Scry2.TestFactory
   alias Scry2.Topics
 
@@ -104,14 +105,14 @@ defmodule Scry2.EventsTest do
     test "multiple same-type events from same source get sequential sequence numbers" do
       source = TestFactory.create_event_record(%{event_type: "GreToClientEvent"})
 
-      event_a = %Events.MulliganOffered{
+      event_a = %Events.Gameplay.MulliganOffered{
         mtga_match_id: "seq-1",
         seat_id: 1,
         hand_size: 7,
         occurred_at: ~U[2026-04-05 12:00:00Z]
       }
 
-      event_b = %Events.MulliganOffered{
+      event_b = %Events.Gameplay.MulliganOffered{
         mtga_match_id: "seq-1",
         seat_id: 2,
         hand_size: 7,
@@ -215,7 +216,7 @@ defmodule Scry2.EventsTest do
     end
 
     test "populates draft_id from domain event's mtga_draft_id" do
-      event = %Events.DraftStarted{
+      event = %Events.Draft.DraftStarted{
         mtga_draft_id: "corr-draft-1",
         event_name: "PremierDraft",
         set_code: "FDN",

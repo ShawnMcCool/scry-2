@@ -30,7 +30,7 @@ defmodule Scry2.Drafts.UpdateFromEvent do
     projection_tables: [Scry2.Drafts.Pick, Scry2.Drafts.Draft]
 
   alias Scry2.Drafts
-  alias Scry2.Events.{DraftPickMade, DraftStarted}
+  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
 
   defp project(%DraftStarted{} = event) do
     attrs = %{

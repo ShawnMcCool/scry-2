@@ -4,7 +4,7 @@ defmodule Scry2.Drafts.UpdateFromEventTest do
   alias Scry2.Drafts
   alias Scry2.Drafts.UpdateFromEvent
   alias Scry2.Events
-  alias Scry2.Events.{DraftPickMade, DraftStarted}
+  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
 
   setup do
     name = Module.concat(__MODULE__, :"Projector#{System.unique_integer([:positive])}")

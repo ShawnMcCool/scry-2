@@ -1,31 +1,15 @@
 defmodule Scry2.Events.IdentifyDomainEventsTest do
   use ExUnit.Case, async: true
 
-  alias Scry2.Events.{
-    DailyWinsStatus,
-    DeckInventory,
-    DeckSelected,
-    DeckSubmitted,
-    DeckUpdated,
-    DieRollCompleted,
-    DraftPickMade,
-    DraftStarted,
-    EventCourseUpdated,
-    EventJoined,
-    EventRewardClaimed,
-    GameCompleted,
-    IdentifyDomainEvents,
-    InventoryChanged,
-    InventoryUpdated,
-    MasteryProgress,
-    MatchCompleted,
-    MatchCreated,
-    PairingEntered,
-    QuestStatus,
-    RankSnapshot,
-    SessionStarted,
-    TranslationWarning
-  }
+  alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
+  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
+  alias Scry2.Events.Economy.{InventoryChanged, InventoryUpdated}
+  alias Scry2.Events.Event.{EventCourseUpdated, EventJoined, EventRewardClaimed, PairingEntered}
+  alias Scry2.Events.IdentifyDomainEvents
+  alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Progression.{DailyWinsStatus, MasteryProgress, QuestStatus, RankSnapshot}
+  alias Scry2.Events.Session.SessionStarted
+  alias Scry2.Events.TranslationWarning
 
   alias Scry2.MtgaLogIngestion.{Event, ExtractEventsFromLog, EventRecord}
 
@@ -117,13 +101,13 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   end
 
   describe "translate/2 — GreToClientEvent, ConnectResp batch" do
-    test "produces DeckSubmitted + DieRollCompleted from the ConnectResp fixture" do
+    test "produces DeckSubmitted + DieRolled from the ConnectResp fixture" do
       record = record_from_fixture("gre_to_client_event_connect_resp.log")
 
       {events, []} = IdentifyDomainEvents.translate(record, @self_user_id)
 
       deck_event = Enum.find(events, &match?(%DeckSubmitted{}, &1))
-      die_event = Enum.find(events, &match?(%DieRollCompleted{}, &1))
+      die_event = Enum.find(events, &match?(%DieRolled{}, &1))
 
       assert deck_event != nil
       assert die_event != nil

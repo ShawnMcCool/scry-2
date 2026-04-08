@@ -2,7 +2,7 @@ defmodule Scry2.Events.MatchCreatedTest do
   use ExUnit.Case, async: true
 
   alias Scry2.Events.Event
-  alias Scry2.Events.MatchCreated
+  alias Scry2.Events.Match.MatchCreated
 
   describe "struct construction" do
     test "builds a valid MatchCreated" do

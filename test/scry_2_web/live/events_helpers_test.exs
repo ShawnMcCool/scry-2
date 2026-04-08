@@ -3,21 +3,14 @@ defmodule Scry2Web.EventsHelpersTest do
 
   alias Scry2Web.EventsHelpers
 
-  alias Scry2.Events.{
-    DeckSubmitted,
-    DieRollCompleted,
-    DraftPickMade,
-    DraftStarted,
-    EventJoined,
-    GameCompleted,
-    InventoryChanged,
-    MatchCompleted,
-    MatchCreated,
-    MulliganOffered,
-    PrizeClaimed,
-    RankSnapshot,
-    SessionStarted
-  }
+  alias Scry2.Events.Deck.DeckSubmitted
+  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
+  alias Scry2.Events.Economy.InventoryChanged
+  alias Scry2.Events.Event.{EventJoined, EventRewardClaimed}
+  alias Scry2.Events.Gameplay.MulliganOffered
+  alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Progression.RankSnapshot
+  alias Scry2.Events.Session.SessionStarted
 
   describe "event_category/1" do
     test "match lifecycle events" do
@@ -115,7 +108,7 @@ defmodule Scry2Web.EventsHelpersTest do
     end
 
     test "die_roll_completed" do
-      event = %DieRollCompleted{
+      event = %DieRolled{
         mtga_match_id: "m",
         self_roll: 19,
         opponent_roll: 4,
@@ -172,11 +165,11 @@ defmodule Scry2Web.EventsHelpersTest do
       assert EventsHelpers.event_summary(event) == "PremierDraft (1500 Gems)"
     end
 
-    test "prize_claimed" do
-      event = %PrizeClaimed{
+    test "event_reward_claimed" do
+      event = %EventRewardClaimed{
         event_name: "PremierDraft",
-        wins: 5,
-        losses: 3,
+        final_wins: 5,
+        final_losses: 3,
         occurred_at: now()
       }
 

@@ -4,29 +4,14 @@ defmodule Scry2Web.EventsHelpers do
   and correlation labels. Extracted per ADR-013 for unit testing.
   """
 
-  alias Scry2.Events.{
-    ActiveCourses,
-    DailyWinsStatus,
-    DeckInventory,
-    DeckSelected,
-    DeckSubmitted,
-    DeckUpdated,
-    DieRollCompleted,
-    DraftPickMade,
-    DraftStarted,
-    EventJoined,
-    GameCompleted,
-    InventoryChanged,
-    MasteryProgress,
-    MatchCompleted,
-    MatchCreated,
-    MulliganOffered,
-    PairingEntered,
-    PrizeClaimed,
-    QuestStatus,
-    RankSnapshot,
-    SessionStarted
-  }
+  alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
+  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
+  alias Scry2.Events.Economy.InventoryChanged
+  alias Scry2.Events.Event.{EventCourseUpdated, EventJoined, EventRewardClaimed, PairingEntered}
+  alias Scry2.Events.Gameplay.MulliganOffered
+  alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Progression.{DailyWinsStatus, MasteryProgress, QuestStatus, RankSnapshot}
+  alias Scry2.Events.Session.SessionStarted
 
   @type event_category :: :match | :draft | :economy | :session | :snapshot
 
@@ -36,12 +21,12 @@ defmodule Scry2Web.EventsHelpers do
   def event_category(%MatchCompleted{}), do: :match
   def event_category(%GameCompleted{}), do: :match
   def event_category(%DeckSubmitted{}), do: :match
-  def event_category(%DieRollCompleted{}), do: :match
+  def event_category(%DieRolled{}), do: :match
   def event_category(%MulliganOffered{}), do: :match
   def event_category(%DraftStarted{}), do: :draft
   def event_category(%DraftPickMade{}), do: :draft
   def event_category(%EventJoined{}), do: :economy
-  def event_category(%PrizeClaimed{}), do: :economy
+  def event_category(%EventRewardClaimed{}), do: :economy
   def event_category(%InventoryChanged{}), do: :economy
   def event_category(%PairingEntered{}), do: :economy
   def event_category(%DeckSelected{}), do: :economy
@@ -84,7 +69,7 @@ defmodule Scry2Web.EventsHelpers do
     "#{main} cards main, #{side} sideboard"
   end
 
-  def event_summary(%DieRollCompleted{} = event) do
+  def event_summary(%DieRolled{} = event) do
     result = if event.self_goes_first, do: "going first", else: "going second"
     "Roll #{event.self_roll} vs #{event.opponent_roll}, #{result}"
   end
@@ -107,8 +92,8 @@ defmodule Scry2Web.EventsHelpers do
     "#{event.event_name}#{fee}"
   end
 
-  def event_summary(%PrizeClaimed{} = event) do
-    "#{event.event_name} — #{event.wins}W #{event.losses}L"
+  def event_summary(%EventRewardClaimed{} = event) do
+    "#{event.event_name} — #{event.final_wins || 0}W #{event.final_losses || 0}L"
   end
 
   def event_summary(%InventoryChanged{} = event) do
@@ -151,9 +136,8 @@ defmodule Scry2Web.EventsHelpers do
     "Daily position: #{event.daily_position}"
   end
 
-  def event_summary(%ActiveCourses{} = event) do
-    count = length(event.courses || [])
-    "#{count} active courses"
+  def event_summary(%EventCourseUpdated{} = event) do
+    "#{event.event_name} — #{event.current_wins || 0}W #{event.current_losses || 0}L"
   end
 
   def event_summary(%DeckInventory{} = event) do

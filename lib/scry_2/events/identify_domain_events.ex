@@ -49,33 +49,39 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   event types waiting to be added.
   """
 
-  alias Scry2.Events.{
-    DailyWinsStatus,
-    DeckInventory,
-    DeckSelected,
-    DeckSubmitted,
-    DeckUpdated,
-    DieRollCompleted,
-    DraftPickMade,
-    DraftStarted,
+  alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
+  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
+  alias Scry2.Events.Economy.{InventoryChanged, InventoryUpdated}
+
+  alias Scry2.Events.Event.{
     EventCourseUpdated,
     EventJoined,
-    GameAction,
     EventRewardClaimed,
-    GameCompleted,
-    TurnAction,
-    InventoryChanged,
-    InventoryUpdated,
-    MatchCompleted,
-    MatchCreated,
-    MulliganOffered,
-    PairingEntered,
-    QuestStatus,
-    RankSnapshot,
-    SessionStarted,
-    MasteryProgress,
-    TranslationWarning
+    PairingEntered
   }
+
+  alias Scry2.Events.Gameplay.{
+    GameConceded,
+    MulliganDecided,
+    MulliganOffered,
+    StartingPlayerChosen,
+    CardDrawn,
+    CardExiled,
+    CombatDamageDealt,
+    CounterAdded,
+    LandPlayed,
+    LifeTotalChanged,
+    PermanentDestroyed,
+    SpellCast,
+    SpellResolved,
+    TokenCreated,
+    ZoneChanged
+  }
+
+  alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Progression.{DailyWinsStatus, MasteryProgress, QuestStatus, RankSnapshot}
+  alias Scry2.Events.Session.SessionStarted
+  alias Scry2.Events.TranslationWarning
 
   alias Scry2.MtgaLogIngestion.EventRecord
 
@@ -278,9 +284,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           "ClientMessageType_ConcedeReq" ->
             scope = get_in(gre_payload, ["concedeReq", "scope"])
 
-            %GameAction{
+            %GameConceded{
               mtga_match_id: match_id,
-              action: "concede",
               scope: scope,
               occurred_at: occurred_at
             }
@@ -295,9 +300,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                 other -> other
               end
 
-            %GameAction{
+            %MulliganDecided{
               mtga_match_id: match_id,
-              action: "mulligan_decision",
               decision: decision,
               occurred_at: occurred_at
             }
@@ -305,9 +309,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           "ClientMessageType_ChooseStartingPlayerResp" ->
             seat = get_in(gre_payload, ["chooseStartingPlayerResp", "systemSeatId"])
 
-            %GameAction{
+            %StartingPlayerChosen{
               mtga_match_id: match_id,
-              action: "choose_starting_player",
               chose_play: seat == 1,
               occurred_at: occurred_at
             }
@@ -1049,7 +1052,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           self_roll = self_roll_entry["rollValue"]
           opponent_roll = opponent_roll_entry["rollValue"]
 
-          %DieRollCompleted{
+          %DieRolled{
             mtga_match_id: match_id,
             self_roll: self_roll,
             opponent_roll: opponent_roll,
@@ -1189,7 +1192,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   #
   # Extracts meaningful game actions from GameStateMessage annotations.
   # Each ZoneTransfer with a category, DamageDealt, or ModifiedLife
-  # annotation becomes a TurnAction domain event. Low-value annotations
+  # annotation becomes a specific gameplay domain event. Low-value annotations
   # (phase changes, ability bookkeeping) are ignored.
 
   defp build_turn_actions(messages, match_id, occurred_at, match_context) do
@@ -1234,44 +1237,89 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
     grp_id = Map.get(objects, instance_id)
 
-    action =
+    zone_from = find_detail_int(details, "zone_src")
+    zone_to = find_detail_int(details, "zone_dest")
+
+    common = %{
+      mtga_match_id: match_id,
+      turn_number: turn_info["turnNumber"],
+      phase: turn_info["phase"],
+      active_player: turn_info["activePlayer"],
+      card_arena_id: grp_id,
+      occurred_at: occurred_at
+    }
+
+    event =
       case category do
-        "PlayLand" -> "play_land"
-        "CastSpell" -> "cast_spell"
-        "Resolve" -> "resolve"
-        "Draw" -> "draw"
-        "Destroy" -> "destroy"
-        "Sacrifice" -> "sacrifice"
-        "Exile" -> "exile"
-        "Discard" -> "discard"
-        "Return" -> "return"
-        "SBA_Damage" -> "destroy"
-        "SBA_Deathtouch" -> "destroy"
-        "Put" -> "put"
-        _ -> nil
+        "PlayLand" ->
+          struct(LandPlayed, common)
+
+        "CastSpell" ->
+          struct(SpellCast, common)
+
+        "Resolve" ->
+          struct(SpellResolved, common)
+
+        "Draw" ->
+          struct(CardDrawn, common)
+
+        "Destroy" ->
+          struct(PermanentDestroyed, common)
+
+        "Sacrifice" ->
+          struct(
+            ZoneChanged,
+            Map.merge(common, %{
+              reason: "sacrifice",
+              zone_from: zone_name(zone_from),
+              zone_to: zone_name(zone_to)
+            })
+          )
+
+        "Exile" ->
+          struct(CardExiled, common)
+
+        "Discard" ->
+          struct(
+            ZoneChanged,
+            Map.merge(common, %{
+              reason: "discard",
+              zone_from: zone_name(zone_from),
+              zone_to: zone_name(zone_to)
+            })
+          )
+
+        "Return" ->
+          struct(
+            ZoneChanged,
+            Map.merge(common, %{
+              reason: "return",
+              zone_from: zone_name(zone_from),
+              zone_to: zone_name(zone_to)
+            })
+          )
+
+        "SBA_Damage" ->
+          struct(PermanentDestroyed, common)
+
+        "SBA_Deathtouch" ->
+          struct(PermanentDestroyed, common)
+
+        "Put" ->
+          struct(
+            ZoneChanged,
+            Map.merge(common, %{
+              reason: "put",
+              zone_from: zone_name(zone_from),
+              zone_to: zone_name(zone_to)
+            })
+          )
+
+        _ ->
+          nil
       end
 
-    if action do
-      zone_from = find_detail_int(details, "zone_src")
-      zone_to = find_detail_int(details, "zone_dest")
-
-      [
-        %TurnAction{
-          mtga_match_id: match_id,
-          action: action,
-          turn_number: turn_info["turnNumber"],
-          phase: turn_info["phase"],
-          step: turn_info["step"],
-          active_player: turn_info["activePlayer"],
-          card_arena_id: grp_id,
-          zone_from: zone_name(zone_from),
-          zone_to: zone_name(zone_to),
-          occurred_at: occurred_at
-        }
-      ]
-    else
-      []
-    end
+    if event, do: [event], else: []
   end
 
   defp annotation_to_turn_actions(
@@ -1287,12 +1335,10 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     grp_id = Map.get(objects, source_id)
 
     [
-      %TurnAction{
+      %CombatDamageDealt{
         mtga_match_id: match_id,
-        action: "combat_damage",
         turn_number: turn_info["turnNumber"],
         phase: turn_info["phase"],
-        step: turn_info["step"],
         active_player: turn_info["activePlayer"],
         card_arena_id: grp_id,
         amount: damage,
@@ -1313,14 +1359,13 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     affected_player = ann["affectedIds"] |> List.wrap() |> List.first()
 
     [
-      %TurnAction{
+      %LifeTotalChanged{
         mtga_match_id: match_id,
-        action: "life_change",
         turn_number: turn_info["turnNumber"],
         phase: turn_info["phase"],
         active_player: turn_info["activePlayer"],
         amount: life_change,
-        details: %{"player" => affected_player},
+        affected_player: affected_player,
         occurred_at: occurred_at
       }
     ]
@@ -1337,9 +1382,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     grp_id = Map.get(objects, instance_id)
 
     [
-      %TurnAction{
+      %TokenCreated{
         mtga_match_id: match_id,
-        action: "create_token",
         turn_number: turn_info["turnNumber"],
         phase: turn_info["phase"],
         active_player: turn_info["activePlayer"],
@@ -1362,9 +1406,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     amount = find_detail_int(details, "transaction_amount")
 
     [
-      %TurnAction{
+      %CounterAdded{
         mtga_match_id: match_id,
-        action: "counter_added",
         turn_number: turn_info["turnNumber"],
         phase: turn_info["phase"],
         active_player: turn_info["activePlayer"],

@@ -182,7 +182,7 @@ defmodule Scry2.Events.IngestRawEvents do
   # MatchCompleted: clear match context for the next match.
   defp update_state(state, events) do
     Enum.reduce(events, state, fn
-      %Scry2.Events.SessionStarted{
+      %Scry2.Events.Session.SessionStarted{
         client_id: client_id,
         screen_name: screen_name,
         session_id: session_id
@@ -197,14 +197,14 @@ defmodule Scry2.Events.IngestRawEvents do
 
         %{acc | self_user_id: client_id, player_id: player.id, current_session_id: session_id}
 
-      %Scry2.Events.MatchCreated{mtga_match_id: match_id}, acc ->
+      %Scry2.Events.Match.MatchCreated{mtga_match_id: match_id}, acc ->
         put_in(acc, [:match_context, :current_match_id], match_id)
 
-      %Scry2.Events.DeckSubmitted{}, acc ->
+      %Scry2.Events.Deck.DeckSubmitted{}, acc ->
         current_game = get_in(acc, [:match_context, :current_game_number]) || 0
         put_in(acc, [:match_context, :current_game_number], current_game + 1)
 
-      %Scry2.Events.MatchCompleted{}, acc ->
+      %Scry2.Events.Match.MatchCompleted{}, acc ->
         %{
           acc
           | match_context: %{
