@@ -45,6 +45,13 @@ defmodule Scry2.Events.IngestRawEvents do
   was called, which matches Player.log byte order. Domain events are
   persisted in the same order (single GenServer → serialized processing).
   This ordering is the basis of `replay_projections!/0` being deterministic.
+
+  ## State persistence
+
+  GenServer state is an `%IngestionState{}` struct, persisted to a singleton
+  DB row after each raw event. On restart, the state is loaded and any
+  unprocessed events after `last_raw_event_id` are caught up before
+  processing new PubSub messages.
   """
   use GenServer
 
@@ -53,6 +60,7 @@ defmodule Scry2.Events.IngestRawEvents do
   alias Scry2.Config
   alias Scry2.Events
   alias Scry2.Events.IdentifyDomainEvents
+  alias Scry2.Events.IngestionState
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.EventRecord
   alias Scry2.Players
@@ -66,23 +74,14 @@ defmodule Scry2.Events.IngestRawEvents do
   @impl true
   def init(_opts) do
     Topics.subscribe(Topics.mtga_logs_events())
+    state = IngestionState.load(self_user_id: Config.get(:mtga_self_user_id))
+    {:ok, state, {:continue, :catch_up}}
+  end
 
-    {:ok,
-     %{
-       self_user_id: Config.get(:mtga_self_user_id),
-       player_id: nil,
-       current_session_id: nil,
-       match_context: %{
-         current_match_id: nil,
-         current_game_number: nil,
-         last_hand_game_objects: %{},
-         last_deck_name: nil,
-         on_play_for_current_game: nil,
-         pending_deck: nil
-       },
-       constructed_rank: nil,
-       limited_rank: nil
-     }}
+  @impl true
+  def handle_continue(:catch_up, state) do
+    state = catch_up_unprocessed(state)
+    {:noreply, state}
   end
 
   @impl true
@@ -106,22 +105,49 @@ defmodule Scry2.Events.IngestRawEvents do
 
   def handle_info(_other, state), do: {:noreply, state}
 
+  # ── Catch-up ─────────────────────────────────────────────────────────
+
+  defp catch_up_unprocessed(state) do
+    unprocessed = MtgaLogIngestion.list_unprocessed_after(state.last_raw_event_id)
+
+    case unprocessed do
+      [] ->
+        state
+
+      records ->
+        Log.info(
+          :ingester,
+          "catching up #{length(records)} unprocessed raw events from id=#{state.last_raw_event_id}"
+        )
+
+        Enum.reduce(records, state, fn record, acc ->
+          try do
+            process_raw_event(record, acc)
+          rescue
+            error ->
+              Log.error(:ingester, "catch-up failed on id=#{record.id}: #{inspect(error)}")
+              MtgaLogIngestion.mark_error!(record.id, error)
+              acc
+          end
+        end)
+    end
+  end
+
+  # ── Core processing ──────────────────────────────────────────────────
+
   # Run the raw event through the translator, append each resulting
-  # domain event to the log, and update match_context state from the
-  # produced events (ADR-022).
+  # domain event to the log, and update state from the produced events.
   #
   # Before translation: cache any gameObjects from this raw event's GRE
-  # messages into match_context. MTGA sends hand card data (gameObjects)
+  # messages into match state. MTGA sends hand card data (gameObjects)
   # in a GameStateMessage that precedes the MulliganReq. The translator
   # uses cached objects as fallback when the MulliganReq itself lacks them.
   defp process_raw_event(record, state) do
-    self_user_id = state.self_user_id
     state = maybe_cache_game_objects(record, state)
     state = maybe_capture_rank(record, state)
-    match_context = state.match_context
 
     {domain_events, translation_warnings} =
-      IdentifyDomainEvents.translate(record, self_user_id, match_context)
+      IdentifyDomainEvents.translate(record, state.session.self_user_id, state.match)
 
     unless IdentifyDomainEvents.recognized?(record.event_type) do
       Log.warning(:ingester, "unrecognized MTGA event type: #{record.event_type}")
@@ -146,108 +172,72 @@ defmodule Scry2.Events.IngestRawEvents do
         state
 
       events ->
-        # Cache DeckSubmitted events that lack a match_id — these arrive
-        # from ConnectResp before MatchCreated sets the match context.
-        {pending, ready} = split_pending_decks(events)
+        # Apply each event to IngestionState, collecting side effects
+        {new_state, all_events} = apply_events_to_state(state, events)
 
-        state =
-          case pending do
-            [deck | _] -> put_in(state, [:match_context, :pending_deck], deck)
-            [] -> state
-          end
-
-        # Update state so SessionStarted can discover the player
-        # before we stamp player_id on the events. MatchCreated sets
-        # current_match_id, which triggers pending deck emission.
-        new_state = update_state(state, ready)
-
-        # If MatchCreated just set the match_id and we have a pending deck,
-        # emit it now with the real match_id.
-        {new_state, ready} = maybe_emit_pending_deck(new_state, ready)
-
-        ready
-        |> stamp_player_id(new_state.player_id, record)
+        all_events
+        |> stamp_player_id(new_state.session.player_id, record)
         |> enrich_events(new_state)
         |> Enum.with_index()
         |> Enum.each(fn {event, index} ->
           Events.append!(event, record,
             sequence: index,
-            session_id: new_state.current_session_id
+            session_id: new_state.session.current_session_id
           )
         end)
 
         MtgaLogIngestion.mark_processed!(record.id)
 
+        new_state =
+          state
+          |> Map.get(:last_raw_event_id)
+          |> then(fn _ ->
+            IngestionState.advance(new_state, record.id) |> IngestionState.persist!()
+          end)
+
         Log.info(
           :ingester,
-          "translated raw id=#{record.id} type=#{record.event_type} → #{length(ready)} domain events"
+          "translated raw id=#{record.id} type=#{record.event_type} → #{length(all_events)} domain events"
         )
 
         new_state
     end
   end
 
-  # Update GenServer state from produced domain events.
-  #
-  # SessionStarted: auto-detect self_user_id from client_id. This is
-  #   critical — without it, self/opponent identification falls back to
-  #   systemSeatId == 1, which is wrong whenever the player is seat 2.
-  #   The AuthenticateResponse that produces SessionStarted fires before
-  #   any match events, so the ID is always available in time.
-  #
-  # MatchCreated: set current_match_id for game-level event correlation.
-  # DeckSubmitted: increment game number (ConnectResp fires per game).
-  # MatchCompleted: clear match context for the next match.
-  defp update_state(state, events) do
-    Enum.reduce(events, state, fn
-      %Scry2.Events.Session.SessionStarted{
-        client_id: client_id,
-        screen_name: screen_name,
-        session_id: session_id
-      },
-      acc
-      when is_binary(client_id) ->
-        player = Players.find_or_create!(client_id, screen_name || client_id)
+  # Apply each domain event to IngestionState, collecting side effects.
+  # For SessionStarted, resolve the player via Players.find_or_create!
+  # and set player_id on the session (side effect not in pure apply_event).
+  defp apply_events_to_state(state, events) do
+    {final_state, collected_events} =
+      Enum.reduce(events, {state, []}, fn event, {acc_state, acc_events} ->
+        {new_state, side_effects} = IngestionState.apply_event(acc_state, event)
 
-        if acc.self_user_id != client_id do
-          Log.info(:ingester, "auto-detected player: #{player.screen_name} (#{client_id})")
-        end
+        # SessionStarted: resolve player_id (DB side effect)
+        new_state = maybe_resolve_player(new_state, event)
 
-        %{acc | self_user_id: client_id, player_id: player.id, current_session_id: session_id}
+        {new_state, acc_events ++ [event] ++ side_effects}
+      end)
 
-      %Scry2.Events.Deck.DeckSelected{deck_name: deck_name}, acc ->
-        put_in(acc, [:match_context, :last_deck_name], deck_name)
-
-      %Scry2.Events.Match.MatchCreated{mtga_match_id: match_id}, acc ->
-        put_in(acc, [:match_context, :current_match_id], match_id)
-
-      %Scry2.Events.Match.DieRolled{self_goes_first: on_play}, acc ->
-        put_in(acc, [:match_context, :on_play_for_current_game], on_play)
-
-      %Scry2.Events.Gameplay.StartingPlayerChosen{chose_play: chose_play}, acc ->
-        put_in(acc, [:match_context, :on_play_for_current_game], chose_play)
-
-      %Scry2.Events.Deck.DeckSubmitted{}, acc ->
-        current_game = get_in(acc, [:match_context, :current_game_number]) || 0
-        put_in(acc, [:match_context, :current_game_number], current_game + 1)
-
-      %Scry2.Events.Match.MatchCompleted{}, acc ->
-        %{
-          acc
-          | match_context: %{
-              current_match_id: nil,
-              current_game_number: nil,
-              last_hand_game_objects: %{},
-              last_deck_name: nil,
-              on_play_for_current_game: nil,
-              pending_deck: nil
-            }
-        }
-
-      _, acc ->
-        acc
-    end)
+    {final_state, collected_events}
   end
+
+  defp maybe_resolve_player(
+         state,
+         %Scry2.Events.Session.SessionStarted{client_id: client_id, screen_name: screen_name}
+       )
+       when is_binary(client_id) do
+    player = Players.find_or_create!(client_id, screen_name || client_id)
+
+    if state.session.self_user_id != client_id do
+      Log.info(:ingester, "auto-detected player: #{player.screen_name} (#{client_id})")
+    end
+
+    put_in(state.session.player_id, player.id)
+  end
+
+  defp maybe_resolve_player(state, _event), do: state
+
+  # ── Pre-translation state extraction ─────────────────────────────────
 
   # Cache the player's resolved hand from GreToClientEvent messages.
   # MTGA sends the hand (zone + gameObjects) in a GameStateMessage that
@@ -260,7 +250,7 @@ defmodule Scry2.Events.IngestRawEvents do
            get_in(payload, ["greToClientEvent", "greToClientMessages"]),
          {_seat_id, _hand} = resolved <-
            IdentifyDomainEvents.extract_resolved_hand(messages) do
-      put_in(state, [:match_context, :last_hand_game_objects], resolved)
+      put_in(state.match.last_hand_game_objects, resolved)
     else
       _ -> state
     end
@@ -270,7 +260,7 @@ defmodule Scry2.Events.IngestRawEvents do
 
   # Capture player rank from RankGetCombinedRankInfo events.
   # This fires periodically and on login — we track the latest rank
-  # in GenServer state and stamp it onto MatchCreated events.
+  # in state and stamp it onto MatchCreated events.
   defp maybe_capture_rank(%EventRecord{event_type: "RankGetCombinedRankInfo"} = record, state) do
     with {:ok, payload} <- Jason.decode(record.raw_json) do
       constructed =
@@ -279,7 +269,7 @@ defmodule Scry2.Events.IngestRawEvents do
             "#{class} #{level}"
 
           _ ->
-            state.constructed_rank
+            state.session.constructed_rank
         end
 
       limited =
@@ -288,17 +278,23 @@ defmodule Scry2.Events.IngestRawEvents do
             "#{class} #{level}"
 
           _ ->
-            state.limited_rank
+            state.session.limited_rank
         end
 
       Log.info(:ingester, "captured rank: constructed=#{constructed} limited=#{limited}")
-      %{state | constructed_rank: constructed, limited_rank: limited}
+
+      %{
+        state
+        | session: %{state.session | constructed_rank: constructed, limited_rank: limited}
+      }
     else
       _ -> state
     end
   end
 
   defp maybe_capture_rank(_record, state), do: state
+
+  # ── Enrichment & stamping ────────────────────────────────────────────
 
   # Enrich domain events with derived data (ADR-030).
   # Card metadata, rank, format, hand stats — all computed here so
@@ -318,35 +314,5 @@ defmodule Scry2.Events.IngestRawEvents do
     end
 
     Enum.map(events, fn event -> %{event | player_id: player_id} end)
-  end
-
-  # DeckSubmitted from a ConnectResp that arrived before MatchCreated
-  # will have a nil mtga_match_id. Cache it in state rather than
-  # persisting — we'll emit it when MatchCreated provides the match_id.
-  defp split_pending_decks(events) do
-    Enum.split_with(events, fn
-      %Scry2.Events.Deck.DeckSubmitted{mtga_match_id: nil} -> true
-      _ -> false
-    end)
-  end
-
-  # When MatchCreated sets current_match_id and there's a pending deck,
-  # stamp the match_id and append it to the event list.
-  defp maybe_emit_pending_deck(state, events) do
-    match_id = get_in(state, [:match_context, :current_match_id])
-    pending = get_in(state, [:match_context, :pending_deck])
-
-    if match_id && pending do
-      deck = %{
-        pending
-        | mtga_match_id: match_id,
-          mtga_deck_id: "#{match_id}:seat1"
-      }
-
-      state = put_in(state, [:match_context, :pending_deck], nil)
-      {state, events ++ [deck]}
-    else
-      {state, events}
-    end
   end
 end

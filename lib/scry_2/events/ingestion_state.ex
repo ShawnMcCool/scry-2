@@ -21,7 +21,8 @@ defmodule Scry2.Events.IngestionState do
   On restart, loaded and resumed from `last_raw_event_id`.
   """
 
-  alias __MODULE__.{Match, Session}
+  alias __MODULE__.{Match, Session, Snapshot}
+  alias Scry2.Repo
 
   @current_version 1
 
@@ -120,6 +121,48 @@ defmodule Scry2.Events.IngestionState do
   end
 
   def apply_event(%__MODULE__{} = state, _event), do: {state, []}
+
+  # -- Persistence -----------------------------------------------------------
+
+  @singleton_id 1
+
+  @doc "Persists the current state to the database."
+  def persist!(%__MODULE__{} = state) do
+    attrs = %{
+      version: state.version,
+      last_raw_event_id: state.last_raw_event_id,
+      session: Jason.decode!(Jason.encode!(state.session)),
+      match: Jason.decode!(Jason.encode!(state.match))
+    }
+
+    case Repo.get(Snapshot, @singleton_id) do
+      nil -> %Snapshot{id: @singleton_id}
+      existing -> existing
+    end
+    |> Snapshot.changeset(attrs)
+    |> Repo.insert_or_update!()
+
+    state
+  end
+
+  @doc """
+  Loads the persisted state from the database.
+  Returns a fresh `%IngestionState{}` if no snapshot exists.
+  """
+  def load(opts \\ []) do
+    case Repo.get(Snapshot, @singleton_id) do
+      nil ->
+        new(opts)
+
+      snapshot ->
+        from_map(%{
+          "version" => snapshot.version,
+          "last_raw_event_id" => snapshot.last_raw_event_id,
+          "session" => snapshot.session,
+          "match" => snapshot.match
+        })
+    end
+  end
 
   # -- Serialization ---------------------------------------------------------
 
