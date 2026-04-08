@@ -10,7 +10,8 @@ defmodule Scry2.Events.ProjectorRegistry do
     Scry2.Matches.UpdateFromEvent,
     Scry2.Drafts.UpdateFromEvent,
     Scry2.Mulligans.UpdateFromEvent,
-    Scry2.Ranks.UpdateFromEvent
+    Scry2.Ranks.UpdateFromEvent,
+    Scry2.Economy.UpdateFromEvent
   ]
 
   @doc "Returns all projector modules."

@@ -32,6 +32,10 @@ defmodule Scry2.Topics do
   @doc "Rank snapshot inserts."
   def ranks_updates, do: "ranks:updates"
 
+  # ── Economy ────────────────────────────────────────────────────────
+  @doc "Economy projection updates (event entries, inventory, transactions)."
+  def economy_updates, do: "economy:updates"
+
   # ── Cards ────────────────────────────────────────────────────────────────
   @doc "Card reference data refreshed (17lands import ran)."
   def cards_updates, do: "cards:updates"
