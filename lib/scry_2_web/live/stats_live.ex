@@ -9,6 +9,7 @@ defmodule Scry2Web.StatsLive do
   use Scry2Web, :live_view
 
   alias Scry2.Matches
+  alias Scry2.Mulligans
   alias Scry2.Topics
   alias Scry2Web.StatsHelpers
 
@@ -21,8 +22,10 @@ defmodule Scry2Web.StatsLive do
 
   @impl true
   def handle_params(_params, _uri, socket) do
-    stats = Matches.aggregate_stats(player_id: socket.assigns[:active_player_id])
-    {:noreply, assign(socket, stats: stats)}
+    player_id = socket.assigns[:active_player_id]
+    stats = Matches.aggregate_stats(player_id: player_id)
+    mulligan_stats = Mulligans.mulligan_analytics(player_id: player_id)
+    {:noreply, assign(socket, stats: stats, mulligan_stats: mulligan_stats)}
   end
 
   @impl true
@@ -31,8 +34,10 @@ defmodule Scry2Web.StatsLive do
   end
 
   def handle_info(:reload_data, socket) do
-    stats = Matches.aggregate_stats(player_id: socket.assigns[:active_player_id])
-    {:noreply, assign(socket, stats: stats, reload_timer: nil)}
+    player_id = socket.assigns[:active_player_id]
+    stats = Matches.aggregate_stats(player_id: player_id)
+    mulligan_stats = Mulligans.mulligan_analytics(player_id: player_id)
+    {:noreply, assign(socket, stats: stats, mulligan_stats: mulligan_stats, reload_timer: nil)}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
@@ -175,6 +180,68 @@ defmodule Scry2Web.StatsLive do
                   </span>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <%!-- Mulligan analytics --%>
+        <section :if={@mulligan_stats.total_hands > 0}>
+          <h2 class="text-lg font-semibold mb-3">Mulligan Analytics</h2>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <%!-- Keep rate by hand size --%>
+            <div :if={@mulligan_stats.by_hand_size != []}>
+              <h3 class="text-sm font-medium text-base-content/60 mb-2">Keep Rate by Hand Size</h3>
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Cards</th>
+                    <th class="text-right">Offered</th>
+                    <th class="text-right">Kept</th>
+                    <th class="text-right">Keep Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr :for={row <- @mulligan_stats.by_hand_size}>
+                    <td class="tabular-nums">{row.hand_size}</td>
+                    <td class="text-right tabular-nums">{row.total}</td>
+                    <td class="text-right tabular-nums">{row.keeps}</td>
+                    <td class="text-right tabular-nums">
+                      {StatsHelpers.format_win_rate(row.keep_rate)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <%!-- Win rate by land count in kept hand --%>
+            <div :if={@mulligan_stats.by_land_count != []}>
+              <h3 class="text-sm font-medium text-base-content/60 mb-2">
+                Win Rate by Lands in Kept Hand
+              </h3>
+              <table class="table table-sm">
+                <thead>
+                  <tr>
+                    <th>Lands</th>
+                    <th class="text-right">Games</th>
+                    <th class="text-right">Wins</th>
+                    <th class="text-right">Win Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr :for={row <- @mulligan_stats.by_land_count}>
+                    <td class="tabular-nums">{row.land_count}</td>
+                    <td class="text-right tabular-nums">{row.total}</td>
+                    <td class="text-right tabular-nums">{row.wins}</td>
+                    <td class={[
+                      "text-right tabular-nums",
+                      StatsHelpers.win_rate_class(row.win_rate)
+                    ]}>
+                      {StatsHelpers.format_win_rate(row.win_rate)}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </section>
