@@ -145,8 +145,8 @@ Each context owns its tables and communicates only via PubSub events. No context
 |---|---|---|---|
 | **MtgaLogIngestion** | `mtga_logs_` | raw log events (`mtga_logs_events`), parser cursor (`mtga_logs_cursor`) | Broadcasts `mtga_logs:events` (raw) and `mtga_logs:status` |
 | **Events** | `domain_events` | domain event log, IdentifyDomainEvents (anti-corruption layer), IngestRawEvents | Subscribes `mtga_logs:events`; broadcasts `domain:events` |
-| **Matches** | `matches_` | matches, games, deck submissions (projection) | Subscribes `domain:events` via `Matches.UpdateFromEvent`; broadcasts `matches:updates` |
-| **Drafts** | `drafts_` | drafts, draft picks (projection) | Subscribes `domain:events` via `Drafts.UpdateFromEvent`; broadcasts `drafts:updates` |
+| **Matches** | `matches_` | matches, games, deck submissions (projection) | Subscribes `domain:events` via `Matches.Match`; broadcasts `matches:updates` |
+| **Drafts** | `drafts_` | drafts, draft picks (projection) | Subscribes `domain:events` via `Drafts.Draft`; broadcasts `drafts:updates` |
 | **Cards** | `cards_` | cards, sets (from 17lands) | Broadcasts `cards:updates` |
 | **Settings** | `settings_` | runtime config entries | Broadcasts `settings:updates` |
 | **Console** | — | in-memory log ring buffer (dev observability) | Broadcasts `console:logs` |

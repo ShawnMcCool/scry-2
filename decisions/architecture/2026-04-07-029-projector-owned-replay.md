@@ -48,10 +48,9 @@ end
 
 # The orchestrator calls each in sequence:
 def replay_projections! do
-  Matches.UpdateFromEvent.rebuild!()
-  Drafts.UpdateFromEvent.rebuild!()
-  Mulligans.UpdateFromEvent.rebuild!()
-  MatchListing.UpdateFromEvent.rebuild!()
+  Matches.Match.rebuild!()
+  Drafts.Draft.rebuild!()
+  Mulligans.MulliganListing.rebuild!()
 end
 ```
 

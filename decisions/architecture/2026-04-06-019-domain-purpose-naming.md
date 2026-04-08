@@ -24,12 +24,20 @@ Name every module for what it does in the domain, not what design pattern it imp
 **Internal module names** read as actions or domain descriptions:
 - `IdentifyDomainEvents` (not `Translator`) — identifies which domain events occurred in raw data
 - `ExtractEventsFromLog` (not `EventParser`) — extracts structured events from raw log text
-- `UpdateFromEvent` (not `Projector`) — updates the read model from a domain event
+- `Matches.Match` (not `Matches.UpdateFromEvent`) — the match read model, which also knows how to project events into itself via `update_from_event/1`
 - `SeventeenLands` (not `Lands17Importer`) — the 17lands integration
 - `PeriodicallyUpdateCards` (not `CardsRefreshWorker`) — periodically updates card data
 - `IngestRawEvents` (not `IngestionWorker`) — ingests raw events into the domain event log
 - `RecentEntries` (not `Buffer`) — manages recent log entries
 - `CaptureLogOutput` (not `Handler`) — captures Erlang logger output
+
+**Projection modules are the schema module.** A projection's schema defines the data *and* knows how to project events into itself. The projection logic lives on the schema module as `update_from_event/1`, not in a separate mechanism-named module. `update_from_event` is a function name, not a module name.
+
+| Instead of | Use |
+|------------|-----|
+| `Matches.UpdateFromEvent` | `Matches.Match` with `Match.update_from_event/1` |
+| `Drafts.UpdateFromEvent` | `Drafts.Draft` with `Draft.update_from_event/1` |
+| `Mulligans.UpdateFromEvent` | `Mulligans.MulliganListing` with `MulliganListing.update_from_event/1` |
 
 **What stays unchanged:**
 - Table names are stable database identifiers — they don't change
