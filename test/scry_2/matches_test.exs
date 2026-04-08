@@ -229,6 +229,23 @@ defmodule Scry2.MatchesTest do
       assert azorius.wins == 1
     end
 
+    test "breaks down by on_play" do
+      TestFactory.create_match(%{won: true, on_play: true})
+      TestFactory.create_match(%{won: true, on_play: true})
+      TestFactory.create_match(%{won: false, on_play: false})
+
+      stats = Matches.aggregate_stats()
+
+      play = Enum.find(stats.by_on_play, &(&1.key == true))
+      assert play.total == 2
+      assert play.wins == 2
+      assert play.win_rate == 100.0
+
+      draw = Enum.find(stats.by_on_play, &(&1.key == false))
+      assert draw.total == 1
+      assert draw.wins == 0
+    end
+
     test "excludes matches where won is nil" do
       TestFactory.create_match(%{won: true})
       TestFactory.create_match(%{won: nil})

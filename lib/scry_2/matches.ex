@@ -143,10 +143,13 @@ defmodule Scry2.Matches do
     by_deck_colors = breakdown_by(base, :deck_colors)
     by_deck_name = breakdown_by(base, :deck_name)
 
+    by_on_play = breakdown_by(base, :on_play)
+
     Map.merge(overall, %{
       by_format: by_format,
       by_deck_colors: by_deck_colors,
-      by_deck_name: by_deck_name
+      by_deck_name: by_deck_name,
+      by_on_play: by_on_play
     })
   end
 
@@ -176,7 +179,8 @@ defmodule Scry2.Matches do
 
   defp breakdown_by(query, field) do
     query
-    |> where([m], not is_nil(field(m, ^field)) and field(m, ^field) != "")
+    |> where([m], not is_nil(field(m, ^field)))
+    |> exclude_blank_strings(field)
     |> group_by([m], field(m, ^field))
     |> select([m], %{
       key: field(m, ^field),
@@ -197,6 +201,11 @@ defmodule Scry2.Matches do
       }
     end)
   end
+
+  @boolean_fields [:on_play, :won]
+
+  defp exclude_blank_strings(query, field) when field in @boolean_fields, do: query
+  defp exclude_blank_strings(query, field), do: where(query, [m], field(m, ^field) != "")
 
   defp maybe_filter_by_player(query, nil), do: query
   defp maybe_filter_by_player(query, player_id), do: where(query, [m], m.player_id == ^player_id)
