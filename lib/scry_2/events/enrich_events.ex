@@ -83,10 +83,11 @@ defmodule Scry2.Events.EnrichEvents do
     %{event | on_play: event.on_play || on_play}
   end
 
-  defp enrich_one(%DeckSubmitted{main_deck: main_deck} = event, _state)
+  defp enrich_one(%DeckSubmitted{main_deck: main_deck} = event, state)
        when is_list(main_deck) do
     deck_colors = compute_deck_colors(main_deck)
-    %{event | deck_colors: deck_colors}
+    game_number = event.game_number || state.match.current_game_number
+    %{event | deck_colors: deck_colors, game_number: game_number}
   end
 
   defp enrich_one(event, _state), do: event
