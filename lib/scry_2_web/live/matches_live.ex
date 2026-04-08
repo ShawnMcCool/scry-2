@@ -1,8 +1,18 @@
 defmodule Scry2Web.MatchesLive do
+  @moduledoc """
+  LiveView for the matches list and match detail pages.
+
+  List view (`:index`) uses the `MatchListing` projection for precomputed
+  display data — opponent info, game score, deck colors, duration. Detail
+  view (`:show`) uses `Matches.get_match_with_associations/1` which loads
+  the full match with per-game records.
+  """
   use Scry2Web, :live_view
 
+  alias Scry2.MatchListing
   alias Scry2.Matches
   alias Scry2.Topics
+  alias Scry2Web.MatchesHelpers
 
   @impl true
   def mount(_params, _session, socket) do
@@ -21,7 +31,10 @@ defmodule Scry2Web.MatchesLive do
     player_id = socket.assigns[:active_player_id]
 
     {:noreply,
-     assign(socket, matches: Matches.list_matches(limit: 100, player_id: player_id), match: nil)}
+     assign(socket,
+       matches: MatchListing.list_matches(limit: 100, player_id: player_id),
+       match: nil
+     )}
   end
 
   @impl true
@@ -34,7 +47,7 @@ defmodule Scry2Web.MatchesLive do
 
     {:noreply,
      assign(socket,
-       matches: Matches.list_matches(limit: 100, player_id: player_id),
+       matches: MatchListing.list_matches(limit: 100, player_id: player_id),
        reload_timer: nil
      )}
   end
@@ -46,39 +59,76 @@ defmodule Scry2Web.MatchesLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold">Matches</h1>
+      <h1 class="text-2xl font-semibold mb-6">Matches</h1>
 
       <.empty_state :if={@matches == []}>
         No matches recorded yet. Play a game with MTGA detailed logs enabled to see entries here.
       </.empty_state>
 
-      <div :if={@matches != []} class="overflow-x-auto">
-        <table class="table table-sm">
-          <thead>
-            <tr>
-              <th>Started</th>
-              <th>Event</th>
-              <th>Format</th>
-              <th>Opponent</th>
-              <th>Games</th>
-              <th>Result</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr :for={match <- @matches} class="hover">
-              <td>
-                <.link navigate={~p"/matches/#{match.id}"} class="link">
-                  {format_datetime(match.started_at)}
-                </.link>
-              </td>
-              <td>{match.event_name}</td>
-              <td>{format_label(match.format)}</td>
-              <td>{match.opponent_screen_name || "—"}</td>
-              <td class="tabular-nums">{match.num_games || "—"}</td>
-              <td><.result_badge won={match.won} /></td>
-            </tr>
-          </tbody>
-        </table>
+      <div :if={@matches != []} class="flex flex-col divide-y divide-base-content/5">
+        <div
+          :for={match <- @matches}
+          class="flex items-center gap-5 py-4 cursor-pointer hover:bg-base-content/3 rounded-lg px-2 -mx-2 transition-colors"
+          phx-click={JS.navigate(~p"/matches/#{match.id}")}
+        >
+          <%!-- Result indicator --%>
+          <div class={[
+            "text-3xl font-black w-8 text-center shrink-0 tabular-nums",
+            MatchesHelpers.result_letter_class(match.won)
+          ]}>
+            {MatchesHelpers.result_letter(match.won)}
+          </div>
+
+          <%!-- Main content --%>
+          <div class="flex flex-col gap-1 min-w-0 flex-1">
+            <%!-- Top line: opponent · colors · format --%>
+            <div class="flex items-center gap-3 flex-wrap">
+              <span class="font-semibold text-base-content truncate">
+                {match.opponent_screen_name || "Unknown Opponent"}
+              </span>
+
+              <.rank_icon
+                :if={match.opponent_rank}
+                rank={match.opponent_rank}
+                format_type={match.format_type || "Limited"}
+                class="h-6"
+              />
+
+              <span :if={match.deck_colors && match.deck_colors != ""} class="flex gap-0.5">
+                <.mana_pips colors={match.deck_colors} />
+              </span>
+
+              <span class="badge badge-sm badge-ghost shrink-0">
+                {format_label(match.format)}
+              </span>
+            </div>
+
+            <%!-- Bottom line: timestamp · score · play/draw · mulligans · turns --%>
+            <div class="flex items-center gap-3 text-xs text-base-content/45 flex-wrap">
+              <span class="tabular-nums">
+                {MatchesHelpers.format_match_datetime(match.started_at)}
+              </span>
+
+              <span :if={match.num_games && match.num_games > 0} class="tabular-nums">
+                {MatchesHelpers.game_score(match.game_results, match.won)}
+              </span>
+
+              <span :if={match.on_play != nil}>
+                {MatchesHelpers.on_play_label(match.on_play)}
+              </span>
+
+              <span :if={match.total_mulligans && match.total_mulligans > 0}>
+                {match.total_mulligans} {if match.total_mulligans == 1,
+                  do: "mulligan",
+                  else: "mulligans"}
+              </span>
+
+              <span :if={match.total_turns && match.total_turns > 0} class="tabular-nums">
+                {match.total_turns} turns
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </Layouts.app>
     """

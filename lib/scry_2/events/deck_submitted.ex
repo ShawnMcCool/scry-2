@@ -39,7 +39,9 @@ defmodule Scry2.Events.DeckSubmitted do
     :mtga_deck_id,
     :main_deck,
     :sideboard,
-    :occurred_at
+    :occurred_at,
+    # Enriched at ingestion (ADR-030)
+    :deck_colors
   ]
 
   @type card_count :: %{arena_id: integer(), count: pos_integer()}

@@ -79,6 +79,7 @@ defmodule Scry2.Application do
           Scry2.Matches.UpdateFromEvent,
           Scry2.Drafts.UpdateFromEvent,
           Scry2.Mulligans.UpdateFromEvent,
+          Scry2.MatchListing.UpdateFromEvent,
           # Stage 08: ingestion worker translates raw events to domain events.
           Scry2.Events.IngestRawEvents,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.

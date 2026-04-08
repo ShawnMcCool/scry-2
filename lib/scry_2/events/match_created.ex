@@ -33,7 +33,11 @@ defmodule Scry2.Events.MatchCreated do
     :opponent_user_id,
     :platform,
     :opponent_platform,
-    :occurred_at
+    :occurred_at,
+    # Enriched at ingestion (ADR-030)
+    :player_rank,
+    :format,
+    :format_type
   ]
 
   @type t :: %__MODULE__{
@@ -44,7 +48,10 @@ defmodule Scry2.Events.MatchCreated do
           opponent_user_id: String.t() | nil,
           platform: String.t() | nil,
           opponent_platform: String.t() | nil,
-          occurred_at: DateTime.t()
+          occurred_at: DateTime.t(),
+          player_rank: String.t() | nil,
+          format: String.t() | nil,
+          format_type: String.t() | nil
         }
 
   defimpl Scry2.Events.Event do

@@ -139,11 +139,53 @@ defmodule Scry2.Events do
 
   @doc """
   Streams every domain event in id order. Must be called inside a
-  transaction (Ecto stream requirement). Used by `replay_projections!/0`.
+  transaction (Ecto stream requirement).
   """
   @spec stream_all() :: Ecto.Query.t()
   def stream_all do
     EventRecord |> order_by([e], asc: e.id)
+  end
+
+  @doc """
+  Fetches domain events of the given types in batches, ordered by id.
+  Calls `fun` with each rehydrated event struct. Cursor-based — fetches
+  `batch_size` rows at a time starting from id 0.
+
+  Used by projectors for self-owned replay (ADR-029). No PubSub involved.
+
+  ## Example
+
+      Events.replay_by_types(~w(match_created match_completed), fn event ->
+        project(event)
+      end)
+  """
+  @spec replay_by_types([String.t()], (struct() -> any()), keyword()) :: :ok
+  def replay_by_types(type_slugs, fun, opts \\ [])
+      when is_list(type_slugs) and is_function(fun, 1) do
+    batch_size = Keyword.get(opts, :batch_size, 500)
+    do_replay_by_types(type_slugs, fun, batch_size, 0)
+  end
+
+  defp do_replay_by_types(type_slugs, fun, batch_size, cursor) do
+    batch =
+      EventRecord
+      |> where([e], e.event_type in ^type_slugs and e.id > ^cursor)
+      |> order_by([e], asc: e.id)
+      |> limit(^batch_size)
+      |> Repo.all()
+
+    case batch do
+      [] ->
+        :ok
+
+      records ->
+        Enum.each(records, fn record ->
+          fun.(rehydrate_with_metadata(record))
+        end)
+
+        last_id = List.last(records).id
+        do_replay_by_types(type_slugs, fun, batch_size, last_id)
+    end
   end
 
   @doc "Returns a map of event_type slug => count. Diagnostics only."
@@ -279,23 +321,15 @@ defmodule Scry2.Events do
     require Scry2.Log, as: Log
     Log.info(:ingester, "reingest: starting full reingest from raw events")
 
-    # 1. Clear projections (FK-safe order: children before parents)
-    Repo.delete_all(Scry2.Matches.DeckSubmission)
-    Repo.delete_all(Scry2.Matches.Game)
-    Repo.delete_all(Scry2.Matches.Match)
-    Repo.delete_all(Scry2.Drafts.Pick)
-    Repo.delete_all(Scry2.Drafts.Draft)
-    Repo.delete_all(Scry2.Mulligans.MulliganListing)
-
-    # 2. Clear domain events
+    # 1. Clear domain events (projections are cleared by rebuild! later)
     Repo.delete_all(EventRecord)
 
-    # 3. Re-mark raw events as unprocessed
+    # 2. Re-mark raw events as unprocessed
     {raw_count, _} =
       Scry2.MtgaLogIngestion.EventRecord
       |> Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
 
-    # 4. Re-broadcast each raw event for retranslation
+    # 3. Re-broadcast each raw event for retranslation via IngestRawEvents
     Scry2.MtgaLogIngestion.EventRecord
     |> order_by([e], asc: e.id)
     |> Repo.all()
@@ -304,36 +338,54 @@ defmodule Scry2.Events do
     end)
 
     Log.info(:ingester, "reingest: re-broadcast #{raw_count} raw events for retranslation")
+
+    # 4. Rebuild all projections from the freshly-translated domain events.
+    #    Each projector queries the event store directly (ADR-029) — no
+    #    PubSub race conditions.
+    #
+    #    Note: the retranslation above is async (IngestRawEvents GenServer),
+    #    but the domain events are written synchronously within each
+    #    handle_info. By the time we reach this line, all broadcasts have
+    #    been sent and the GenServer's mailbox will process them in order.
+    #    We sync by calling GenServer to drain its mailbox first.
+    sync_ingest_raw_events()
+    replay_projections!()
+
     :ok
   end
 
+  # Ensures IngestRawEvents has processed all queued messages by
+  # sending a synchronous call that must be handled after all prior
+  # handle_info messages in the mailbox.
+  defp sync_ingest_raw_events do
+    case Process.whereis(Scry2.Events.IngestRawEvents) do
+      nil -> :ok
+      pid -> :sys.get_state(pid) && :ok
+    end
+  end
+
   @doc """
-  Replays every persisted domain event through the current projectors
-  by re-broadcasting them on `domain:events`. Used to rebuild projection
-  tables after a projector's logic changes.
+  Rebuilds all projection tables from the domain event store.
 
-  Assumes the caller has already truncated the projection tables (or is
-  fine with idempotent upserts overwriting existing rows). Blocks until
-  drained by syncing each projector.
+  Each projector owns its own replay (ADR-029): truncates its tables,
+  queries the event store for its claimed types in id order, and
+  processes them sequentially. No PubSub involved — deterministic and
+  race-free.
 
-  Does not re-run the translator — domain events are read as-is from the
-  log. For translator changes, use `retranslate_from_raw!/0` instead.
+  Does not re-run the translator — domain events are read as-is from
+  the log. For translator changes, use `reingest!/0` instead.
   """
   @spec replay_projections!() :: :ok
   def replay_projections! do
-    # Collect first, broadcast second. Broadcasting inside a Repo.stream
-    # transaction can race with projector DB queries for the same
-    # connection pool; collecting to a list first keeps the broadcast
-    # phase transaction-free. The domain_events table is small enough
-    # (thousands of rows max for a heavy user) that buffering is fine.
-    records =
-      stream_all()
-      |> Repo.all()
+    require Scry2.Log, as: Log
+    Log.info(:ingester, "replay_projections: rebuilding all projections from event store")
 
-    Enum.each(records, fn record ->
-      Topics.broadcast(Topics.domain_events(), {:domain_event, record.id, record.event_type})
-    end)
+    Scry2.Matches.UpdateFromEvent.rebuild!()
+    Scry2.Drafts.UpdateFromEvent.rebuild!()
+    Scry2.Mulligans.UpdateFromEvent.rebuild!()
+    Scry2.MatchListing.UpdateFromEvent.rebuild!()
 
+    Log.info(:ingester, "replay_projections: all projections rebuilt")
     :ok
   end
 
@@ -377,14 +429,17 @@ defmodule Scry2.Events do
   """
   @spec reset_all!() :: :ok
   def reset_all! do
-    # FK-safe order: children before parents
-    Repo.delete_all(Scry2.Matches.DeckSubmission)
-    Repo.delete_all(Scry2.Matches.Game)
-    Repo.delete_all(Scry2.Matches.Match)
-    Repo.delete_all(Scry2.Drafts.Pick)
-    Repo.delete_all(Scry2.Drafts.Draft)
-    Repo.delete_all(Scry2.Mulligans.MulliganListing)
+    require Scry2.Log, as: Log
+    Log.info(:ingester, "reset_all: clearing domain events and all projections")
+
+    # Clear domain events
     Repo.delete_all(EventRecord)
+
+    # Each projector clears its own tables (ADR-029)
+    Scry2.Matches.UpdateFromEvent.rebuild!()
+    Scry2.Drafts.UpdateFromEvent.rebuild!()
+    Scry2.Mulligans.UpdateFromEvent.rebuild!()
+    Scry2.MatchListing.UpdateFromEvent.rebuild!()
 
     # Re-mark raw events as unprocessed so replay picks them up
     Scry2.MtgaLogIngestion.EventRecord
@@ -440,7 +495,10 @@ defmodule Scry2.Events do
       opponent_user_id: payload["opponent_user_id"],
       platform: payload["platform"],
       opponent_platform: payload["opponent_platform"],
-      occurred_at: parse_datetime(payload["occurred_at"])
+      occurred_at: parse_datetime(payload["occurred_at"]),
+      player_rank: payload["player_rank"],
+      format: payload["format"],
+      format_type: payload["format_type"]
     }
   end
 
@@ -477,7 +535,8 @@ defmodule Scry2.Events do
       mtga_deck_id: payload["mtga_deck_id"],
       main_deck: payload["main_deck"] || [],
       sideboard: payload["sideboard"] || [],
-      occurred_at: parse_datetime(payload["occurred_at"])
+      occurred_at: parse_datetime(payload["occurred_at"]),
+      deck_colors: payload["deck_colors"]
     }
   end
 
@@ -517,7 +576,13 @@ defmodule Scry2.Events do
       seat_id: payload["seat_id"],
       hand_size: payload["hand_size"],
       hand_arena_ids: payload["hand_arena_ids"],
-      occurred_at: parse_datetime(payload["occurred_at"])
+      occurred_at: parse_datetime(payload["occurred_at"]),
+      land_count: payload["land_count"],
+      nonland_count: payload["nonland_count"],
+      total_cmc: payload["total_cmc"],
+      cmc_distribution: payload["cmc_distribution"],
+      color_distribution: payload["color_distribution"],
+      card_names: payload["card_names"]
     }
   end
 
