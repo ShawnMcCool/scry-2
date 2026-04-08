@@ -37,6 +37,7 @@ defmodule Scry2.Events.Deck.DeckSubmitted do
     :player_id,
     :mtga_match_id,
     :mtga_deck_id,
+    :game_number,
     :main_deck,
     :sideboard,
     :occurred_at,
@@ -50,6 +51,7 @@ defmodule Scry2.Events.Deck.DeckSubmitted do
           player_id: String.t() | nil,
           mtga_match_id: String.t(),
           mtga_deck_id: String.t() | nil,
+          game_number: pos_integer() | nil,
           main_deck: [card_count()],
           sideboard: [card_count()],
           occurred_at: DateTime.t()

@@ -23,11 +23,15 @@ defmodule Scry2.Events.Progression.RankSnapshot do
     :constructed_step,
     :constructed_matches_won,
     :constructed_matches_lost,
+    :constructed_percentile,
+    :constructed_leaderboard_placement,
     :limited_class,
     :limited_level,
     :limited_step,
     :limited_matches_won,
     :limited_matches_lost,
+    :limited_percentile,
+    :limited_leaderboard_placement,
     :season_ordinal,
     :occurred_at
   ]
@@ -39,11 +43,15 @@ defmodule Scry2.Events.Progression.RankSnapshot do
           constructed_step: integer() | nil,
           constructed_matches_won: integer() | nil,
           constructed_matches_lost: integer() | nil,
+          constructed_percentile: number() | nil,
+          constructed_leaderboard_placement: integer() | nil,
           limited_class: String.t() | nil,
           limited_level: integer() | nil,
           limited_step: integer() | nil,
           limited_matches_won: integer() | nil,
           limited_matches_lost: integer() | nil,
+          limited_percentile: number() | nil,
+          limited_leaderboard_placement: integer() | nil,
           season_ordinal: integer() | nil,
           occurred_at: DateTime.t()
         }

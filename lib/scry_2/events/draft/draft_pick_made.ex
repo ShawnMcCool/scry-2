@@ -31,6 +31,8 @@ defmodule Scry2.Events.Draft.DraftPickMade do
     :pick_number,
     :picked_arena_id,
     :pack_arena_ids,
+    :auto_pick,
+    :time_remaining,
     :occurred_at
   ]
 
@@ -41,6 +43,8 @@ defmodule Scry2.Events.Draft.DraftPickMade do
           pick_number: pos_integer(),
           picked_arena_id: integer(),
           pack_arena_ids: [integer()],
+          auto_pick: boolean() | nil,
+          time_remaining: number() | nil,
           occurred_at: DateTime.t()
         }
 
