@@ -116,6 +116,82 @@ defmodule Scry2.Matches do
     |> Repo.aggregate(:count, :id)
   end
 
+  @doc """
+  Returns aggregate match statistics, optionally filtered by player_id.
+
+  Returns a map with:
+    * `:total` — total matches
+    * `:wins` — matches won
+    * `:losses` — matches lost
+    * `:win_rate` — float 0.0–100.0, or nil if no completed matches
+    * `:avg_turns` — average total_turns per match, or nil
+    * `:avg_mulligans` — average total_mulligans per match, or nil
+    * `:by_format` — list of `%{format: string, total: int, wins: int, win_rate: float}`
+    * `:by_deck_colors` — list of `%{deck_colors: string, total: int, wins: int, win_rate: float}`
+  """
+  def aggregate_stats(opts \\ []) do
+    player_id = Keyword.get(opts, :player_id)
+
+    base =
+      Match
+      |> maybe_filter_by_player(player_id)
+      |> where([m], not is_nil(m.won))
+
+    overall = overall_stats(base)
+    by_format = breakdown_by(base, :format)
+    by_deck_colors = breakdown_by(base, :deck_colors)
+
+    Map.merge(overall, %{by_format: by_format, by_deck_colors: by_deck_colors})
+  end
+
+  defp overall_stats(query) do
+    result =
+      query
+      |> select([m], %{
+        total: count(m.id),
+        wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.won)),
+        avg_turns: avg(m.total_turns),
+        avg_mulligans: avg(m.total_mulligans)
+      })
+      |> Repo.one()
+
+    wins = result.wins || 0
+    total = result.total || 0
+
+    %{
+      total: total,
+      wins: wins,
+      losses: total - wins,
+      win_rate: if(total > 0, do: Float.round(wins / total * 100, 1)),
+      avg_turns: if(result.avg_turns, do: Float.round(result.avg_turns / 1, 1)),
+      avg_mulligans: if(result.avg_mulligans, do: Float.round(result.avg_mulligans / 1, 1))
+    }
+  end
+
+  defp breakdown_by(query, field) do
+    query
+    |> where([m], not is_nil(field(m, ^field)) and field(m, ^field) != "")
+    |> group_by([m], field(m, ^field))
+    |> select([m], %{
+      key: field(m, ^field),
+      total: count(m.id),
+      wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.won))
+    })
+    |> order_by([m], desc: count(m.id))
+    |> Repo.all()
+    |> Enum.map(fn row ->
+      wins = row.wins || 0
+
+      %{
+        key: row.key,
+        total: row.total,
+        wins: wins,
+        losses: row.total - wins,
+        win_rate: Float.round(wins / row.total * 100, 1)
+      }
+    end)
+  end
+
   defp maybe_filter_by_player(query, nil), do: query
   defp maybe_filter_by_player(query, player_id), do: where(query, [m], m.player_id == ^player_id)
 

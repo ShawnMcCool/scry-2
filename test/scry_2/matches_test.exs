@@ -155,6 +155,85 @@ defmodule Scry2.MatchesTest do
     end
   end
 
+  describe "aggregate_stats/1" do
+    test "returns zeroed stats when no completed matches exist" do
+      stats = Matches.aggregate_stats()
+      assert stats.total == 0
+      assert stats.wins == 0
+      assert stats.losses == 0
+      assert stats.win_rate == nil
+      assert stats.by_format == []
+      assert stats.by_deck_colors == []
+    end
+
+    test "computes overall win rate from completed matches" do
+      TestFactory.create_match(%{won: true, format: "premier_draft", deck_colors: "UW"})
+      TestFactory.create_match(%{won: true, format: "premier_draft", deck_colors: "UW"})
+      TestFactory.create_match(%{won: false, format: "traditional_standard", deck_colors: "BR"})
+
+      stats = Matches.aggregate_stats()
+
+      assert stats.total == 3
+      assert stats.wins == 2
+      assert stats.losses == 1
+      assert stats.win_rate == 66.7
+    end
+
+    test "breaks down by format" do
+      TestFactory.create_match(%{won: true, format: "premier_draft"})
+      TestFactory.create_match(%{won: false, format: "premier_draft"})
+      TestFactory.create_match(%{won: true, format: "traditional_standard"})
+
+      stats = Matches.aggregate_stats()
+
+      draft = Enum.find(stats.by_format, &(&1.key == "premier_draft"))
+      assert draft.total == 2
+      assert draft.wins == 1
+      assert draft.win_rate == 50.0
+
+      standard = Enum.find(stats.by_format, &(&1.key == "traditional_standard"))
+      assert standard.total == 1
+      assert standard.wins == 1
+      assert standard.win_rate == 100.0
+    end
+
+    test "breaks down by deck colors" do
+      TestFactory.create_match(%{won: true, deck_colors: "UW"})
+      TestFactory.create_match(%{won: false, deck_colors: "UW"})
+      TestFactory.create_match(%{won: true, deck_colors: "BR"})
+
+      stats = Matches.aggregate_stats()
+
+      uw = Enum.find(stats.by_deck_colors, &(&1.key == "UW"))
+      assert uw.total == 2
+      assert uw.wins == 1
+
+      br = Enum.find(stats.by_deck_colors, &(&1.key == "BR"))
+      assert br.total == 1
+      assert br.wins == 1
+    end
+
+    test "excludes matches where won is nil" do
+      TestFactory.create_match(%{won: true})
+      TestFactory.create_match(%{won: nil})
+
+      stats = Matches.aggregate_stats()
+      assert stats.total == 1
+    end
+
+    test "filters by player_id" do
+      player = Scry2.Players.find_or_create!("player-1", "Player One")
+      other = Scry2.Players.find_or_create!("player-2", "Player Two")
+
+      TestFactory.create_match(%{won: true, player_id: player.id})
+      TestFactory.create_match(%{won: false, player_id: other.id})
+
+      stats = Matches.aggregate_stats(player_id: player.id)
+      assert stats.total == 1
+      assert stats.wins == 1
+    end
+  end
+
   describe "list_matches/1" do
     test "returns matches ordered by started_at desc" do
       older = TestFactory.create_match(%{started_at: ~U[2026-01-01 12:00:00Z]})
