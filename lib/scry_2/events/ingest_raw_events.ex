@@ -147,7 +147,11 @@ defmodule Scry2.Events.IngestRawEvents do
     state = maybe_capture_rank(record, state)
 
     {domain_events, translation_warnings} =
-      IdentifyDomainEvents.translate(record, state.session.self_user_id, state.match)
+      IdentifyDomainEvents.translate(
+        record,
+        state.session.self_user_id,
+        Map.from_struct(state.match)
+      )
 
     unless IdentifyDomainEvents.recognized?(record.event_type) do
       Log.warning(:ingester, "unrecognized MTGA event type: #{record.event_type}")
