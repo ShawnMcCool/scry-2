@@ -1,71 +1,92 @@
 defmodule Scry2.Drafts.UpdateFromEventTest do
   use Scry2.DataCase
 
+  import ExUnit.CaptureLog
+  import Scry2.TestFactory
+  import Scry2.ProjectorCase
+
   alias Scry2.Drafts
   alias Scry2.Drafts.UpdateFromEvent
   alias Scry2.Events
-  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
 
-  setup do
-    name = Module.concat(__MODULE__, :"Projector#{System.unique_integer([:positive])}")
-    pid = start_supervised!({UpdateFromEvent, name: name})
-    %{projector: name, pid: pid}
-  end
+  describe "rebuild!/0" do
+    test "draft_started projects a draft row" do
+      player = create_player()
+      draft_id = "test-draft-#{System.unique_integer([:positive])}"
 
-  defp sync(name), do: :sys.get_state(name) && :ok
+      event =
+        build_draft_started(%{
+          player_id: player.id,
+          mtga_draft_id: draft_id,
+          event_name: "QuickDraft_LCI",
+          set_code: "LCI"
+        })
 
-  describe "projects %DraftStarted{} → drafts_drafts" do
-    test "creates a new draft row", %{projector: name} do
-      event = %DraftStarted{
-        mtga_draft_id: "QuickDraft_TST_20260406",
-        event_name: "QuickDraft_TST_20260406",
-        set_code: "TST",
-        occurred_at: ~U[2026-04-06 12:00:00Z]
-      }
+      project_events(UpdateFromEvent, event)
 
-      Events.append!(event, nil)
-      sync(name)
-
-      draft = Drafts.get_by_mtga_id("QuickDraft_TST_20260406")
-      assert draft != nil
-      assert draft.set_code == "TST"
-      assert draft.started_at == ~U[2026-04-06 12:00:00Z]
+      draft = Drafts.get_by_mtga_id(draft_id, player.id)
+      assert draft
+      assert draft.event_name == "QuickDraft_LCI"
+      assert draft.set_code == "LCI"
     end
-  end
 
-  describe "projects %DraftPickMade{} → drafts_picks" do
-    test "creates a pick row linked to the draft", %{projector: name} do
-      started = %DraftStarted{
-        mtga_draft_id: "QuickDraft_TST_20260406",
-        event_name: "QuickDraft_TST_20260406",
-        set_code: "TST",
-        occurred_at: ~U[2026-04-06 12:00:00Z]
-      }
+    test "draft_pick_made creates a pick linked to the draft" do
+      player = create_player()
+      draft_id = "test-draft-pick-#{System.unique_integer([:positive])}"
 
-      Events.append!(started, nil)
-      sync(name)
+      events = [
+        build_draft_started(%{player_id: player.id, mtga_draft_id: draft_id}),
+        build_draft_pick_made(%{
+          player_id: player.id,
+          mtga_draft_id: draft_id,
+          pack_number: 1,
+          pick_number: 3,
+          picked_arena_id: 91_999
+        })
+      ]
 
-      pick = %DraftPickMade{
-        mtga_draft_id: "QuickDraft_TST_20260406",
-        pack_number: 1,
-        pick_number: 1,
-        picked_arena_id: 93959,
-        pack_arena_ids: [],
-        occurred_at: ~U[2026-04-06 12:01:00Z]
-      }
+      project_events(UpdateFromEvent, events)
 
-      Events.append!(pick, nil)
-      sync(name)
+      draft = Drafts.get_by_mtga_id(draft_id, player.id)
+      picks = Scry2.Repo.all(Scry2.Drafts.Pick) |> Enum.filter(&(&1.draft_id == draft.id))
+      assert length(picks) == 1
+      pick = hd(picks)
+      assert pick.pack_number == 1
+      assert pick.pick_number == 3
+      assert pick.picked_arena_id == 91_999
+    end
 
-      draft =
-        Drafts.get_draft_with_picks(Drafts.get_by_mtga_id("QuickDraft_TST_20260406").id)
+    test "draft_pick_made for unknown draft logs warning" do
+      player = create_player()
+      event = build_draft_pick_made(%{player_id: player.id, mtga_draft_id: "nonexistent-draft"})
 
-      assert length(draft.picks) == 1
+      log = capture_log(fn -> project_events(UpdateFromEvent, event) end)
+      assert log =~ "unknown draft"
+    end
 
-      [saved_pick] = draft.picks
-      assert saved_pick.pack_number == 1
-      assert saved_pick.pick_number == 1
-      assert saved_pick.picked_arena_id == 93959
+    test "idempotent replay produces same state" do
+      player = create_player()
+      draft_id = "test-draft-idem-#{System.unique_integer([:positive])}"
+
+      event = build_draft_started(%{player_id: player.id, mtga_draft_id: draft_id})
+      project_events(UpdateFromEvent, event)
+
+      # Rebuild again
+      UpdateFromEvent.rebuild!()
+
+      drafts =
+        Scry2.Repo.all(Scry2.Drafts.Draft) |> Enum.filter(&(&1.mtga_draft_id == draft_id))
+
+      assert length(drafts) == 1
+    end
+
+    test "watermark advances to last processed event" do
+      player = create_player()
+
+      event = build_draft_started(%{player_id: player.id})
+      records = project_events(UpdateFromEvent, event)
+
+      assert Events.get_watermark("Drafts.UpdateFromEvent") == List.last(records).id
     end
   end
 end
