@@ -573,6 +573,92 @@ defmodule Scry2Web.CoreComponents do
   def mana_color_class("G"), do: "text-emerald-400"
   def mana_color_class(_), do: "text-base-content/40"
 
+  @doc """
+  Renders MTG mana color pips from a color string like "GRW".
+
+  ## Examples
+
+      <.mana_pips colors="GRW" />
+      <.mana_pips colors="" />
+  """
+  attr :colors, :string, required: true
+
+  def mana_pips(assigns) do
+    assigns =
+      assign(assigns, :pips, assigns.colors |> String.graphemes() |> Enum.reject(&(&1 == "")))
+
+    ~H"""
+    <span :for={pip <- @pips} class={["font-bold", mana_color_class(pip)]}>{pip}</span>
+    """
+  end
+
+  @doc """
+  Formats an MTGA event name into a readable label.
+
+  ## Examples
+
+      format_event_name("QuickDraft_FDN_20260323")
+      # => "Quick Draft — FDN"
+  """
+  def format_event_name(event_name) when is_binary(event_name) do
+    case String.split(event_name, "_") do
+      [prefix, set_code | _] ->
+        label =
+          prefix
+          |> String.replace("QuickDraft", "Quick Draft")
+          |> String.replace("PremierDraft", "Premier Draft")
+          |> String.replace("CompDraft", "Comp Draft")
+          |> String.replace("TradDraft", "Traditional Draft")
+          |> String.replace("BotDraft", "Bot Draft")
+
+        "#{label} — #{set_code}"
+
+      _ ->
+        event_name
+    end
+  end
+
+  def format_event_name(nil), do: "Unknown Event"
+
+  @doc """
+  Renders an MTGA rank icon.
+
+  The `rank` string should be a rank name from the MTGA log (e.g.,
+  "Gold", "Platinum", "Mythic"). The `format_type` determines which
+  icon set to use: "Limited" or "Constructed" (defaults to "Limited").
+
+  ## Examples
+
+      <.rank_icon rank="Gold" />
+      <.rank_icon rank="Platinum" format_type="Constructed" class="h-6" />
+  """
+  attr :rank, :string, required: true
+  attr :format_type, :string, default: "Limited"
+  attr :class, :string, default: "h-5"
+
+  def rank_icon(assigns) do
+    rank_slug = rank_to_slug(assigns.rank)
+    side = if assigns.format_type == "Constructed", do: "constructed", else: "limited"
+    assigns = assign(assigns, :src, "/images/ranks/#{side}-#{rank_slug}.png")
+
+    ~H"""
+    <img :if={@src} src={@src} alt={@rank} class={["inline-block", @class]} />
+    """
+  end
+
+  defp rank_to_slug(nil), do: nil
+
+  defp rank_to_slug(rank) when is_binary(rank) do
+    rank
+    |> String.downcase()
+    |> String.replace(~r/\s+\d+$/, "")
+    |> String.trim()
+    |> case do
+      "beginner" -> "bronze"
+      slug -> slug
+    end
+  end
+
   ## JS Commands
 
   def show(js \\ %JS{}, selector) do

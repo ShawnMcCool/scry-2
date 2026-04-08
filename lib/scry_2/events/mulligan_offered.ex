@@ -25,7 +25,14 @@ defmodule Scry2.Events.MulliganOffered do
     :seat_id,
     :hand_size,
     :hand_arena_ids,
-    :occurred_at
+    :occurred_at,
+    # Enriched at ingestion (ADR-030)
+    :land_count,
+    :nonland_count,
+    :total_cmc,
+    :cmc_distribution,
+    :color_distribution,
+    :card_names
   ]
 
   @type t :: %__MODULE__{
@@ -34,7 +41,13 @@ defmodule Scry2.Events.MulliganOffered do
           seat_id: integer(),
           hand_size: integer(),
           hand_arena_ids: [integer()] | nil,
-          occurred_at: DateTime.t()
+          occurred_at: DateTime.t(),
+          land_count: non_neg_integer() | nil,
+          nonland_count: non_neg_integer() | nil,
+          total_cmc: float() | nil,
+          cmc_distribution: map() | nil,
+          color_distribution: map() | nil,
+          card_names: map() | nil
         }
 
   defimpl Scry2.Events.Event do

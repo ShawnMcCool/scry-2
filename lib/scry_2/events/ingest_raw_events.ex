@@ -76,7 +76,9 @@ defmodule Scry2.Events.IngestRawEvents do
          current_match_id: nil,
          current_game_number: nil,
          last_hand_game_objects: %{}
-       }
+       },
+       constructed_rank: nil,
+       limited_rank: nil
      }}
   end
 
@@ -112,6 +114,7 @@ defmodule Scry2.Events.IngestRawEvents do
   defp process_raw_event(record, state) do
     self_user_id = state.self_user_id
     state = maybe_cache_game_objects(record, state)
+    state = maybe_capture_rank(record, state)
     match_context = state.match_context
 
     {domain_events, translation_warnings} =
@@ -146,6 +149,7 @@ defmodule Scry2.Events.IngestRawEvents do
 
         events
         |> stamp_player_id(new_state.player_id, record)
+        |> enrich_events(new_state)
         |> Enum.with_index()
         |> Enum.each(fn {event, index} ->
           Events.append!(event, record,
@@ -233,6 +237,45 @@ defmodule Scry2.Events.IngestRawEvents do
   end
 
   defp maybe_cache_game_objects(_record, state), do: state
+
+  # Capture player rank from RankGetCombinedRankInfo events.
+  # This fires periodically and on login — we track the latest rank
+  # in GenServer state and stamp it onto MatchCreated events.
+  defp maybe_capture_rank(%EventRecord{event_type: "RankGetCombinedRankInfo"} = record, state) do
+    with {:ok, payload} <- Jason.decode(record.raw_json) do
+      constructed =
+        case {payload["constructedClass"], payload["constructedLevel"]} do
+          {class, level} when is_binary(class) and is_integer(level) ->
+            "#{class} #{level}"
+
+          _ ->
+            state.constructed_rank
+        end
+
+      limited =
+        case {payload["limitedClass"], payload["limitedLevel"]} do
+          {class, level} when is_binary(class) and is_integer(level) ->
+            "#{class} #{level}"
+
+          _ ->
+            state.limited_rank
+        end
+
+      Log.info(:ingester, "captured rank: constructed=#{constructed} limited=#{limited}")
+      %{state | constructed_rank: constructed, limited_rank: limited}
+    else
+      _ -> state
+    end
+  end
+
+  defp maybe_capture_rank(_record, state), do: state
+
+  # Enrich domain events with derived data (ADR-030).
+  # Card metadata, rank, format, hand stats — all computed here so
+  # projectors receive fully enriched events with no external lookups.
+  defp enrich_events(events, state) do
+    Scry2.Events.EnrichEvents.enrich(events, state)
+  end
 
   # Inject player_id into each domain event struct. SessionStarted events
   # set the player_id (they discover the player), so they stamp themselves.

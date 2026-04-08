@@ -41,46 +41,17 @@ defmodule Scry2.Matches.UpdateFromEvent do
   event log via `Scry2.Events.replay_projections!/0`, so eventual
   consistency is tolerable.
   """
-  use GenServer
+  # projection_tables listed in FK-safe delete order (children first)
+  use Scry2.Events.Projector,
+    claimed_slugs: ~w(match_created match_completed deck_submitted game_completed),
+    projection_tables: [
+      Scry2.Matches.DeckSubmission,
+      Scry2.Matches.Game,
+      Scry2.Matches.Match
+    ]
 
-  require Scry2.Log, as: Log
-
-  alias Scry2.Events
   alias Scry2.Events.{DeckSubmitted, GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.Matches
-  alias Scry2.Topics
-
-  @claimed_slugs ~w(match_created match_completed deck_submitted game_completed)
-
-  def start_link(opts \\ []) do
-    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
-    GenServer.start_link(__MODULE__, opts, name: name)
-  end
-
-  @impl true
-  def init(_opts) do
-    Topics.subscribe(Topics.domain_events())
-    {:ok, %{}}
-  end
-
-  @impl true
-  def handle_info({:domain_event, id, type_slug}, state) when type_slug in @claimed_slugs do
-    try do
-      event = Events.get!(id)
-      project(event)
-    rescue
-      error ->
-        Log.error(
-          :ingester,
-          "matches projector failed on domain_event id=#{id} type=#{type_slug}: #{inspect(error)}"
-        )
-    end
-
-    {:noreply, state}
-  end
-
-  def handle_info({:domain_event, _id, _type_slug}, state), do: {:noreply, state}
-  def handle_info(_other, state), do: {:noreply, state}
 
   # ── Projection handlers ─────────────────────────────────────────────
   #

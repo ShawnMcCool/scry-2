@@ -77,30 +77,8 @@ defmodule Scry2Web.MulligansHelpers do
   def decision_badge_class(:kept), do: "bg-orange-500/90 text-white"
   def decision_badge_class(:mulliganed), do: "bg-blue-500/90 text-white"
 
-  @doc """
-  Formats an MTGA event name into a readable label.
-
-  Examples:
-      "QuickDraft_FDN_20260323" → "Quick Draft — FDN"
-      "PremierDraft_LCI_20260401" → "Premier Draft — LCI"
-  """
-  def format_event_name(event_name) when is_binary(event_name) do
-    case String.split(event_name, "_") do
-      [prefix, set_code | _] ->
-        label =
-          prefix
-          |> String.replace("QuickDraft", "Quick Draft")
-          |> String.replace("PremierDraft", "Premier Draft")
-          |> String.replace("CompDraft", "Comp Draft")
-          |> String.replace("TradDraft", "Traditional Draft")
-          |> String.replace("BotDraft", "Bot Draft")
-
-        "#{label} — #{set_code}"
-
-      _ ->
-        event_name
-    end
-  end
+  @doc "Delegates to `Scry2Web.CoreComponents.format_event_name/1`."
+  defdelegate format_event_name(event_name), to: Scry2Web.CoreComponents
 
   # ── Internals ───────────────────────────────────────────────────────────
 
