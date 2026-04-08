@@ -89,3 +89,43 @@ Run through the full verification checklist against real systems:
 2. **Oban + SQLite cron** — verify `Oban.Engines.Lite` cron scheduling actually fires in dev.
 3. **`file_system` on Flatpak paths** — verify inotify works on Proton-flatpak dirs.
 4. **Draft ID correlation** — `BotDraftDraftPick` events use `EventName` as `mtga_draft_id`. Multiple drafts of the same format would collide. Acceptable for personal MVP; needs session tracking for correctness.
+
+---
+
+## Game replay data (future — significant work)
+
+The MTGA log contains the complete in-game action history inside
+`GreToClientEvent` (289 `GameStateMessage` entries per session) and
+`ClientToGremessage` (player actions). Combined, these reconstruct
+every turn of every game: cards drawn, spells cast, attacks, blocks,
+life total changes, zone transitions.
+
+### Server → Client (GameStateMessage differential state)
+
+- **289 GameStateMessages** — every game state change (zones, objects, counters, annotations)
+- **ActionsAvailableReq (36)** — what the player can do at each priority pass
+- **TimerStateMessage (35)** — chess clock state, timeout tracking
+
+### Client → Server (player actions)
+
+- **PerformActionResp (204)** — cards played, abilities activated, lands dropped
+- **SubmitAttackersReq (33)** — which creatures attacked
+- **SelectTargetsResp (31)** — spell/ability target choices
+- **DeclareBlockersResp (11)** — block assignments
+- **AssignDamageResp (4)** — damage assignment order
+- **CastingTimeOptionsResp (13)** — mana payment choices
+
+### What this enables
+
+- Full game replay (17lands-style)
+- Per-turn card draw / play sequence
+- Combat analytics (attack/block patterns)
+- Mana efficiency tracking
+- Decision tree analysis
+
+### Prerequisites
+
+- ADR-025 cumulative game state is the foundation — already implemented
+- Need to extend `match_context` to maintain full zone state across GameStateMessages
+- Need to define domain events for turns, spells cast, combat phases
+- `diffDeletedInstanceIds` handling needed for proper zone tracking
