@@ -179,11 +179,11 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                      |> MapSet.union(@deferred_event_types)
 
   @doc "Returns the set of all recognized raw MTGA event types."
-  @spec known_event_types() :: MapSet.t(String.t())
+  @spec known_event_types() :: MapSet.t()
   def known_event_types, do: @known_event_types
 
   @doc "Returns the set of event types deferred pending a non-empty payload."
-  @spec deferred_event_types() :: MapSet.t(String.t())
+  @spec deferred_event_types() :: MapSet.t()
   def deferred_event_types, do: @deferred_event_types
 
   @doc "Returns true if the event type has an explicit handler or ignore clause."
@@ -193,8 +193,9 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   @type self_user_id :: String.t() | nil
 
   @type match_context :: %{
-          current_match_id: String.t() | nil,
-          current_game_number: non_neg_integer() | nil
+          optional(:current_match_id) => String.t() | nil,
+          optional(:current_game_number) => non_neg_integer() | nil,
+          optional(:last_hand_game_objects) => map() | {integer(), list()}
         }
 
   @doc """
@@ -1255,6 +1256,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           super_format: game_info["superFormat"],
           occurred_at: occurred_at
         }
+      else
+        _ -> nil
       end
     end)
   end
