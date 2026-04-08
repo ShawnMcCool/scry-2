@@ -716,6 +716,54 @@ defmodule Scry2.Events do
     }
   end
 
+  defp rehydrate(%EventRecord{event_type: "inventory_updated", payload: payload}) do
+    %Scry2.Events.InventoryUpdated{
+      gold: payload["gold"],
+      gems: payload["gems"],
+      wildcards_common: payload["wildcards_common"],
+      wildcards_uncommon: payload["wildcards_uncommon"],
+      wildcards_rare: payload["wildcards_rare"],
+      wildcards_mythic: payload["wildcards_mythic"],
+      vault_progress: payload["vault_progress"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "event_course_updated", payload: payload}) do
+    %Scry2.Events.EventCourseUpdated{
+      event_name: payload["event_name"],
+      current_wins: payload["current_wins"],
+      current_losses: payload["current_losses"],
+      current_module: payload["current_module"],
+      card_pool: payload["card_pool"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "event_reward_claimed", payload: payload}) do
+    %Scry2.Events.EventRewardClaimed{
+      event_name: payload["event_name"],
+      final_wins: payload["final_wins"],
+      final_losses: payload["final_losses"],
+      gems_awarded: payload["gems_awarded"],
+      gold_awarded: payload["gold_awarded"],
+      boosters_awarded: payload["boosters_awarded"],
+      card_pool: payload["card_pool"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
+  defp rehydrate(%EventRecord{event_type: "game_action", payload: payload}) do
+    %Scry2.Events.GameAction{
+      mtga_match_id: payload["mtga_match_id"],
+      action: payload["action"],
+      decision: payload["decision"],
+      chose_play: payload["chose_play"],
+      scope: payload["scope"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
   defp parse_datetime(nil), do: nil
 
   defp parse_datetime(iso) when is_binary(iso) do

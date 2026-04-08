@@ -2,7 +2,6 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   use ExUnit.Case, async: true
 
   alias Scry2.Events.{
-    ActiveCourses,
     DailyWinsStatus,
     DeckInventory,
     DeckSelected,
@@ -11,15 +10,17 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     DieRollCompleted,
     DraftPickMade,
     DraftStarted,
+    EventCourseUpdated,
     EventJoined,
+    EventRewardClaimed,
     GameCompleted,
     IdentifyDomainEvents,
     InventoryChanged,
+    InventoryUpdated,
     MasteryProgress,
     MatchCompleted,
     MatchCreated,
     PairingEntered,
-    PrizeClaimed,
     QuestStatus,
     RankSnapshot,
     SessionStarted,
@@ -392,7 +393,6 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "deferred_event_types returns a MapSet of deferred types" do
       deferred = IdentifyDomainEvents.deferred_event_types()
       assert MapSet.member?(deferred, "EventGetActiveMatches")
-      assert MapSet.member?(deferred, "StartHook")
     end
   end
 
@@ -491,10 +491,10 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     end
   end
 
-  # ── EventClaimPrize → PrizeClaimed + InventoryChanged ───────────────
+  # ── EventClaimPrize → EventRewardClaimed + InventoryUpdated ─────────
 
-  describe "translate/2 — EventClaimPrize response → PrizeClaimed + InventoryChanged" do
-    test "produces PrizeClaimed and InventoryChanged with boosters" do
+  describe "translate/2 — EventClaimPrize response → EventRewardClaimed + InventoryUpdated" do
+    test "produces EventRewardClaimed and InventoryUpdated with reward details" do
       record = %EventRecord{
         id: 1,
         event_type: "EventClaimPrize",
@@ -507,7 +507,8 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
               "CourseId" => "e1a4b192-course-uuid",
               "InternalEventName" => "QuickDraft_FDN_20260323",
               "CurrentWins" => 3,
-              "CurrentLosses" => 3
+              "CurrentLosses" => 3,
+              "CardPool" => [12345, 67890]
             },
             "InventoryInfo" => %{
               "Changes" => [
@@ -519,23 +520,31 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
                 }
               ],
               "Gold" => 8200,
-              "Gems" => 4900
+              "Gems" => 4900,
+              "WildCardCommons" => 2,
+              "WildCardUnCommons" => 1,
+              "WildCardRares" => 0,
+              "WildCardMythics" => 0,
+              "TotalVaultProgress" => 150
             }
           }),
         processed: false
       }
 
       assert {events, []} = IdentifyDomainEvents.translate(record, nil)
-      assert [%PrizeClaimed{} = claimed, %InventoryChanged{} = inv] = events
+      assert [%EventRewardClaimed{} = reward, %InventoryUpdated{} = inv] = events
 
-      assert claimed.event_name == "QuickDraft_FDN_20260323"
-      assert claimed.wins == 3
-      assert claimed.losses == 3
+      assert reward.event_name == "QuickDraft_FDN_20260323"
+      assert reward.final_wins == 3
+      assert reward.final_losses == 3
+      assert reward.gems_awarded == 300
+      assert reward.boosters_awarded == [%{"SetCode" => "FDN", "Count" => 1}]
+      assert reward.card_pool == [12345, 67890]
 
-      assert inv.source == "EventReward"
-      assert inv.gems_delta == 300
-      assert inv.boosters == [%{set_code: "FDN", count: 1}]
-      assert inv.gems_balance == 4900
+      assert inv.gold == 8200
+      assert inv.gems == 4900
+      assert inv.wildcards_common == 2
+      assert inv.vault_progress == 150
     end
   end
 
@@ -794,10 +803,10 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     end
   end
 
-  # ── EventGetCoursesV2 → ActiveCourses ──────────────────────────────
+  # ── EventGetCoursesV2 → EventCourseUpdated (per course) ─────────────
 
-  describe "translate/2 — EventGetCoursesV2 → ActiveCourses" do
-    test "produces ActiveCourses from response" do
+  describe "translate/2 — EventGetCoursesV2 → EventCourseUpdated per course" do
+    test "produces one EventCourseUpdated per course with non-empty event name" do
       record = %EventRecord{
         id: 1,
         event_type: "EventGetCoursesV2",
@@ -812,29 +821,57 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
                 "InternalEventName" => "QuickDraft_FDN_20260323",
                 "CurrentModule" => "BotDraft",
                 "CurrentWins" => 2,
-                "CurrentLosses" => 1
+                "CurrentLosses" => 1,
+                "CardPool" => [11111, 22222]
               },
               %{
                 "CourseId" => "course-2",
                 "InternalEventName" => "DualColorPrecons",
                 "CurrentModule" => "CreateMatch",
                 "CurrentWins" => 10,
-                "CurrentLosses" => 5
+                "CurrentLosses" => 5,
+                "CardPool" => nil
               }
             ]
           }),
         processed: false
       }
 
-      assert {[%ActiveCourses{} = event], []} = IdentifyDomainEvents.translate(record, nil)
-      assert length(event.courses) == 2
+      assert {events, []} = IdentifyDomainEvents.translate(record, nil)
+      assert length(events) == 2
+      assert Enum.all?(events, &match?(%EventCourseUpdated{}, &1))
 
-      draft = hd(event.courses)
-      assert draft.course_id == "course-1"
+      [draft, constructed] = events
       assert draft.event_name == "QuickDraft_FDN_20260323"
+      assert draft.current_wins == 2
+      assert draft.current_losses == 1
       assert draft.current_module == "BotDraft"
-      assert draft.wins == 2
-      assert draft.losses == 1
+      assert draft.card_pool == [11111, 22222]
+
+      assert constructed.event_name == "DualColorPrecons"
+      assert constructed.current_wins == 10
+    end
+
+    test "filters out courses with empty or nil InternalEventName" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventGetCoursesV2",
+        mtga_timestamp: ~U[2026-04-06 16:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Courses" => [
+              %{"InternalEventName" => "ValidEvent", "CurrentWins" => 0, "CurrentLosses" => 0},
+              %{"InternalEventName" => "", "CurrentWins" => 0, "CurrentLosses" => 0},
+              %{"InternalEventName" => nil, "CurrentWins" => 0, "CurrentLosses" => 0}
+            ]
+          }),
+        processed: false
+      }
+
+      assert {[%EventCourseUpdated{event_name: "ValidEvent"}], []} =
+               IdentifyDomainEvents.translate(record, nil)
     end
 
     test "skips request-format records" do
@@ -844,6 +881,55 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         file_offset: 0,
         source_file: "Player.log",
         raw_json: ~s({"id":"uuid","request":"{}"}),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # ── StartHook → InventoryUpdated ─────────────────────────────────────
+
+  describe "translate/2 — StartHook → InventoryUpdated" do
+    test "produces InventoryUpdated from login hook with InventoryInfo" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "StartHook",
+        mtga_timestamp: ~U[2026-04-07 09:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "InventoryInfo" => %{
+              "Gold" => 12500,
+              "Gems" => 3200,
+              "WildCardCommons" => 8,
+              "WildCardUnCommons" => 4,
+              "WildCardRares" => 2,
+              "WildCardMythics" => 1,
+              "TotalVaultProgress" => 475
+            }
+          }),
+        processed: false
+      }
+
+      assert {[%InventoryUpdated{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert event.gold == 12500
+      assert event.gems == 3200
+      assert event.wildcards_common == 8
+      assert event.wildcards_uncommon == 4
+      assert event.wildcards_rare == 2
+      assert event.wildcards_mythic == 1
+      assert event.vault_progress == 475
+    end
+
+    test "returns empty list when InventoryInfo is absent (empty-payload login)" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "StartHook",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: "{}",
         processed: false
       }
 

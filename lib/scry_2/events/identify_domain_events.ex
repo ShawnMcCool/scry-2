@@ -50,7 +50,6 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   """
 
   alias Scry2.Events.{
-    ActiveCourses,
     DailyWinsStatus,
     DeckInventory,
     DeckSelected,
@@ -59,14 +58,17 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     DieRollCompleted,
     DraftPickMade,
     DraftStarted,
+    EventCourseUpdated,
     EventJoined,
+    GameAction,
+    EventRewardClaimed,
     GameCompleted,
     InventoryChanged,
+    InventoryUpdated,
     MatchCompleted,
     MatchCreated,
     MulliganOffered,
     PairingEntered,
-    PrizeClaimed,
     QuestStatus,
     RankSnapshot,
     SessionStarted,
@@ -85,6 +87,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   @handled_event_types MapSet.new([
                          "MatchGameRoomStateChangedEvent",
                          "GreToClientEvent",
+                         # Client → GRE game actions (concede, mulligan response, play/draw choice)
+                         "ClientToGremessage",
                          "BotDraftDraftPick",
                          "BotDraftDraftStatus",
                          "AuthenticateResponse",
@@ -102,13 +106,14 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "QuestGetQuests",
                          "PeriodicRewardsGetStatus",
                          "EventGetCoursesV2",
-                         "GraphGetGraphState"
+                         "GraphGetGraphState",
+                         # Client startup lifecycle — inventory snapshot on login
+                         "StartHook"
                        ])
 
   @ignored_event_types MapSet.new([
-                         # GRE client messages — high-volume UI input traffic, no domain semantics
+                         # GRE client UI messages — animation/display input, no domain semantics
                          "ClientToGreuimessage",
-                         "ClientToGremessage",
                          # Connection lifecycle — internal MTGA networking plumbing
                          "Client.TcpConnection.Close",
                          "GREConnection.HandleWebSocketClosed",
@@ -133,9 +138,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # When a deferred type arrives with raw_json other than "{}",
   # the dashboard flags it so we know a handler can be written.
   @deferred_event_types MapSet.new([
-                          "EventGetActiveMatches",
-                          # Client startup lifecycle — only empty payloads observed
-                          "StartHook"
+                          "EventGetActiveMatches"
                         ])
 
   @known_event_types @handled_event_types
@@ -251,6 +254,69 @@ defmodule Scry2.Events.IdentifyDomainEvents do
              detail: "failed to decode/extract greToClientMessages"
            }
          ]}
+    end
+  end
+
+  # ClientToGremessage carries the player's in-game actions. Most are
+  # high-volume UI responses (PerformActionResp, SelectTargetsResp) that
+  # we skip. We extract only high-signal decisions: concede, mulligan
+  # response, and play/draw choice.
+  def translate(
+        %EventRecord{event_type: "ClientToGremessage"} = record,
+        _self_user_id,
+        match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+    match_id = match_context[:current_match_id]
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         %{"type" => msg_type} = gre_payload <- payload["payload"] || payload do
+      event =
+        case msg_type do
+          "ClientMessageType_ConcedeReq" ->
+            scope = get_in(gre_payload, ["concedeReq", "scope"])
+
+            %GameAction{
+              mtga_match_id: match_id,
+              action: "concede",
+              scope: scope,
+              occurred_at: occurred_at
+            }
+
+          "ClientMessageType_MulliganResp" ->
+            raw_decision = get_in(gre_payload, ["mulliganResp", "decision"])
+
+            decision =
+              case raw_decision do
+                "MulliganOption_AcceptHand" -> "keep"
+                "MulliganOption_Mulligan" -> "mulligan"
+                other -> other
+              end
+
+            %GameAction{
+              mtga_match_id: match_id,
+              action: "mulligan_decision",
+              decision: decision,
+              occurred_at: occurred_at
+            }
+
+          "ClientMessageType_ChooseStartingPlayerResp" ->
+            seat = get_in(gre_payload, ["chooseStartingPlayerResp", "systemSeatId"])
+
+            %GameAction{
+              mtga_match_id: match_id,
+              action: "choose_starting_player",
+              chose_play: seat == 1,
+              occurred_at: occurred_at
+            }
+
+          _ ->
+            nil
+        end
+
+      if event, do: {[event], []}, else: {[], []}
+    else
+      _ -> {[], []}
     end
   end
 
@@ -441,6 +507,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   end
 
   # EventClaimPrize response carries Course (final record) + InventoryInfo (rewards).
+  # Emits EventRewardClaimed (rich reward detail) and InventoryUpdated (economy snapshot).
   # Request format has {"id", "request"} — skip it.
   def translate(
         %EventRecord{event_type: "EventClaimPrize"} = record,
@@ -450,21 +517,32 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
-         %{"Course" => course, "InventoryInfo" => inventory_info} <- payload do
-      event_name = course["InternalEventName"]
+         %{"Course" => course, "InventoryInfo" => inventory} <- payload do
+      changes = (inventory["Changes"] || []) |> List.first() || %{}
 
-      claimed =
-        %PrizeClaimed{
-          event_name: event_name,
-          course_id: course["CourseId"],
-          wins: course["CurrentWins"],
-          losses: course["CurrentLosses"],
-          occurred_at: occurred_at
-        }
+      reward_event = %EventRewardClaimed{
+        event_name: course["InternalEventName"],
+        final_wins: course["CurrentWins"],
+        final_losses: course["CurrentLosses"],
+        gems_awarded: changes["InventoryGems"],
+        gold_awarded: changes["InventoryGold"],
+        boosters_awarded: changes["Boosters"],
+        card_pool: course["CardPool"],
+        occurred_at: occurred_at
+      }
 
-      inventory_events = build_inventory_changed(inventory_info, occurred_at)
+      inventory_event = %InventoryUpdated{
+        gold: inventory["Gold"],
+        gems: inventory["Gems"],
+        wildcards_common: inventory["WildCardCommons"],
+        wildcards_uncommon: inventory["WildCardUnCommons"],
+        wildcards_rare: inventory["WildCardRares"],
+        wildcards_mythic: inventory["WildCardMythics"],
+        vault_progress: inventory["TotalVaultProgress"],
+        occurred_at: occurred_at
+      }
 
-      {[claimed | inventory_events], []}
+      {[reward_event, inventory_event], []}
     else
       %{"request" => _} -> {[], []}
       _ -> {[], translation_warning(record, "failed to decode EventClaimPrize response")}
@@ -648,7 +726,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   end
 
   # EventGetCoursesV2 response carries all active event enrollments.
-  # Request format has {"id", "request"} — skip it.
+  # Each course with a non-empty InternalEventName becomes a separate
+  # EventCourseUpdated event. Request format has {"id", "request"} — skip it.
   def translate(
         %EventRecord{event_type: "EventGetCoursesV2"} = record,
         _self_user_id,
@@ -657,19 +736,49 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
-         %{"Courses" => courses} when is_list(courses) <- payload do
-      course_data =
-        Enum.map(courses, fn course ->
-          %{
-            course_id: course["CourseId"],
+         courses when is_list(courses) <- payload["Courses"] do
+      events =
+        courses
+        |> Enum.filter(fn course ->
+          name = course["InternalEventName"]
+          name != nil and name != ""
+        end)
+        |> Enum.map(fn course ->
+          %EventCourseUpdated{
             event_name: course["InternalEventName"],
+            current_wins: course["CurrentWins"],
+            current_losses: course["CurrentLosses"],
             current_module: course["CurrentModule"],
-            wins: course["CurrentWins"],
-            losses: course["CurrentLosses"]
+            card_pool: course["CardPool"],
+            occurred_at: occurred_at
           }
         end)
 
-      {[%ActiveCourses{courses: course_data, occurred_at: occurred_at}], []}
+      {events, []}
+    else
+      _ -> {[], []}
+    end
+  end
+
+  # StartHook fires on every MTGA client login and carries an InventoryInfo
+  # snapshot with gold, gems, wildcards, and vault progress.
+  def translate(%EventRecord{event_type: "StartHook"} = record, _self_user_id, _match_context) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Jason.decode(record.raw_json),
+         %{"InventoryInfo" => inventory} when is_map(inventory) <- payload do
+      event = %InventoryUpdated{
+        gold: inventory["Gold"],
+        gems: inventory["Gems"],
+        wildcards_common: inventory["WildCardCommons"],
+        wildcards_uncommon: inventory["WildCardUnCommons"],
+        wildcards_rare: inventory["WildCardRares"],
+        wildcards_mythic: inventory["WildCardMythics"],
+        vault_progress: inventory["TotalVaultProgress"],
+        occurred_at: occurred_at
+      }
+
+      {[event], []}
     else
       _ -> {[], []}
     end
