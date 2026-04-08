@@ -8,12 +8,16 @@ defmodule Scry2Web.OperationsLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Topics.subscribe(Topics.operations())
+      Topics.subscribe(Topics.domain_events())
+      Topics.subscribe(Topics.matches_updates())
+      Topics.subscribe(Topics.drafts_updates())
     end
 
     {:ok,
      socket
      |> assign(:operation, nil)
      |> assign(:progress, nil)
+     |> assign(:steps, [])
      |> assign(:reload_timer, nil)}
   end
 
@@ -75,10 +79,48 @@ defmodule Scry2Web.OperationsLive do
 
   @impl true
   def handle_info({:operation_started, type, metadata}, socket) do
+    projector_names = Map.get(metadata, :projectors, [])
+
+    steps =
+      if type == :reingest do
+        [%{name: "Retranslation", status: :pending, detail: nil}] ++
+          Enum.map(projector_names, &%{name: &1, status: :pending, detail: nil})
+      else
+        Enum.map(projector_names, &%{name: &1, status: :pending, detail: nil})
+      end
+
     {:noreply,
      socket
      |> assign(:operation, type)
-     |> assign(:progress, Map.put(metadata, :percent, 0))}
+     |> assign(:progress, nil)
+     |> assign(:steps, steps)}
+  end
+
+  def handle_info({:operation_progress, _type, %{phase: :retranslation} = progress}, socket) do
+    steps =
+      update_step(
+        socket.assigns.steps,
+        "Retranslation",
+        :in_progress,
+        "#{format_number(progress.processed)} / #{format_number(progress.total)} events"
+      )
+
+    {:noreply, socket |> assign(:progress, progress) |> assign(:steps, steps)}
+  end
+
+  def handle_info({:operation_progress, _type, %{phase: :projection} = progress}, socket) do
+    name = progress.current_projector
+
+    steps =
+      socket.assigns.steps
+      |> mark_prior_steps_done(name)
+      |> update_step(
+        name,
+        :in_progress,
+        "#{format_number(progress.processed)} / #{format_number(progress.total)} events"
+      )
+
+    {:noreply, socket |> assign(:progress, progress) |> assign(:steps, steps)}
   end
 
   def handle_info({:operation_progress, _type, progress}, socket) do
@@ -86,10 +128,13 @@ defmodule Scry2Web.OperationsLive do
   end
 
   def handle_info({:operation_completed, type}, socket) do
+    steps = Enum.map(socket.assigns.steps, &%{&1 | status: :done, detail: nil})
+
     {:noreply,
      socket
      |> assign(:operation, nil)
      |> assign(:progress, nil)
+     |> assign(:steps, steps)
      |> put_flash(:info, "#{operation_label(type)} completed.")
      |> load_status()}
   end
@@ -99,32 +144,53 @@ defmodule Scry2Web.OperationsLive do
      socket
      |> assign(:operation, nil)
      |> assign(:progress, nil)
+     |> assign(:steps, [])
      |> put_flash(:error, "#{operation_label(type)} failed: #{reason}")
      |> load_status()}
   end
 
-  # Task.Supervisor.async_nolink sends task results back
   def handle_info({ref, _result}, socket) when is_reference(ref) do
     Process.demonitor(ref, [:flush])
     {:noreply, socket}
   end
 
-  def handle_info({:DOWN, _ref, :process, _pid, :normal}, socket) do
-    {:noreply, socket}
-  end
+  def handle_info({:DOWN, _ref, :process, _pid, :normal}, socket), do: {:noreply, socket}
 
   def handle_info({:DOWN, _ref, :process, _pid, reason}, socket) do
     {:noreply,
      socket
      |> assign(:operation, nil)
      |> assign(:progress, nil)
+     |> assign(:steps, [])
      |> put_flash(:error, "Operation crashed: #{inspect(reason)}")
      |> load_status()}
   end
 
+  # Domain event and projection updates — debounced reload for stat cards
+  def handle_info({:domain_event, _id, _type}, socket) do
+    {:noreply, schedule_reload(socket)}
+  end
+
+  def handle_info(:reload_data, socket) do
+    {:noreply, load_status(socket)}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
 
-  # ── Helpers ─────────────────────────────────────────────────────────
+  # ── Step tracking helpers ───────────────────────────────────────────
+
+  defp update_step(steps, name, status, detail) do
+    Enum.map(steps, fn step ->
+      if step.name == name, do: %{step | status: status, detail: detail}, else: step
+    end)
+  end
+
+  defp mark_prior_steps_done(steps, current_name) do
+    {before, rest} = Enum.split_while(steps, &(&1.name != current_name))
+    Enum.map(before, &%{&1 | status: :done, detail: nil}) ++ rest
+  end
+
+  # ── Formatting helpers ─────────────────────────────────────────────
 
   defp operation_label(:reingest), do: "Reingest"
   defp operation_label(:rebuild), do: "Rebuild"
@@ -144,32 +210,16 @@ defmodule Scry2Web.OperationsLive do
 
   defp format_number(n), do: to_string(n)
 
-  defp progress_percent(%{percent: p}), do: p
+  defp progress_percent(%{percent: p}), do: min(p, 100)
   defp progress_percent(_), do: 0
 
-  defp progress_label(nil), do: ""
+  defp step_icon(:done), do: "hero-check-circle"
+  defp step_icon(:in_progress), do: "hero-arrow-path"
+  defp step_icon(:pending), do: "hero-clock"
 
-  defp progress_label(%{phase: :retranslation, processed: processed, total: total}) do
-    "Retranslating: #{format_number(processed)} / #{format_number(total)} raw events"
-  end
-
-  defp progress_label(%{
-         phase: :projection,
-         current_projector: name,
-         projector_index: i,
-         projector_total: total
-       }) do
-    "Rebuilding #{name} (#{i}/#{total})"
-  end
-
-  defp progress_label(%{projectors: names}) do
-    "Starting: #{Enum.join(names, ", ")}"
-  end
-
-  defp progress_label(_), do: "Working..."
-
-  defp watermark_percent(_watermark, 0), do: 100
-  defp watermark_percent(watermark, max_id), do: round(watermark / max_id * 100)
+  defp step_color(:done), do: "text-success"
+  defp step_color(:in_progress), do: "text-info"
+  defp step_color(:pending), do: "text-base-content/30"
 
   # ── Render ──────────────────────────────────────────────────────────
 
@@ -192,45 +242,103 @@ defmodule Scry2Web.OperationsLive do
         />
       </section>
 
-      <%!-- Active operation banner --%>
-      <section :if={@operation} class="alert alert-info">
-        <.icon name="hero-arrow-path" class="size-5 animate-spin" />
-        <div class="flex-1">
-          <p class="font-semibold">{operation_label(@operation)} in progress</p>
-          <p class="text-sm opacity-80">{progress_label(@progress)}</p>
+      <%!-- Operation progress (shown when running) --%>
+      <section :if={@operation} class="card bg-base-200">
+        <div class="card-body p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <.icon name="hero-arrow-path" class="size-5 text-info animate-spin" />
+            <h2 class="card-title text-base">{operation_label(@operation)} in progress</h2>
+          </div>
+
           <progress
-            class="progress progress-info w-full mt-2"
+            class="progress progress-info w-full mb-4"
             value={progress_percent(@progress)}
             max="100"
           >
           </progress>
+
+          <ul class="space-y-2">
+            <li :for={step <- @steps} class="flex items-center gap-3">
+              <.icon
+                name={step_icon(step.status)}
+                class={[
+                  "size-5",
+                  step_color(step.status),
+                  step.status == :in_progress && "animate-spin"
+                ]}
+              />
+              <span class={[
+                "font-mono text-sm",
+                if(step.status == :pending, do: "opacity-40", else: "")
+              ]}>
+                {step.name}
+              </span>
+              <span :if={step.detail} class="text-xs text-base-content/60">
+                {step.detail}
+              </span>
+            </li>
+          </ul>
         </div>
       </section>
 
-      <%!-- Bulk actions --%>
-      <section class="flex flex-wrap gap-3">
-        <button
-          phx-click="rebuild_all"
-          disabled={busy?(assigns)}
-          class="btn btn-primary btn-sm"
-        >
-          <.icon name="hero-arrow-path" class="size-4" /> Rebuild All Projections
-        </button>
-        <button
-          phx-click="catch_up_all"
-          disabled={busy?(assigns)}
-          class="btn btn-soft btn-sm"
-        >
-          <.icon name="hero-forward" class="size-4" /> Catch Up All
-        </button>
-        <button
-          phx-click="reingest"
-          disabled={busy?(assigns)}
-          data-confirm="This will clear all domain events and re-translate from raw MTGA events. Continue?"
-          class="btn btn-warning btn-sm"
-        >
-          <.icon name="hero-arrow-uturn-left" class="size-4" /> Reingest from MTGA Events
-        </button>
+      <%!-- Action cards --%>
+      <section class="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div class="card bg-base-200">
+          <div class="card-body p-5">
+            <h3 class="card-title text-base">
+              <.icon name="hero-arrow-path" class="size-5" /> Rebuild All Projections
+            </h3>
+            <p class="text-sm text-base-content/60">
+              Truncates all projection tables and replays every domain event from scratch.
+              Use after changing projector logic or to fix corrupted state.
+            </p>
+            <div class="card-actions justify-end mt-2">
+              <button phx-click="rebuild_all" disabled={busy?(assigns)} class="btn btn-primary btn-sm">
+                Rebuild All
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card bg-base-200">
+          <div class="card-body p-5">
+            <h3 class="card-title text-base">
+              <.icon name="hero-forward" class="size-5" /> Catch Up All
+            </h3>
+            <p class="text-sm text-base-content/60">
+              Resumes each projector from its last watermark without truncating.
+              Use after a crash or restart to process missed events.
+            </p>
+            <div class="card-actions justify-end mt-2">
+              <button phx-click="catch_up_all" disabled={busy?(assigns)} class="btn btn-soft btn-sm">
+                Catch Up
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card bg-base-200">
+          <div class="card-body p-5">
+            <h3 class="card-title text-base">
+              <.icon name="hero-arrow-uturn-left" class="size-5 text-warning" />
+              Reingest from MTGA Events
+            </h3>
+            <p class="text-sm text-base-content/60">
+              Clears all domain events and re-translates from the raw MTGA event store.
+              Then rebuilds all projections. Use after changing the event translator.
+            </p>
+            <div class="card-actions justify-end mt-2">
+              <button
+                phx-click="reingest"
+                disabled={busy?(assigns)}
+                data-confirm="This will clear all domain events and re-translate from raw MTGA events. Continue?"
+                class="btn btn-warning btn-sm"
+              >
+                Reingest
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <%!-- Projections table --%>
@@ -242,9 +350,8 @@ defmodule Scry2Web.OperationsLive do
               <tr>
                 <th>Projector</th>
                 <th>Event Types</th>
-                <th>Watermark</th>
-                <th>Lag</th>
-                <th>Progress</th>
+                <th>Status</th>
+                <th class="text-right">Rows</th>
                 <th class="text-right">Actions</th>
               </tr>
             </thead>
@@ -261,27 +368,16 @@ defmodule Scry2Web.OperationsLive do
                     </span>
                   </div>
                 </td>
-                <td class="font-mono text-sm">
-                  {format_number(proj.watermark)} / {format_number(proj.max_event_id)}
-                </td>
                 <td>
-                  <span class={[
-                    "font-mono text-sm",
-                    if(proj.lag > 0, do: "text-warning", else: "text-success")
-                  ]}>
-                    {format_number(proj.lag)}
+                  <span :if={proj.caught_up} class="badge badge-sm badge-success gap-1">
+                    <.icon name="hero-check-circle-mini" class="size-3" /> Caught up
+                  </span>
+                  <span :if={!proj.caught_up} class="badge badge-sm badge-warning gap-1">
+                    <.icon name="hero-exclamation-triangle-mini" class="size-3" /> Behind
                   </span>
                 </td>
-                <td>
-                  <progress
-                    class={[
-                      "progress w-24",
-                      if(proj.lag == 0, do: "progress-success", else: "progress-warning")
-                    ]}
-                    value={watermark_percent(proj.watermark, proj.max_event_id)}
-                    max="100"
-                  >
-                  </progress>
+                <td class="text-right font-mono text-sm">
+                  {format_number(proj.row_count)}
                 </td>
                 <td class="text-right">
                   <div class="flex gap-1 justify-end">

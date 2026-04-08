@@ -25,13 +25,20 @@ defmodule Scry2.Events.Projector do
   The `use` macro provides:
   - `start_link/1`, `init/1` (subscribes to PubSub)
   - `handle_info/2` (dispatches claimed events to `project/1`, updates watermark)
-  - `rebuild!/0` (resets watermark, truncates tables, replays from event store)
-  - `catch_up!/0` (replays from watermark without truncating)
+  - `rebuild!/1` (resets watermark, truncates tables, replays from event store)
+  - `catch_up!/1` (replays from watermark without truncating)
   - `claimed_slugs/0` (returns the list, useful for introspection)
   - `projector_name/0` (short name for logging and watermark keys)
 
   The module must define `defp project(event)` clauses for each
   claimed event type, plus a catch-all `defp project(_), do: :ok`.
+
+  ## Progress callbacks
+
+  `rebuild!/1` and `catch_up!/1` accept an `:on_progress` option — a
+  2-arity function `(processed, total) -> any()`. Called after each
+  batch (default 500 events). The total is counted upfront; if new
+  events arrive during replay the progress bar caps at 100%.
   """
 
   defmacro __using__(opts) do
@@ -64,34 +71,57 @@ defmodule Scry2.Events.Projector do
       @doc "Returns the short name used for logging and watermark keys."
       def projector_name, do: @projector_name
 
+      @doc "Returns the total row count across all projection tables owned by this projector."
+      def row_count do
+        Enum.reduce(@projection_tables, 0, fn schema, acc ->
+          acc + Scry2.Repo.aggregate(schema, :count)
+        end)
+      end
+
       @doc """
       Resets watermark, truncates all projection tables, and replays
       claimed events from the domain event store in id order.
       Cursor-based batching (ADR-029).
 
+      Accepts `:on_progress` — a `(processed, total) -> any()` callback
+      fired after each batch for real-time progress tracking.
+
       Call from any process — does not go through the GenServer.
       """
-      def rebuild! do
-        Log.info(:ingester, "#{@projector_name}: rebuilding from event store")
+      def rebuild!(opts \\ []) do
+        on_progress = Keyword.get(opts, :on_progress)
+        total = Events.count_for_types(@claimed_slugs)
+
+        Log.info(:ingester, "#{@projector_name}: rebuilding #{total} events from event store")
 
         Events.put_watermark!(@projector_name, 0)
 
         # Truncate projection tables (reverse order for FK safety)
         Enum.each(Enum.reverse(@projection_tables), &Scry2.Repo.delete_all/1)
 
-        Events.replay_by_types(@claimed_slugs, fn event ->
-          try do
-            project(event)
-            event_id = Map.get(event, :id)
-            if event_id, do: Events.put_watermark!(@projector_name, event_id)
-          rescue
-            error ->
-              Log.warning(
-                :ingester,
-                "#{@projector_name} rebuild skip: #{inspect(error)}"
-              )
+        Events.replay_by_types(
+          @claimed_slugs,
+          fn event ->
+            try do
+              project(event)
+            rescue
+              error ->
+                Log.warning(
+                  :ingester,
+                  "#{@projector_name} rebuild skip: #{inspect(error)}"
+                )
+            end
+          end,
+          on_batch: fn last_id, processed ->
+            Events.put_watermark!(@projector_name, last_id)
+            if on_progress, do: on_progress.(min(processed, total), total)
           end
-        end)
+        )
+
+        # Final watermark for any remaining events
+        max_id = Events.max_event_id_for_types(@claimed_slugs)
+        if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
+        if on_progress, do: on_progress.(total, total)
 
         Log.info(:ingester, "#{@projector_name}: rebuild complete")
         :ok
@@ -100,18 +130,21 @@ defmodule Scry2.Events.Projector do
       @doc """
       Resumes projection from the watermark without truncating tables.
       Replays only events after the last successfully processed id.
+
+      Accepts `:on_progress` — same callback as `rebuild!/1`.
       """
-      def catch_up! do
+      def catch_up!(opts \\ []) do
+        on_progress = Keyword.get(opts, :on_progress)
         cursor = Events.get_watermark(@projector_name)
-        Log.info(:ingester, "#{@projector_name}: catching up from event id=#{cursor}")
+        total = Events.count_for_types_since(@claimed_slugs, cursor)
+
+        Log.info(:ingester, "#{@projector_name}: catching up #{total} events from id=#{cursor}")
 
         Events.replay_by_types(
           @claimed_slugs,
           fn event ->
             try do
               project(event)
-              event_id = Map.get(event, :id)
-              if event_id, do: Events.put_watermark!(@projector_name, event_id)
             rescue
               error ->
                 Log.warning(
@@ -120,8 +153,16 @@ defmodule Scry2.Events.Projector do
                 )
             end
           end,
-          cursor: cursor
+          cursor: cursor,
+          on_batch: fn last_id, processed ->
+            Events.put_watermark!(@projector_name, last_id)
+            if on_progress, do: on_progress.(min(processed, total), total)
+          end
         )
+
+        max_id = Events.max_event_id_for_types(@claimed_slugs)
+        if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
+        if on_progress, do: on_progress.(total, total)
 
         Log.info(:ingester, "#{@projector_name}: catch-up complete")
         :ok

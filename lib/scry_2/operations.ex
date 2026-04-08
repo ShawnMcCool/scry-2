@@ -43,7 +43,8 @@ defmodule Scry2.Operations do
   Phase 2: Rebuilds all projections from the fresh domain event log.
   """
   def start_reingest! do
-    broadcast_started(:reingest, %{})
+    names = Enum.map(ProjectorRegistry.all(), & &1.projector_name())
+    broadcast_started(:reingest, %{projectors: names})
 
     Task.Supervisor.async_nolink(Scry2.TaskSupervisor, fn ->
       try do
@@ -157,40 +158,50 @@ defmodule Scry2.Operations do
   end
 
   defp rebuild_with_progress(projector_modules) do
-    total = length(projector_modules)
+    projector_count = length(projector_modules)
 
     projector_modules
     |> Enum.with_index(1)
     |> Enum.each(fn {mod, index} ->
       name = mod.projector_name()
 
-      broadcast_progress(:rebuild, %{
-        phase: :projection,
-        current_projector: name,
-        projector_index: index,
-        projector_total: total
-      })
-
-      mod.rebuild!()
+      mod.rebuild!(
+        on_progress: fn processed, total ->
+          broadcast_progress(:rebuild, %{
+            phase: :projection,
+            current_projector: name,
+            projector_index: index,
+            projector_total: projector_count,
+            processed: processed,
+            total: total,
+            percent: percent(processed, total)
+          })
+        end
+      )
     end)
   end
 
   defp catch_up_with_progress(projector_modules) do
-    total = length(projector_modules)
+    projector_count = length(projector_modules)
 
     projector_modules
     |> Enum.with_index(1)
     |> Enum.each(fn {mod, index} ->
       name = mod.projector_name()
 
-      broadcast_progress(:catch_up, %{
-        phase: :projection,
-        current_projector: name,
-        projector_index: index,
-        projector_total: total
-      })
-
-      mod.catch_up!()
+      mod.catch_up!(
+        on_progress: fn processed, total ->
+          broadcast_progress(:catch_up, %{
+            phase: :projection,
+            current_projector: name,
+            projector_index: index,
+            projector_total: projector_count,
+            processed: processed,
+            total: total,
+            percent: percent(processed, total)
+          })
+        end
+      )
     end)
   end
 
