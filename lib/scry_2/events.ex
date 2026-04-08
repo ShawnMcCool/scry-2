@@ -164,10 +164,11 @@ defmodule Scry2.Events do
       when is_list(type_slugs) and is_function(fun, 1) do
     batch_size = Keyword.get(opts, :batch_size, 500)
     cursor = Keyword.get(opts, :cursor, 0)
-    do_replay_by_types(type_slugs, fun, batch_size, cursor)
+    on_batch = Keyword.get(opts, :on_batch)
+    do_replay_by_types(type_slugs, fun, batch_size, cursor, on_batch, 0)
   end
 
-  defp do_replay_by_types(type_slugs, fun, batch_size, cursor) do
+  defp do_replay_by_types(type_slugs, fun, batch_size, cursor, on_batch, processed) do
     batch =
       EventRecord
       |> where([e], e.event_type in ^type_slugs and e.id > ^cursor)
@@ -185,7 +186,11 @@ defmodule Scry2.Events do
         end)
 
         last_id = List.last(records).id
-        do_replay_by_types(type_slugs, fun, batch_size, last_id)
+        new_processed = processed + length(records)
+
+        if on_batch, do: on_batch.(last_id, new_processed)
+
+        do_replay_by_types(type_slugs, fun, batch_size, last_id, on_batch, new_processed)
     end
   end
 
@@ -349,6 +354,36 @@ defmodule Scry2.Events do
   @spec max_event_id() :: non_neg_integer()
   def max_event_id do
     Repo.aggregate(EventRecord, :max, :id) || 0
+  end
+
+  @doc "Returns the highest domain event id for the given event type slugs, or 0 if none."
+  @spec max_event_id_for_types([String.t()]) :: non_neg_integer()
+  def max_event_id_for_types([]), do: 0
+
+  def max_event_id_for_types(type_slugs) do
+    EventRecord
+    |> where([e], e.event_type in ^type_slugs)
+    |> Repo.aggregate(:max, :id) || 0
+  end
+
+  @doc "Returns the count of domain events matching the given type slugs."
+  @spec count_for_types([String.t()]) :: non_neg_integer()
+  def count_for_types([]), do: 0
+
+  def count_for_types(type_slugs) do
+    EventRecord
+    |> where([e], e.event_type in ^type_slugs)
+    |> Repo.aggregate(:count)
+  end
+
+  @doc "Returns the count of domain events matching the given type slugs with id > cursor."
+  @spec count_for_types_since([String.t()], non_neg_integer()) :: non_neg_integer()
+  def count_for_types_since([], _cursor), do: 0
+
+  def count_for_types_since(type_slugs, cursor) do
+    EventRecord
+    |> where([e], e.event_type in ^type_slugs and e.id > ^cursor)
+    |> Repo.aggregate(:count)
   end
 
   @doc """
