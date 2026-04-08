@@ -1,19 +1,17 @@
-defmodule Scry2.Events.Economy.InventoryUpdated do
+defmodule Scry2.Events.Economy.InventorySnapshot do
   @moduledoc """
-  Domain event — snapshot of the player's economy and collection state.
+  Domain event — standalone inventory state pushed by MTGA outside of
+  event join/claim contexts. Captures the full economy state including
+  tokens and boosters.
 
   ## Slug
 
-  `"inventory_updated"` — stable, do not rename.
+  `"inventory_snapshot"` — stable, do not rename.
 
   ## Source
 
-  Produced from `StartHook` raw events, which fire on every MTGA login.
-  The `InventoryInfo` section carries gold, gems, wildcards, and vault
-  progress. Tracking these over time reveals economy trends.
-
-  Also produced from `EventClaimPrize` events which update inventory
-  after claiming event rewards.
+  Produced from `DTO_InventoryInfo` events, which MTGA pushes on
+  inventory changes outside of event join/claim flows.
   """
 
   @enforce_keys [:occurred_at]
@@ -21,32 +19,36 @@ defmodule Scry2.Events.Economy.InventoryUpdated do
     :player_id,
     :gold,
     :gems,
+    :vault_progress,
     :wildcards_common,
     :wildcards_uncommon,
     :wildcards_rare,
     :wildcards_mythic,
-    :vault_progress,
     :draft_tokens,
     :sealed_tokens,
+    :boosters,
     :occurred_at
   ]
 
+  @type booster :: %{set_code: String.t(), count: non_neg_integer()}
+
   @type t :: %__MODULE__{
-          player_id: integer() | nil,
+          player_id: String.t() | nil,
           gold: non_neg_integer() | nil,
           gems: non_neg_integer() | nil,
+          vault_progress: number() | nil,
           wildcards_common: non_neg_integer() | nil,
           wildcards_uncommon: non_neg_integer() | nil,
           wildcards_rare: non_neg_integer() | nil,
           wildcards_mythic: non_neg_integer() | nil,
-          vault_progress: number() | nil,
           draft_tokens: non_neg_integer() | nil,
           sealed_tokens: non_neg_integer() | nil,
+          boosters: [booster()] | nil,
           occurred_at: DateTime.t()
         }
 
   defimpl Scry2.Events.Event do
-    def type_slug(_), do: "inventory_updated"
+    def type_slug(_), do: "inventory_snapshot"
     def mtga_timestamp(%{occurred_at: ts}), do: ts
   end
 end

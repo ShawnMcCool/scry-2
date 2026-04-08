@@ -18,11 +18,20 @@ defmodule Scry2.TestFactory do
   alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Events
   alias Scry2.Events.Deck.{DeckSelected, DeckSubmitted}
-  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
+
+  alias Scry2.Events.Draft.{
+    DraftCompleted,
+    DraftPickMade,
+    DraftStarted,
+    HumanDraftPackOffered,
+    HumanDraftPickMade
+  }
+
+  alias Scry2.Events.Economy.{CollectionUpdated, InventorySnapshot, InventoryUpdated}
   alias Scry2.Events.Gameplay.{MulliganOffered, StartingPlayerChosen}
   alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
-  alias Scry2.Events.Session.SessionStarted
-  alias Scry2.Events.Progression.MasteryProgress
+  alias Scry2.Events.Progression.{MasteryProgress, RankSnapshot}
+  alias Scry2.Events.Session.{SessionDisconnected, SessionStarted}
   alias Scry2.Matches
   alias Scry2.Matches.{DeckSubmission, Game, Match}
   alias Scry2.MtgaLogIngestion
@@ -218,6 +227,10 @@ defmodule Scry2.TestFactory do
       opponent_user_id: nil,
       platform: nil,
       opponent_platform: nil,
+      opponent_rank_class: nil,
+      opponent_rank_tier: nil,
+      opponent_leaderboard_percentile: nil,
+      opponent_leaderboard_placement: nil,
       occurred_at: DateTime.utc_now(:second),
       player_rank: "Gold 1",
       format: "premier_draft",
@@ -249,6 +262,7 @@ defmodule Scry2.TestFactory do
       on_play: true,
       won: true,
       num_mulligans: 0,
+      opponent_num_mulligans: 0,
       num_turns: 9,
       self_life_total: 20,
       opponent_life_total: 0,
@@ -313,10 +327,51 @@ defmodule Scry2.TestFactory do
       pick_number: 1,
       picked_arena_id: 91_234,
       pack_arena_ids: [91_234, 91_235, 91_236],
+      auto_pick: false,
+      time_remaining: nil,
       occurred_at: DateTime.utc_now(:second)
     }
 
     struct(DraftPickMade, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_human_draft_pack_offered(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_draft_id: "test-draft-" <> random_suffix(),
+      pack_number: 1,
+      pick_number: 2,
+      pack_arena_ids: [91_234, 91_235, 91_236, 91_237, 91_238],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(HumanDraftPackOffered, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_human_draft_pick_made(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_draft_id: "test-draft-" <> random_suffix(),
+      pack_number: 1,
+      pick_number: 1,
+      picked_arena_ids: [91_234],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(HumanDraftPickMade, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_draft_completed(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_draft_id: "test-draft-" <> random_suffix(),
+      event_name: "PremierDraft_FDN_20260401",
+      is_bot_draft: false,
+      card_pool_arena_ids: [91_234, 91_235, 91_236],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(DraftCompleted, Map.merge(defaults, Map.new(attrs)))
   end
 
   def build_session_started(attrs \\ %{}) do
@@ -329,6 +384,15 @@ defmodule Scry2.TestFactory do
     }
 
     struct(SessionStarted, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_session_disconnected(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(SessionDisconnected, Map.merge(defaults, Map.new(attrs)))
   end
 
   def build_die_rolled(attrs \\ %{}) do
@@ -366,6 +430,77 @@ defmodule Scry2.TestFactory do
     }
 
     struct(DeckSelected, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_rank_snapshot(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      constructed_class: "Gold",
+      constructed_level: 2,
+      constructed_step: 3,
+      constructed_matches_won: 15,
+      constructed_matches_lost: 10,
+      constructed_percentile: nil,
+      constructed_leaderboard_placement: nil,
+      limited_class: "Silver",
+      limited_level: 1,
+      limited_step: 0,
+      limited_matches_won: 5,
+      limited_matches_lost: 3,
+      limited_percentile: nil,
+      limited_leaderboard_placement: nil,
+      season_ordinal: 88,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(RankSnapshot, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_inventory_updated(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      gold: 5000,
+      gems: 1200,
+      wildcards_common: 25,
+      wildcards_uncommon: 18,
+      wildcards_rare: 6,
+      wildcards_mythic: 3,
+      vault_progress: 42.5,
+      draft_tokens: 0,
+      sealed_tokens: 0,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(InventoryUpdated, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_collection_updated(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      card_counts: %{91_234 => 4, 91_235 => 2, 91_236 => 1},
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(CollectionUpdated, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_inventory_snapshot(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      gold: 5000,
+      gems: 1200,
+      vault_progress: 42.5,
+      wildcards_common: 25,
+      wildcards_uncommon: 18,
+      wildcards_rare: 6,
+      wildcards_mythic: 3,
+      draft_tokens: 0,
+      sealed_tokens: 0,
+      boosters: [%{set_code: "FDN", count: 3}],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(InventorySnapshot, Map.merge(defaults, Map.new(attrs)))
   end
 
   # ── create_* domain events (persisted to event store) ──────────────────
@@ -487,11 +622,19 @@ defmodule Scry2.TestFactory do
               DeckSelected,
               DeckSubmission,
               DieRolled,
+              CollectionUpdated,
+              DraftCompleted,
               EventRecord,
+              HumanDraftPackOffered,
+              HumanDraftPickMade,
+              InventorySnapshot,
+              InventoryUpdated,
               MasteryProgress,
               MtgaCard,
               Players,
+              RankSnapshot,
               ScryfallCard,
+              SessionDisconnected,
               SessionStarted,
               StartingPlayerChosen
             ]}
