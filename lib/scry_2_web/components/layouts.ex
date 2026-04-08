@@ -53,6 +53,7 @@ defmodule Scry2Web.Layouts do
           <li><.link navigate={~p"/events"}>Events</.link></li>
           <li><.link navigate={~p"/mulligans"}>Mulligans</.link></li>
           <li><.link navigate={~p"/settings"}>Settings</.link></li>
+          <li><.link navigate={~p"/operations"}>Ops</.link></li>
           <li>
             <.player_selector players={@players} active_player_id={@active_player_id} />
           </li>

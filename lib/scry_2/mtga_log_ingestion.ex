@@ -137,6 +137,17 @@ defmodule Scry2.MtgaLogIngestion do
     |> Map.new()
   end
 
+  @doc "Returns the total number of raw events."
+  def count_all do
+    Repo.aggregate(EventRecord, :count)
+  end
+
+  @doc "Returns the count of raw events not yet processed."
+  def count_unprocessed do
+    from(r in EventRecord, where: r.processed == false)
+    |> Repo.aggregate(:count)
+  end
+
   @doc "Returns the count of events with a non-nil processing_error."
   def count_errors do
     from(r in EventRecord, where: not is_nil(r.processing_error))

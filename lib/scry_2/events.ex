@@ -430,10 +430,7 @@ defmodule Scry2.Events do
     require Scry2.Log, as: Log
     Log.info(:ingester, "replay_projections: rebuilding all projections from event store")
 
-    Scry2.Matches.UpdateFromEvent.rebuild!()
-    Scry2.Drafts.UpdateFromEvent.rebuild!()
-    Scry2.Mulligans.UpdateFromEvent.rebuild!()
-    Scry2.MatchListing.UpdateFromEvent.rebuild!()
+    Enum.each(Scry2.Events.ProjectorRegistry.all(), & &1.rebuild!())
 
     Log.info(:ingester, "replay_projections: all projections rebuilt")
     :ok
@@ -451,10 +448,7 @@ defmodule Scry2.Events do
     require Scry2.Log, as: Log
     Log.info(:ingester, "catch_up_projections: resuming all projections from watermarks")
 
-    Scry2.Matches.UpdateFromEvent.catch_up!()
-    Scry2.Drafts.UpdateFromEvent.catch_up!()
-    Scry2.Mulligans.UpdateFromEvent.catch_up!()
-    Scry2.MatchListing.UpdateFromEvent.catch_up!()
+    Enum.each(Scry2.Events.ProjectorRegistry.all(), & &1.catch_up!())
 
     Log.info(:ingester, "catch_up_projections: all projections caught up")
     :ok
@@ -507,10 +501,7 @@ defmodule Scry2.Events do
     Repo.delete_all(EventRecord)
 
     # Each projector clears its own tables (ADR-029)
-    Scry2.Matches.UpdateFromEvent.rebuild!()
-    Scry2.Drafts.UpdateFromEvent.rebuild!()
-    Scry2.Mulligans.UpdateFromEvent.rebuild!()
-    Scry2.MatchListing.UpdateFromEvent.rebuild!()
+    Enum.each(Scry2.Events.ProjectorRegistry.all(), & &1.rebuild!())
 
     # Re-mark raw events as unprocessed so replay picks them up
     Scry2.MtgaLogIngestion.EventRecord
