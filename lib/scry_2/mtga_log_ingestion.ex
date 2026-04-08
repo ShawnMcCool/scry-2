@@ -65,6 +65,14 @@ defmodule Scry2.MtgaLogIngestion do
     end
   end
 
+  @doc "Returns unprocessed raw events with id > last_raw_event_id, ordered by id."
+  def list_unprocessed_after(last_raw_event_id) do
+    EventRecord
+    |> where([e], e.id > ^last_raw_event_id and e.processed == false)
+    |> order_by([e], asc: e.id)
+    |> Repo.all()
+  end
+
   @doc """
   Returns unprocessed events, oldest first, optionally filtered to a set
   of event types. Used by the ingester GenServers to drain the backlog.

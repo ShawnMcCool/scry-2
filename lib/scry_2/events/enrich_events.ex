@@ -28,12 +28,12 @@ defmodule Scry2.Events.EnrichEvents do
 
     rank =
       case format_type do
-        "Limited" -> state[:limited_rank]
-        "Constructed" -> state[:constructed_rank]
-        _ -> state[:constructed_rank] || state[:limited_rank]
+        "Limited" -> state.session.limited_rank
+        "Constructed" -> state.session.constructed_rank
+        _ -> state.session.constructed_rank || state.session.limited_rank
       end
 
-    deck_name = get_in(state, [:match_context, :last_deck_name])
+    deck_name = state.match.last_deck_name
 
     %{event | player_rank: rank, format: format, format_type: format_type, deck_name: deck_name}
   end
@@ -79,7 +79,7 @@ defmodule Scry2.Events.EnrichEvents do
   end
 
   defp enrich_one(%GameCompleted{} = event, state) do
-    on_play = get_in(state, [:match_context, :on_play_for_current_game])
+    on_play = state.match.on_play_for_current_game
     %{event | on_play: event.on_play || on_play}
   end
 
