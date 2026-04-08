@@ -406,6 +406,9 @@ defmodule Scry2.Events do
     require Scry2.Log, as: Log
     Log.info(:ingester, "reingest: starting full reingest from raw events")
 
+    # 0. Reset ingestion state snapshot
+    Repo.delete_all(Scry2.Events.IngestionState.Snapshot)
+
     # 1. Clear domain events (projections are cleared by rebuild! later)
     Repo.delete_all(EventRecord)
 

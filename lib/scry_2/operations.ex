@@ -114,7 +114,8 @@ defmodule Scry2.Operations do
   defp reingest_with_progress do
     total_raw = MtgaLogIngestion.count_all()
 
-    # Phase 1: Clear domain events and re-mark raw events
+    # Phase 1: Clear ingestion state, domain events, and re-mark raw events
+    Scry2.Repo.delete_all(Scry2.Events.IngestionState.Snapshot)
     Scry2.Repo.delete_all(Events.EventRecord)
 
     Scry2.MtgaLogIngestion.EventRecord
