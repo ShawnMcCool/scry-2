@@ -76,7 +76,8 @@ defmodule Scry2.Events.IngestRawEvents do
          current_match_id: nil,
          current_game_number: nil,
          last_hand_game_objects: %{},
-         last_deck_name: nil
+         last_deck_name: nil,
+         on_play_for_current_game: nil
        },
        constructed_rank: nil,
        limited_rank: nil
@@ -204,6 +205,12 @@ defmodule Scry2.Events.IngestRawEvents do
       %Scry2.Events.Match.MatchCreated{mtga_match_id: match_id}, acc ->
         put_in(acc, [:match_context, :current_match_id], match_id)
 
+      %Scry2.Events.Match.DieRolled{self_goes_first: on_play}, acc ->
+        put_in(acc, [:match_context, :on_play_for_current_game], on_play)
+
+      %Scry2.Events.Gameplay.StartingPlayerChosen{chose_play: chose_play}, acc ->
+        put_in(acc, [:match_context, :on_play_for_current_game], chose_play)
+
       %Scry2.Events.Deck.DeckSubmitted{}, acc ->
         current_game = get_in(acc, [:match_context, :current_game_number]) || 0
         put_in(acc, [:match_context, :current_game_number], current_game + 1)
@@ -215,7 +222,8 @@ defmodule Scry2.Events.IngestRawEvents do
               current_match_id: nil,
               current_game_number: nil,
               last_hand_game_objects: %{},
-              last_deck_name: nil
+              last_deck_name: nil,
+              on_play_for_current_game: nil
             }
         }
 

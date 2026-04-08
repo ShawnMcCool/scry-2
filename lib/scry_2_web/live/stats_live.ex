@@ -156,6 +156,28 @@ defmodule Scry2Web.StatsLive do
             </table>
           </div>
         </section>
+
+        <%!-- Play vs Draw breakdown --%>
+        <section :if={@stats.by_on_play != []}>
+          <h2 class="text-lg font-semibold mb-3">Play vs Draw</h2>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div :for={row <- @stats.by_on_play} class="card bg-base-200">
+              <div class="card-body p-4">
+                <p class="text-xs uppercase text-base-content/60">
+                  {if row.key, do: "On the Play", else: "On the Draw"}
+                </p>
+                <div class="flex items-baseline gap-3">
+                  <span class={["text-2xl font-semibold", StatsHelpers.win_rate_class(row.win_rate)]}>
+                    {StatsHelpers.format_win_rate(row.win_rate)}
+                  </span>
+                  <span class="text-sm text-base-content/60">
+                    {StatsHelpers.record(row.wins, row.losses)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
     </Layouts.app>
     """

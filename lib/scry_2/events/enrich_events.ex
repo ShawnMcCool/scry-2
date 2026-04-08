@@ -14,7 +14,7 @@ defmodule Scry2.Events.EnrichEvents do
   alias Scry2.Cards
   alias Scry2.Events.Deck.DeckSubmitted
   alias Scry2.Events.Gameplay.MulliganOffered
-  alias Scry2.Events.Match.MatchCreated
+  alias Scry2.Events.Match.{GameCompleted, MatchCreated}
 
   @doc """
   Enriches a list of domain events using the current ingestion state.
@@ -76,6 +76,11 @@ defmodule Scry2.Events.EnrichEvents do
         color_distribution: color_distribution,
         card_names: card_names
     }
+  end
+
+  defp enrich_one(%GameCompleted{} = event, state) do
+    on_play = get_in(state, [:match_context, :on_play_for_current_game])
+    %{event | on_play: event.on_play || on_play}
   end
 
   defp enrich_one(%DeckSubmitted{main_deck: main_deck} = event, _state)
