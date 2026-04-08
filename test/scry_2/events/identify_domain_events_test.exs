@@ -107,6 +107,23 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     end
   end
 
+  describe "translate/3 — GreToClientEvent with match context map" do
+    test "uses current_match_id from match context when event has no match id" do
+      record = record_from_fixture("gre_to_client_event_connect_resp.log")
+
+      # IngestRawEvents converts IngestionState.Match to a plain map before
+      # calling translate/3, so match_context is always an atom-keyed map.
+      match_context = %{
+        current_match_id: "008b1926-09a8-40b4-872d-fa987588740c",
+        last_hand_game_objects: %{}
+      }
+
+      {events, []} = IdentifyDomainEvents.translate(record, @self_user_id, match_context)
+
+      assert Enum.any?(events, &match?(%DeckSubmitted{}, &1))
+    end
+  end
+
   describe "translate/2 — GreToClientEvent, ConnectResp batch" do
     test "produces DeckSubmitted + DieRolled from the ConnectResp fixture" do
       record = record_from_fixture("gre_to_client_event_connect_resp.log")
