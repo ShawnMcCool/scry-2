@@ -2,14 +2,13 @@ defmodule Scry2Web.MatchesLive do
   @moduledoc """
   LiveView for the matches list and match detail pages.
 
-  List view (`:index`) uses the `MatchListing` projection for precomputed
-  display data — opponent info, game score, deck colors, duration. Detail
-  view (`:show`) uses `Matches.get_match_with_associations/1` which loads
-  the full match with per-game records.
+  List view (`:index`) queries the `Matches` context directly — all
+  display data (opponent info, game score, deck colors, duration) is
+  precomputed on the match row by the projector. Detail view (`:show`)
+  uses `Matches.get_match_with_associations/1` for per-game records.
   """
   use Scry2Web, :live_view
 
-  alias Scry2.MatchListing
   alias Scry2.Matches
   alias Scry2.Topics
   alias Scry2Web.MatchesHelpers
@@ -32,7 +31,7 @@ defmodule Scry2Web.MatchesLive do
 
     {:noreply,
      assign(socket,
-       matches: MatchListing.list_matches(limit: 100, player_id: player_id),
+       matches: Matches.list_matches(limit: 100, player_id: player_id),
        match: nil
      )}
   end
@@ -47,7 +46,7 @@ defmodule Scry2Web.MatchesLive do
 
     {:noreply,
      assign(socket,
-       matches: MatchListing.list_matches(limit: 100, player_id: player_id),
+       matches: Matches.list_matches(limit: 100, player_id: player_id),
        reload_timer: nil
      )}
   end

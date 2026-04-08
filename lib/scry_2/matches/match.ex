@@ -14,6 +14,13 @@ defmodule Scry2.Matches.Match do
     field :ended_at, :utc_datetime
     field :won, :boolean
     field :num_games, :integer
+    field :on_play, :boolean
+    field :total_mulligans, :integer, default: 0
+    field :total_turns, :integer, default: 0
+    field :deck_colors, :string, default: ""
+    field :duration_seconds, :integer
+    field :format_type, :string
+    field :game_results, :map
     field :raw_event_ids, :map
 
     has_many :games, Scry2.Matches.Game
@@ -36,6 +43,13 @@ defmodule Scry2.Matches.Match do
       :ended_at,
       :won,
       :num_games,
+      :on_play,
+      :total_mulligans,
+      :total_turns,
+      :deck_colors,
+      :duration_seconds,
+      :format_type,
+      :game_results,
       :raw_event_ids
     ])
     |> validate_required([:mtga_match_id])
