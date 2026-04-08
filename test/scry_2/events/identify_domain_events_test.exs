@@ -2,7 +2,14 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   use ExUnit.Case, async: true
 
   alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
-  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
+
+  alias Scry2.Events.Draft.{
+    DraftPickMade,
+    DraftStarted,
+    HumanDraftPackOffered,
+    HumanDraftPickMade
+  }
+
   alias Scry2.Events.Economy.{InventoryChanged, InventoryUpdated}
   alias Scry2.Events.Event.{EventCourseUpdated, EventJoined, EventRewardClaimed, PairingEntered}
   alias Scry2.Events.IdentifyDomainEvents
@@ -914,6 +921,124 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         file_offset: 0,
         source_file: "Player.log",
         raw_json: "{}",
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # ── Draft.Notify → HumanDraftPackOffered ────────────────────────────
+
+  describe "translate/2 — Draft.Notify response → HumanDraftPackOffered" do
+    test "produces HumanDraftPackOffered with pack contents" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "Draft.Notify",
+        mtga_timestamp: ~U[2026-04-08 14:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "draftId" => "draft-abc-001",
+            "SelfPack" => 1,
+            "SelfPick" => 2,
+            "PackCards" => "12345,67890,11111"
+          }),
+        processed: false
+      }
+
+      assert {[%HumanDraftPackOffered{} = event], []} =
+               IdentifyDomainEvents.translate(record, nil)
+
+      assert event.mtga_draft_id == "draft-abc-001"
+      assert event.pack_number == 1
+      assert event.pick_number == 2
+      assert event.pack_arena_ids == [12345, 67890, 11111]
+      assert event.occurred_at == ~U[2026-04-08 14:00:00Z]
+    end
+
+    test "skips Draft.Notify records that are RPC metadata (have a method key)" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "Draft.Notify",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "method" => "Draft.Notify",
+            "id" => "some-rpc-id"
+          }),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # ── EventPlayerDraftMakePick → HumanDraftPickMade ───────────────────
+
+  describe "translate/2 — EventPlayerDraftMakePick response → HumanDraftPickMade" do
+    test "produces HumanDraftPickMade with selected card" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventPlayerDraftMakePick",
+        mtga_timestamp: ~U[2026-04-08 14:01:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "DraftId" => "draft-abc-001",
+            "Pack" => 1,
+            "Pick" => 2,
+            "GrpIds" => [12345]
+          }),
+        processed: false
+      }
+
+      assert {[%HumanDraftPickMade{} = event], []} =
+               IdentifyDomainEvents.translate(record, nil)
+
+      assert event.mtga_draft_id == "draft-abc-001"
+      assert event.pack_number == 1
+      assert event.pick_number == 2
+      assert event.picked_arena_ids == [12345]
+      assert event.occurred_at == ~U[2026-04-08 14:01:00Z]
+    end
+
+    test "handles Pick Two Draft with multiple selected cards" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventPlayerDraftMakePick",
+        mtga_timestamp: ~U[2026-04-08 14:02:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "DraftId" => "draft-abc-002",
+            "Pack" => 2,
+            "Pick" => 5,
+            "GrpIds" => [11111, 22222]
+          }),
+        processed: false
+      }
+
+      assert {[%HumanDraftPickMade{} = event], []} =
+               IdentifyDomainEvents.translate(record, nil)
+
+      assert event.picked_arena_ids == [11111, 22222]
+    end
+
+    test "skips request-format EventPlayerDraftMakePick records" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventPlayerDraftMakePick",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "request" => ~s({"DraftId":"draft-abc-001","Pack":1,"Pick":2,"GrpId":12345})
+          }),
         processed: false
       }
 
