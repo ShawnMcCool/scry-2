@@ -8,38 +8,21 @@ defmodule Scry2.Matches.UpdateFromEvent do
   | | |
   |---|---|
   | **Input**  | `{:domain_event, id, type_slug}` messages on `domain:events` |
-  | **Output** | Rows in `matches_matches` via `Scry2.Matches.upsert_match!/1` + broadcasts on `matches:updates` |
+  | **Output** | Rows in `matches_matches`, `matches_games`, `matches_deck_submissions` |
   | **Nature** | GenServer (subscribes at init) |
   | **Called from** | Broadcast from `Scry2.Events.append!/2` |
-  | **Calls** | `Scry2.Events.get!/1` → `Scry2.Matches.upsert_match!/1` |
 
   ## Claimed domain events
 
-  Only events whose `type_slug` is in `@claimed_slugs` trigger a
-  projection update. Other events are silently ignored (this is how
-  multiple projectors can share a single `domain:events` topic without
-  stepping on each other).
-
-  Current claims:
-
-    * `"match_created"` → `%Scry2.Events.MatchCreated{}` → upsert a new
-      row in `matches_matches` with opponent name, event name, started_at.
-    * `"match_completed"` → `%Scry2.Events.MatchCompleted{}` → enrich
-      the existing row with ended_at, won, num_games.
+    * `"match_created"` → seed match row with opponent, event, rank, format
+    * `"match_completed"` → enrich with ended_at, won, num_games, duration
+    * `"game_completed"` → upsert game row + accumulate game_results on match
+    * `"deck_submitted"` → upsert deck submission + write deck_colors on match
 
   ## Idempotency
 
-  Projections MUST be idempotent — replaying the same domain event
-  twice produces the same row state. This is guaranteed by `upsert_match!/1`
-  using `mtga_match_id` as the conflict target (ADR-016). The projector
-  itself contains no state; everything flows through the DB upsert.
-
-  ## Failure handling
-
-  Handler errors are caught and logged. The projector never crashes on
-  a malformed event — the projection table can be rebuilt from the
-  event log via `Scry2.Events.replay_projections!/0`, so eventual
-  consistency is tolerable.
+  All writes use upsert-by-mtga-id. Replaying the same domain event
+  twice produces identical state (ADR-016).
   """
   # projection_tables listed in FK-safe delete order (children first)
   use Scry2.Events.Projector,
@@ -55,10 +38,6 @@ defmodule Scry2.Matches.UpdateFromEvent do
   alias Scry2.Matches
 
   # ── Projection handlers ─────────────────────────────────────────────
-  #
-  # One clause per claimed domain event type. Each handler destructures
-  # the event, builds upsert attrs, and writes to the projection table.
-  # Idempotency comes from the underlying upsert-by-mtga-id.
 
   defp project(%MatchCreated{} = event) do
     attrs = %{
@@ -66,7 +45,10 @@ defmodule Scry2.Matches.UpdateFromEvent do
       mtga_match_id: event.mtga_match_id,
       event_name: event.event_name,
       opponent_screen_name: event.opponent_screen_name,
-      started_at: event.occurred_at
+      started_at: event.occurred_at,
+      player_rank: event.player_rank,
+      format: event.format,
+      format_type: event.format_type
     }
 
     match = Matches.upsert_match!(attrs)
@@ -80,12 +62,20 @@ defmodule Scry2.Matches.UpdateFromEvent do
   end
 
   defp project(%MatchCompleted{} = event) do
+    existing = Matches.get_by_mtga_id(event.mtga_match_id, event.player_id)
+
+    duration =
+      if existing && existing.started_at do
+        DateTime.diff(event.occurred_at, existing.started_at, :second)
+      end
+
     attrs = %{
       player_id: event.player_id,
       mtga_match_id: event.mtga_match_id,
       ended_at: event.occurred_at,
       won: event.won,
-      num_games: event.num_games
+      num_games: event.num_games,
+      duration_seconds: duration
     }
 
     match = Matches.upsert_match!(attrs)
@@ -102,7 +92,8 @@ defmodule Scry2.Matches.UpdateFromEvent do
     match = Matches.get_by_mtga_id(event.mtga_match_id, event.player_id)
 
     if match do
-      attrs = %{
+      # Upsert the individual game row
+      game_attrs = %{
         match_id: match.id,
         game_number: event.game_number,
         on_play: event.on_play,
@@ -112,11 +103,40 @@ defmodule Scry2.Matches.UpdateFromEvent do
         ended_at: event.occurred_at
       }
 
-      game = Matches.upsert_game!(attrs)
+      Matches.upsert_game!(game_attrs)
+
+      # Accumulate game_results on the match row
+      prev_results = (match.game_results && match.game_results["results"]) || []
+      other_results = Enum.reject(prev_results, &(&1["game"] == event.game_number))
+
+      new_result = %{
+        "game" => event.game_number,
+        "won" => event.won,
+        "on_play" => event.on_play,
+        "turns" => event.num_turns,
+        "mulligans" => event.num_mulligans
+      }
+
+      all_results = Enum.sort_by(other_results ++ [new_result], & &1["game"])
+
+      total_mulligans = all_results |> Enum.map(&(&1["mulligans"] || 0)) |> Enum.sum()
+      total_turns = all_results |> Enum.map(&(&1["turns"] || 0)) |> Enum.sum()
+
+      game_1 = Enum.find(all_results, &(&1["game"] == 1))
+      on_play = game_1 && game_1["on_play"]
+
+      Matches.upsert_match!(%{
+        player_id: event.player_id,
+        mtga_match_id: event.mtga_match_id,
+        on_play: on_play,
+        total_mulligans: total_mulligans,
+        total_turns: total_turns,
+        game_results: %{"results" => all_results}
+      })
 
       Log.info(
         :ingester,
-        "projected GameCompleted match=#{event.mtga_match_id} game=#{game.game_number}"
+        "projected GameCompleted match=#{event.mtga_match_id} game=#{event.game_number}"
       )
     else
       Log.warning(
@@ -131,7 +151,8 @@ defmodule Scry2.Matches.UpdateFromEvent do
   defp project(%DeckSubmitted{} = event) do
     match = Matches.get_by_mtga_id(event.mtga_match_id, event.player_id)
 
-    attrs = %{
+    # Upsert the deck submission row
+    submission_attrs = %{
       mtga_deck_id: event.mtga_deck_id,
       match_id: match && match.id,
       main_deck: %{"cards" => event.main_deck},
@@ -139,11 +160,20 @@ defmodule Scry2.Matches.UpdateFromEvent do
       submitted_at: event.occurred_at
     }
 
-    submission = Matches.upsert_deck_submission!(attrs)
+    Matches.upsert_deck_submission!(submission_attrs)
+
+    # Write deck_colors on the match row
+    if match do
+      Matches.upsert_match!(%{
+        player_id: event.player_id,
+        mtga_match_id: event.mtga_match_id,
+        deck_colors: event.deck_colors
+      })
+    end
 
     Log.info(
       :ingester,
-      "projected DeckSubmitted mtga_deck_id=#{submission.mtga_deck_id} cards=#{length(event.main_deck)}"
+      "projected DeckSubmitted mtga_deck_id=#{event.mtga_deck_id} colors=#{event.deck_colors}"
     )
 
     :ok

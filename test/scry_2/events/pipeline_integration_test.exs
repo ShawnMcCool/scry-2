@@ -7,7 +7,7 @@ defmodule Scry2.Events.PipelineIntegrationTest do
   `:sys.get_state/1` to drain GenServer mailboxes before asserting.
 
   Note: the test fixtures lack a SessionStarted event, so player_id is
-  nil on all domain events. The MatchListing projector skips nil-player
+  nil on all domain events. These tests focus on Matches projector +
   events by design. These tests focus on Matches projector + domain
   event correctness + watermark tracking.
   """
@@ -44,9 +44,6 @@ defmodule Scry2.Events.PipelineIntegrationTest do
     # Start all projectors first (subscribe before events arrive)
     _match_proj = start_supervised!({Scry2.Matches.UpdateFromEvent, name: :"MatchProj#{suffix}"})
 
-    _listing_proj =
-      start_supervised!({Scry2.MatchListing.UpdateFromEvent, name: :"ListingProj#{suffix}"})
-
     _mull_proj = start_supervised!({Scry2.Mulligans.UpdateFromEvent, name: :"MullProj#{suffix}"})
     _draft_proj = start_supervised!({Scry2.Drafts.UpdateFromEvent, name: :"DraftProj#{suffix}"})
 
@@ -58,7 +55,6 @@ defmodule Scry2.Events.PipelineIntegrationTest do
       worker_pid: worker_pid,
       projectors: %{
         matches: :"MatchProj#{suffix}",
-        listing: :"ListingProj#{suffix}",
         mulligans: :"MullProj#{suffix}",
         drafts: :"DraftProj#{suffix}"
       }
