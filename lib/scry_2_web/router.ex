@@ -23,6 +23,7 @@ defmodule Scry2Web.Router do
 
     live_session :default, on_mount: {Scry2Web.PlayerScope, :default} do
       live "/", DashboardLive, :index
+      live "/stats", StatsLive, :index
       live "/matches", MatchesLive, :index
       live "/matches/:id", MatchesLive, :show
       live "/cards", CardsLive, :index
