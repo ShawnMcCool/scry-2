@@ -46,6 +46,10 @@ defmodule Scry2.Topics do
   """
   def console_logs, do: "console:logs"
 
+  # ── Operations ───────────────────────────────────────────────────────────
+  @doc "Background operation progress (reingest, rebuild, catch-up)."
+  def operations, do: "operations:status"
+
   # ── Events (domain event log) ────────────────────────────────────────────
   @doc """
   Domain events from `Scry2.Events`. Every projector and real-time consumer

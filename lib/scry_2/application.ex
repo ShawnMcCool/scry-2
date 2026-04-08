@@ -27,6 +27,7 @@ defmodule Scry2.Application do
         # Card image cache — ensures cache directory exists on startup.
         Scry2.Cards.ImageCache,
         {Oban, Application.fetch_env!(:scry_2, Oban)},
+        {Task.Supervisor, name: Scry2.TaskSupervisor},
         Scry2Web.Endpoint
       ]
       |> maybe_add_watcher()
@@ -73,13 +74,10 @@ defmodule Scry2.Application do
   # downstream consumers are ready.
   defp maybe_add_watcher(children) do
     if Scry2.Config.get(:start_watcher) do
+      # Stage 09: projectors subscribe first so they never miss an event.
       children ++
+        Scry2.Events.ProjectorRegistry.all() ++
         [
-          # Stage 09: projectors subscribe first so they never miss an event.
-          Scry2.Matches.UpdateFromEvent,
-          Scry2.Drafts.UpdateFromEvent,
-          Scry2.Mulligans.UpdateFromEvent,
-          Scry2.MatchListing.UpdateFromEvent,
           # Stage 08: ingestion worker translates raw events to domain events.
           Scry2.Events.IngestRawEvents,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.
