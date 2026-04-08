@@ -17,10 +17,11 @@ defmodule Scry2.TestFactory do
   alias Scry2.Drafts
   alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Events
-  alias Scry2.Events.Deck.DeckSubmitted
+  alias Scry2.Events.Deck.{DeckSelected, DeckSubmitted}
   alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
-  alias Scry2.Events.Gameplay.MulliganOffered
-  alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Gameplay.{MulliganOffered, StartingPlayerChosen}
+  alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Session.SessionStarted
   alias Scry2.Events.Progression.MasteryProgress
   alias Scry2.Matches
   alias Scry2.Matches.{DeckSubmission, Game, Match}
@@ -318,6 +319,55 @@ defmodule Scry2.TestFactory do
     struct(DraftPickMade, Map.merge(defaults, Map.new(attrs)))
   end
 
+  def build_session_started(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      client_id: "TESTUSER" <> random_suffix(),
+      screen_name: "Test Player",
+      session_id: "sess-" <> random_suffix(),
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(SessionStarted, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_die_rolled(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      self_roll: 18,
+      opponent_roll: 5,
+      self_goes_first: true,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(DieRolled, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_starting_player_chosen(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      chose_play: true,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(StartingPlayerChosen, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_deck_selected(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      event_name: "QuickDraft_FDN",
+      deck_name: "Test Deck",
+      main_deck: [],
+      sideboard: [],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(DeckSelected, Map.merge(defaults, Map.new(attrs)))
+  end
+
   # ── create_* domain events (persisted to event store) ──────────────────
 
   @doc """
@@ -434,11 +484,15 @@ defmodule Scry2.TestFactory do
   @compile {:no_warn_unused,
             [
               Cursor,
-              EventRecord,
+              DeckSelected,
               DeckSubmission,
+              DieRolled,
+              EventRecord,
               MasteryProgress,
               MtgaCard,
               Players,
-              ScryfallCard
+              ScryfallCard,
+              SessionStarted,
+              StartingPlayerChosen
             ]}
 end

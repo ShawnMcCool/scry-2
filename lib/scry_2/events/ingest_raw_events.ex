@@ -77,7 +77,8 @@ defmodule Scry2.Events.IngestRawEvents do
          current_game_number: nil,
          last_hand_game_objects: %{},
          last_deck_name: nil,
-         on_play_for_current_game: nil
+         on_play_for_current_game: nil,
+         pending_deck: nil
        },
        constructed_rank: nil,
        limited_rank: nil
@@ -145,11 +146,26 @@ defmodule Scry2.Events.IngestRawEvents do
         state
 
       events ->
-        # Update state first so SessionStarted can discover the player
-        # before we stamp player_id on the events.
-        new_state = update_state(state, events)
+        # Cache DeckSubmitted events that lack a match_id — these arrive
+        # from ConnectResp before MatchCreated sets the match context.
+        {pending, ready} = split_pending_decks(events)
 
-        events
+        state =
+          case pending do
+            [deck | _] -> put_in(state, [:match_context, :pending_deck], deck)
+            [] -> state
+          end
+
+        # Update state so SessionStarted can discover the player
+        # before we stamp player_id on the events. MatchCreated sets
+        # current_match_id, which triggers pending deck emission.
+        new_state = update_state(state, ready)
+
+        # If MatchCreated just set the match_id and we have a pending deck,
+        # emit it now with the real match_id.
+        {new_state, ready} = maybe_emit_pending_deck(new_state, ready)
+
+        ready
         |> stamp_player_id(new_state.player_id, record)
         |> enrich_events(new_state)
         |> Enum.with_index()
@@ -164,7 +180,7 @@ defmodule Scry2.Events.IngestRawEvents do
 
         Log.info(
           :ingester,
-          "translated raw id=#{record.id} type=#{record.event_type} → #{length(events)} domain events"
+          "translated raw id=#{record.id} type=#{record.event_type} → #{length(ready)} domain events"
         )
 
         new_state
@@ -223,7 +239,8 @@ defmodule Scry2.Events.IngestRawEvents do
               current_game_number: nil,
               last_hand_game_objects: %{},
               last_deck_name: nil,
-              on_play_for_current_game: nil
+              on_play_for_current_game: nil,
+              pending_deck: nil
             }
         }
 
@@ -301,5 +318,35 @@ defmodule Scry2.Events.IngestRawEvents do
     end
 
     Enum.map(events, fn event -> %{event | player_id: player_id} end)
+  end
+
+  # DeckSubmitted from a ConnectResp that arrived before MatchCreated
+  # will have a nil mtga_match_id. Cache it in state rather than
+  # persisting — we'll emit it when MatchCreated provides the match_id.
+  defp split_pending_decks(events) do
+    Enum.split_with(events, fn
+      %Scry2.Events.Deck.DeckSubmitted{mtga_match_id: nil} -> true
+      _ -> false
+    end)
+  end
+
+  # When MatchCreated sets current_match_id and there's a pending deck,
+  # stamp the match_id and append it to the event list.
+  defp maybe_emit_pending_deck(state, events) do
+    match_id = get_in(state, [:match_context, :current_match_id])
+    pending = get_in(state, [:match_context, :pending_deck])
+
+    if match_id && pending do
+      deck = %{
+        pending
+        | mtga_match_id: match_id,
+          mtga_deck_id: "#{match_id}:seat1"
+      }
+
+      state = put_in(state, [:match_context, :pending_deck], nil)
+      {state, events ++ [deck]}
+    else
+      {state, events}
+    end
   end
 end
