@@ -753,6 +753,26 @@ defmodule Scry2.Events do
     }
   end
 
+  defp rehydrate(%EventRecord{event_type: "turn_action", payload: payload}) do
+    %Scry2.Events.TurnAction{
+      mtga_match_id: payload["mtga_match_id"],
+      action: payload["action"],
+      turn_number: payload["turn_number"],
+      phase: payload["phase"],
+      step: payload["step"],
+      active_player: payload["active_player"],
+      card_arena_id: payload["card_arena_id"],
+      card_name: payload["card_name"],
+      affected_card_arena_id: payload["affected_card_arena_id"],
+      affected_card_name: payload["affected_card_name"],
+      zone_from: payload["zone_from"],
+      zone_to: payload["zone_to"],
+      amount: payload["amount"],
+      details: payload["details"],
+      occurred_at: parse_datetime(payload["occurred_at"])
+    }
+  end
+
   defp rehydrate(%EventRecord{event_type: "game_action", payload: payload}) do
     %Scry2.Events.GameAction{
       mtga_match_id: payload["mtga_match_id"],

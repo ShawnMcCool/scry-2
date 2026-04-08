@@ -63,6 +63,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     GameAction,
     EventRewardClaimed,
     GameCompleted,
+    TurnAction,
     InventoryChanged,
     InventoryUpdated,
     MatchCompleted,
@@ -237,7 +238,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           maybe_build_deck_submitted(messages, match_id, occurred_at),
           maybe_build_die_roll_completed(messages, match_id, occurred_at),
           maybe_build_game_completed(messages, match_id, occurred_at),
-          build_mulligan_offered(messages, context_match_id, occurred_at, match_context)
+          build_mulligan_offered(messages, context_match_id, occurred_at, match_context),
+          build_turn_actions(messages, context_match_id, occurred_at, match_context)
         ]
         |> List.flatten()
         |> Enum.reject(&is_nil/1)
@@ -1182,6 +1184,220 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # GameStateMessage that had gameObjects. Only use it if the seat matches.
   defp use_cached_hand({cached_seat, hand}, seat_id) when cached_seat == seat_id, do: hand
   defp use_cached_hand(_, _), do: nil
+
+  # ── Turn actions from GameStateMessage annotations ─────────────────
+  #
+  # Extracts meaningful game actions from GameStateMessage annotations.
+  # Each ZoneTransfer with a category, DamageDealt, or ModifiedLife
+  # annotation becomes a TurnAction domain event. Low-value annotations
+  # (phase changes, ability bookkeeping) are ignored.
+
+  defp build_turn_actions(messages, match_id, occurred_at, match_context) do
+    cached_objects = match_context[:last_hand_game_objects] || %{}
+
+    messages
+    |> Enum.flat_map(fn
+      %{"type" => "GREMessageType_GameStateMessage", "gameStateMessage" => gsm} ->
+        turn_info = gsm["turnInfo"] || %{}
+        annotations = gsm["annotations"] || []
+        game_objects = gsm["gameObjects"] || []
+
+        # Build instance → grpId map from this message's objects
+        local_objects = Map.new(game_objects, fn obj -> {obj["instanceId"], obj["grpId"]} end)
+
+        # Merge with cached objects for resolution
+        objects = Map.merge(cached_objects_to_map(cached_objects), local_objects)
+
+        annotations
+        |> Enum.flat_map(
+          &annotation_to_turn_actions(&1, turn_info, match_id, occurred_at, objects)
+        )
+
+      _ ->
+        []
+    end)
+  end
+
+  defp cached_objects_to_map({_seat, _hand}), do: %{}
+  defp cached_objects_to_map(map) when is_map(map), do: map
+  defp cached_objects_to_map(_), do: %{}
+
+  defp annotation_to_turn_actions(
+         %{"type" => ["AnnotationType_ZoneTransfer"]} = ann,
+         turn_info,
+         match_id,
+         occurred_at,
+         objects
+       ) do
+    details = ann["details"] || []
+    category = find_detail_string(details, "category")
+    instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
+    grp_id = Map.get(objects, instance_id)
+
+    action =
+      case category do
+        "PlayLand" -> "play_land"
+        "CastSpell" -> "cast_spell"
+        "Resolve" -> "resolve"
+        "Draw" -> "draw"
+        "Destroy" -> "destroy"
+        "Sacrifice" -> "sacrifice"
+        "Exile" -> "exile"
+        "Discard" -> "discard"
+        "Return" -> "return"
+        "SBA_Damage" -> "destroy"
+        "SBA_Deathtouch" -> "destroy"
+        "Put" -> "put"
+        _ -> nil
+      end
+
+    if action do
+      zone_from = find_detail_int(details, "zone_src")
+      zone_to = find_detail_int(details, "zone_dest")
+
+      [
+        %TurnAction{
+          mtga_match_id: match_id,
+          action: action,
+          turn_number: turn_info["turnNumber"],
+          phase: turn_info["phase"],
+          step: turn_info["step"],
+          active_player: turn_info["activePlayer"],
+          card_arena_id: grp_id,
+          zone_from: zone_name(zone_from),
+          zone_to: zone_name(zone_to),
+          occurred_at: occurred_at
+        }
+      ]
+    else
+      []
+    end
+  end
+
+  defp annotation_to_turn_actions(
+         %{"type" => ["AnnotationType_DamageDealt"]} = ann,
+         turn_info,
+         match_id,
+         occurred_at,
+         objects
+       ) do
+    details = ann["details"] || []
+    damage = find_detail_int(details, "damage")
+    source_id = ann["affectorId"]
+    grp_id = Map.get(objects, source_id)
+
+    [
+      %TurnAction{
+        mtga_match_id: match_id,
+        action: "combat_damage",
+        turn_number: turn_info["turnNumber"],
+        phase: turn_info["phase"],
+        step: turn_info["step"],
+        active_player: turn_info["activePlayer"],
+        card_arena_id: grp_id,
+        amount: damage,
+        occurred_at: occurred_at
+      }
+    ]
+  end
+
+  defp annotation_to_turn_actions(
+         %{"type" => ["AnnotationType_ModifiedLife"]} = ann,
+         turn_info,
+         match_id,
+         occurred_at,
+         _objects
+       ) do
+    details = ann["details"] || []
+    life_change = find_detail_int(details, "life")
+    affected_player = ann["affectedIds"] |> List.wrap() |> List.first()
+
+    [
+      %TurnAction{
+        mtga_match_id: match_id,
+        action: "life_change",
+        turn_number: turn_info["turnNumber"],
+        phase: turn_info["phase"],
+        active_player: turn_info["activePlayer"],
+        amount: life_change,
+        details: %{"player" => affected_player},
+        occurred_at: occurred_at
+      }
+    ]
+  end
+
+  defp annotation_to_turn_actions(
+         %{"type" => ["AnnotationType_TokenCreated"]} = ann,
+         turn_info,
+         match_id,
+         occurred_at,
+         objects
+       ) do
+    instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
+    grp_id = Map.get(objects, instance_id)
+
+    [
+      %TurnAction{
+        mtga_match_id: match_id,
+        action: "create_token",
+        turn_number: turn_info["turnNumber"],
+        phase: turn_info["phase"],
+        active_player: turn_info["activePlayer"],
+        card_arena_id: grp_id,
+        occurred_at: occurred_at
+      }
+    ]
+  end
+
+  defp annotation_to_turn_actions(
+         %{"type" => ["AnnotationType_CounterAdded"]} = ann,
+         turn_info,
+         match_id,
+         occurred_at,
+         objects
+       ) do
+    details = ann["details"] || []
+    instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
+    grp_id = Map.get(objects, instance_id)
+    amount = find_detail_int(details, "transaction_amount")
+
+    [
+      %TurnAction{
+        mtga_match_id: match_id,
+        action: "counter_added",
+        turn_number: turn_info["turnNumber"],
+        phase: turn_info["phase"],
+        active_player: turn_info["activePlayer"],
+        card_arena_id: grp_id,
+        amount: amount,
+        occurred_at: occurred_at
+      }
+    ]
+  end
+
+  # All other annotation types — skip silently
+  defp annotation_to_turn_actions(_ann, _turn_info, _match_id, _occurred_at, _objects), do: []
+
+  # Detail extraction helpers
+  defp find_detail_string(details, key) do
+    Enum.find_value(details, fn
+      %{"key" => ^key, "valueString" => [val | _]} -> val
+      _ -> nil
+    end)
+  end
+
+  defp find_detail_int(details, key) do
+    Enum.find_value(details, fn
+      %{"key" => ^key, "valueInt32" => [val | _]} -> val
+      _ -> nil
+    end)
+  end
+
+  # Map zone IDs to readable names (zone IDs are per-game, but
+  # common zones have standard type names in the full state)
+  defp zone_name(nil), do: nil
+  defp zone_name(id) when is_integer(id) and id > 0, do: "zone_#{id}"
+  defp zone_name(_), do: nil
 
   defp find_gre_message(messages, type) do
     Enum.find(messages, fn message -> message["type"] == type end)
