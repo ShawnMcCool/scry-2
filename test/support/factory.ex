@@ -16,9 +16,14 @@ defmodule Scry2.TestFactory do
   alias Scry2.Cards.{Card, MtgaCard, ScryfallCard, Set}
   alias Scry2.Drafts
   alias Scry2.Drafts.{Draft, Pick}
+  alias Scry2.Events
+  alias Scry2.Events.Deck.DeckSubmitted
+  alias Scry2.Events.Draft.{DraftPickMade, DraftStarted}
+  alias Scry2.Events.Gameplay.MulliganOffered
+  alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Events.Progression.MasteryProgress
   alias Scry2.Matches
   alias Scry2.Matches.{DeckSubmission, Game, Match}
-  alias Scry2.Events.Progression.MasteryProgress
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
   alias Scry2.Players
@@ -194,6 +199,136 @@ defmodule Scry2.TestFactory do
     }
 
     struct(EventRecord, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  # ── build_* domain events (no DB) ───────────────────────────────────────
+  #
+  # These return typed domain event structs as projectors receive them
+  # (after rehydrate_with_metadata injects :id and stamps :player_id).
+  # The :id field is NOT part of the struct — it's added by Events.append!
+  # during persistence and injected via Map.put on rehydration.
+
+  def build_match_created(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      event_name: "PremierDraft_LCI_20260401",
+      opponent_screen_name: "TestOpponent",
+      opponent_user_id: nil,
+      platform: nil,
+      opponent_platform: nil,
+      occurred_at: DateTime.utc_now(:second),
+      player_rank: "Gold 1",
+      format: "premier_draft",
+      format_type: "limited"
+    }
+
+    struct(MatchCreated, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_match_completed(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      occurred_at: DateTime.utc_now(:second),
+      won: true,
+      num_games: 2,
+      reason: nil,
+      game_results: nil
+    }
+
+    struct(MatchCompleted, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_game_completed(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      game_number: 1,
+      on_play: true,
+      won: true,
+      num_mulligans: 0,
+      num_turns: 9,
+      self_life_total: 20,
+      opponent_life_total: 0,
+      win_reason: nil,
+      super_format: nil,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(GameCompleted, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_deck_submitted(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      mtga_deck_id: "test-deck-" <> random_suffix(),
+      main_deck: [%{"arena_id" => 91_234, "count" => 4}],
+      sideboard: [],
+      occurred_at: DateTime.utc_now(:second),
+      deck_colors: "WU"
+    }
+
+    struct(DeckSubmitted, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_mulligan_offered(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      seat_id: 1,
+      hand_size: 7,
+      hand_arena_ids: [91_234, 91_235, 91_236, 91_237, 91_238, 91_239, 91_240],
+      occurred_at: DateTime.utc_now(:second),
+      land_count: 3,
+      nonland_count: 4,
+      total_cmc: 12.0,
+      cmc_distribution: %{"1" => 2, "2" => 1, "3" => 1},
+      color_distribution: %{"W" => 3, "U" => 1},
+      card_names: %{"91234" => "Plains", "91235" => "Island"}
+    }
+
+    struct(MulliganOffered, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_draft_started(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_draft_id: "test-draft-" <> random_suffix(),
+      event_name: "QuickDraft_LCI_20260401",
+      set_code: "LCI",
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(DraftStarted, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_draft_pick_made(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_draft_id: "test-draft-" <> random_suffix(),
+      pack_number: 1,
+      pick_number: 1,
+      picked_arena_id: 91_234,
+      pack_arena_ids: [91_234, 91_235, 91_236],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(DraftPickMade, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  # ── create_* domain events (persisted to event store) ──────────────────
+
+  @doc """
+  Persists a domain event struct to the `domain_events` table via
+  `Events.append!/3`. Returns the persisted `%Events.EventRecord{}`.
+
+  Pass `:source_record` and `:sequence` in opts if needed.
+  """
+  def create_domain_event(domain_event, opts \\ []) do
+    source_record = Keyword.get(opts, :source_record)
+    Events.append!(domain_event, source_record, opts)
   end
 
   # ── create_* (persisted) ────────────────────────────────────────────────

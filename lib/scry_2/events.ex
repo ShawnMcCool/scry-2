@@ -51,7 +51,7 @@ defmodule Scry2.Events do
 
   import Ecto.Query
 
-  alias Scry2.Events.{Event, EventRecord}
+  alias Scry2.Events.{Event, EventRecord, ProjectorWatermark}
   alias Scry2.Repo
   alias Scry2.Topics
 
@@ -163,7 +163,8 @@ defmodule Scry2.Events do
   def replay_by_types(type_slugs, fun, opts \\ [])
       when is_list(type_slugs) and is_function(fun, 1) do
     batch_size = Keyword.get(opts, :batch_size, 500)
-    do_replay_by_types(type_slugs, fun, batch_size, 0)
+    cursor = Keyword.get(opts, :cursor, 0)
+    do_replay_by_types(type_slugs, fun, batch_size, cursor)
   end
 
   defp do_replay_by_types(type_slugs, fun, batch_size, cursor) do
@@ -301,6 +302,55 @@ defmodule Scry2.Events do
   @spec subscribe() :: :ok | {:error, term()}
   def subscribe, do: Topics.subscribe(Topics.domain_events())
 
+  # ── Watermarks ──────────────────────────────────────────────────────
+
+  @doc """
+  Returns the last domain event id processed by the named projector.
+  Returns 0 if no watermark exists (projector has never run).
+  """
+  @spec get_watermark(String.t()) :: non_neg_integer()
+  def get_watermark(projector_name) when is_binary(projector_name) do
+    case Repo.get_by(ProjectorWatermark, projector_name: projector_name) do
+      nil -> 0
+      %{last_event_id: id} -> id
+    end
+  end
+
+  @doc """
+  Persists the watermark for the named projector. Upsert — creates the
+  row on first call, updates on subsequent calls.
+  """
+  @spec put_watermark!(String.t(), non_neg_integer()) :: %ProjectorWatermark{}
+  def put_watermark!(projector_name, event_id)
+      when is_binary(projector_name) and is_integer(event_id) do
+    now = DateTime.utc_now(:second)
+
+    %ProjectorWatermark{}
+    |> ProjectorWatermark.changeset(%{
+      projector_name: projector_name,
+      last_event_id: event_id,
+      updated_at: now
+    })
+    |> Repo.insert!(
+      on_conflict: [set: [last_event_id: event_id, updated_at: now]],
+      conflict_target: :projector_name
+    )
+  end
+
+  @doc "Returns all projector watermark rows. Diagnostics / dashboard."
+  @spec list_watermarks() :: [%ProjectorWatermark{}]
+  def list_watermarks do
+    ProjectorWatermark
+    |> order_by([w], asc: w.projector_name)
+    |> Repo.all()
+  end
+
+  @doc "Returns the highest domain event id in the store, or 0 if empty."
+  @spec max_event_id() :: non_neg_integer()
+  def max_event_id do
+    Repo.aggregate(EventRecord, :max, :id) || 0
+  end
+
   @doc """
   Full reingest — clears all derived data and rebuilds from raw MTGA events.
 
@@ -386,6 +436,27 @@ defmodule Scry2.Events do
     Scry2.MatchListing.UpdateFromEvent.rebuild!()
 
     Log.info(:ingester, "replay_projections: all projections rebuilt")
+    :ok
+  end
+
+  @doc """
+  Resumes all projections from their watermarks without truncating tables.
+
+  Each projector reads its watermark (last processed domain event id) and
+  replays only events after that point. Use after a crash or restart to
+  catch projections up to the current event log without a full rebuild.
+  """
+  @spec catch_up_projections!() :: :ok
+  def catch_up_projections! do
+    require Scry2.Log, as: Log
+    Log.info(:ingester, "catch_up_projections: resuming all projections from watermarks")
+
+    Scry2.Matches.UpdateFromEvent.catch_up!()
+    Scry2.Drafts.UpdateFromEvent.catch_up!()
+    Scry2.Mulligans.UpdateFromEvent.catch_up!()
+    Scry2.MatchListing.UpdateFromEvent.catch_up!()
+
+    Log.info(:ingester, "catch_up_projections: all projections caught up")
     :ok
   end
 
