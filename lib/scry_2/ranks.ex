@@ -19,7 +19,7 @@ defmodule Scry2.Ranks do
   """
   def list_snapshots(opts \\ []) do
     Snapshot
-    |> maybe_filter_player(opts[:player_id])
+    |> maybe_filter_by_player(opts[:player_id])
     |> order_by([s], asc: s.occurred_at)
     |> Repo.all()
   end
@@ -27,7 +27,7 @@ defmodule Scry2.Ranks do
   @doc "Returns the most recent snapshot, or nil."
   def latest_snapshot(opts \\ []) do
     Snapshot
-    |> maybe_filter_player(opts[:player_id])
+    |> maybe_filter_by_player(opts[:player_id])
     |> order_by([s], desc: s.occurred_at)
     |> limit(1)
     |> Repo.one()
@@ -36,7 +36,7 @@ defmodule Scry2.Ranks do
   @doc "Returns the total number of rank snapshots."
   def count(opts \\ []) do
     Snapshot
-    |> maybe_filter_player(opts[:player_id])
+    |> maybe_filter_by_player(opts[:player_id])
     |> Repo.aggregate(:count, :id)
   end
 
@@ -51,6 +51,6 @@ defmodule Scry2.Ranks do
     snapshot
   end
 
-  defp maybe_filter_player(query, nil), do: query
-  defp maybe_filter_player(query, player_id), do: where(query, [s], s.player_id == ^player_id)
+  defp maybe_filter_by_player(query, nil), do: query
+  defp maybe_filter_by_player(query, player_id), do: where(query, [s], s.player_id == ^player_id)
 end
