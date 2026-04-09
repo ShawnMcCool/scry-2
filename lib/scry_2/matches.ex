@@ -5,7 +5,7 @@ defmodule Scry2.Matches do
   Owns tables: `matches_matches`, `matches_games`, `matches_deck_submissions`.
 
   PubSub role:
-    * subscribes to `"domain:events"` (via `Scry2.Matches.UpdateFromEvent`)
+    * subscribes to `"domain:events"` (via `Scry2.Matches.MatchProjection`)
     * broadcasts `"matches:updates"` after any mutation
 
   All upserts target MTGA-provided ids (`mtga_match_id`, `mtga_deck_id`)

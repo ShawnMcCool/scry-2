@@ -4,7 +4,7 @@ defmodule Scry2.Events.IngestRawEventsTest do
   alias Scry2.Events
   alias Scry2.Events.IngestRawEvents
   alias Scry2.Matches
-  alias Scry2.Matches.UpdateFromEvent
+  alias Scry2.Matches.MatchProjection
   alias Scry2.MtgaLogIngestion
 
   # Reads a real fixture and returns its bytes.
@@ -37,7 +37,7 @@ defmodule Scry2.Events.IngestRawEventsTest do
     worker_name = Module.concat(__MODULE__, :"Worker#{System.unique_integer([:positive])}")
     proj_name = Module.concat(__MODULE__, :"Projector#{System.unique_integer([:positive])}")
 
-    _proj_pid = start_supervised!({UpdateFromEvent, name: proj_name})
+    _proj_pid = start_supervised!({MatchProjection, name: proj_name})
     worker_pid = start_supervised!({IngestRawEvents, name: worker_name})
 
     %{worker: worker_name, worker_pid: worker_pid, projector: proj_name}

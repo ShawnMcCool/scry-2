@@ -21,8 +21,8 @@ defmodule Scry2.Events do
   | 07    | `Scry2.Events.IdentifyDomainEvents` | Pure: raw event record → list of domain events |
   | 08    | `Scry2.Events.IngestRawEvents`     | Subscribes to raw events, calls translator, appends |
   |       | `Scry2.Events.append!/2`        | Persists domain event + broadcasts atomically     |
-  | 09    | `Scry2.Matches.UpdateFromEvent` | Subscribes, updates `matches_*` projection tables |
-  |       | `Scry2.Drafts.UpdateFromEvent` | (same, for draft projections)                |
+  | 09    | `Scry2.Matches.MatchProjection` | Subscribes, updates `matches_*` projection tables |
+  |       | `Scry2.Drafts.DraftProjection` | (same, for draft projections)                |
   | 10    | `Scry2.Matches.upsert_*!`  | Idempotent projection writes                      |
   | 11    | Context broadcasts              | `matches:updates`, `drafts:updates` (for LiveView)|
 

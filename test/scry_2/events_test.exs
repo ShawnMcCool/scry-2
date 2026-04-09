@@ -465,19 +465,19 @@ defmodule Scry2.EventsTest do
       import Scry2.ProjectorCase
       import Scry2.TestFactory
 
-      alias Scry2.Matches.UpdateFromEvent
+      alias Scry2.Matches.MatchProjection
 
       player = create_player()
       scenario = match_scenario(player, games: [[won: true, on_play: true]], won: true)
       for event <- scenario.events, do: Events.append!(event, nil)
 
       # Simulate a stale watermark left over from a previous event store generation.
-      Events.put_watermark!(UpdateFromEvent.projector_name(), 999_999)
+      Events.put_watermark!(MatchProjection.projector_name(), 999_999)
 
       proj_name =
         Module.concat(__MODULE__, :"FullRebuildTest#{System.unique_integer([:positive])}")
 
-      start_supervised!({UpdateFromEvent, name: proj_name})
+      start_supervised!({MatchProjection, name: proj_name})
 
       # Clear projection tables — full_rebuild must repopulate them from the event store.
       Scry2.Repo.delete_all(Scry2.Matches.DeckSubmission)
@@ -491,19 +491,19 @@ defmodule Scry2.EventsTest do
 
       assert Scry2.Matches.count() >= 1
 
-      watermark = Events.get_watermark(UpdateFromEvent.projector_name())
+      watermark = Events.get_watermark(MatchProjection.projector_name())
       assert watermark > 0
       # Confirms the stale watermark was not used as a cursor — we replayed from 0.
       assert watermark != 999_999
     end
 
     test "live events arriving after full_rebuild are processed normally" do
-      alias Scry2.Matches.UpdateFromEvent
+      alias Scry2.Matches.MatchProjection
 
       proj_name =
         Module.concat(__MODULE__, :"FullRebuildLiveTest#{System.unique_integer([:positive])}")
 
-      start_supervised!({UpdateFromEvent, name: proj_name})
+      start_supervised!({MatchProjection, name: proj_name})
 
       # Append one event before the rebuild signal so it ends up in the event store.
       Events.append!(match_created("pre-rebuild"), nil)

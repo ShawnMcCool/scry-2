@@ -4,7 +4,7 @@ defmodule Scry2.Events.IngestRawEventsStartupTest do
   alias Scry2.Events
   alias Scry2.Events.IngestRawEvents
   alias Scry2.Matches
-  alias Scry2.Matches.UpdateFromEvent
+  alias Scry2.Matches.MatchProjection
   alias Scry2.MtgaLogIngestion
 
   # Reads a real fixture and returns its bytes.
@@ -55,7 +55,7 @@ defmodule Scry2.Events.IngestRawEventsStartupTest do
 
       worker_name = Module.concat(__MODULE__, :"Resume#{System.unique_integer([:positive])}")
       proj_name = Module.concat(__MODULE__, :"ResumeProj#{System.unique_integer([:positive])}")
-      _proj = start_supervised!({UpdateFromEvent, name: proj_name}, id: proj_name)
+      _proj = start_supervised!({MatchProjection, name: proj_name}, id: proj_name)
       _pid = start_supervised!({IngestRawEvents, name: worker_name}, id: worker_name)
 
       _raw = insert_raw_from_fixture!("match_game_room_state_changed_playing.log")
@@ -72,7 +72,7 @@ defmodule Scry2.Events.IngestRawEventsStartupTest do
 
       catchup_name = Module.concat(__MODULE__, :"Catchup#{System.unique_integer([:positive])}")
       proj_name = Module.concat(__MODULE__, :"CatchupProj#{System.unique_integer([:positive])}")
-      _proj = start_supervised!({UpdateFromEvent, name: proj_name}, id: proj_name)
+      _proj = start_supervised!({MatchProjection, name: proj_name}, id: proj_name)
       _worker = start_supervised!({IngestRawEvents, name: catchup_name}, id: catchup_name)
 
       # Give catch_up time to run (handle_continue is async)

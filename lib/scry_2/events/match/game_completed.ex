@@ -16,7 +16,7 @@ defmodule Scry2.Events.Match.GameCompleted do
 
   ## Projected by (future)
 
-  `Scry2.Matches.UpdateFromEvent` will project to `matches_games` via
+  `Scry2.Matches.MatchProjection` will project to `matches_games` via
   `Scry2.Matches.upsert_game!/1`, keyed on `(match_id, game_number)`.
 
   ## Status

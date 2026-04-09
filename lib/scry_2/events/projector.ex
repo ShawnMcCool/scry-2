@@ -9,7 +9,7 @@ defmodule Scry2.Events.Projector do
 
   ## Usage
 
-      defmodule Scry2.Mulligans.UpdateFromEvent do
+      defmodule Scry2.Mulligans.MulliganProjection do
         use Scry2.Events.Projector,
           claimed_slugs: ~w(mulligan_offered match_created),
           projection_tables: [Scry2.Mulligans.MulliganListing]

@@ -1,4 +1,4 @@
-defmodule Scry2.Drafts.UpdateFromEventTest do
+defmodule Scry2.Drafts.DraftProjectionTest do
   use Scry2.DataCase
 
   import ExUnit.CaptureLog
@@ -6,7 +6,7 @@ defmodule Scry2.Drafts.UpdateFromEventTest do
   import Scry2.ProjectorCase
 
   alias Scry2.Drafts
-  alias Scry2.Drafts.UpdateFromEvent
+  alias Scry2.Drafts.DraftProjection
   alias Scry2.Events
 
   describe "rebuild!/0" do
@@ -22,7 +22,7 @@ defmodule Scry2.Drafts.UpdateFromEventTest do
           set_code: "LCI"
         })
 
-      project_events(UpdateFromEvent, event)
+      project_events(DraftProjection, event)
 
       draft = Drafts.get_by_mtga_id(draft_id, player.id)
       assert draft
@@ -45,7 +45,7 @@ defmodule Scry2.Drafts.UpdateFromEventTest do
         })
       ]
 
-      project_events(UpdateFromEvent, events)
+      project_events(DraftProjection, events)
 
       draft = Drafts.get_by_mtga_id(draft_id, player.id)
       picks = Scry2.Repo.all(Scry2.Drafts.Pick) |> Enum.filter(&(&1.draft_id == draft.id))
@@ -60,7 +60,7 @@ defmodule Scry2.Drafts.UpdateFromEventTest do
       player = create_player()
       event = build_draft_pick_made(%{player_id: player.id, mtga_draft_id: "nonexistent-draft"})
 
-      log = capture_log(fn -> project_events(UpdateFromEvent, event) end)
+      log = capture_log(fn -> project_events(DraftProjection, event) end)
       assert log =~ "unknown draft"
     end
 
@@ -69,10 +69,10 @@ defmodule Scry2.Drafts.UpdateFromEventTest do
       draft_id = "test-draft-idem-#{System.unique_integer([:positive])}"
 
       event = build_draft_started(%{player_id: player.id, mtga_draft_id: draft_id})
-      project_events(UpdateFromEvent, event)
+      project_events(DraftProjection, event)
 
       # Rebuild again
-      UpdateFromEvent.rebuild!()
+      DraftProjection.rebuild!()
 
       drafts =
         Scry2.Repo.all(Scry2.Drafts.Draft) |> Enum.filter(&(&1.mtga_draft_id == draft_id))
@@ -84,9 +84,9 @@ defmodule Scry2.Drafts.UpdateFromEventTest do
       player = create_player()
 
       event = build_draft_started(%{player_id: player.id})
-      records = project_events(UpdateFromEvent, event)
+      records = project_events(DraftProjection, event)
 
-      assert Events.get_watermark("Drafts.UpdateFromEvent") == List.last(records).id
+      assert Events.get_watermark("Drafts.DraftProjection") == List.last(records).id
     end
   end
 end

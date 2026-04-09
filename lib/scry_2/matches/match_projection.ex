@@ -1,4 +1,4 @@
-defmodule Scry2.Matches.UpdateFromEvent do
+defmodule Scry2.Matches.MatchProjection do
   @moduledoc """
   Pipeline stage 09 — project domain events into the `matches_*` read
   models.

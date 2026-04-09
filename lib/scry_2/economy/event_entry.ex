@@ -9,7 +9,7 @@ defmodule Scry2.Economy.EventEntry do
   ## Disposable
 
   Rebuilt from the domain event log via
-  `Scry2.Economy.UpdateFromEvent.rebuild!/0`.
+  `Scry2.Economy.EconomyProjection.rebuild!/0`.
   """
 
   use Ecto.Schema

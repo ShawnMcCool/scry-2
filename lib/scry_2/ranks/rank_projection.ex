@@ -1,4 +1,4 @@
-defmodule Scry2.Ranks.UpdateFromEvent do
+defmodule Scry2.Ranks.RankProjection do
   @moduledoc """
   Projects `rank_snapshot` domain events into the `ranks_snapshots`
   read model.
