@@ -72,6 +72,16 @@ defmodule Scry2.Topics do
   """
   def domain_events, do: "domain:events"
 
+  @doc """
+  Control signals for projectors. Used to coordinate lifecycle changes that
+  affect the entire event store. Messages:
+
+    * `:full_rebuild` — domain events have been cleared and regenerated
+      (reingest). All projectors must reset their watermark to 0, truncate
+      their tables, and replay from scratch. Prior watermarks are stale.
+  """
+  def domain_control, do: "domain:control"
+
   # ── Helpers ──────────────────────────────────────────────────────────────
   @doc "Subscribe the calling process to `topic`."
   def subscribe(topic) when is_binary(topic) do

@@ -119,20 +119,8 @@ defmodule Scry2.Operations do
     Scry2.MtgaLogIngestion.EventRecord
     |> Scry2.Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
 
-    # Suspend live projectors — avoids redundant projection writes while
-    # retranslating. Phase 2 (rebuild_with_progress) rebuilds everything
-    # from scratch anyway.
-    Enum.each(ProjectorRegistry.all(), fn mod ->
-      case Process.whereis(mod) do
-        nil -> :ok
-        _pid -> mod.suspend_live()
-      end
-    end)
-
-    # Phase 1: Retranslate every raw event synchronously.
-    # IngestRawEvents.retranslate_all! processes each event inside the GenServer
-    # and calls on_progress after each one — accurate per-event tracking with
-    # no polling and no race conditions.
+    # Retranslate every raw event synchronously. append_batch! does not broadcast
+    # domain:events, so projectors receive no live messages during this phase.
     IngestRawEvents.retranslate_all!(
       on_progress: fn processed, total ->
         report_every = max(1, div(total, 200))
@@ -148,15 +136,11 @@ defmodule Scry2.Operations do
       end
     )
 
-    Enum.each(ProjectorRegistry.all(), fn mod ->
-      case Process.whereis(mod) do
-        nil -> :ok
-        _pid -> mod.resume_live()
-      end
-    end)
-
-    # Phase 2: Rebuild all projections from the fresh domain event log.
-    rebuild_with_progress(ProjectorRegistry.all())
+    # Signal all projectors to rebuild from scratch. Each projector handles
+    # :full_rebuild in its own GenServer mailbox — BEAM's single-process
+    # guarantee ensures any live events that arrive afterward queue up and
+    # are processed after the rebuild completes (zero message loss).
+    Topics.broadcast(Topics.domain_control(), :full_rebuild)
   end
 
   defp rebuild_with_progress(projector_modules) do

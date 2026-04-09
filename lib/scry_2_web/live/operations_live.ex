@@ -83,10 +83,16 @@ defmodule Scry2Web.OperationsLive do
   def handle_info({:operation_started, type, metadata}, socket) do
     projector_names = Map.get(metadata, :projectors, [])
 
+    # Reingest has two phases, but projectors now self-manage their rebuild via
+    # :full_rebuild on domain:control — there are no progress events for them.
+    # Show only Retranslation + a single "Projector rebuilds" placeholder.
+    # Rebuild/catch-up operations still show individual projector steps.
     steps =
       if type == :reingest do
-        [%{name: "Retranslation", status: :pending, detail: nil}] ++
-          Enum.map(projector_names, &%{name: &1, status: :pending, detail: nil})
+        [
+          %{name: "Retranslation", status: :pending, detail: nil},
+          %{name: "Projector rebuilds (async)", status: :pending, detail: nil}
+        ]
       else
         Enum.map(projector_names, &%{name: &1, status: :pending, detail: nil})
       end
@@ -101,13 +107,21 @@ defmodule Scry2Web.OperationsLive do
   end
 
   def handle_info({:operation_progress, _type, %{phase: :retranslation} = progress}, socket) do
+    detail = "#{format_number(progress.processed)} / #{format_number(progress.total)} events"
+
     steps =
-      update_step(
-        socket.assigns.steps,
-        "Retranslation",
-        :in_progress,
-        "#{format_number(progress.processed)} / #{format_number(progress.total)} events"
-      )
+      socket.assigns.steps
+      |> update_step("Retranslation", :in_progress, detail)
+      |> then(fn steps ->
+        # When retranslation reaches 100%, mark it done and show projector step as in_progress.
+        if progress.percent == 100 do
+          steps
+          |> update_step("Retranslation", :done, nil)
+          |> update_step("Projector rebuilds (async)", :in_progress, "running in background")
+        else
+          steps
+        end
+      end)
 
     {:noreply, socket |> assign(:progress, progress) |> assign(:steps, steps)}
   end
@@ -154,14 +168,30 @@ defmodule Scry2Web.OperationsLive do
   end
 
   def handle_info({:operation_completed, type}, socket) do
-    steps = Enum.map(socket.assigns.steps, &%{&1 | status: :done, detail: nil})
+    # For reingest: retranslation is done and :full_rebuild has been broadcast.
+    # Projectors rebuild asynchronously — mark the placeholder step as in-progress
+    # (not done) so the UI doesn't falsely claim all projectors are finished.
+    # The projector table below will show their real status as they catch up.
+    steps =
+      if type == :reingest do
+        socket.assigns.steps
+        |> update_step("Retranslation", :done, nil)
+        |> update_step("Projector rebuilds (async)", :in_progress, "check table below")
+      else
+        Enum.map(socket.assigns.steps, &%{&1 | status: :done, detail: nil})
+      end
+
+    label =
+      if type == :reingest,
+        do: "Retranslation complete — projectors rebuilding",
+        else: "#{operation_label(type)} completed."
 
     {:noreply,
      socket
      |> assign(:operation_running, false)
      |> assign(:progress, %{percent: 100})
      |> assign(:steps, steps)
-     |> put_flash(:info, "#{operation_label(type)} completed.")
+     |> put_flash(:info, label)
      |> load_status()}
   end
 
