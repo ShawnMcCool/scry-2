@@ -41,7 +41,7 @@ defmodule Scry2Web.Layouts do
     <header class="navbar px-4 sm:px-6 lg:px-8 border-b border-base-300">
       <div class="flex-1">
         <.link navigate={~p"/"} class="flex items-center gap-2 text-lg font-semibold">
-          <.icon name="hero-eye" class="size-6 text-primary" /> Scry2
+          <.icon name="hero-eye" class="size-6 text-primary" /> Scry 2
         </.link>
       </div>
       <div class="flex-none">

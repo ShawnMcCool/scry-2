@@ -54,7 +54,7 @@ defmodule Scry2Web.SettingsLive do
           </p>
           <p :if={is_nil(@resolved_path)} class="text-sm">
             <span class="badge badge-warning">Not found</span>
-            Scry2 checked the following locations and found no matching file.
+            Scry 2 checked the following locations and found no matching file.
             Set <code>[mtga_logs] player_log_path</code>
             in <code>~/.config/scry_2/config.toml</code>
             to override.
