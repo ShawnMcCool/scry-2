@@ -67,6 +67,9 @@ defmodule Scry2.Events.IngestRawEventsStartupTest do
     end
 
     test "catches up unprocessed events on init" do
+      # Insert AuthenticateResponse first so the worker has player context when
+      # it catches up the match event on startup — avoids "no player context" warning.
+      _auth = insert_raw_from_fixture!("authenticate_response.log")
       raw = insert_raw_from_fixture!("match_game_room_state_changed_playing.log")
       assert MtgaLogIngestion.get_event!(raw.id).processed == false
 

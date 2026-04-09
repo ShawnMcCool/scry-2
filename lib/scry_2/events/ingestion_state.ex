@@ -26,17 +26,24 @@ defmodule Scry2.Events.IngestionState do
 
   @current_version 1
 
-  @derive Jason.Encoder
+  # snapshot_state is intentionally excluded from DB persistence and resets to %{} on restart.
+  # The first snapshot of each type after restart is always appended (no previous key to compare
+  # against), which is safe and correct: it re-establishes the last-known baseline. Cross-restart
+  # dedup would require loading the last-seen diff key per event type from the domain event log
+  # on startup — complexity not worth the marginal benefit of skipping one extra append.
+  @derive {Jason.Encoder, except: [:snapshot_state]}
   defstruct version: @current_version,
             last_raw_event_id: 0,
             session: %Session{},
-            match: %Match{}
+            match: %Match{},
+            snapshot_state: %{}
 
   @type t :: %__MODULE__{
           version: pos_integer(),
           last_raw_event_id: non_neg_integer(),
           session: Session.t(),
-          match: Match.t()
+          match: Match.t(),
+          snapshot_state: %{optional(String.t()) => term()}
         }
 
   @doc "Returns a fresh ingestion state, optionally seeded with a self_user_id."
