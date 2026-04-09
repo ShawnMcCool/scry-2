@@ -1,15 +1,25 @@
 defmodule Scry2.Events.Gameplay.GameConceded do
   @moduledoc """
-  Domain event — a player conceded the current game.
+  A player conceded the current game.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw `ClientToGremessage`
+  with type `ClientMessageType_ConcedeReq`. Fires when the player clicks
+  "Concede" and the message is sent to the game engine.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match the concession occurred in
+  - `scope` — concession scope: `"game"` to concede the current game,
+    `"match"` to concede the entire match
 
   ## Slug
 
   `"game_conceded"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `ClientToGremessage` raw events with type
-  `ClientMessageType_ConcedeReq`.
   """
 
   @enforce_keys [:occurred_at]

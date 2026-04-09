@@ -1,4 +1,31 @@
 defmodule Scry2.Events.Gameplay.CombatDamageDealt do
+  @moduledoc """
+  A creature dealt combat damage during the combat damage step.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a `GreToClientEvent`
+  containing an `AnnotationType_DamageDealt` annotation during the combat
+  damage step. Fires once per damage assignment.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match the combat occurred in
+  - `turn_number` — turn number when damage was dealt
+  - `phase` — game phase (should be combat damage step)
+  - `active_player` — seat ID of the attacking player
+  - `card_arena_id` — arena_id of the creature dealing damage
+  - `card_name` — resolved card name (enriched at ingestion)
+  - `amount` — points of combat damage dealt
+
+  ## Slug
+
+  `"combat_damage_dealt"` — stable, do not rename.
+  """
+
   @enforce_keys [:occurred_at]
   defstruct [
     :player_id,

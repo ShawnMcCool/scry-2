@@ -1,17 +1,26 @@
 defmodule Scry2.Events.Gameplay.MulliganDecided do
   @moduledoc """
-  Domain event — a player made an explicit keep or mulligan decision.
+  A player made a keep or mulligan decision during the opening hand phase.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw `ClientToGremessage`
+  with type `ClientMessageType_MulliganResp`. Fires when the player clicks
+  "Keep" or "Mulligan." The `decision` field is normalized from MTGA's
+  `MulliganOption_AcceptHand` / `MulliganOption_Mulligan` to `"keep"` /
+  `"mulligan"`.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match the mulligan decision was made in
+  - `decision` — normalized decision string: `"keep"` or `"mulligan"`
 
   ## Slug
 
   `"mulligan_decided"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `ClientToGremessage` raw events with type
-  `ClientMessageType_MulliganResp`. The `decision` field is normalized
-  from MTGA's `MulliganOption_AcceptHand` / `MulliganOption_Mulligan`
-  to `"keep"` / `"mulligan"`.
   """
 
   @enforce_keys [:decision, :occurred_at]

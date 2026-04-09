@@ -1,19 +1,31 @@
 defmodule Scry2.Events.Economy.InventoryChanged do
   @moduledoc """
-  Domain event — the player's inventory changed due to a currency
-  transaction (event entry fee, prize payout, etc.).
+  A discrete inventory transaction — entry fee paid or prize received.
+  One event per change entry in an `EventJoin` or `EventClaimPrize` response.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from `EventJoin` and
+  `EventClaimPrize` responses. Fires for each entry in `InventoryInfo.Changes[]`.
+  The balance fields capture the resulting totals reported by the server after
+  the change.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `source` — transaction source identifier (e.g. `"EventJoin"`, `"EventClaimPrize"`)
+  - `source_id` — event or course ID associated with the transaction
+  - `gold_delta` — gold added (positive) or spent (negative); nil if no gold change
+  - `gems_delta` — gems added (positive) or spent (negative); nil if no gem change
+  - `boosters` — list of `%{set_code, count}` booster packs awarded; nil if none
+  - `gold_balance` — gold total after this transaction
+  - `gems_balance` — gem total after this transaction
 
   ## Slug
 
   `"inventory_changed"` — stable, do not rename.
-
-  ## Source
-
-  Produced by `Scry2.Events.IdentifyDomainEvents` from `EventJoin`
-  and `EventClaimPrize` responses. Each entry in
-  `InventoryInfo.Changes[]` becomes one `InventoryChanged` event.
-  The balance fields capture the resulting totals reported by the
-  server after the change.
   """
 
   @enforce_keys [:source, :occurred_at]

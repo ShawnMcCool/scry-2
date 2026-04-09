@@ -1,17 +1,28 @@
 defmodule Scry2.Events.Deck.DeckSelected do
   @moduledoc """
-  Domain event — the player selected a deck for an MTGA event.
-  Captures the full deck list at the time of selection.
+  The player selected a deck for an MTGA event. Captures the full deck list at
+  the time of selection.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw `EventSetDeckV2`
+  request. Fires when the player chooses a deck before entering a match queue.
+  The request carries the full deck list including main deck and sideboard.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `event_name` — internal MTGA event identifier (e.g. `"Play_Ranked"`)
+  - `deck_id` — MTGA deck identifier (may be nil for sealed pools)
+  - `deck_name` — player-assigned deck name
+  - `main_deck` — list of `%{arena_id, count}` entries for the main deck
+  - `sideboard` — list of `%{arena_id, count}` entries for the sideboard, or nil
 
   ## Slug
 
   `"deck_selected"` — stable, do not rename.
-
-  ## Source
-
-  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
-  `EventSetDeckV2` request. The request carries the full deck list
-  including main deck and sideboard.
   """
 
   @enforce_keys [:event_name, :main_deck, :occurred_at]

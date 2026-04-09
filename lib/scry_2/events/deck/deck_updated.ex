@@ -1,17 +1,30 @@
 defmodule Scry2.Events.Deck.DeckUpdated do
   @moduledoc """
-  Domain event — the player created, edited, or cloned a deck.
-  Captures the full deck list at the time of the change.
+  The player created, edited, or cloned a deck. Captures the full deck list
+  at the time of the change.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw `DeckUpsertDeckV2`
+  request. Fires when the player saves any deck change in the collection screen.
+  The `action_type` field indicates what kind of change was made (e.g.
+  `"Cloned"`, `"Update"`).
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `deck_id` — MTGA deck identifier for the affected deck
+  - `deck_name` — player-assigned deck name after the change
+  - `format` — deck format (e.g. `"Standard"`, `"Historic"`)
+  - `action_type` — kind of change: `"Cloned"`, `"Update"`, etc.
+  - `main_deck` — list of `%{arena_id, count}` entries for the main deck
+  - `sideboard` — list of `%{arena_id, count}` entries for the sideboard, or nil
 
   ## Slug
 
   `"deck_updated"` — stable, do not rename.
-
-  ## Source
-
-  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
-  `DeckUpsertDeckV2` request. The `action_type` field indicates
-  what kind of change was made (e.g. "Cloned", "Update").
   """
 
   @enforce_keys [:deck_id, :main_deck, :occurred_at]

@@ -1,17 +1,35 @@
 defmodule Scry2.Events.Progression.DailyWinsStatus do
   @moduledoc """
-  Domain event — snapshot of the player's daily and weekly win
-  reward progress and next reset times.
+  Snapshot of the player's daily and weekly win reward progress and next
+  reset times.
 
-  ## Slug
-
-  `"daily_wins_status"` — stable, do not rename.
+  Event type: :snapshot
 
   ## Source
 
   Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
-  `PeriodicRewardsGetStatus` response. The position fields indicate
-  the next reward tier to be earned (1 = no wins yet today/this week).
+  `PeriodicRewardsGetStatus` response. Fires on login and during periodic
+  sync. The position fields indicate the next reward tier to be earned
+  (1 = no wins yet today/this week).
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `daily_position` — next daily win reward tier to be unlocked (1 = first)
+  - `daily_reset_at` — when the daily win counter resets
+  - `weekly_position` — next weekly win reward tier to be unlocked (1 = first)
+  - `weekly_reset_at` — when the weekly win counter resets
+
+  ## Diff key
+
+  `SnapshotDiff` compares `{daily_position, weekly_position}`. Reset times
+  (`daily_reset_at`, `weekly_reset_at`) are excluded — they change on a fixed
+  schedule and would generate spurious events without a corresponding progress
+  change.
+
+  ## Slug
+
+  `"daily_wins_status"` — stable, do not rename.
   """
 
   @enforce_keys [:daily_position, :occurred_at]

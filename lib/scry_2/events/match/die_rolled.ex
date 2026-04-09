@@ -1,18 +1,28 @@
 defmodule Scry2.Events.Match.DieRolled do
   @moduledoc """
-  Domain event — dice were rolled at the start of a game to determine
-  who goes first. The higher roll wins and chooses to play or draw
-  (virtually always chooses play).
+  Dice were rolled at the start of a game to determine who goes first. The
+  higher roll wins and chooses to play or draw.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a `GreToClientEvent`
+  containing a `GREMessageType_DieRollResultsResp` message. Fires in the same
+  GRE batch as the `ConnectResp` at game start. Each game in a match gets its
+  own die roll.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match this die roll belongs to
+  - `self_roll` — the player's die roll result
+  - `opponent_roll` — the opponent's die roll result
+  - `self_goes_first` — true if the player won the die roll and goes first
 
   ## Slug
 
   `"die_roll_completed"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `GreToClientEvent` containing a
-  `GREMessageType_DieRollResultsResp` message in the same batch as the
-  ConnectResp (game start). Each game in a match gets a die roll.
   """
 
   @enforce_keys [:mtga_match_id, :self_roll, :opponent_roll, :self_goes_first, :occurred_at]

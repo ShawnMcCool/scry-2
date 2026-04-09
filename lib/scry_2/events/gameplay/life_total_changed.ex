@@ -1,4 +1,30 @@
 defmodule Scry2.Events.Gameplay.LifeTotalChanged do
+  @moduledoc """
+  A player's life total changed during a game.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a `GreToClientEvent`
+  containing an `AnnotationType_LifeTotalChanged` annotation. Fires on any
+  life total change — damage, life gain, or direct manipulation.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match the life change occurred in
+  - `turn_number` — turn number when the life total changed
+  - `phase` — game phase during which the change occurred
+  - `active_player` — seat ID of the player whose turn it is
+  - `amount` — magnitude of the life change (positive = gain, negative = loss)
+  - `affected_player` — seat ID of the player whose life total changed
+
+  ## Slug
+
+  `"life_total_changed"` — stable, do not rename.
+  """
+
   @enforce_keys [:occurred_at]
   defstruct [
     :player_id,

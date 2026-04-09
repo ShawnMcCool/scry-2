@@ -1,14 +1,29 @@
 defmodule Scry2.Events.Gameplay.LandPlayed do
   @moduledoc """
-  Domain event — a land was played from hand to battlefield.
+  A land was played from hand to the battlefield.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a `GreToClientEvent`
+  containing an `AnnotationType_ZoneTransfer` annotation with category
+  `PlayLand`. Fires once per land drop — does not fire for lands entering
+  via other means (e.g. put-into-play effects, which produce `ZoneChanged`).
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match the land play occurred in
+  - `turn_number` — turn number when the land was played
+  - `phase` — game phase (should be main phase)
+  - `active_player` — seat ID of the player playing the land
+  - `card_arena_id` — arena_id of the land played
+  - `card_name` — resolved card name (enriched at ingestion)
 
   ## Slug
 
   `"land_played"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `AnnotationType_ZoneTransfer` annotations with category `PlayLand`.
   """
 
   @enforce_keys [:occurred_at]

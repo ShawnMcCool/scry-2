@@ -1,35 +1,30 @@
 defmodule Scry2.Events.Deck.DeckSubmitted do
   @moduledoc """
-  Domain event — a deck was submitted for a match. Carries the full main
-  deck + sideboard composition as arena_ids.
+  A deck was submitted for a game. Carries the full main deck and sideboard
+  composition as arena_ids, as reported by the game engine at game start.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
+  `GreToClientEvent` containing `GREMessageType_ConnectResp`. The ConnectResp
+  carries `connectResp.deckMessage.deckCards` as a flat array of arena_ids
+  (repeated for copies). Fires at the start of each game within a match.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — MTGA match identifier linking this submission to a match
+  - `mtga_deck_id` — MTGA deck identifier (may be nil for sealed pools)
+  - `game_number` — which game within the match (1, 2, 3) this deck was submitted for
+  - `main_deck` — list of `%{arena_id, count}` entries for the main deck
+  - `sideboard` — list of `%{arena_id, count}` entries for the sideboard
+  - `deck_colors` — derived color identity string, enriched at ingestion (ADR-030)
 
   ## Slug
 
   `"deck_submitted"` — stable, do not rename.
-
-  ## Source (future)
-
-  Will be produced by `Scry2.Events.IdentifyDomainEvents` from one of two raw
-  MTGA sources:
-
-    * `GreToClientEvent.greToClientMessages[]` with type
-      `"GREMessageType_ConnectResp"` — carries `connectResp.deckMessage.deckCards`
-      as a flat array of arena_ids (repeated for copies). Covers both
-      self and opponent decks.
-    * `EventSetDeckV2` / `DeckUpsertDeckV2` — lobby events, self deck only,
-      carry a pre-aggregated structure.
-
-  See `TODO.md` > "Match ingestion follow-ups" > Deck submissions for
-  the full plan including how `mtga_deck_id` is derived.
-
-  ## Projected by (future)
-
-  `Scry2.Matches.MatchProjection` will project to `matches_deck_submissions`
-  via `Scry2.Matches.upsert_deck_submission!/1`, keyed on `mtga_deck_id`.
-
-  ## Status
-
-  Struct defined; no translator clause or projector handler wired yet.
   """
 
   @enforce_keys [:mtga_match_id, :main_deck, :occurred_at]

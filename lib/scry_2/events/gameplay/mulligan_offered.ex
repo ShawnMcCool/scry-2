@@ -1,21 +1,37 @@
 defmodule Scry2.Events.Gameplay.MulliganOffered do
   @moduledoc """
-  Domain event — MTGA offered a mulligan decision to a player during
-  the opening hand phase. One event per mulligan offer. The number of
-  mulligans for a game is the count of these events for that game.
+  MTGA presented a mulligan decision to a player during the opening hand phase.
+  One event per offer; the total number of mulligans for a game equals the count
+  of these events for that game where `decision == "mulligan"`.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a `GreToClientEvent`
+  containing a `GREMessageType_MulliganReq` message. Fires once per hand
+  presented to the player. Under London mulligan rules, `hand_size` decreases
+  with each successive mulligan (7, 6, 5, ...). `mtga_match_id` comes from
+  `IngestRawEvents` match context state (ADR-022) since mulligan GRE messages
+  don't carry a `matchID` field.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match the mulligan offer occurred in
+  - `seat_id` — game engine seat ID of the player being offered the mulligan
+  - `hand_size` — number of cards in the offered hand (decreases each mulligan)
+  - `hand_arena_ids` — arena_ids of the cards in the offered hand
+  - `land_count` — number of lands in the hand (enriched at ingestion, ADR-030)
+  - `nonland_count` — number of non-land cards in the hand (enriched at ingestion)
+  - `total_cmc` — sum of converted mana costs of non-land cards (enriched)
+  - `cmc_distribution` — map of CMC => count for non-land cards (enriched)
+  - `color_distribution` — map of color symbol => count in the hand (enriched)
+  - `card_names` — map of arena_id => name for cards in the hand (enriched)
 
   ## Slug
 
   `"mulligan_offered"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `GreToClientEvent` containing a
-  `GREMessageType_MulliganReq` message. The `hand_size` decreases with
-  each successive mulligan (7, 6, 5, ...) under London mulligan rules.
-
-  `mtga_match_id` comes from IngestRawEvents match_context state
-  (ADR-022) since mulligan GRE diffs don't carry matchID.
   """
 
   @enforce_keys [:seat_id, :hand_size, :occurred_at]

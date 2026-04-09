@@ -1,27 +1,37 @@
 defmodule Scry2.Events.Match.MatchCreated do
   @moduledoc """
-  Domain event — a new MTGA match was created and the lobby has handed
-  control to the game room. This is the "match is about to begin" event.
+  A new MTGA match was created and the lobby has handed control to the game
+  room. This is the "match is about to begin" event.
 
-  ## Slug
-
-  `"match_created"` — stable, do not rename.
+  Event type: :state_change
 
   ## Source
 
   Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
   `MatchGameRoomStateChangedEvent` with `stateType: "MatchGameRoomStateType_Playing"`.
+  Fires when the match game room transitions to the playing state.
 
-  ## Projected by
+  ## Fields
 
-  `Scry2.Matches.MatchProjection` — creates a row in `matches_matches` via
-  `Scry2.Matches.upsert_match!/1`.
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — stable match identifier; all subsequent match events share this
+  - `event_name` — MTGA event this match is part of (e.g. `"Play_Ranked"`)
+  - `opponent_screen_name` — opponent's display name
+  - `opponent_user_id` — opponent's MTGA user ID
+  - `platform` — player's platform (e.g. `"PC"`, `"Mac"`)
+  - `opponent_platform` — opponent's platform
+  - `opponent_rank_class` — opponent's rank class at match start (e.g. `"Gold"`)
+  - `opponent_rank_tier` — opponent's rank tier within their class (1–4)
+  - `opponent_leaderboard_percentile` — opponent's percentile for mythic ranked
+  - `opponent_leaderboard_placement` — opponent's placement for mythic ranked
+  - `player_rank` — player's rank string at match start (enriched at ingestion, ADR-030)
+  - `format` — derived format name (enriched at ingestion)
+  - `format_type` — derived format type (enriched at ingestion)
+  - `deck_name` — deck name from the pending deck context (enriched at ingestion)
 
-  ## Real-time consumers
+  ## Slug
 
-  Any LiveView or analytics tool that wants to react to "user started a
-  match" subscribes to `Scry2.Topics.domain_events/0` and matches on this
-  struct.
+  `"match_created"` — stable, do not rename.
   """
 
   @enforce_keys [:mtga_match_id, :occurred_at]

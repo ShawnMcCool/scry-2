@@ -1,17 +1,30 @@
 defmodule Scry2.Events.Progression.QuestStatus do
   @moduledoc """
-  Domain event — snapshot of the player's currently assigned quests
-  and their progress.
+  Snapshot of the player's currently assigned quests and their progress.
+
+  Event type: :snapshot
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw `QuestGetQuests`
+  response. Fires on login and periodic sync. Each quest in the array includes
+  its goal, current progress, and reward description.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `quests` — list of quest maps, each with `quest_id`, `goal`, `progress`,
+    `quest_track`, `reward_gold`, and `reward_xp`
+
+  ## Diff key
+
+  `SnapshotDiff` compares the list of `{quest_id, goal, progress, quest_track}`
+  tuples per quest. `reward_gold` and `reward_xp` are excluded from the diff key
+  as they are static reward metadata that does not change with progress.
 
   ## Slug
 
   `"quest_status"` — stable, do not rename.
-
-  ## Source
-
-  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
-  `QuestGetQuests` response. Each quest in the array includes its
-  goal, current progress, and reward description.
   """
 
   @enforce_keys [:quests, :occurred_at]
