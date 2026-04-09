@@ -33,6 +33,30 @@ defmodule Scry2Web.OperationsLive do
     domain_event_types = Events.count_by_type()
     total_domain = domain_event_types |> Map.values() |> Enum.sum()
 
+    # Restore last operation state so the section survives page reload /
+    # WebSocket reconnect. Only applied when no operation is already tracked
+    # in assigns (i.e. fresh mount) — live PubSub updates take precedence.
+    socket =
+      if socket.assigns.operation == nil do
+        case Operations.last_operation() do
+          nil ->
+            socket
+
+          %{type: type, running: false} ->
+            socket
+            |> assign(:operation, type)
+            |> assign(:operation_running, false)
+            |> assign(:progress, %{percent: 100})
+
+          %{type: type, running: true} ->
+            socket
+            |> assign(:operation, type)
+            |> assign(:operation_running, true)
+        end
+      else
+        socket
+      end
+
     socket
     |> assign(:raw_event_count, status.raw_event_count)
     |> assign(:raw_unprocessed, status.raw_unprocessed)
