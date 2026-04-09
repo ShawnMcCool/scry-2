@@ -74,11 +74,21 @@ defmodule Scry2.Topics do
 
   @doc """
   Control signals for projectors. Used to coordinate lifecycle changes that
-  affect the entire event store. Messages:
+  affect the entire event store.
 
-    * `:full_rebuild` — domain events have been cleared and regenerated
-      (reingest). All projectors must reset their watermark to 0, truncate
-      their tables, and replay from scratch. Prior watermarks are stale.
+  ## Inbound (broadcast by Operations, received by projectors)
+
+    * `:full_rebuild` — domain events cleared and regenerated (reingest).
+      All projectors reset watermark to 0, truncate tables, replay from scratch.
+    * `:rebuild_all` — explicit rebuild all projections (not from reingest).
+      Same truncate-and-replay semantics as `:full_rebuild`.
+    * `:catch_up_all` — replay from watermark without truncating.
+
+  ## Outbound (broadcast by projectors on completion)
+
+    * `{:projector_rebuilt, name}` — projector finished `:full_rebuild` or `:rebuild_all`
+    * `{:projector_caught_up, name}` — projector finished `:catch_up_all`
+    * `{:projector_progress, name, processed, total}` — progress during rebuild or catch-up
   """
   def domain_control, do: "domain:control"
 

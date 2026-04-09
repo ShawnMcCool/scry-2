@@ -8,6 +8,7 @@ defmodule Scry2Web.OperationsLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Topics.subscribe(Topics.operations())
+      Topics.subscribe(Topics.domain_control())
       Topics.subscribe(Topics.domain_events())
       Topics.subscribe(Topics.matches_updates())
       Topics.subscribe(Topics.drafts_updates())
@@ -20,6 +21,7 @@ defmodule Scry2Web.OperationsLive do
      |> assign(:progress, nil)
      |> assign(:steps, [])
      |> assign(:projector_progress, %{})
+     |> assign(:pending_rebuilds, nil)
      |> assign(:reload_timer, nil)}
   end
 
@@ -121,13 +123,17 @@ defmodule Scry2Web.OperationsLive do
         Enum.map(projector_names, &%{name: &1, status: :pending, detail: nil})
       end
 
+    pending_rebuilds =
+      if type == :reingest, do: MapSet.new(projector_names), else: nil
+
     {:noreply,
      socket
      |> assign(:operation, type)
      |> assign(:operation_running, true)
      |> assign(:progress, nil)
      |> assign(:steps, steps)
-     |> assign(:projector_progress, %{})}
+     |> assign(:projector_progress, %{})
+     |> assign(:pending_rebuilds, pending_rebuilds)}
   end
 
   def handle_info({:operation_progress, _type, %{phase: :retranslation} = progress}, socket) do
@@ -192,15 +198,15 @@ defmodule Scry2Web.OperationsLive do
   end
 
   def handle_info({:operation_completed, type}, socket) do
-    # For reingest: retranslation is done and :full_rebuild has been broadcast.
-    # Projectors rebuild asynchronously — mark the placeholder step as in-progress
-    # (not done) so the UI doesn't falsely claim all projectors are finished.
-    # The projector table below will show their real status as they catch up.
+    # For reingest: retranslation is done and :full_rebuild has been broadcast to projectors.
+    # Keep the "Projector rebuilds" step spinning — it completes when all projectors
+    # broadcast {:projector_rebuilt, name} back on domain:control.
+    # For rebuild/catch_up: all projectors have already finished (coordinator waited for acks).
     steps =
       if type == :reingest do
         socket.assigns.steps
         |> update_step("Retranslation", :done, nil)
-        |> update_step("Projector rebuilds (async)", :in_progress, "check table below")
+        |> update_step("Projector rebuilds (async)", :in_progress, "waiting for projectors")
       else
         Enum.map(socket.assigns.steps, &%{&1 | status: :done, detail: nil})
       end
@@ -210,9 +216,11 @@ defmodule Scry2Web.OperationsLive do
         do: "Retranslation complete — projectors rebuilding",
         else: "#{operation_label(type)} completed."
 
+    operation_running = type == :reingest
+
     {:noreply,
      socket
-     |> assign(:operation_running, false)
+     |> assign(:operation_running, operation_running)
      |> assign(:progress, %{percent: 100})
      |> assign(:steps, steps)
      |> put_flash(:info, label)
@@ -245,6 +253,44 @@ defmodule Scry2Web.OperationsLive do
      |> assign(:steps, [])
      |> put_flash(:error, "Operation crashed: #{inspect(reason)}")
      |> load_status()}
+  end
+
+  # Projector completion acks from domain:control ─────────────────────
+
+  def handle_info({:projector_rebuilt, name}, socket) do
+    socket =
+      case socket.assigns.pending_rebuilds do
+        nil ->
+          socket
+
+        pending ->
+          remaining = MapSet.delete(pending, name)
+
+          socket =
+            if MapSet.size(remaining) == 0 do
+              steps = update_step(socket.assigns.steps, "Projector rebuilds (async)", :done, nil)
+
+              socket
+              |> assign(:operation_running, false)
+              |> assign(:pending_rebuilds, nil)
+              |> assign(:steps, steps)
+              |> put_flash(:info, "Reingest complete.")
+            else
+              assign(socket, :pending_rebuilds, remaining)
+            end
+
+          socket
+      end
+
+    {:noreply, load_status(socket)}
+  end
+
+  def handle_info({:projector_caught_up, _name}, socket) do
+    {:noreply, load_status(socket)}
+  end
+
+  def handle_info({:projector_progress, _name, _processed, _total}, socket) do
+    {:noreply, socket}
   end
 
   # Domain event and projection updates — debounced reload for stat cards
