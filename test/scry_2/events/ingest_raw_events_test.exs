@@ -50,6 +50,12 @@ defmodule Scry2.Events.IngestRawEventsTest do
   end
 
   describe "end-to-end: raw event → domain event → projection" do
+    setup %{worker: worker} do
+      insert_raw_from_fixture!("authenticate_response.log")
+      _ = :sys.get_state(worker)
+      :ok
+    end
+
     test "MatchGameRoomStateChangedEvent Playing becomes a match row",
          %{worker: worker, projector: projector} do
       raw = insert_raw_from_fixture!("match_game_room_state_changed_playing.log")
@@ -142,6 +148,12 @@ defmodule Scry2.Events.IngestRawEventsTest do
   end
 
   describe "checkpointing suspension" do
+    setup %{worker: worker} do
+      insert_raw_from_fixture!("authenticate_response.log")
+      _ = :sys.get_state(worker)
+      :ok
+    end
+
     test "suspend_checkpointing prevents IngestionState DB persistence during processing",
          %{worker: worker} do
       alias Scry2.Events.IngestionState
@@ -163,14 +175,90 @@ defmodule Scry2.Events.IngestRawEventsTest do
     end
   end
 
+  describe "snapshot deduplication" do
+    setup %{worker: worker} do
+      insert_raw_from_fixture!("authenticate_response.log")
+      _ = :sys.get_state(worker)
+      :ok
+    end
+
+    # Inserts a raw RankGetCombinedRankInfo event directly with custom JSON, bypassing
+    # the fixture parser so we can control the payload and produce duplicate raw events.
+    defp insert_rank_raw!(json, offset \\ nil) do
+      offset = offset || System.unique_integer([:positive]) * 100_000
+
+      MtgaLogIngestion.insert_event!(%{
+        event_type: "RankGetCombinedRankInfo",
+        mtga_timestamp: ~U[2026-04-06 18:47:51Z],
+        file_offset: offset,
+        source_file: "Player.log",
+        raw_json: json
+      })
+    end
+
+    defp rank_json(opts \\ []) do
+      Jason.encode!(%{
+        "constructedSeasonOrdinal" => Keyword.get(opts, :season, 88),
+        "constructedClass" => Keyword.get(opts, :constructed_class, "Diamond"),
+        "constructedLevel" => Keyword.get(opts, :constructed_level, 4),
+        "constructedStep" => 2,
+        "constructedMatchesWon" => 30,
+        "constructedMatchesLost" => 18,
+        "limitedSeasonOrdinal" => 88,
+        "limitedClass" => Keyword.get(opts, :limited_class, "Silver"),
+        "limitedLevel" => 1
+      })
+    end
+
+    test "identical snapshot event processed twice produces one domain event row",
+         %{worker: worker} do
+      json = rank_json()
+      insert_rank_raw!(json)
+      insert_rank_raw!(json)
+
+      _ = :sys.get_state(worker)
+
+      counts = Events.count_by_type()
+      assert counts["rank_snapshot"] == 1
+    end
+
+    test "snapshot event with changed payload processed twice produces two domain event rows",
+         %{worker: worker} do
+      insert_rank_raw!(rank_json(constructed_level: 4))
+      insert_rank_raw!(rank_json(constructed_level: 5))
+
+      _ = :sys.get_state(worker)
+
+      counts = Events.count_by_type()
+      assert counts["rank_snapshot"] == 2
+    end
+
+    test "non-snapshot event (state-change) processed twice always produces two domain event rows",
+         %{worker: worker} do
+      insert_raw_from_fixture!("match_game_room_state_changed_playing.log")
+      insert_raw_from_fixture!("match_game_room_state_changed_playing.log")
+
+      _ = :sys.get_state(worker)
+
+      counts = Events.count_by_type()
+      assert counts["match_created"] == 2
+    end
+  end
+
   describe "retranslate_all!" do
+    setup %{worker: worker} do
+      insert_raw_from_fixture!("authenticate_response.log")
+      _ = :sys.get_state(worker)
+      :ok
+    end
+
     test "processes all events in id order and calls on_progress once per event",
          %{worker: worker, projector: projector} do
       raw1 = insert_raw_from_fixture!("match_game_room_state_changed_playing.log")
       raw2 = insert_raw_from_fixture!("match_game_room_state_changed_completed.log")
       sync_pipeline(worker, projector)
 
-      # Simulate the reingest DB reset
+      # Simulate the reingest DB reset — all 3 raw events (auth + 2 match) are reset.
       Scry2.Repo.delete_all(Scry2.Events.EventRecord)
 
       Scry2.MtgaLogIngestion.EventRecord
@@ -192,15 +280,20 @@ defmodule Scry2.Events.IngestRawEventsTest do
       assert MtgaLogIngestion.get_event!(raw1.id).processed == true
       assert MtgaLogIngestion.get_event!(raw2.id).processed == true
 
-      # Progress callback called once per event with accurate counts
-      assert_received {:progress, 1, 2}
-      assert_received {:progress, 2, 2}
+      # Progress callback called once per event with accurate counts.
+      # Total is 3: the AuthenticateResponse from setup plus the two match events.
+      assert_received {:progress, 1, 3}
+      assert_received {:progress, 2, 3}
+      assert_received {:progress, 3, 3}
       refute_received {:progress, _, _}
     end
 
     test "works with no events", %{worker: worker} do
+      # Auth event was inserted by setup; ensure only that no match events exist.
       IngestRawEvents.retranslate_all!([], worker)
-      assert Events.count_by_type() == %{}
+      counts = Events.count_by_type()
+      refute Map.has_key?(counts, "match_created")
+      refute Map.has_key?(counts, "match_completed")
     end
   end
 end

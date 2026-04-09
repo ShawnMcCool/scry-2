@@ -27,10 +27,12 @@ defmodule Scry2.TestFactory do
     HumanDraftPickMade
   }
 
+  alias Scry2.Events.Deck.DeckInventory
   alias Scry2.Events.Economy.{CollectionUpdated, InventorySnapshot, InventoryUpdated}
+  alias Scry2.Events.Event.EventCourseUpdated
   alias Scry2.Events.Gameplay.{MulliganOffered, StartingPlayerChosen}
   alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
-  alias Scry2.Events.Progression.{MasteryProgress, RankSnapshot}
+  alias Scry2.Events.Progression.{DailyWinsStatus, MasteryProgress, QuestStatus, RankSnapshot}
   alias Scry2.Events.Session.{SessionDisconnected, SessionStarted}
   alias Scry2.Matches
   alias Scry2.Matches.{DeckSubmission, Game, Match}
@@ -501,6 +503,65 @@ defmodule Scry2.TestFactory do
     }
 
     struct(InventorySnapshot, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_quest_status(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      quests: [
+        %{
+          quest_id: "daily_win_1",
+          goal: 5,
+          progress: 2,
+          quest_track: "Daily",
+          reward_gold: 250,
+          reward_xp: nil
+        }
+      ],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(QuestStatus, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_daily_wins_status(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      daily_position: 3,
+      daily_reset_at: DateTime.utc_now(:second),
+      weekly_position: 10,
+      weekly_reset_at: DateTime.utc_now(:second),
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(DailyWinsStatus, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_deck_inventory(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      decks: [
+        %{deck_id: "deck-abc-123", name: "My Deck", format: "Standard"},
+        %{deck_id: "deck-def-456", name: "Draft Deck", format: "Limited"}
+      ],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(DeckInventory, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_event_course_updated(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      event_name: "QuickDraft_FDN_20260323",
+      current_wins: 2,
+      current_losses: 1,
+      current_module: "Draft",
+      card_pool: [91_234, 91_235],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(EventCourseUpdated, Map.merge(defaults, Map.new(attrs)))
   end
 
   # ── create_* domain events (persisted to event store) ──────────────────

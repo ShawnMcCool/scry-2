@@ -5,11 +5,6 @@ defmodule Scry2.Events.PipelineIntegrationTest do
 
   Starts all pipeline components with unique names per test. Syncs via
   `:sys.get_state/1` to drain GenServer mailboxes before asserting.
-
-  Note: the test fixtures lack a SessionStarted event, so player_id is
-  nil on all domain events. These tests focus on Matches projector +
-  events by design. These tests focus on Matches projector + domain
-  event correctness + watermark tracking.
   """
   use Scry2.DataCase
 
@@ -51,6 +46,11 @@ defmodule Scry2.Events.PipelineIntegrationTest do
 
     # Start the ingestion worker last (producer)
     worker_pid = start_supervised!({IngestRawEvents, name: :"Worker#{suffix}"})
+
+    # Establish player context so all events are stamped with a player_id
+    # and the "no player context" warning is never emitted during tests.
+    insert_raw_from_fixture!("authenticate_response.log")
+    _ = :sys.get_state(:"Worker#{suffix}")
 
     %{
       worker: :"Worker#{suffix}",

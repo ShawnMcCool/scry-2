@@ -61,6 +61,7 @@ defmodule Scry2.Events.IngestRawEvents do
   alias Scry2.Events
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.IngestionState
+  alias Scry2.Events.SnapshotDiff
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.EventRecord
   alias Scry2.Players
@@ -299,16 +300,23 @@ defmodule Scry2.Events.IngestRawEvents do
         # Apply each event to IngestionState, collecting side effects
         {new_state, all_events} = apply_events_to_state(state, events)
 
-        all_events
-        |> stamp_player_id(new_state.session.player_id, record)
-        |> enrich_events(new_state)
-        |> Enum.with_index()
-        |> Enum.each(fn {event, index} ->
-          Events.append!(event, record,
-            sequence: index,
-            session_id: new_state.session.current_session_id
-          )
-        end)
+        {new_state, appended} =
+          all_events
+          |> stamp_player_id(new_state.session.player_id, record)
+          |> enrich_events(new_state)
+          |> Enum.with_index()
+          |> Enum.reduce({new_state, 0}, fn {event, _raw_index}, {acc_state, sequence} ->
+            case maybe_append_event(
+                   event,
+                   record,
+                   sequence,
+                   new_state.session.current_session_id,
+                   acc_state
+                 ) do
+              {:appended, updated_state} -> {updated_state, sequence + 1}
+              {:skipped, updated_state} -> {updated_state, sequence}
+            end
+          end)
 
         MtgaLogIngestion.mark_processed!(record.id)
 
@@ -317,7 +325,7 @@ defmodule Scry2.Events.IngestRawEvents do
 
         Log.info(
           :ingester,
-          "translated raw id=#{record.id} type=#{record.event_type} → #{length(all_events)} domain events"
+          "translated raw id=#{record.id} type=#{record.event_type} → #{appended} appended (#{length(all_events)} produced)"
         )
 
         new_state
@@ -365,18 +373,37 @@ defmodule Scry2.Events.IngestRawEvents do
       events ->
         {new_state, all_events} = apply_events_to_state(state, events)
 
-        event_tuples =
+        {new_state, _sequence, rev_tuples} =
           all_events
           |> stamp_player_id(new_state.session.player_id, record)
           |> enrich_events(new_state)
-          |> Enum.with_index()
-          |> Enum.map(fn {event, index} ->
-            {event, record, [sequence: index, session_id: new_state.session.current_session_id]}
+          |> Enum.reduce({new_state, 0, []}, fn event, {acc_state, sequence, acc_tuples} ->
+            case snapshot_changed?(event, acc_state) do
+              {:changed, slug, key} ->
+                tuple =
+                  {event, record,
+                   [sequence: sequence, session_id: new_state.session.current_session_id]}
+
+                updated_state = put_in(acc_state.snapshot_state[slug], key)
+                {updated_state, sequence + 1, [tuple | acc_tuples]}
+
+              :not_a_snapshot ->
+                tuple =
+                  {event, record,
+                   [sequence: sequence, session_id: new_state.session.current_session_id]}
+
+                {acc_state, sequence + 1, [tuple | acc_tuples]}
+
+              :unchanged ->
+                {acc_state, sequence, acc_tuples}
+            end
           end)
+
+        event_tuples = Enum.reverse(rev_tuples)
 
         Log.info(
           :ingester,
-          "translated raw id=#{record.id} type=#{record.event_type} → #{length(all_events)} domain events"
+          "translated raw id=#{record.id} type=#{record.event_type} → #{length(event_tuples)} appended (#{length(all_events)} produced)"
         )
 
         advanced = IngestionState.advance(new_state, record.id)
@@ -494,5 +521,43 @@ defmodule Scry2.Events.IngestRawEvents do
     end
 
     Enum.map(events, fn event -> %{event | player_id: player_id} end)
+  end
+
+  # ── Snapshot deduplication ───────────────────────────────────────────
+
+  # Checks whether a domain event is a snapshot type that has changed
+  # relative to the last-known diff key in state. Returns one of:
+  #
+  #   {:changed, slug, new_key} — snapshot event with new content; append it
+  #   :unchanged                — snapshot event with identical content; skip
+  #   :not_a_snapshot           — state-change event; always append
+  defp snapshot_changed?(event, state) do
+    if SnapshotDiff.snapshot_event?(event) do
+      slug = Events.Event.type_slug(event)
+
+      case SnapshotDiff.changed?(event, state.snapshot_state[slug]) do
+        {:changed, key} -> {:changed, slug, key}
+        :unchanged -> :unchanged
+      end
+    else
+      :not_a_snapshot
+    end
+  end
+
+  # Appends a single domain event to the log, applying snapshot dedup.
+  # Returns `{:appended, new_state}` or `{:skipped, new_state}`.
+  defp maybe_append_event(event, record, sequence, session_id, state) do
+    case snapshot_changed?(event, state) do
+      {:changed, slug, key} ->
+        Events.append!(event, record, sequence: sequence, session_id: session_id)
+        {:appended, put_in(state.snapshot_state[slug], key)}
+
+      :not_a_snapshot ->
+        Events.append!(event, record, sequence: sequence, session_id: session_id)
+        {:appended, state}
+
+      :unchanged ->
+        {:skipped, state}
+    end
   end
 end
