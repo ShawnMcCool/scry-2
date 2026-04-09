@@ -160,51 +160,57 @@ defmodule Scry2.Operations do
   end
 
   defp rebuild_with_progress(projector_modules) do
-    projector_count = length(projector_modules)
-
     projector_modules
-    |> Enum.with_index(1)
-    |> Enum.each(fn {mod, index} ->
-      name = mod.projector_name()
+    |> then(fn projectors ->
+      Task.Supervisor.async_stream(
+        Scry2.TaskSupervisor,
+        projectors,
+        fn mod ->
+          name = mod.projector_name()
 
-      mod.rebuild!(
-        on_progress: fn processed, total ->
-          broadcast_progress(:rebuild, %{
-            phase: :projection,
-            current_projector: name,
-            projector_index: index,
-            projector_total: projector_count,
-            processed: processed,
-            total: total,
-            percent: percent(processed, total)
-          })
-        end
+          mod.rebuild!(
+            on_progress: fn processed, total ->
+              broadcast_progress(:rebuild, %{
+                phase: :projection,
+                projector: name,
+                processed: processed,
+                total: total,
+                percent: percent(processed, total)
+              })
+            end
+          )
+        end,
+        timeout: :infinity
       )
     end)
+    |> Stream.run()
   end
 
   defp catch_up_with_progress(projector_modules) do
-    projector_count = length(projector_modules)
-
     projector_modules
-    |> Enum.with_index(1)
-    |> Enum.each(fn {mod, index} ->
-      name = mod.projector_name()
+    |> then(fn projectors ->
+      Task.Supervisor.async_stream(
+        Scry2.TaskSupervisor,
+        projectors,
+        fn mod ->
+          name = mod.projector_name()
 
-      mod.catch_up!(
-        on_progress: fn processed, total ->
-          broadcast_progress(:catch_up, %{
-            phase: :projection,
-            current_projector: name,
-            projector_index: index,
-            projector_total: projector_count,
-            processed: processed,
-            total: total,
-            percent: percent(processed, total)
-          })
-        end
+          mod.catch_up!(
+            on_progress: fn processed, total ->
+              broadcast_progress(:catch_up, %{
+                phase: :projection,
+                projector: name,
+                processed: processed,
+                total: total,
+                percent: percent(processed, total)
+              })
+            end
+          )
+        end,
+        timeout: :infinity
       )
     end)
+    |> Stream.run()
   end
 
   # ── Helpers ─────────────────────────────────────────────────────────
