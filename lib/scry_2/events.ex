@@ -105,6 +105,50 @@ defmodule Scry2.Events do
   end
 
   @doc """
+  Atomically inserts a batch of domain events collected during reingest.
+  Takes a list of `{domain_event, source_record, opts}` tuples.
+
+  No PubSub broadcasts — projectors rebuild from the store via
+  `replay_projections!/0` after the batch is committed.
+
+  Duplicate entries (same `mtga_source_id` + `event_type` + `sequence`)
+  are silently skipped so the batch is idempotent on retry.
+  """
+  @spec append_batch!([{struct(), struct() | nil, keyword()}]) :: :ok
+  def append_batch!([]), do: :ok
+
+  def append_batch!(items) when is_list(items) do
+    attrs =
+      Enum.map(items, fn {domain_event, source_record, opts} ->
+        build_event_attrs(domain_event, source_record, opts)
+      end)
+
+    Repo.insert_all(EventRecord, attrs,
+      on_conflict: :nothing,
+      conflict_target: [:mtga_source_id, :event_type, :sequence]
+    )
+
+    :ok
+  end
+
+  defp build_event_attrs(domain_event, source_record, opts) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    %{
+      event_type: Event.type_slug(domain_event),
+      payload: struct_to_payload(domain_event),
+      mtga_source_id: source_record && source_record.id,
+      mtga_timestamp: Event.mtga_timestamp(domain_event),
+      sequence: Keyword.get(opts, :sequence, 0),
+      player_id: Map.get(domain_event, :player_id),
+      match_id: Map.get(domain_event, :mtga_match_id),
+      draft_id: Map.get(domain_event, :mtga_draft_id),
+      session_id: Keyword.get(opts, :session_id),
+      inserted_at: now
+    }
+  end
+
+  @doc """
   Loads a domain event record by id and rehydrates it into the original
   struct form. Returns `{:ok, struct}` or `{:error, :not_found}`.
 
@@ -417,88 +461,23 @@ defmodule Scry2.Events do
       Scry2.MtgaLogIngestion.EventRecord
       |> Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
 
-    # 3. Re-broadcast each raw event for retranslation via IngestRawEvents.
-    #    Suspend checkpointing — no crash-recovery value during full reingest.
-    #    Suspend all projectors — live projection during retranslation is wasted
-    #    work since rebuild! in replay_projections! rebuilds everything from
-    #    scratch. Projectors consume broadcasts from the mailbox (fast no-ops)
-    #    but skip the DB projection and watermark update.
-    suspend_ingest_raw_events_checkpointing()
-    suspend_all_projectors()
+    Log.info(:ingester, "reingest: retranslating #{raw_count} raw events")
 
-    Repo.transaction(fn ->
-      Scry2.MtgaLogIngestion.EventRecord
-      |> order_by([e], asc: e.id)
-      |> Repo.stream()
-      |> Stream.each(fn raw ->
-        Topics.broadcast(Topics.mtga_logs_events(), {:event, raw})
-      end)
-      |> Stream.run()
-    end)
+    # 3. Retranslate synchronously inside IngestRawEvents. All domain events
+    #    are accumulated in memory and committed in a single atomic transaction
+    #    (one Repo.insert_all + one bulk UPDATE). No per-event DB writes.
+    #    No PubSub broadcasts during retranslation — projectors rebuild from
+    #    the event store in step 4.
+    Scry2.Events.IngestRawEvents.retranslate_all!()
 
-    Log.info(:ingester, "reingest: re-broadcast #{raw_count} raw events for retranslation")
+    Log.info(:ingester, "reingest: retranslation complete, rebuilding projections")
 
     # 4. Rebuild all projections from the freshly-translated domain events.
     #    Each projector queries the event store directly (ADR-029) — no
     #    PubSub race conditions.
-    #
-    #    Note: the retranslation above is async (IngestRawEvents GenServer),
-    #    but the domain events are written synchronously within each
-    #    handle_info. By the time we reach this line, all broadcasts have
-    #    been sent and the GenServer's mailbox will process them in order.
-    #    We sync by calling GenServer to drain its mailbox first.
-    sync_ingest_raw_events()
-    resume_ingest_raw_events_checkpointing()
     replay_projections!()
-    resume_all_projectors()
 
     :ok
-  end
-
-  # Ensures IngestRawEvents has processed all queued messages by
-  # sending a synchronous call that must be handled after all prior
-  # handle_info messages in the mailbox.
-  defp sync_ingest_raw_events do
-    case Process.whereis(Scry2.Events.IngestRawEvents) do
-      nil -> :ok
-      pid -> :sys.get_state(pid) && :ok
-    end
-  end
-
-  defp suspend_ingest_raw_events_checkpointing do
-    case Process.whereis(Scry2.Events.IngestRawEvents) do
-      nil -> :ok
-      _pid -> Scry2.Events.IngestRawEvents.suspend_checkpointing()
-    end
-  end
-
-  defp resume_ingest_raw_events_checkpointing do
-    case Process.whereis(Scry2.Events.IngestRawEvents) do
-      nil -> :ok
-      _pid -> Scry2.Events.IngestRawEvents.resume_checkpointing()
-    end
-  end
-
-  # Suspend live projection on all running projectors so retranslation
-  # broadcasts are consumed but not projected. rebuild! in replay_projections!
-  # rebuilds everything from scratch, making live projections during reingest
-  # redundant waste.
-  defp suspend_all_projectors do
-    Enum.each(Scry2.Events.ProjectorRegistry.all(), fn mod ->
-      case Process.whereis(mod) do
-        nil -> :ok
-        _pid -> mod.suspend_live()
-      end
-    end)
-  end
-
-  defp resume_all_projectors do
-    Enum.each(Scry2.Events.ProjectorRegistry.all(), fn mod ->
-      case Process.whereis(mod) do
-        nil -> :ok
-        _pid -> mod.resume_live()
-      end
-    end)
   end
 
   @doc """
