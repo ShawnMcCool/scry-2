@@ -42,10 +42,12 @@ defmodule Scry2.Events.PipelineIntegrationTest do
     suffix = System.unique_integer([:positive])
 
     # Start all projectors first (subscribe before events arrive)
-    _match_proj = start_supervised!({Scry2.Matches.UpdateFromEvent, name: :"MatchProj#{suffix}"})
+    _match_proj = start_supervised!({Scry2.Matches.MatchProjection, name: :"MatchProj#{suffix}"})
 
-    _mull_proj = start_supervised!({Scry2.Mulligans.UpdateFromEvent, name: :"MullProj#{suffix}"})
-    _draft_proj = start_supervised!({Scry2.Drafts.UpdateFromEvent, name: :"DraftProj#{suffix}"})
+    _mull_proj =
+      start_supervised!({Scry2.Mulligans.MulliganProjection, name: :"MullProj#{suffix}"})
+
+    _draft_proj = start_supervised!({Scry2.Drafts.DraftProjection, name: :"DraftProj#{suffix}"})
 
     # Start the ingestion worker last (producer)
     worker_pid = start_supervised!({IngestRawEvents, name: :"Worker#{suffix}"})
@@ -137,15 +139,15 @@ defmodule Scry2.Events.PipelineIntegrationTest do
       _raw = insert_raw_from_fixture!("match_game_room_state_changed_playing.log")
       sync_pipeline(worker, projectors)
 
-      matches_watermark = Events.get_watermark("Matches.UpdateFromEvent")
+      matches_watermark = Events.get_watermark("Matches.MatchProjection")
       assert matches_watermark > 0
 
       # Mulligans also claims match_created, so it advances too
-      mulligans_watermark = Events.get_watermark("Mulligans.UpdateFromEvent")
+      mulligans_watermark = Events.get_watermark("Mulligans.MulliganProjection")
       assert mulligans_watermark > 0
 
       # Drafts doesn't handle match events — watermark stays at 0
-      drafts_watermark = Events.get_watermark("Drafts.UpdateFromEvent")
+      drafts_watermark = Events.get_watermark("Drafts.DraftProjection")
       assert drafts_watermark == 0
     end
 
@@ -158,7 +160,7 @@ defmodule Scry2.Events.PipelineIntegrationTest do
       max_id = Events.max_event_id()
       assert max_id > 0
 
-      matches_watermark = Events.get_watermark("Matches.UpdateFromEvent")
+      matches_watermark = Events.get_watermark("Matches.MatchProjection")
       assert matches_watermark == max_id
     end
   end

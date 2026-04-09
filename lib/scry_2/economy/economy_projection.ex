@@ -1,4 +1,4 @@
-defmodule Scry2.Economy.UpdateFromEvent do
+defmodule Scry2.Economy.EconomyProjection do
   @moduledoc """
   Projects economy domain events into the `economy_*` read models.
 

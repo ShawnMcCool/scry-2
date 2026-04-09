@@ -1,4 +1,4 @@
-defmodule Scry2.Drafts.UpdateFromEvent do
+defmodule Scry2.Drafts.DraftProjection do
   @moduledoc """
   Pipeline stage 09 — project draft-related domain events into the
   `drafts_*` read models.
@@ -18,7 +18,7 @@ defmodule Scry2.Drafts.UpdateFromEvent do
   `@claimed_slugs` is empty — the translator does not yet produce any
   draft domain events because the user's Player.log contains no draft
   activity. This module exists as a structural placeholder matching
-  `Scry2.Matches.UpdateFromEvent`, so that once draft fixtures exist and the
+  `Scry2.Matches.MatchProjection`, so that once draft fixtures exist and the
   translator learns `%DraftStarted{}` / `%DraftPickMade{}`, the projector
   pattern is already in place.
 

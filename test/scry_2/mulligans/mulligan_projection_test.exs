@@ -1,4 +1,4 @@
-defmodule Scry2.Mulligans.UpdateFromEventTest do
+defmodule Scry2.Mulligans.MulliganProjectionTest do
   use Scry2.DataCase
 
   import Scry2.TestFactory
@@ -6,7 +6,7 @@ defmodule Scry2.Mulligans.UpdateFromEventTest do
 
   alias Scry2.Events
   alias Scry2.Mulligans
-  alias Scry2.Mulligans.UpdateFromEvent
+  alias Scry2.Mulligans.MulliganProjection
 
   describe "rebuild!/0" do
     test "mulligan_offered creates a hand row with stats" do
@@ -24,7 +24,7 @@ defmodule Scry2.Mulligans.UpdateFromEventTest do
           total_cmc: 12.0
         })
 
-      project_events(UpdateFromEvent, event)
+      project_events(MulliganProjection, event)
 
       hands = Mulligans.list_hands()
       hand = Enum.find(hands, &(&1.mtga_match_id == match_id))
@@ -53,7 +53,7 @@ defmodule Scry2.Mulligans.UpdateFromEventTest do
         })
       ]
 
-      project_events(UpdateFromEvent, events)
+      project_events(MulliganProjection, events)
 
       hands = Mulligans.list_hands()
       hand = Enum.find(hands, &(&1.mtga_match_id == match_id))
@@ -82,7 +82,7 @@ defmodule Scry2.Mulligans.UpdateFromEventTest do
         })
       ]
 
-      project_events(UpdateFromEvent, events)
+      project_events(MulliganProjection, events)
 
       hands = Mulligans.list_hands() |> Enum.filter(&(&1.mtga_match_id == match_id))
       assert length(hands) == 2
@@ -94,9 +94,9 @@ defmodule Scry2.Mulligans.UpdateFromEventTest do
       player = create_player()
 
       event = build_mulligan_offered(%{player_id: player.id})
-      records = project_events(UpdateFromEvent, event)
+      records = project_events(MulliganProjection, event)
 
-      assert Events.get_watermark("Mulligans.UpdateFromEvent") == List.last(records).id
+      assert Events.get_watermark("Mulligans.MulliganProjection") == List.last(records).id
     end
   end
 end

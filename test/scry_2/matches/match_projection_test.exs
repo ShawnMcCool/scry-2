@@ -1,4 +1,4 @@
-defmodule Scry2.Matches.UpdateFromEventTest do
+defmodule Scry2.Matches.MatchProjectionTest do
   use Scry2.DataCase
 
   import ExUnit.CaptureLog
@@ -7,7 +7,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
 
   alias Scry2.Events
   alias Scry2.Matches
-  alias Scry2.Matches.UpdateFromEvent
+  alias Scry2.Matches.MatchProjection
 
   describe "rebuild!/0" do
     test "match_created projects a match row" do
@@ -21,7 +21,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
           won: nil
         )
 
-      project_events(UpdateFromEvent, scenario)
+      project_events(MatchProjection, scenario)
 
       match = Matches.get_by_mtga_id(scenario.match_id, player.id)
       assert match
@@ -41,7 +41,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
           won: nil
         )
 
-      project_events(UpdateFromEvent, scenario)
+      project_events(MatchProjection, scenario)
 
       match = Matches.get_by_mtga_id(scenario.match_id, player.id)
       assert match.player_rank == "Platinum 2"
@@ -63,7 +63,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
           ]
         )
 
-      project_events(UpdateFromEvent, scenario)
+      project_events(MatchProjection, scenario)
 
       match = Matches.get_by_mtga_id(scenario.match_id, player.id)
       assert match.won == true
@@ -81,7 +81,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
           won: nil
         )
 
-      project_events(UpdateFromEvent, scenario)
+      project_events(MatchProjection, scenario)
 
       match = Matches.get_by_mtga_id(scenario.match_id, player.id)
       games = Scry2.Repo.all(Scry2.Matches.Game)
@@ -97,7 +97,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
 
       event = build_game_completed(%{player_id: player.id, mtga_match_id: "nonexistent-match"})
 
-      log = capture_log(fn -> project_events(UpdateFromEvent, event) end)
+      log = capture_log(fn -> project_events(MatchProjection, event) end)
       assert log =~ "unknown match"
     end
 
@@ -113,7 +113,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
           won: nil
         )
 
-      project_events(UpdateFromEvent, scenario)
+      project_events(MatchProjection, scenario)
 
       match = Matches.get_by_mtga_id(scenario.match_id, player.id)
       assert match.on_play == true
@@ -148,7 +148,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
         })
       ]
 
-      project_events(UpdateFromEvent, events)
+      project_events(MatchProjection, events)
 
       match = Matches.get_by_mtga_id(match_id, player.id)
       results = match.game_results["results"]
@@ -167,7 +167,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
           won: nil
         )
 
-      project_events(UpdateFromEvent, scenario)
+      project_events(MatchProjection, scenario)
 
       match = Matches.get_by_mtga_id(scenario.match_id, player.id)
       assert match.deck_colors == "BRG"
@@ -196,7 +196,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
           ]
         )
 
-      project_events(UpdateFromEvent, scenario)
+      project_events(MatchProjection, scenario)
 
       match = Matches.get_by_mtga_id(scenario.match_id, player.id)
       assert match.event_name == "PremierDraft_FDN"
@@ -227,7 +227,7 @@ defmodule Scry2.Matches.UpdateFromEventTest do
           mtga_deck_id: "pending:seat1"
         })
 
-      project_events(UpdateFromEvent, event)
+      project_events(MatchProjection, event)
 
       submissions = Scry2.Repo.all(Scry2.Matches.DeckSubmission)
       assert length(submissions) == 1
@@ -238,9 +238,9 @@ defmodule Scry2.Matches.UpdateFromEventTest do
       player = create_player()
 
       scenario = match_scenario(player, games: [], won: nil)
-      records = project_events(UpdateFromEvent, scenario)
+      records = project_events(MatchProjection, scenario)
 
-      watermark = Events.get_watermark("Matches.UpdateFromEvent")
+      watermark = Events.get_watermark("Matches.MatchProjection")
       assert watermark == List.last(records).id
     end
 
@@ -249,9 +249,9 @@ defmodule Scry2.Matches.UpdateFromEventTest do
 
       scenario = match_scenario(player, games: [], won: nil)
 
-      project_events(UpdateFromEvent, scenario)
+      project_events(MatchProjection, scenario)
       # Rebuild again — should produce same result
-      UpdateFromEvent.rebuild!()
+      MatchProjection.rebuild!()
 
       matches =
         Scry2.Repo.all(Scry2.Matches.Match)

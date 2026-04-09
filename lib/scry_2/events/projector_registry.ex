@@ -7,11 +7,11 @@ defmodule Scry2.Events.ProjectorRegistry do
   """
 
   @projectors [
-    Scry2.Matches.UpdateFromEvent,
-    Scry2.Drafts.UpdateFromEvent,
-    Scry2.Mulligans.UpdateFromEvent,
-    Scry2.Ranks.UpdateFromEvent,
-    Scry2.Economy.UpdateFromEvent
+    Scry2.Matches.MatchProjection,
+    Scry2.Drafts.DraftProjection,
+    Scry2.Mulligans.MulliganProjection,
+    Scry2.Ranks.RankProjection,
+    Scry2.Economy.EconomyProjection
   ]
 
   @doc "Returns all projector modules."

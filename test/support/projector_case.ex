@@ -21,7 +21,7 @@ defmodule Scry2.ProjectorCase do
           [game_number: 2, won: false, on_play: false, num_turns: 11]
         ])
 
-        project_events(Scry2.Matches.UpdateFromEvent, events)
+        project_events(Scry2.Matches.MatchProjection, events)
 
         match = Matches.get_by_mtga_id(events.match_id, player.id)
         assert match.won == true

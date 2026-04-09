@@ -1,4 +1,4 @@
-defmodule Scry2.Mulligans.UpdateFromEvent do
+defmodule Scry2.Mulligans.MulliganProjection do
   @moduledoc """
   Projects domain events into the `mulligans_mulligan_listing` read model.
 

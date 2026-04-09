@@ -24,7 +24,7 @@ defmodule Scry2.Events.Deck.DeckSubmitted do
 
   ## Projected by (future)
 
-  `Scry2.Matches.UpdateFromEvent` will project to `matches_deck_submissions`
+  `Scry2.Matches.MatchProjection` will project to `matches_deck_submissions`
   via `Scry2.Matches.upsert_deck_submission!/1`, keyed on `mtga_deck_id`.
 
   ## Status

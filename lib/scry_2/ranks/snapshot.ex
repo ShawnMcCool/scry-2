@@ -8,7 +8,7 @@ defmodule Scry2.Ranks.Snapshot do
   ## Disposable
 
   This table can be dropped and rebuilt from the domain event log via
-  `Scry2.Ranks.UpdateFromEvent.rebuild!/0`.
+  `Scry2.Ranks.RankProjection.rebuild!/0`.
   """
 
   use Ecto.Schema

@@ -15,7 +15,7 @@ defmodule Scry2.Events.Draft.DraftPickMade do
 
   ## Projected by (future)
 
-  `Scry2.Drafts.UpdateFromEvent` will project to `drafts_picks` via
+  `Scry2.Drafts.DraftProjection` will project to `drafts_picks` via
   `Scry2.Drafts.upsert_pick!/1`, keyed on `(draft_id, pack_number, pick_number)`.
 
   ## Status
