@@ -206,7 +206,7 @@ defmodule Scry2.Events do
   @spec replay_by_types([String.t()], (struct() -> any()), keyword()) :: :ok
   def replay_by_types(type_slugs, fun, opts \\ [])
       when is_list(type_slugs) and is_function(fun, 1) do
-    batch_size = Keyword.get(opts, :batch_size, 500)
+    batch_size = Keyword.get(opts, :batch_size, 1000)
     cursor = Keyword.get(opts, :cursor, 0)
     on_batch = Keyword.get(opts, :on_batch)
     do_replay_by_types(type_slugs, fun, batch_size, cursor, on_batch, 0)
@@ -214,8 +214,8 @@ defmodule Scry2.Events do
 
   defp do_replay_by_types(type_slugs, fun, batch_size, cursor, on_batch, processed) do
     batch =
-      EventRecord
-      |> where([e], e.event_type in ^type_slugs and e.id > ^cursor)
+      type_slugs
+      |> build_replay_batch_query(cursor)
       |> order_by([e], asc: e.id)
       |> limit(^batch_size)
       |> Repo.all()
@@ -236,6 +236,22 @@ defmodule Scry2.Events do
 
         do_replay_by_types(type_slugs, fun, batch_size, last_id, on_batch, new_processed)
     end
+  end
+
+  # Builds a UNION ALL query when there are multiple type slugs, allowing
+  # SQLite to use the event_type index as a merge source (no temp b-tree sort).
+  # For a single slug, uses a plain WHERE clause.
+  defp build_replay_batch_query([slug], cursor) do
+    from e in EventRecord, where: e.event_type == ^slug and e.id > ^cursor
+  end
+
+  defp build_replay_batch_query([first | rest], cursor) do
+    base = from e in EventRecord, where: e.event_type == ^first and e.id > ^cursor
+
+    Enum.reduce(rest, base, fn slug, acc ->
+      branch = from e in EventRecord, where: e.event_type == ^slug and e.id > ^cursor
+      union_all(acc, ^branch)
+    end)
   end
 
   @doc "Returns a map of event_type slug => count. Diagnostics only."

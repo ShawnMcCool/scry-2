@@ -174,6 +174,38 @@ defmodule Scry2.MtgaLogIngestion do
     |> Repo.all()
   end
 
+  @doc """
+  Returns raw events with id > `cursor`, ordered ascending, up to `limit`.
+
+  Used for cursor-based streaming during retranslation — avoids loading the
+  entire raw event table into memory at once.
+  """
+  def list_ordered_after(cursor, opts \\ []) do
+    limit_count = Keyword.get(opts, :limit, 1000)
+
+    EventRecord
+    |> where([e], e.id > ^cursor)
+    |> order_by([e], asc: e.id)
+    |> limit(^limit_count)
+    |> Repo.all()
+  end
+
+  @doc """
+  Marks only the given event `ids` as processed.
+
+  Used during chunked retranslation to mark each committed batch without
+  touching the rest of the table.
+  """
+  def bulk_mark_processed!(ids) when is_list(ids) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    Repo.update_all(from(e in EventRecord, where: e.id in ^ids),
+      set: [processed: true, processed_at: now]
+    )
+
+    :ok
+  end
+
   @doc "Returns the total number of raw events."
   def count_all do
     Repo.aggregate(EventRecord, :count)
