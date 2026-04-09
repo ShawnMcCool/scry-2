@@ -35,42 +35,7 @@ defmodule Scry2Web.DashboardLive do
 
   @impl true
   def handle_params(_params, _uri, socket) do
-    watcher = MtgaLogIngestion.Watcher.status()
-    events_by_type = MtgaLogIngestion.count_by_type()
-    known_types = IdentifyDomainEvents.known_event_types()
-
-    unrecognized =
-      events_by_type
-      |> Map.reject(fn {type, _count} -> MapSet.member?(known_types, type) end)
-
-    deferred_with_payloads =
-      IdentifyDomainEvents.deferred_event_types()
-      |> MtgaLogIngestion.deferred_types_with_payloads()
-
-    total_raw = events_by_type |> Map.values() |> Enum.sum()
-    domain_counts = Events.count_by_type()
-    total_domain = domain_counts |> Map.values() |> Enum.sum()
-    error_count = MtgaLogIngestion.count_errors()
-
-    player_id = socket.assigns[:active_player_id]
-
-    counts = %{
-      matches: Matches.count(player_id: player_id),
-      drafts: Drafts.count(player_id: player_id),
-      cards: Cards.count(),
-      events_by_type: events_by_type,
-      total_raw: total_raw,
-      total_domain: total_domain,
-      errors: error_count
-    }
-
-    {:noreply,
-     socket
-     |> assign(:watcher, watcher)
-     |> assign(:counts, counts)
-     |> assign(:unrecognized, unrecognized)
-     |> assign(:deferred_with_payloads, deferred_with_payloads)
-     |> assign(:errors, if(error_count > 0, do: MtgaLogIngestion.list_errors(), else: []))}
+    {:noreply, load_data(socket)}
   end
 
   @impl true
@@ -107,43 +72,59 @@ defmodule Scry2Web.DashboardLive do
   end
 
   def handle_info(:reload_data, socket) do
+    {:noreply, socket |> load_data() |> assign(:reload_timer, nil)}
+  end
+
+  def handle_info(_other, socket), do: {:noreply, socket}
+
+  defp load_data(socket) do
     player_id = socket.assigns[:active_player_id]
-    events_by_type = MtgaLogIngestion.count_by_type()
+
+    # Pure function calls — no DB, run first
     known_types = IdentifyDomainEvents.known_event_types()
+    deferred_types = IdentifyDomainEvents.deferred_event_types()
 
-    unrecognized =
-      events_by_type
-      |> Map.reject(fn {type, _count} -> MapSet.member?(known_types, type) end)
+    # All DB/GenServer calls are independent — run in parallel
+    t_watcher = Task.async(fn -> MtgaLogIngestion.Watcher.status() end)
+    t_events_by_type = Task.async(fn -> MtgaLogIngestion.count_by_type() end)
+    t_domain_counts = Task.async(fn -> Events.count_by_type() end)
+    t_error_count = Task.async(fn -> MtgaLogIngestion.count_errors() end)
+    t_matches = Task.async(fn -> Matches.count(player_id: player_id) end)
+    t_drafts = Task.async(fn -> Drafts.count(player_id: player_id) end)
+    t_cards = Task.async(fn -> Cards.count() end)
 
-    deferred_with_payloads =
-      IdentifyDomainEvents.deferred_event_types()
-      |> MtgaLogIngestion.deferred_types_with_payloads()
+    t_deferred =
+      Task.async(fn -> MtgaLogIngestion.deferred_types_with_payloads(deferred_types) end)
+
+    watcher = Task.await(t_watcher)
+    events_by_type = Task.await(t_events_by_type)
+    domain_counts = Task.await(t_domain_counts)
+    error_count = Task.await(t_error_count)
+    deferred_with_payloads = Task.await(t_deferred)
 
     total_raw = events_by_type |> Map.values() |> Enum.sum()
-    domain_counts = Events.count_by_type()
     total_domain = domain_counts |> Map.values() |> Enum.sum()
-    error_count = MtgaLogIngestion.count_errors()
+
+    unrecognized =
+      Map.reject(events_by_type, fn {type, _count} -> MapSet.member?(known_types, type) end)
 
     counts = %{
-      matches: Matches.count(player_id: player_id),
-      drafts: Drafts.count(player_id: player_id),
-      cards: Cards.count(),
+      matches: Task.await(t_matches),
+      drafts: Task.await(t_drafts),
+      cards: Task.await(t_cards),
       events_by_type: events_by_type,
       total_raw: total_raw,
       total_domain: total_domain,
       errors: error_count
     }
 
-    {:noreply,
-     socket
-     |> assign(:counts, counts)
-     |> assign(:unrecognized, unrecognized)
-     |> assign(:deferred_with_payloads, deferred_with_payloads)
-     |> assign(:errors, if(error_count > 0, do: MtgaLogIngestion.list_errors(), else: []))
-     |> assign(:reload_timer, nil)}
+    socket
+    |> assign(:watcher, watcher)
+    |> assign(:counts, counts)
+    |> assign(:unrecognized, unrecognized)
+    |> assign(:deferred_with_payloads, deferred_with_payloads)
+    |> assign(:errors, if(error_count > 0, do: MtgaLogIngestion.list_errors(), else: []))
   end
-
-  def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
   def render(assigns) do

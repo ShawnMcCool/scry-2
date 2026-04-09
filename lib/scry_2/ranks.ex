@@ -37,7 +37,7 @@ defmodule Scry2.Ranks do
   def count(opts \\ []) do
     Snapshot
     |> maybe_filter_by_player(opts[:player_id])
-    |> Repo.aggregate(:count, :id)
+    |> Repo.aggregate(:count)
   end
 
   @doc "Inserts a rank snapshot row."

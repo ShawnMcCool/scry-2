@@ -96,7 +96,7 @@ defmodule Scry2.Drafts do
 
     Draft
     |> maybe_filter_by_player(player_id)
-    |> Repo.aggregate(:count, :id)
+    |> Repo.aggregate(:count)
   end
 
   defp maybe_filter_by_player(query, nil), do: query
