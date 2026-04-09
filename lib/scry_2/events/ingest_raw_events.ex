@@ -140,13 +140,16 @@ defmodule Scry2.Events.IngestRawEvents do
     # load/1 returns defaults, ensuring events are replayed from event 1.
     fresh_ingestion = IngestionState.load(self_user_id: Config.get(:mtga_self_user_id))
 
-    new_ingestion =
+    # Translate every raw event in-memory, accumulating domain event tuples
+    # and error pairs without touching the DB per event.
+    {new_ingestion, rev_event_buckets, rev_error_buckets} =
       MtgaLogIngestion.list_all_ordered()
       |> Enum.with_index(1)
-      |> Enum.reduce(fresh_ingestion, fn {record, index}, acc_ingestion ->
-        result =
+      |> Enum.reduce({fresh_ingestion, [], []}, fn {record, index},
+                                                   {acc_ingestion, acc_events, acc_errors} ->
+        {result_ingestion, new_events, new_errors} =
           try do
-            process_raw_event(record, acc_ingestion, false)
+            process_raw_event_for_batch(record, acc_ingestion)
           rescue
             error ->
               Log.error(
@@ -154,13 +157,24 @@ defmodule Scry2.Events.IngestRawEvents do
                 "retranslate_all failed on id=#{record.id}: #{inspect(error)}"
               )
 
-              MtgaLogIngestion.mark_error!(record.id, error)
-              acc_ingestion
+              {acc_ingestion, [], [{record.id, error}]}
           end
 
         if on_progress, do: on_progress.(index, total)
-        result
+        {result_ingestion, [new_events | acc_events], [new_errors | acc_errors]}
       end)
+
+    # Commit atomically: bulk-insert domain events, bulk-mark raw events
+    # processed, then record any per-event errors. One transaction instead
+    # of ~10k individual DB writes.
+    event_tuples = rev_event_buckets |> Enum.reverse() |> Enum.concat()
+    error_pairs = rev_error_buckets |> Enum.reverse() |> Enum.concat()
+
+    Scry2.Repo.transaction(fn ->
+      Events.append_batch!(event_tuples)
+      MtgaLogIngestion.bulk_mark_all_processed!()
+      MtgaLogIngestion.bulk_mark_errors!(error_pairs)
+    end)
 
     final_ingestion = IngestionState.persist!(new_ingestion)
     {:reply, :ok, %{state | ingestion: final_ingestion}}
@@ -283,6 +297,66 @@ defmodule Scry2.Events.IngestRawEvents do
         )
 
         new_state
+    end
+  end
+
+  # Batch variant of process_raw_event/3 — same translation and state
+  # logic, but returns `{new_ingestion, event_tuples, error_pairs}` instead
+  # of writing to the DB. Used by retranslate_all! to accumulate the full
+  # translation in memory before committing atomically.
+  defp process_raw_event_for_batch(record, state) do
+    state = maybe_cache_game_objects(record, state)
+    state = maybe_capture_rank(record, state)
+
+    {domain_events, translation_warnings} =
+      IdentifyDomainEvents.translate(
+        record,
+        state.session.self_user_id,
+        Map.from_struct(state.match)
+      )
+
+    unless IdentifyDomainEvents.recognized?(record.event_type) do
+      Log.warning(:ingester, "unrecognized MTGA event type: #{record.event_type}")
+    end
+
+    for warning <- translation_warnings do
+      Log.warning(
+        :ingester,
+        "translation: #{warning.category} raw_id=#{record.id} type=#{record.event_type} — #{warning.detail}"
+      )
+    end
+
+    error_pairs =
+      if domain_events == [] and translation_warnings != [] and
+           IdentifyDomainEvents.recognized?(record.event_type) do
+        [{record.id, translation_warnings}]
+      else
+        []
+      end
+
+    case domain_events do
+      [] ->
+        {state, [], error_pairs}
+
+      events ->
+        {new_state, all_events} = apply_events_to_state(state, events)
+
+        event_tuples =
+          all_events
+          |> stamp_player_id(new_state.session.player_id, record)
+          |> enrich_events(new_state)
+          |> Enum.with_index()
+          |> Enum.map(fn {event, index} ->
+            {event, record, [sequence: index, session_id: new_state.session.current_session_id]}
+          end)
+
+        Log.info(
+          :ingester,
+          "translated raw id=#{record.id} type=#{record.event_type} → #{length(all_events)} domain events"
+        )
+
+        advanced = IngestionState.advance(new_state, record.id)
+        {advanced, event_tuples, error_pairs}
     end
   end
 

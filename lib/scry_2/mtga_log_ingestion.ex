@@ -124,6 +124,28 @@ defmodule Scry2.MtgaLogIngestion do
     :ok
   end
 
+  @doc """
+  Marks ALL raw events as processed in a single UPDATE — no WHERE clause.
+
+  Safe in the reingest context because reingest resets every raw event to
+  `processed: false` before retranslation, then processes every one.
+  Avoids hitting any per-query parameter limits at large scale.
+  """
+  def bulk_mark_all_processed! do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    Repo.update_all(EventRecord, set: [processed: true, processed_at: now])
+    :ok
+  end
+
+  @doc """
+  Marks each `{id, reason}` pair as a processing error.
+
+  Errors are rare (malformed events) so individual updates are fine.
+  """
+  def bulk_mark_errors!(id_reason_pairs) do
+    Enum.each(id_reason_pairs, fn {id, reason} -> mark_error!(id, reason) end)
+  end
+
   @doc "Returns a map of event_type => count for all persisted events."
   def count_by_type do
     from(r in EventRecord, group_by: r.event_type, select: {r.event_type, count(r.id)})
