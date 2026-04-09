@@ -56,69 +56,88 @@ defmodule Scry2.Mulligans do
   end
 
   @doc """
+  Marks all existing hands for a match as `"mulliganed"`.
+  Called just before inserting a new hand offer — the prior hand was
+  definitively rejected under London mulligan rules.
+  """
+  def stamp_decision_mulliganed!(mtga_match_id) when is_binary(mtga_match_id) do
+    from(m in MulliganListing, where: m.mtga_match_id == ^mtga_match_id)
+    |> Repo.update_all(set: [decision: "mulliganed"])
+  end
+
+  @doc """
+  Stamps `match_won` on all mulligan rows for a match.
+  Called when `MatchCompleted` is projected.
+  """
+  def stamp_match_won!(mtga_match_id, won)
+      when is_binary(mtga_match_id) and is_boolean(won) do
+    from(m in MulliganListing, where: m.mtga_match_id == ^mtga_match_id)
+    |> Repo.update_all(set: [match_won: won])
+  end
+
+  @doc """
   Returns mulligan analytics: keep rate by hand size and win rate by
-  kept hand land count. Joins mulligan hands to match outcomes.
+  kept hand land count. Uses precomputed `decision` and `match_won`
+  columns — no Elixir aggregation, no cross-context lookup.
 
   Returns:
     * `:by_hand_size` — keep rate per hand size (7, 6, 5, etc.)
     * `:by_land_count` — win rate when keeping a hand with N lands
     * `:total_hands` — total mulligan offers
-    * `:total_keeps` — hands kept (inferred: last per match)
+    * `:total_keeps` — hands kept
   """
   def mulligan_analytics(opts \\ []) do
     player_id = opts[:player_id]
-    hands = list_hands(player_id: player_id)
-    by_match = Enum.group_by(hands, & &1.mtga_match_id)
 
-    # For each match, the last hand (by occurred_at) is the kept hand
-    kept_hands =
-      by_match
-      |> Enum.map(fn {_match_id, match_hands} ->
-        Enum.max_by(match_hands, & &1.occurred_at, DateTime)
-      end)
+    total_hands =
+      MulliganListing
+      |> maybe_filter_by_player(player_id)
+      |> Repo.aggregate(:count)
 
-    # Load match outcomes for the kept hands
-    match_ids = Enum.map(kept_hands, & &1.mtga_match_id) |> Enum.uniq()
-    outcomes = match_outcomes(match_ids)
+    total_keeps =
+      MulliganListing
+      |> maybe_filter_by_player(player_id)
+      |> where([m], m.decision == "kept")
+      |> Repo.aggregate(:count)
 
-    # Keep rate by hand size
     by_hand_size =
-      by_match
-      |> Enum.flat_map(fn {_match_id, match_hands} ->
-        sorted = Enum.sort_by(match_hands, & &1.occurred_at, {:asc, DateTime})
-        {mulliganed, [kept]} = Enum.split(sorted, -1)
-        [{kept.hand_size, :kept} | Enum.map(mulliganed, &{&1.hand_size, :mulliganed})]
-      end)
-      |> Enum.group_by(&elem(&1, 0))
-      |> Enum.map(fn {size, entries} ->
-        total = length(entries)
-        keeps = Enum.count(entries, fn {_, decision} -> decision == :kept end)
-        %{hand_size: size, total: total, keeps: keeps, keep_rate: pct(keeps, total)}
-      end)
-      |> Enum.sort_by(& &1.hand_size, :desc)
+      MulliganListing
+      |> maybe_filter_by_player(player_id)
+      |> where([m], not is_nil(m.decision))
+      |> group_by([m], m.hand_size)
+      |> select([m], %{
+        hand_size: m.hand_size,
+        total: count(),
+        keeps: sum(fragment("CASE WHEN ? = 'kept' THEN 1 ELSE 0 END", m.decision))
+      })
+      |> order_by([m], desc: m.hand_size)
+      |> Repo.all()
+      |> Enum.map(fn row -> Map.put(row, :keep_rate, pct(row.keeps, row.total)) end)
 
-    # Win rate by land count in kept hand
     by_land_count =
-      kept_hands
-      |> Enum.filter(&(&1.land_count != nil))
-      |> Enum.group_by(& &1.land_count)
-      |> Enum.map(fn {lands, hands_at_count} ->
-        total = length(hands_at_count)
-        wins = Enum.count(hands_at_count, fn hand -> outcomes[hand.mtga_match_id] == true end)
-        %{land_count: lands, total: total, wins: wins, win_rate: pct(wins, total)}
-      end)
-      |> Enum.sort_by(& &1.land_count)
+      MulliganListing
+      |> maybe_filter_by_player(player_id)
+      |> where(
+        [m],
+        m.decision == "kept" and not is_nil(m.land_count) and not is_nil(m.match_won)
+      )
+      |> group_by([m], m.land_count)
+      |> select([m], %{
+        land_count: m.land_count,
+        total: count(),
+        wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.match_won))
+      })
+      |> order_by([m], asc: m.land_count)
+      |> Repo.all()
+      |> Enum.map(fn row -> Map.put(row, :win_rate, pct(row.wins, row.total)) end)
 
     %{
-      total_hands: length(hands),
-      total_keeps: length(kept_hands),
+      total_hands: total_hands,
+      total_keeps: total_keeps,
       by_hand_size: by_hand_size,
       by_land_count: by_land_count
     }
   end
-
-  defp match_outcomes([]), do: %{}
-  defp match_outcomes(match_ids), do: Scry2.Matches.outcomes_by_mtga_ids(match_ids)
 
   defp pct(_n, 0), do: nil
   defp pct(n, total), do: Float.round(n / total * 100, 1)

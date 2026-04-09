@@ -16,20 +16,22 @@ defmodule Scry2.MulligansAnalyticsTest do
     test "computes keep rate by hand size" do
       match = TestFactory.create_match(%{won: true})
 
-      # First offer at 7 cards — mulliganed (not the last)
+      # First offer at 7 cards — mulliganed
       Mulligans.upsert_hand!(%{
         mtga_match_id: match.mtga_match_id,
         hand_size: 7,
         land_count: 1,
-        occurred_at: ~U[2026-04-08 12:00:00Z]
+        occurred_at: ~U[2026-04-08 12:00:00Z],
+        decision: "mulliganed"
       })
 
-      # Second offer at 6 cards — kept (last)
+      # Second offer at 6 cards — kept
       Mulligans.upsert_hand!(%{
         mtga_match_id: match.mtga_match_id,
         hand_size: 6,
         land_count: 2,
-        occurred_at: ~U[2026-04-08 12:00:01Z]
+        occurred_at: ~U[2026-04-08 12:00:01Z],
+        decision: "kept"
       })
 
       stats = Mulligans.mulligan_analytics()
@@ -49,23 +51,24 @@ defmodule Scry2.MulligansAnalyticsTest do
     end
 
     test "computes win rate by land count in kept hand" do
-      match_won = TestFactory.create_match(%{won: true})
-      match_lost = TestFactory.create_match(%{won: false})
-
-      # Won game — kept with 3 lands
+      # Won game — kept with 3 lands; match_won stamped directly on the row
       Mulligans.upsert_hand!(%{
-        mtga_match_id: match_won.mtga_match_id,
+        mtga_match_id: "analytics-match-won",
         hand_size: 7,
         land_count: 3,
-        occurred_at: ~U[2026-04-08 12:00:00Z]
+        occurred_at: ~U[2026-04-08 12:00:00Z],
+        decision: "kept",
+        match_won: true
       })
 
       # Lost game — kept with 3 lands
       Mulligans.upsert_hand!(%{
-        mtga_match_id: match_lost.mtga_match_id,
+        mtga_match_id: "analytics-match-lost",
         hand_size: 7,
         land_count: 3,
-        occurred_at: ~U[2026-04-08 13:00:00Z]
+        occurred_at: ~U[2026-04-08 13:00:00Z],
+        decision: "kept",
+        match_won: false
       })
 
       stats = Mulligans.mulligan_analytics()

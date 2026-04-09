@@ -6,15 +6,15 @@ defmodule Scry2Web.MulligansHelpersTest do
 
   describe "annotate_decisions/1" do
     test "single offer is kept" do
-      row = build_listing(7, ~U[2026-04-05 12:00:00Z])
+      row = %{build_listing(7, ~U[2026-04-05 12:00:00Z]) | decision: "kept"}
 
       assert [{hand, :kept}] = MulligansHelpers.annotate_decisions([row])
       assert hand.hand_size == 7
     end
 
     test "two offers — first mulliganed, second kept" do
-      first = build_listing(7, ~U[2026-04-05 12:00:00Z])
-      second = build_listing(6, ~U[2026-04-05 12:00:01Z])
+      first = %{build_listing(7, ~U[2026-04-05 12:00:00Z]) | decision: "mulliganed"}
+      second = %{build_listing(6, ~U[2026-04-05 12:00:01Z]) | decision: "kept"}
 
       result = MulligansHelpers.annotate_decisions([first, second])
 
@@ -22,9 +22,9 @@ defmodule Scry2Web.MulligansHelpersTest do
     end
 
     test "three offers — first two mulliganed, last kept" do
-      first = build_listing(7, ~U[2026-04-05 12:00:00Z])
-      second = build_listing(6, ~U[2026-04-05 12:00:01Z])
-      third = build_listing(5, ~U[2026-04-05 12:00:02Z])
+      first = %{build_listing(7, ~U[2026-04-05 12:00:00Z]) | decision: "mulliganed"}
+      second = %{build_listing(6, ~U[2026-04-05 12:00:01Z]) | decision: "mulliganed"}
+      third = %{build_listing(5, ~U[2026-04-05 12:00:02Z]) | decision: "kept"}
 
       result = MulligansHelpers.annotate_decisions([third, first, second])
 
