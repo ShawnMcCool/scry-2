@@ -22,8 +22,27 @@ defmodule Scry2Web.MulligansLive do
   @impl true
   def handle_params(_params, _uri, socket) do
     player_id = socket.assigns[:active_player_id]
-    events = load_mulligans(player_id)
-    {:noreply, assign(socket, events: events)}
+    hands = Mulligans.list_hands(player_id: player_id)
+    events = MulligansHelpers.group_for_display(hands)
+
+    arena_ids =
+      hands
+      |> Enum.flat_map(fn hand ->
+        (hand.hand_arena_ids && hand.hand_arena_ids["cards"]) || []
+      end)
+      |> Enum.uniq()
+
+    socket = assign(socket, events: events)
+
+    socket =
+      if arena_ids != [],
+        do:
+          start_async(socket, :cache_images, fn ->
+            Scry2.Cards.ImageCache.ensure_cached(arena_ids)
+          end),
+        else: socket
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -35,10 +54,16 @@ defmodule Scry2Web.MulligansLive do
 
   def handle_info(:reload_data, socket) do
     player_id = socket.assigns[:active_player_id]
-    {:noreply, assign(socket, events: load_mulligans(player_id), reload_timer: nil)}
+    hands = Mulligans.list_hands(player_id: player_id)
+    events = MulligansHelpers.group_for_display(hands)
+    {:noreply, assign(socket, events: events, reload_timer: nil)}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_async(:cache_images, {:ok, _stats}, socket), do: {:noreply, socket}
+  def handle_async(:cache_images, {:exit, _reason}, socket), do: {:noreply, socket}
 
   @impl true
   def render(assigns) do
@@ -133,23 +158,6 @@ defmodule Scry2Web.MulligansLive do
       </div>
     </Layouts.app>
     """
-  end
-
-  defp load_mulligans(player_id) do
-    hands = Mulligans.list_hands(player_id: player_id)
-    events = MulligansHelpers.group_for_display(hands)
-
-    # Pre-cache card images.
-    arena_ids =
-      hands
-      |> Enum.flat_map(fn hand ->
-        (hand.hand_arena_ids && hand.hand_arena_ids["cards"]) || []
-      end)
-      |> Enum.uniq()
-
-    if arena_ids != [], do: Scry2.Cards.ImageCache.ensure_cached(arena_ids)
-
-    events
   end
 
   defp format_game_time(%{hands: [{first, _} | _]}) do

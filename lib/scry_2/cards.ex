@@ -43,7 +43,7 @@ defmodule Scry2.Cards do
 
   @doc "Returns the total card count."
   def count do
-    Repo.aggregate(Card, :count, :id)
+    Repo.aggregate(Card, :count)
   end
 
   @doc """
@@ -168,7 +168,7 @@ defmodule Scry2.Cards do
 
   @doc "Returns the total Scryfall card count."
   def scryfall_count do
-    Repo.aggregate(ScryfallCard, :count, :id)
+    Repo.aggregate(ScryfallCard, :count)
   end
 
   @doc "Returns the Scryfall card for the given MTGA arena_id, or nil."
@@ -185,7 +185,7 @@ defmodule Scry2.Cards do
 
   @doc "Returns the total MTGA card count."
   def mtga_card_count do
-    Repo.aggregate(MtgaCard, :count, :id)
+    Repo.aggregate(MtgaCard, :count)
   end
 
   @doc "Returns the MTGA card for the given arena_id, or nil."

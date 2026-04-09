@@ -113,7 +113,7 @@ defmodule Scry2.Matches do
 
     Match
     |> maybe_filter_by_player(player_id)
-    |> Repo.aggregate(:count, :id)
+    |> Repo.aggregate(:count)
   end
 
   @doc """
