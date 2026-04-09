@@ -23,13 +23,13 @@ defmodule Scry2.Mulligans do
   """
   def list_hands(opts \\ []) do
     MulliganListing
-    |> maybe_filter_player(opts[:player_id])
+    |> maybe_filter_by_player(opts[:player_id])
     |> order_by([m], desc: m.occurred_at)
     |> Repo.all()
   end
 
-  defp maybe_filter_player(query, nil), do: query
-  defp maybe_filter_player(query, player_id), do: where(query, [m], m.player_id == ^player_id)
+  defp maybe_filter_by_player(query, nil), do: query
+  defp maybe_filter_by_player(query, player_id), do: where(query, [m], m.player_id == ^player_id)
 
   @doc """
   Upserts a mulligan listing row by `(mtga_match_id, occurred_at)`.
@@ -117,16 +117,8 @@ defmodule Scry2.Mulligans do
     }
   end
 
-  defp match_outcomes(match_ids) when match_ids == [], do: %{}
-
-  defp match_outcomes(match_ids) do
-    from(m in Scry2.Matches.Match,
-      where: m.mtga_match_id in ^match_ids,
-      select: {m.mtga_match_id, m.won}
-    )
-    |> Repo.all()
-    |> Map.new()
-  end
+  defp match_outcomes([]), do: %{}
+  defp match_outcomes(match_ids), do: Scry2.Matches.outcomes_by_mtga_ids(match_ids)
 
   defp pct(_n, 0), do: nil
   defp pct(n, total), do: Float.round(n / total * 100, 1)

@@ -417,12 +417,16 @@ defmodule Scry2.Events do
       Scry2.MtgaLogIngestion.EventRecord
       |> Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
 
-    # 3. Re-broadcast each raw event for retranslation via IngestRawEvents
-    Scry2.MtgaLogIngestion.EventRecord
-    |> order_by([e], asc: e.id)
-    |> Repo.all()
-    |> Enum.each(fn raw ->
-      Topics.broadcast(Topics.mtga_logs_events(), {:event, raw})
+    # 3. Re-broadcast each raw event for retranslation via IngestRawEvents.
+    #    Stream to avoid loading the full event log into memory.
+    Repo.transaction(fn ->
+      Scry2.MtgaLogIngestion.EventRecord
+      |> order_by([e], asc: e.id)
+      |> Repo.stream()
+      |> Stream.each(fn raw ->
+        Topics.broadcast(Topics.mtga_logs_events(), {:event, raw})
+      end)
+      |> Stream.run()
     end)
 
     Log.info(:ingester, "reingest: re-broadcast #{raw_count} raw events for retranslation")
