@@ -55,18 +55,18 @@ defmodule Scry2Web.MulligansHelpers do
   returns `[{hand_map, :kept | :mulliganed}]` sorted ascending by
   `occurred_at`.
 
-  Under London mulligan rules, the last offer is the kept hand.
+  Decision is read from the `decision` field stamped by the projector
+  at write time. Sort order is preserved for correct display sequence.
   """
   def annotate_decisions([]), do: []
 
   def annotate_decisions(rows) when is_list(rows) do
-    sorted = Enum.sort_by(rows, & &1.occurred_at, {:asc, DateTime})
-    {all_but_last, [last]} = Enum.split(sorted, -1)
-
-    mulliganed = Enum.map(all_but_last, &{to_hand(&1), :mulliganed})
-    kept = [{to_hand(last), :kept}]
-
-    mulliganed ++ kept
+    rows
+    |> Enum.sort_by(& &1.occurred_at, {:asc, DateTime})
+    |> Enum.map(fn row ->
+      decision = if row.decision == "kept", do: :kept, else: :mulliganed
+      {to_hand(row), decision}
+    end)
   end
 
   @doc "Returns a short label for the decision."

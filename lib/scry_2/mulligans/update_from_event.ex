@@ -8,19 +8,23 @@ defmodule Scry2.Mulligans.UpdateFromEvent do
 
   ## Claimed domain events
 
-    * `"mulligan_offered"` → upsert a row with hand data + precomputed stats
+    * `"mulligan_offered"` → mark prior hands for this match as mulliganed,
+      then upsert the new hand as `"kept"` (tentative)
     * `"match_created"` → stamp `event_name` on existing rows for that match
+    * `"match_completed"` → stamp `match_won` on all rows for that match
   """
 
   use Scry2.Events.Projector,
-    claimed_slugs: ~w(mulligan_offered match_created),
+    claimed_slugs: ~w(mulligan_offered match_created match_completed),
     projection_tables: [Scry2.Mulligans.MulliganListing]
 
   alias Scry2.Events.Gameplay.MulliganOffered
-  alias Scry2.Events.Match.MatchCreated
+  alias Scry2.Events.Match.{MatchCompleted, MatchCreated}
   alias Scry2.Mulligans
 
   defp project(%MulliganOffered{} = event) do
+    Mulligans.stamp_decision_mulliganed!(event.mtga_match_id)
+
     Mulligans.upsert_hand!(%{
       player_id: event.player_id,
       mtga_match_id: event.mtga_match_id,
@@ -33,7 +37,8 @@ defmodule Scry2.Mulligans.UpdateFromEvent do
       total_cmc: event.total_cmc,
       cmc_distribution: event.cmc_distribution,
       color_distribution: event.color_distribution,
-      card_names: event.card_names
+      card_names: event.card_names,
+      decision: "kept"
     })
 
     :ok
@@ -42,6 +47,14 @@ defmodule Scry2.Mulligans.UpdateFromEvent do
   defp project(%MatchCreated{} = event) do
     if event.mtga_match_id && event.event_name do
       Mulligans.stamp_event_name!(event.mtga_match_id, event.event_name)
+    end
+
+    :ok
+  end
+
+  defp project(%MatchCompleted{} = event) do
+    if event.mtga_match_id do
+      Mulligans.stamp_match_won!(event.mtga_match_id, event.won)
     end
 
     :ok

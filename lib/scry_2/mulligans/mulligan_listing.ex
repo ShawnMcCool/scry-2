@@ -7,13 +7,13 @@ defmodule Scry2.Mulligans.MulliganListing do
   from the corresponding `MatchCreated` event so the page can group
   by set/event without joining to the matches table.
 
-  ## Decision inference
+  ## Decision
 
-  The kept/mulliganed decision is NOT stored — it's inferred from the
-  sequence by `MulligansHelpers.annotate_decisions/1`. The last offer
-  in a match (by `occurred_at`) was kept; all prior were mulliganed.
-  This keeps the projection simple and avoids needing to update rows
-  when the sequence completes.
+  The kept/mulliganed decision is stored in the `decision` column
+  (`"kept"` | `"mulliganed"`). The projector stamps it at write time
+  using the London mulligan rule: when a new hand arrives for a match,
+  all prior rows for that match are marked `"mulliganed"` and the new
+  row is inserted as `"kept"` (tentative until the next offer, if any).
 
   ## Disposable
 
@@ -38,6 +38,8 @@ defmodule Scry2.Mulligans.MulliganListing do
     field :color_distribution, :map
     field :card_names, :map
     field :occurred_at, :utc_datetime
+    field :decision, :string
+    field :match_won, :boolean
 
     timestamps(type: :utc_datetime)
   end
@@ -57,7 +59,9 @@ defmodule Scry2.Mulligans.MulliganListing do
       :cmc_distribution,
       :color_distribution,
       :card_names,
-      :occurred_at
+      :occurred_at,
+      :decision,
+      :match_won
     ])
     |> validate_required([:hand_size, :occurred_at])
     |> unique_constraint([:mtga_match_id, :occurred_at])
