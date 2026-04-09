@@ -25,12 +25,13 @@ import {LiveSocket} from "phoenix_live_view"
 import {hooks as colocatedHooks} from "phoenix-colocated/scry_2"
 import {Console} from "./hooks/console"
 import {CardHover} from "./hooks/card_hover"
+import {Chart} from "./hooks/chart"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
 const liveSocket = new LiveSocket("/live", Socket, {
   params: {_csrf_token: csrfToken},
-  hooks: {...colocatedHooks, Console, CardHover},
+  hooks: {...colocatedHooks, Console, CardHover, Chart},
 })
 
 // Global backtick hotkey to toggle the sticky console drawer. Registered in
