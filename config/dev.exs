@@ -4,6 +4,7 @@ import Config
 config :scry_2, Scry2.Repo,
   database: Path.expand("../scry_2_dev.db", __DIR__),
   pool_size: 5,
+  busy_timeout: 500,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 

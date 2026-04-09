@@ -460,26 +460,65 @@ defmodule Scry2.EventsTest do
     end
   end
 
-  describe "projector suspension" do
-    test "projector drops live events when suspended, processes them after resume" do
+  describe "projector full_rebuild" do
+    test "resets stale watermark and replays all events from id=0" do
+      import Scry2.ProjectorCase
+      import Scry2.TestFactory
+
       alias Scry2.Matches.UpdateFromEvent
 
-      proj_name = Module.concat(__MODULE__, :"SuspendTest#{System.unique_integer([:positive])}")
+      player = create_player()
+      scenario = match_scenario(player, games: [[won: true, on_play: true]], won: true)
+      for event <- scenario.events, do: Events.append!(event, nil)
+
+      # Simulate a stale watermark left over from a previous event store generation.
+      Events.put_watermark!(UpdateFromEvent.projector_name(), 999_999)
+
+      proj_name =
+        Module.concat(__MODULE__, :"FullRebuildTest#{System.unique_integer([:positive])}")
+
       start_supervised!({UpdateFromEvent, name: proj_name})
 
-      UpdateFromEvent.suspend_live(proj_name)
+      # Clear projection tables — full_rebuild must repopulate them from the event store.
+      Scry2.Repo.delete_all(Scry2.Matches.DeckSubmission)
+      Scry2.Repo.delete_all(Scry2.Matches.Game)
+      Scry2.Repo.delete_all(Scry2.Matches.Match)
 
-      Events.append!(match_created("suspend-1"), nil)
-      _ = :sys.get_state(proj_name)
+      send(proj_name, :full_rebuild)
+      # :sys.get_state/1 is a synchronous call that ensures the GenServer has
+      # finished processing all pending messages before we assert.
+      :sys.get_state(proj_name)
 
-      assert Scry2.Matches.count() == 0
+      assert Scry2.Matches.count() >= 1
 
-      UpdateFromEvent.resume_live(proj_name)
+      watermark = Events.get_watermark(UpdateFromEvent.projector_name())
+      assert watermark > 0
+      # Confirms the stale watermark was not used as a cursor — we replayed from 0.
+      assert watermark != 999_999
+    end
 
-      Events.append!(match_created("suspend-2"), nil)
-      _ = :sys.get_state(proj_name)
+    test "live events arriving after full_rebuild are processed normally" do
+      alias Scry2.Matches.UpdateFromEvent
 
-      assert Scry2.Matches.count() == 1
+      proj_name =
+        Module.concat(__MODULE__, :"FullRebuildLiveTest#{System.unique_integer([:positive])}")
+
+      start_supervised!({UpdateFromEvent, name: proj_name})
+
+      # Append one event before the rebuild signal so it ends up in the event store.
+      Events.append!(match_created("pre-rebuild"), nil)
+
+      send(proj_name, :full_rebuild)
+
+      # Append a second event — this broadcasts to the projector mailbox, which
+      # queues behind :full_rebuild and is handled after the rebuild returns.
+      Events.append!(match_created("post-rebuild"), nil)
+
+      :sys.get_state(proj_name)
+
+      # Both matches must be present: pre-rebuild replayed from event store,
+      # post-rebuild handled as a live domain_event after full_rebuild returns.
+      assert Scry2.Matches.count() == 2
     end
   end
 

@@ -5,7 +5,7 @@ defmodule Scry2.Events.Projector do
   Projectors subscribe to `domain:events` for live updates and own
   their replay via cursor-based event queries. This module provides
   the boilerplate: GenServer setup, PubSub subscription, event dispatch,
-  error handling, watermark tracking, and `rebuild!/0`.
+  error handling, watermark tracking, and rebuild/catch-up.
 
   ## Usage
 
@@ -23,9 +23,10 @@ defmodule Scry2.Events.Projector do
       end
 
   The `use` macro provides:
-  - `start_link/1`, `init/1` (subscribes to PubSub)
+  - `start_link/1`, `init/1` (subscribes to `domain:events` and `domain:control`)
   - `handle_info/2` (dispatches claimed events to `project/1`, updates watermark)
-  - `rebuild!/1` (resets watermark, truncates tables, replays from event store)
+  - `handle_info(:full_rebuild)` (triggered after reingest — see below)
+  - `rebuild!/1` (explicit standalone rebuild — domain events immutable)
   - `catch_up!/1` (replays from watermark without truncating)
   - `claimed_slugs/0` (returns the list, useful for introspection)
   - `projector_name/0` (short name for logging and watermark keys)
@@ -33,11 +34,27 @@ defmodule Scry2.Events.Projector do
   The module must define `defp project(event)` clauses for each
   claimed event type, plus a catch-all `defp project(_), do: :ok`.
 
+  ## Two rebuild modes
+
+  These are fundamentally different and must not be conflated:
+
+  | Mode | When | Watermark |
+  |------|------|-----------|
+  | `:full_rebuild` via `domain:control` | After reingest — domain events wiped and regenerated | **Stale — reset to 0** |
+  | `rebuild!/1` / `catch_up!/1` | Standalone explicit rebuild — domain events immutable | **Valid cursor** |
+
+  When reingest completes, `Scry2.Operations` broadcasts `:full_rebuild` on
+  `domain:control`. Each projector's GenServer picks this up from its mailbox.
+  Because BEAM processes are single-threaded, any `{:domain_event, ...}` messages
+  that arrive from the Watcher while `:full_rebuild` is processing simply queue in
+  the mailbox and are handled normally after the rebuild returns — zero message loss
+  with no extra buffering or state flags.
+
   ## Progress callbacks
 
   `rebuild!/1` and `catch_up!/1` accept an `:on_progress` option — a
   2-arity function `(processed, total) -> any()`. Called after each
-  batch (default 500 events). The total is counted upfront; if new
+  batch (default 1000 events). The total is counted upfront; if new
   events arrive during replay the progress bar caps at 100%.
   """
 
@@ -63,21 +80,6 @@ defmodule Scry2.Events.Projector do
       def start_link(opts \\ []) do
         {name, opts} = Keyword.pop(opts, :name, __MODULE__)
         GenServer.start_link(__MODULE__, opts, name: name)
-      end
-
-      @doc """
-      Suspends live event processing. While suspended, `{:domain_event, ...}`
-      messages are consumed from the mailbox but not projected. Used by
-      `Events.reingest!/0` to avoid redundant live projections during retranslation
-      (all projections are rebuilt from scratch by `replay_projections!/0` afterwards).
-      """
-      def suspend_live(name \\ __MODULE__) do
-        GenServer.call(name, :suspend_live)
-      end
-
-      @doc "Resumes live event processing after `suspend_live/1`."
-      def resume_live(name \\ __MODULE__) do
-        GenServer.call(name, :resume_live)
       end
 
       @doc "Returns the event type slugs this projector handles."
@@ -186,34 +188,57 @@ defmodule Scry2.Events.Projector do
       @impl true
       def init(_opts) do
         Topics.subscribe(Topics.domain_events())
-        {:ok, %{paused: false}}
+        Topics.subscribe(Topics.domain_control())
+        {:ok, %{}}
       end
 
       @impl true
-      def handle_call(:suspend_live, _from, state) do
-        {:reply, :ok, Map.put(state, :paused, true)}
-      end
+      def handle_info(:full_rebuild, state) do
+        Log.info(
+          :ingester,
+          "#{@projector_name}: full rebuild triggered (domain events regenerated)"
+        )
 
-      @impl true
-      def handle_call(:resume_live, _from, state) do
-        {:reply, :ok, Map.put(state, :paused, false)}
+        # Watermarks from the prior event store generation are stale — reset before replaying.
+        Events.put_watermark!(@projector_name, 0)
+        Enum.each(Enum.reverse(@projection_tables), &Scry2.Repo.delete_all/1)
+
+        Events.replay_by_types(
+          @claimed_slugs,
+          fn event ->
+            try do
+              project(event)
+            rescue
+              error ->
+                Log.warning(
+                  :ingester,
+                  "#{@projector_name} full_rebuild skip: #{inspect(error)}"
+                )
+            end
+          end,
+          on_batch: fn last_id, _ -> Events.put_watermark!(@projector_name, last_id) end
+        )
+
+        max_id = Events.max_event_id_for_types(@claimed_slugs)
+        if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
+
+        Log.info(:ingester, "#{@projector_name}: full rebuild complete")
+        {:noreply, state}
       end
 
       @impl true
       def handle_info({:domain_event, id, type_slug}, state)
           when type_slug in @claimed_slugs do
-        unless Map.get(state, :paused, false) do
-          try do
-            event = Events.get!(id)
-            project(event)
-            Events.put_watermark!(@projector_name, id)
-          rescue
-            error ->
-              Log.error(
-                :ingester,
-                "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug}: #{inspect(error)}"
-              )
-          end
+        try do
+          event = Events.get!(id)
+          project(event)
+          Events.put_watermark!(@projector_name, id)
+        rescue
+          error ->
+            Log.error(
+              :ingester,
+              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug}: #{inspect(error)}"
+            )
         end
 
         {:noreply, state}
