@@ -72,7 +72,7 @@ function climbOption(series) {
 function momentumOption(winsData, lossesData) {
   return {
     backgroundColor: "transparent",
-    grid: {left: 48, right: 20, top: 16, bottom: 40},
+    grid: {left: 80, right: 20, top: 16, bottom: 40},
     tooltip: {
       trigger: "axis",
       formatter(params) {
