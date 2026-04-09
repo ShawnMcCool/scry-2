@@ -57,10 +57,36 @@ defmodule Scry2.Operations do
   end
 
   @doc """
-  Launches a projection rebuild in the background for the given modules
-  (defaults to all projectors).
+  Launches a full rebuild of all projections via `domain:control`.
+
+  Broadcasts `:rebuild_all` to all projector GenServers. Each projector
+  truncates its tables, replays from scratch, and reports progress and
+  completion back on `domain:control`. A coordinator Task collects the
+  acks and broadcasts `{:operation_completed, :rebuild}` when all done.
   """
-  def start_rebuild!(projector_modules \\ ProjectorRegistry.all()) do
+  def start_rebuild! do
+    names = Enum.map(ProjectorRegistry.all(), & &1.projector_name())
+    broadcast_started(:rebuild, %{projectors: names})
+    expected = MapSet.new(names)
+
+    Task.Supervisor.async_nolink(Scry2.TaskSupervisor, fn ->
+      try do
+        Phoenix.PubSub.subscribe(Scry2.PubSub, Topics.domain_control())
+        Topics.broadcast(Topics.domain_control(), :rebuild_all)
+        await_rebuilt(expected, :rebuild)
+      rescue
+        error ->
+          Log.error(:ingester, "rebuild failed: #{inspect(error)}")
+          broadcast_failed(:rebuild, inspect(error))
+      end
+    end)
+  end
+
+  @doc """
+  Launches a rebuild for a specific subset of projectors (direct call, no broadcast).
+  Used by per-row rebuild actions on the ops page.
+  """
+  def start_rebuild!(projector_modules) when is_list(projector_modules) do
     names = Enum.map(projector_modules, & &1.projector_name())
     broadcast_started(:rebuild, %{projectors: names})
 
@@ -77,10 +103,34 @@ defmodule Scry2.Operations do
   end
 
   @doc """
-  Launches a projection catch-up in the background for the given modules
-  (defaults to all projectors).
+  Launches a catch-up of all projections via `domain:control`.
+
+  Same coordination model as `start_rebuild!/0` but replays only missed
+  events (from watermark) without truncating tables.
   """
-  def start_catch_up!(projector_modules \\ ProjectorRegistry.all()) do
+  def start_catch_up! do
+    names = Enum.map(ProjectorRegistry.all(), & &1.projector_name())
+    broadcast_started(:catch_up, %{projectors: names})
+    expected = MapSet.new(names)
+
+    Task.Supervisor.async_nolink(Scry2.TaskSupervisor, fn ->
+      try do
+        Phoenix.PubSub.subscribe(Scry2.PubSub, Topics.domain_control())
+        Topics.broadcast(Topics.domain_control(), :catch_up_all)
+        await_caught_up(expected, :catch_up)
+      rescue
+        error ->
+          Log.error(:ingester, "catch-up failed: #{inspect(error)}")
+          broadcast_failed(:catch_up, inspect(error))
+      end
+    end)
+  end
+
+  @doc """
+  Launches a catch-up for a specific subset of projectors (direct call, no broadcast).
+  Used by per-row catch-up actions on the ops page.
+  """
+  def start_catch_up!(projector_modules) when is_list(projector_modules) do
     names = Enum.map(projector_modules, & &1.projector_name())
     broadcast_started(:catch_up, %{projectors: names})
 
@@ -107,7 +157,53 @@ defmodule Scry2.Operations do
     }
   end
 
-  # ── Background work with progress ──────────────────────────────────
+  # ── Coordinator receive loops (domain:control ack collection) ──────
+
+  defp await_rebuilt(expected, type) do
+    if MapSet.size(expected) == 0 do
+      broadcast_completed(type)
+    else
+      receive do
+        {:projector_rebuilt, name} ->
+          await_rebuilt(MapSet.delete(expected, name), type)
+
+        {:projector_progress, name, processed, total} ->
+          broadcast_progress(type, %{
+            phase: :projection,
+            projector: name,
+            processed: processed,
+            total: total,
+            percent: percent(processed, total)
+          })
+
+          await_rebuilt(expected, type)
+      end
+    end
+  end
+
+  defp await_caught_up(expected, type) do
+    if MapSet.size(expected) == 0 do
+      broadcast_completed(type)
+    else
+      receive do
+        {:projector_caught_up, name} ->
+          await_caught_up(MapSet.delete(expected, name), type)
+
+        {:projector_progress, name, processed, total} ->
+          broadcast_progress(type, %{
+            phase: :projection,
+            projector: name,
+            processed: processed,
+            total: total,
+            percent: percent(processed, total)
+          })
+
+          await_caught_up(expected, type)
+      end
+    end
+  end
+
+  # ── Background work with progress (subset/single-projector ops) ────
 
   defp reingest_with_progress do
     alias Scry2.Events.IngestRawEvents

@@ -223,6 +223,41 @@ defmodule Scry2.Events.Projector do
         if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
 
         Log.info(:ingester, "#{@projector_name}: full rebuild complete")
+        Topics.broadcast(Topics.domain_control(), {:projector_rebuilt, @projector_name})
+        {:noreply, state}
+      end
+
+      @impl true
+      def handle_info(:rebuild_all, state) do
+        Log.info(:ingester, "#{@projector_name}: rebuild_all received")
+
+        rebuild!(
+          on_progress: fn processed, total ->
+            Topics.broadcast(
+              Topics.domain_control(),
+              {:projector_progress, @projector_name, processed, total}
+            )
+          end
+        )
+
+        Topics.broadcast(Topics.domain_control(), {:projector_rebuilt, @projector_name})
+        {:noreply, state}
+      end
+
+      @impl true
+      def handle_info(:catch_up_all, state) do
+        Log.info(:ingester, "#{@projector_name}: catch_up_all received")
+
+        catch_up!(
+          on_progress: fn processed, total ->
+            Topics.broadcast(
+              Topics.domain_control(),
+              {:projector_progress, @projector_name, processed, total}
+            )
+          end
+        )
+
+        Topics.broadcast(Topics.domain_control(), {:projector_caught_up, @projector_name})
         {:noreply, state}
       end
 
