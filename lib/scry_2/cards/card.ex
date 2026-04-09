@@ -2,6 +2,8 @@ defmodule Scry2.Cards.Card do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   schema "cards_cards" do
     field :arena_id, :integer
     field :lands17_id, :integer

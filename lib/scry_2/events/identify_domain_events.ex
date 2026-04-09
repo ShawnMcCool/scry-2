@@ -179,12 +179,12 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                      |> MapSet.union(@deferred_event_types)
 
   @doc "Returns the set of all recognized raw MTGA event types."
-  @spec known_event_types() :: MapSet.t()
-  def known_event_types, do: @known_event_types
+  @spec known_event_types() :: MapSet.t(String.t())
+  def known_event_types, do: MapSet.new(@known_event_types)
 
   @doc "Returns the set of event types deferred pending a non-empty payload."
-  @spec deferred_event_types() :: MapSet.t()
-  def deferred_event_types, do: @deferred_event_types
+  @spec deferred_event_types() :: MapSet.t(String.t())
+  def deferred_event_types, do: MapSet.new(@deferred_event_types)
 
   @doc "Returns true if the event type has an explicit handler or ignore clause."
   @spec recognized?(String.t()) :: boolean()
