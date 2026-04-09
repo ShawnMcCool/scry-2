@@ -286,6 +286,16 @@ defmodule Scry2Web.OperationsLive do
 
   defp format_number(n), do: to_string(n)
 
+  defp projector_name(assigns) do
+    [context, module] = String.split(assigns.name, ".")
+    spaced = Regex.replace(~r/(?<=[a-z])(?=[A-Z])/, module, " ")
+    assigns = assign(assigns, context: context, module: spaced)
+
+    ~H"""
+    {@context}<span class="text-base-content/30 text-xs mx-1">/</span>{@module}
+    """
+  end
+
   defp progress_percent(%{percent: p}), do: min(p, 100)
   defp progress_percent(_), do: 0
 
@@ -385,7 +395,11 @@ defmodule Scry2Web.OperationsLive do
               Use after changing projector logic or to fix corrupted state.
             </p>
             <div class="card-actions justify-end mt-2">
-              <button phx-click="rebuild_all" disabled={busy?(assigns)} class="btn btn-primary btn-sm">
+              <button
+                phx-click="rebuild_all"
+                disabled={busy?(assigns)}
+                class="btn btn-soft btn-primary btn-sm"
+              >
                 Rebuild All
               </button>
             </div>
@@ -424,7 +438,7 @@ defmodule Scry2Web.OperationsLive do
                 phx-click="reingest"
                 disabled={busy?(assigns)}
                 data-confirm="This will clear all domain events and re-translate from raw MTGA events. Continue?"
-                class="btn btn-warning btn-sm"
+                class="btn btn-soft btn-warning btn-sm"
               >
                 Reingest
               </button>
@@ -449,7 +463,7 @@ defmodule Scry2Web.OperationsLive do
             </thead>
             <tbody>
               <tr :for={proj <- @projectors}>
-                <td class="font-mono text-sm">{proj.name}</td>
+                <td class="text-sm"><.projector_name name={proj.name} /></td>
                 <td>
                   <div class="flex flex-wrap gap-1">
                     <span
@@ -461,10 +475,10 @@ defmodule Scry2Web.OperationsLive do
                   </div>
                 </td>
                 <td>
-                  <span :if={proj.caught_up} class="badge badge-sm badge-success gap-1">
+                  <span :if={proj.caught_up} class="badge badge-sm badge-soft badge-success gap-1">
                     <.icon name="hero-check-circle-mini" class="size-3" /> Caught up
                   </span>
-                  <span :if={!proj.caught_up} class="badge badge-sm badge-warning gap-1">
+                  <span :if={!proj.caught_up} class="badge badge-sm badge-soft badge-warning gap-1">
                     <.icon name="hero-exclamation-triangle-mini" class="size-3" /> Behind
                   </span>
                 </td>
