@@ -131,6 +131,8 @@ defmodule Scry2.Events.IngestRawEvents do
     {:reply, :ok, %{state | checkpointing: true}}
   end
 
+  @chunk_size 1_000
+
   @impl true
   def handle_call({:retranslate_all, opts}, _from, state) do
     on_progress = Keyword.get(opts, :on_progress)
@@ -140,44 +142,61 @@ defmodule Scry2.Events.IngestRawEvents do
     # load/1 returns defaults, ensuring events are replayed from event 1.
     fresh_ingestion = IngestionState.load(self_user_id: Config.get(:mtga_self_user_id))
 
-    # Translate every raw event in-memory, accumulating domain event tuples
-    # and error pairs without touching the DB per event.
-    {new_ingestion, rev_event_buckets, rev_error_buckets} =
-      MtgaLogIngestion.list_all_ordered()
-      |> Enum.with_index(1)
-      |> Enum.reduce({fresh_ingestion, [], []}, fn {record, index},
-                                                   {acc_ingestion, acc_events, acc_errors} ->
-        {result_ingestion, new_events, new_errors} =
-          try do
-            process_raw_event_for_batch(record, acc_ingestion)
-          rescue
-            error ->
-              Log.error(
-                :ingester,
-                "retranslate_all failed on id=#{record.id}: #{inspect(error)}"
-              )
-
-              {acc_ingestion, [], [{record.id, error}]}
-          end
-
-        if on_progress, do: on_progress.(index, total)
-        {result_ingestion, [new_events | acc_events], [new_errors | acc_errors]}
-      end)
-
-    # Commit atomically: bulk-insert domain events, bulk-mark raw events
-    # processed, then record any per-event errors. One transaction instead
-    # of ~10k individual DB writes.
-    event_tuples = rev_event_buckets |> Enum.reverse() |> Enum.concat()
-    error_pairs = rev_error_buckets |> Enum.reverse() |> Enum.concat()
-
-    Scry2.Repo.transaction(fn ->
-      Events.append_batch!(event_tuples)
-      MtgaLogIngestion.bulk_mark_all_processed!()
-      MtgaLogIngestion.bulk_mark_errors!(error_pairs)
-    end)
+    # Process in cursor-based chunks of @chunk_size raw events. Each chunk is
+    # committed atomically before loading the next, keeping peak memory
+    # proportional to chunk size rather than the full dataset (~5 MB vs ~40 MB).
+    new_ingestion = do_retranslate_chunk(0, fresh_ingestion, total, 0, on_progress)
 
     final_ingestion = IngestionState.persist!(new_ingestion)
     {:reply, :ok, %{state | ingestion: final_ingestion}}
+  end
+
+  defp do_retranslate_chunk(cursor, ingestion, total, processed, on_progress) do
+    case MtgaLogIngestion.list_ordered_after(cursor, limit: @chunk_size) do
+      [] ->
+        ingestion
+
+      records ->
+        {new_ingestion, rev_events, rev_errors} =
+          records
+          |> Enum.with_index(processed + 1)
+          |> Enum.reduce({ingestion, [], []}, fn {record, index},
+                                                 {acc_ingestion, acc_events, acc_errors} ->
+            {result_ingestion, new_events, new_errors} =
+              try do
+                process_raw_event_for_batch(record, acc_ingestion)
+              rescue
+                error ->
+                  Log.error(
+                    :ingester,
+                    "retranslate_all failed on id=#{record.id}: #{inspect(error)}"
+                  )
+
+                  {acc_ingestion, [], [{record.id, error}]}
+              end
+
+            if on_progress, do: on_progress.(index, total)
+            {result_ingestion, [new_events | acc_events], [new_errors | acc_errors]}
+          end)
+
+        event_tuples = rev_events |> Enum.reverse() |> Enum.concat()
+        error_pairs = rev_errors |> Enum.reverse() |> Enum.concat()
+        ids = Enum.map(records, & &1.id)
+
+        Scry2.Repo.transaction(fn ->
+          Events.append_batch!(event_tuples)
+          MtgaLogIngestion.bulk_mark_processed!(ids)
+          MtgaLogIngestion.bulk_mark_errors!(error_pairs)
+        end)
+
+        do_retranslate_chunk(
+          List.last(records).id,
+          new_ingestion,
+          total,
+          processed + length(records),
+          on_progress
+        )
+    end
   end
 
   @impl true

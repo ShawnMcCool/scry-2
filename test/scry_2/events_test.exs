@@ -183,6 +183,60 @@ defmodule Scry2.EventsTest do
     end
   end
 
+  describe "replay_by_types/3" do
+    test "returns events in strict id order across multiple type slugs" do
+      a = Events.append!(match_created("r1"), nil)
+      b = Events.append!(match_completed("r1"), nil)
+      c = Events.append!(match_created("r2"), nil)
+      d = Events.append!(match_completed("r2"), nil)
+
+      me = self()
+
+      Events.replay_by_types(~w(match_created match_completed), fn event ->
+        send(me, {:replayed, event.id})
+      end)
+
+      ids =
+        Enum.map([a, b, c, d], fn _ ->
+          assert_receive {:replayed, id}
+          id
+        end)
+
+      assert ids == [a.id, b.id, c.id, d.id]
+    end
+
+    test "cursor option skips already-seen events" do
+      a = Events.append!(match_created("c1"), nil)
+      b = Events.append!(match_created("c2"), nil)
+
+      me = self()
+
+      Events.replay_by_types(~w(match_created), fn event -> send(me, {:replayed, event.id}) end,
+        cursor: a.id
+      )
+
+      assert_receive {:replayed, id}
+      assert id == b.id
+      refute_receive {:replayed, _}
+    end
+
+    test "calls on_batch after each batch with last_id and processed count" do
+      Enum.each(1..3, fn i -> Events.append!(match_created("b#{i}"), nil) end)
+
+      me = self()
+
+      Events.replay_by_types(
+        ~w(match_created),
+        fn _event -> :ok end,
+        batch_size: 2,
+        on_batch: fn last_id, processed -> send(me, {:batch, last_id, processed}) end
+      )
+
+      assert_receive {:batch, _last_id, 2}
+      assert_receive {:batch, _last_id2, 3}
+    end
+  end
+
   describe "count_by_type/0" do
     test "returns a slug → count map" do
       Events.append!(match_created("a"), nil)

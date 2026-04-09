@@ -120,6 +120,58 @@ defmodule Scry2.MtgaLogIngestionTest do
     end
   end
 
+  describe "list_ordered_after/2" do
+    test "returns events with id > cursor, ordered ascending" do
+      a = TestFactory.create_event_record(%{event_type: "TypeA"})
+      b = TestFactory.create_event_record(%{event_type: "TypeB"})
+      c = TestFactory.create_event_record(%{event_type: "TypeC"})
+
+      all = MtgaLogIngestion.list_ordered_after(0)
+      ids = Enum.map(all, & &1.id)
+      assert a.id in ids
+      assert b.id in ids
+      assert c.id in ids
+
+      after_a = MtgaLogIngestion.list_ordered_after(a.id)
+      after_ids = Enum.map(after_a, & &1.id)
+      refute a.id in after_ids
+      assert b.id in after_ids
+      assert c.id in after_ids
+    end
+
+    test "respects the limit option" do
+      Enum.each(1..5, fn i ->
+        TestFactory.create_event_record(%{event_type: "Type#{i}"})
+      end)
+
+      result = MtgaLogIngestion.list_ordered_after(0, limit: 2)
+      assert length(result) == 2
+    end
+
+    test "returns empty list when cursor is past all records" do
+      record = TestFactory.create_event_record()
+      assert MtgaLogIngestion.list_ordered_after(record.id) == []
+    end
+  end
+
+  describe "bulk_mark_processed!/1 (id list)" do
+    test "marks only the given ids as processed, leaving others untouched" do
+      a = TestFactory.create_event_record(%{event_type: "TypeA"})
+      b = TestFactory.create_event_record(%{event_type: "TypeB"})
+      c = TestFactory.create_event_record(%{event_type: "TypeC"})
+
+      MtgaLogIngestion.bulk_mark_processed!([a.id, b.id])
+
+      assert MtgaLogIngestion.get_event!(a.id).processed == true
+      assert MtgaLogIngestion.get_event!(b.id).processed == true
+      assert MtgaLogIngestion.get_event!(c.id).processed == false
+    end
+
+    test "is a no-op for an empty list" do
+      assert :ok = MtgaLogIngestion.bulk_mark_processed!([])
+    end
+  end
+
   describe "count_by_type/0" do
     test "returns a map of event_type => count" do
       TestFactory.create_event_record(%{event_type: "MatchGameRoomStateChangedEvent"})
