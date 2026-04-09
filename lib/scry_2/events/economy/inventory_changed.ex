@@ -29,6 +29,10 @@ defmodule Scry2.Events.Economy.InventoryChanged do
   """
 
   @enforce_keys [:source, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :source,
@@ -54,6 +58,20 @@ defmodule Scry2.Events.Economy.InventoryChanged do
           gems_balance: integer() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      source: payload["source"],
+      source_id: payload["source_id"],
+      gold_delta: payload["gold_delta"],
+      gems_delta: payload["gems_delta"],
+      boosters: payload["boosters"],
+      gold_balance: payload["gold_balance"],
+      gems_balance: payload["gems_balance"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "inventory_changed"

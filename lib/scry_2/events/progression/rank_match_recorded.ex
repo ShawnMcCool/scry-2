@@ -25,6 +25,10 @@ defmodule Scry2.Events.Progression.RankMatchRecorded do
   """
 
   @enforce_keys [:format, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :format,
@@ -42,6 +46,17 @@ defmodule Scry2.Events.Progression.RankMatchRecorded do
           losses: integer() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      format: payload["format"] && String.to_existing_atom(payload["format"]),
+      won: payload["won"],
+      wins: payload["wins"],
+      losses: payload["losses"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "rank_match_recorded"

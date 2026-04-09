@@ -636,8 +636,64 @@ defmodule Scry2.Events do
   # ── Serialization ────────────────────────────────────────────────────
   #
   # Domain events are stored as JSON payloads keyed by slug. Rehydration
-  # is a case dispatch on the stored slug — each case builds the right
-  # struct with the right key atoms.
+  # dispatches via @slug_to_module — every registered module implements
+  # the Scry2.Events.DomainEvent behaviour, so adding a new type without
+  # implementing from_payload/1 produces a compile-time warning.
+
+  @slug_to_module %{
+    "card_drawn" => Scry2.Events.Gameplay.CardDrawn,
+    "card_exiled" => Scry2.Events.Gameplay.CardExiled,
+    "combat_damage_dealt" => Scry2.Events.Gameplay.CombatDamageDealt,
+    "counter_added" => Scry2.Events.Gameplay.CounterAdded,
+    "deck_inventory" => Scry2.Events.Deck.DeckInventory,
+    "deck_selected" => Scry2.Events.Deck.DeckSelected,
+    "deck_submitted" => Scry2.Events.Deck.DeckSubmitted,
+    "deck_updated" => Scry2.Events.Deck.DeckUpdated,
+    "die_roll_completed" => Scry2.Events.Match.DieRolled,
+    "draft_pick_made" => Scry2.Events.Draft.DraftPickMade,
+    "draft_started" => Scry2.Events.Draft.DraftStarted,
+    "event_course_updated" => Scry2.Events.Event.EventCourseUpdated,
+    "event_joined" => Scry2.Events.Event.EventJoined,
+    "event_record_changed" => Scry2.Events.Event.EventRecordChanged,
+    "event_reward_claimed" => Scry2.Events.Event.EventRewardClaimed,
+    "game_completed" => Scry2.Events.Match.GameCompleted,
+    "game_conceded" => Scry2.Events.Gameplay.GameConceded,
+    "inventory_changed" => Scry2.Events.Economy.InventoryChanged,
+    "inventory_snapshot" => Scry2.Events.Economy.InventorySnapshot,
+    "inventory_updated" => Scry2.Events.Economy.InventoryUpdated,
+    "land_played" => Scry2.Events.Gameplay.LandPlayed,
+    "life_total_changed" => Scry2.Events.Gameplay.LifeTotalChanged,
+    "mastery_milestone_reached" => Scry2.Events.Progression.MasteryMilestoneReached,
+    "mastery_progress" => Scry2.Events.Progression.MasteryProgress,
+    "match_completed" => Scry2.Events.Match.MatchCompleted,
+    "match_created" => Scry2.Events.Match.MatchCreated,
+    "mulligan_decided" => Scry2.Events.Gameplay.MulliganDecided,
+    "mulligan_offered" => Scry2.Events.Gameplay.MulliganOffered,
+    "pairing_entered" => Scry2.Events.Event.PairingEntered,
+    "permanent_destroyed" => Scry2.Events.Gameplay.PermanentDestroyed,
+    "quest_assigned" => Scry2.Events.Progression.QuestAssigned,
+    "quest_completed" => Scry2.Events.Progression.QuestCompleted,
+    "quest_progressed" => Scry2.Events.Progression.QuestProgressed,
+    "quest_status" => Scry2.Events.Progression.QuestStatus,
+    "rank_advanced" => Scry2.Events.Progression.RankAdvanced,
+    "rank_match_recorded" => Scry2.Events.Progression.RankMatchRecorded,
+    "rank_snapshot" => Scry2.Events.Progression.RankSnapshot,
+    "cards_acquired" => Scry2.Events.Economy.CardsAcquired,
+    "cards_removed" => Scry2.Events.Economy.CardsRemoved,
+    "collection_updated" => Scry2.Events.Economy.CollectionUpdated,
+    "daily_win_earned" => Scry2.Events.Progression.DailyWinEarned,
+    "daily_wins_status" => Scry2.Events.Progression.DailyWinsStatus,
+    "session_started" => Scry2.Events.Session.SessionStarted,
+    "spell_cast" => Scry2.Events.Gameplay.SpellCast,
+    "spell_resolved" => Scry2.Events.Gameplay.SpellResolved,
+    "starting_player_chosen" => Scry2.Events.Gameplay.StartingPlayerChosen,
+    "token_created" => Scry2.Events.Gameplay.TokenCreated,
+    "weekly_win_earned" => Scry2.Events.Progression.WeeklyWinEarned,
+    "zone_changed" => Scry2.Events.Gameplay.ZoneChanged
+  }
+
+  @doc "Returns the slug-to-module registry. Used by guard-rail tests."
+  def __slug_to_module__, do: @slug_to_module
 
   defp struct_to_payload(domain_event) do
     domain_event
@@ -651,429 +707,15 @@ defmodule Scry2.Events do
   defp serialize_value(value), do: value
 
   defp rehydrate_with_metadata(%EventRecord{} = record) do
-    event = rehydrate(record)
+    event = rehydrate(record.event_type, record.payload)
     event = %{event | player_id: record.player_id}
     Map.put(event, :id, record.id)
   end
 
-  defp rehydrate(%EventRecord{event_type: "match_created", payload: payload}) do
-    %Scry2.Events.Match.MatchCreated{
-      mtga_match_id: payload["mtga_match_id"],
-      event_name: payload["event_name"],
-      opponent_screen_name: payload["opponent_screen_name"],
-      opponent_user_id: payload["opponent_user_id"],
-      platform: payload["platform"],
-      opponent_platform: payload["opponent_platform"],
-      occurred_at: parse_datetime(payload["occurred_at"]),
-      player_rank: payload["player_rank"],
-      format: payload["format"],
-      format_type: payload["format_type"]
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "match_completed", payload: payload}) do
-    %Scry2.Events.Match.MatchCompleted{
-      mtga_match_id: payload["mtga_match_id"],
-      occurred_at: parse_datetime(payload["occurred_at"]),
-      won: payload["won"],
-      num_games: payload["num_games"],
-      reason: payload["reason"],
-      game_results: payload["game_results"]
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "game_completed", payload: payload}) do
-    %Scry2.Events.Match.GameCompleted{
-      mtga_match_id: payload["mtga_match_id"],
-      game_number: payload["game_number"],
-      on_play: payload["on_play"],
-      won: payload["won"],
-      num_mulligans: payload["num_mulligans"],
-      num_turns: payload["num_turns"],
-      self_life_total: payload["self_life_total"],
-      opponent_life_total: payload["opponent_life_total"],
-      win_reason: payload["win_reason"],
-      super_format: payload["super_format"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "deck_submitted", payload: payload}) do
-    %Scry2.Events.Deck.DeckSubmitted{
-      mtga_match_id: payload["mtga_match_id"],
-      mtga_deck_id: payload["mtga_deck_id"],
-      main_deck: payload["main_deck"] || [],
-      sideboard: payload["sideboard"] || [],
-      occurred_at: parse_datetime(payload["occurred_at"]),
-      deck_colors: payload["deck_colors"]
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "draft_started", payload: payload}) do
-    %Scry2.Events.Draft.DraftStarted{
-      mtga_draft_id: payload["mtga_draft_id"],
-      event_name: payload["event_name"],
-      set_code: payload["set_code"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "draft_pick_made", payload: payload}) do
-    %Scry2.Events.Draft.DraftPickMade{
-      mtga_draft_id: payload["mtga_draft_id"],
-      pack_number: payload["pack_number"],
-      pick_number: payload["pick_number"],
-      picked_arena_id: payload["picked_arena_id"],
-      pack_arena_ids: payload["pack_arena_ids"] || [],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "die_roll_completed", payload: payload}) do
-    %Scry2.Events.Match.DieRolled{
-      mtga_match_id: payload["mtga_match_id"],
-      self_roll: payload["self_roll"],
-      opponent_roll: payload["opponent_roll"],
-      self_goes_first: payload["self_goes_first"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "mulligan_offered", payload: payload}) do
-    %Scry2.Events.Gameplay.MulliganOffered{
-      mtga_match_id: payload["mtga_match_id"],
-      seat_id: payload["seat_id"],
-      hand_size: payload["hand_size"],
-      hand_arena_ids: payload["hand_arena_ids"],
-      occurred_at: parse_datetime(payload["occurred_at"]),
-      land_count: payload["land_count"],
-      nonland_count: payload["nonland_count"],
-      total_cmc: payload["total_cmc"],
-      cmc_distribution: payload["cmc_distribution"],
-      color_distribution: payload["color_distribution"],
-      card_names: payload["card_names"]
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "rank_snapshot", payload: payload}) do
-    %Scry2.Events.Progression.RankSnapshot{
-      constructed_class: payload["constructed_class"],
-      constructed_level: payload["constructed_level"],
-      constructed_step: payload["constructed_step"],
-      constructed_matches_won: payload["constructed_matches_won"],
-      constructed_matches_lost: payload["constructed_matches_lost"],
-      limited_class: payload["limited_class"],
-      limited_level: payload["limited_level"],
-      limited_step: payload["limited_step"],
-      limited_matches_won: payload["limited_matches_won"],
-      limited_matches_lost: payload["limited_matches_lost"],
-      season_ordinal: payload["season_ordinal"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "session_started", payload: payload}) do
-    %Scry2.Events.Session.SessionStarted{
-      client_id: payload["client_id"],
-      screen_name: payload["screen_name"],
-      session_id: payload["session_id"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "event_joined", payload: payload}) do
-    %Scry2.Events.Event.EventJoined{
-      event_name: payload["event_name"],
-      course_id: payload["course_id"],
-      entry_currency_type: payload["entry_currency_type"],
-      entry_fee: payload["entry_fee"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "inventory_changed", payload: payload}) do
-    %Scry2.Events.Economy.InventoryChanged{
-      source: payload["source"],
-      source_id: payload["source_id"],
-      gold_delta: payload["gold_delta"],
-      gems_delta: payload["gems_delta"],
-      boosters: payload["boosters"],
-      gold_balance: payload["gold_balance"],
-      gems_balance: payload["gems_balance"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "deck_selected", payload: payload}) do
-    %Scry2.Events.Deck.DeckSelected{
-      event_name: payload["event_name"],
-      deck_id: payload["deck_id"],
-      deck_name: payload["deck_name"],
-      main_deck: payload["main_deck"] || [],
-      sideboard: payload["sideboard"] || [],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "pairing_entered", payload: payload}) do
-    %Scry2.Events.Event.PairingEntered{
-      event_name: payload["event_name"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "quest_status", payload: payload}) do
-    %Scry2.Events.Progression.QuestStatus{
-      quests: payload["quests"] || [],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "daily_wins_status", payload: payload}) do
-    %Scry2.Events.Progression.DailyWinsStatus{
-      daily_position: payload["daily_position"],
-      daily_reset_at: payload["daily_reset_at"],
-      weekly_position: payload["weekly_position"],
-      weekly_reset_at: payload["weekly_reset_at"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "deck_inventory", payload: payload}) do
-    %Scry2.Events.Deck.DeckInventory{
-      decks: payload["decks"] || [],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "deck_updated", payload: payload}) do
-    %Scry2.Events.Deck.DeckUpdated{
-      deck_id: payload["deck_id"],
-      deck_name: payload["deck_name"],
-      format: payload["format"],
-      action_type: payload["action_type"],
-      main_deck: payload["main_deck"] || [],
-      sideboard: payload["sideboard"] || [],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "mastery_progress", payload: payload}) do
-    %Scry2.Events.Progression.MasteryProgress{
-      node_states: payload["node_states"],
-      milestone_states: payload["milestone_states"],
-      total_nodes: payload["total_nodes"],
-      completed_nodes: payload["completed_nodes"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "inventory_updated", payload: payload}) do
-    %Scry2.Events.Economy.InventoryUpdated{
-      gold: payload["gold"],
-      gems: payload["gems"],
-      wildcards_common: payload["wildcards_common"],
-      wildcards_uncommon: payload["wildcards_uncommon"],
-      wildcards_rare: payload["wildcards_rare"],
-      wildcards_mythic: payload["wildcards_mythic"],
-      vault_progress: payload["vault_progress"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "event_course_updated", payload: payload}) do
-    %Scry2.Events.Event.EventCourseUpdated{
-      event_name: payload["event_name"],
-      current_wins: payload["current_wins"],
-      current_losses: payload["current_losses"],
-      current_module: payload["current_module"],
-      card_pool: payload["card_pool"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "event_reward_claimed", payload: payload}) do
-    %Scry2.Events.Event.EventRewardClaimed{
-      event_name: payload["event_name"],
-      final_wins: payload["final_wins"],
-      final_losses: payload["final_losses"],
-      gems_awarded: payload["gems_awarded"],
-      gold_awarded: payload["gold_awarded"],
-      boosters_awarded: payload["boosters_awarded"],
-      card_pool: payload["card_pool"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  # ── New gameplay event rehydration (decomposed from game_action / turn_action) ──
-
-  defp rehydrate(%EventRecord{event_type: "game_conceded", payload: payload}) do
-    %Scry2.Events.Gameplay.GameConceded{
-      mtga_match_id: payload["mtga_match_id"],
-      scope: payload["scope"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "mulligan_decided", payload: payload}) do
-    %Scry2.Events.Gameplay.MulliganDecided{
-      mtga_match_id: payload["mtga_match_id"],
-      decision: payload["decision"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "starting_player_chosen", payload: payload}) do
-    %Scry2.Events.Gameplay.StartingPlayerChosen{
-      mtga_match_id: payload["mtga_match_id"],
-      chose_play: payload["chose_play"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "land_played", payload: payload}) do
-    %Scry2.Events.Gameplay.LandPlayed{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "spell_cast", payload: payload}) do
-    %Scry2.Events.Gameplay.SpellCast{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "spell_resolved", payload: payload}) do
-    %Scry2.Events.Gameplay.SpellResolved{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "card_drawn", payload: payload}) do
-    %Scry2.Events.Gameplay.CardDrawn{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "combat_damage_dealt", payload: payload}) do
-    %Scry2.Events.Gameplay.CombatDamageDealt{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      amount: payload["amount"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "life_total_changed", payload: payload}) do
-    %Scry2.Events.Gameplay.LifeTotalChanged{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      amount: payload["amount"],
-      affected_player: payload["affected_player"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "permanent_destroyed", payload: payload}) do
-    %Scry2.Events.Gameplay.PermanentDestroyed{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "card_exiled", payload: payload}) do
-    %Scry2.Events.Gameplay.CardExiled{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "token_created", payload: payload}) do
-    %Scry2.Events.Gameplay.TokenCreated{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "counter_added", payload: payload}) do
-    %Scry2.Events.Gameplay.CounterAdded{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      amount: payload["amount"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp rehydrate(%EventRecord{event_type: "zone_changed", payload: payload}) do
-    %Scry2.Events.Gameplay.ZoneChanged{
-      mtga_match_id: payload["mtga_match_id"],
-      turn_number: payload["turn_number"],
-      phase: payload["phase"],
-      active_player: payload["active_player"],
-      card_arena_id: payload["card_arena_id"],
-      card_name: payload["card_name"],
-      reason: payload["reason"],
-      zone_from: payload["zone_from"],
-      zone_to: payload["zone_to"],
-      occurred_at: parse_datetime(payload["occurred_at"])
-    }
-  end
-
-  defp parse_datetime(nil), do: nil
-
-  defp parse_datetime(iso) when is_binary(iso) do
-    case DateTime.from_iso8601(iso) do
-      {:ok, dt, _offset} -> dt
-      _ -> nil
+  defp rehydrate(event_type, payload) do
+    case Map.get(@slug_to_module, event_type) do
+      nil -> raise "Unknown event type: #{inspect(event_type)}"
+      module -> module.from_payload(payload)
     end
   end
 end

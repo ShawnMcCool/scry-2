@@ -35,6 +35,10 @@ defmodule Scry2.Events.Match.MatchCreated do
   """
 
   @enforce_keys [:mtga_match_id, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :mtga_match_id,
@@ -73,6 +77,27 @@ defmodule Scry2.Events.Match.MatchCreated do
           format_type: String.t() | nil,
           deck_name: String.t() | nil
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_match_id: payload["mtga_match_id"],
+      event_name: payload["event_name"],
+      opponent_screen_name: payload["opponent_screen_name"],
+      opponent_user_id: payload["opponent_user_id"],
+      platform: payload["platform"],
+      opponent_platform: payload["opponent_platform"],
+      opponent_rank_class: payload["opponent_rank_class"],
+      opponent_rank_tier: payload["opponent_rank_tier"],
+      opponent_leaderboard_percentile: payload["opponent_leaderboard_percentile"],
+      opponent_leaderboard_placement: payload["opponent_leaderboard_placement"],
+      player_rank: payload["player_rank"],
+      format: payload["format"],
+      format_type: payload["format_type"],
+      deck_name: payload["deck_name"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "match_created"

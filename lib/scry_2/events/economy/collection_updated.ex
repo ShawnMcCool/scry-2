@@ -29,6 +29,10 @@ defmodule Scry2.Events.Economy.CollectionUpdated do
   """
 
   @enforce_keys [:card_counts, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :card_counts,
@@ -40,6 +44,14 @@ defmodule Scry2.Events.Economy.CollectionUpdated do
           card_counts: %{integer() => non_neg_integer()},
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      card_counts: Payload.integer_keys(payload["card_counts"] || %{}),
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "collection_updated"

@@ -24,6 +24,10 @@ defmodule Scry2.Events.Draft.DraftStarted do
   """
 
   @enforce_keys [:mtga_draft_id, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :mtga_draft_id,
@@ -39,6 +43,16 @@ defmodule Scry2.Events.Draft.DraftStarted do
           set_code: String.t() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_draft_id: payload["mtga_draft_id"],
+      event_name: payload["event_name"],
+      set_code: payload["set_code"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "draft_started"

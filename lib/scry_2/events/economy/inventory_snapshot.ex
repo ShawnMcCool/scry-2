@@ -37,6 +37,10 @@ defmodule Scry2.Events.Economy.InventorySnapshot do
   `"inventory_snapshot"` — stable, do not rename.
   """
 
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   @enforce_keys [:occurred_at]
   defstruct [
     :player_id,
@@ -69,6 +73,23 @@ defmodule Scry2.Events.Economy.InventorySnapshot do
           boosters: [booster()] | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      gold: payload["gold"],
+      gems: payload["gems"],
+      vault_progress: payload["vault_progress"],
+      wildcards_common: payload["wildcards_common"],
+      wildcards_uncommon: payload["wildcards_uncommon"],
+      wildcards_rare: payload["wildcards_rare"],
+      wildcards_mythic: payload["wildcards_mythic"],
+      draft_tokens: payload["draft_tokens"],
+      sealed_tokens: payload["sealed_tokens"],
+      boosters: payload["boosters"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "inventory_snapshot"

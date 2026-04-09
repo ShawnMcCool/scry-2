@@ -35,6 +35,10 @@ defmodule Scry2.Events.Economy.InventoryUpdated do
   `"inventory_updated"` — stable, do not rename.
   """
 
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   @enforce_keys [:occurred_at]
   defstruct [
     :player_id,
@@ -63,6 +67,22 @@ defmodule Scry2.Events.Economy.InventoryUpdated do
           sealed_tokens: non_neg_integer() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      gold: payload["gold"],
+      gems: payload["gems"],
+      wildcards_common: payload["wildcards_common"],
+      wildcards_uncommon: payload["wildcards_uncommon"],
+      wildcards_rare: payload["wildcards_rare"],
+      wildcards_mythic: payload["wildcards_mythic"],
+      vault_progress: payload["vault_progress"],
+      draft_tokens: payload["draft_tokens"],
+      sealed_tokens: payload["sealed_tokens"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "inventory_updated"

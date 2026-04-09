@@ -28,6 +28,10 @@ defmodule Scry2.Events.Deck.DeckUpdated do
   """
 
   @enforce_keys [:deck_id, :main_deck, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :deck_id,
@@ -51,6 +55,19 @@ defmodule Scry2.Events.Deck.DeckUpdated do
           sideboard: [card_entry()] | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      deck_id: payload["deck_id"],
+      deck_name: payload["deck_name"],
+      format: payload["format"],
+      action_type: payload["action_type"],
+      main_deck: payload["main_deck"] || [],
+      sideboard: payload["sideboard"] || [],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "deck_updated"

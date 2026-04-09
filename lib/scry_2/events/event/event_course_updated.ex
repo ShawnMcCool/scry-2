@@ -32,6 +32,10 @@ defmodule Scry2.Events.Event.EventCourseUpdated do
   """
 
   @enforce_keys [:event_name, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :event_name,
@@ -51,6 +55,18 @@ defmodule Scry2.Events.Event.EventCourseUpdated do
           card_pool: [integer()] | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      event_name: payload["event_name"],
+      current_wins: payload["current_wins"],
+      current_losses: payload["current_losses"],
+      current_module: payload["current_module"],
+      card_pool: payload["card_pool"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "event_course_updated"
