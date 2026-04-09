@@ -28,6 +28,10 @@ defmodule Scry2.Events.Progression.QuestStatus do
   """
 
   @enforce_keys [:quests, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :quests,
@@ -48,6 +52,14 @@ defmodule Scry2.Events.Progression.QuestStatus do
           quests: [quest()],
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      quests: payload["quests"] || [],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "quest_status"

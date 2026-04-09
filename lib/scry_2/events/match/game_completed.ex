@@ -33,6 +33,10 @@ defmodule Scry2.Events.Match.GameCompleted do
   """
 
   @enforce_keys [:mtga_match_id, :game_number, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :mtga_match_id,
@@ -64,6 +68,24 @@ defmodule Scry2.Events.Match.GameCompleted do
           super_format: String.t() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_match_id: payload["mtga_match_id"],
+      game_number: payload["game_number"],
+      on_play: payload["on_play"],
+      won: payload["won"],
+      num_mulligans: payload["num_mulligans"],
+      opponent_num_mulligans: payload["opponent_num_mulligans"],
+      num_turns: payload["num_turns"],
+      self_life_total: payload["self_life_total"],
+      opponent_life_total: payload["opponent_life_total"],
+      win_reason: payload["win_reason"],
+      super_format: payload["super_format"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "game_completed"

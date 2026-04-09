@@ -33,6 +33,10 @@ defmodule Scry2.Events.Progression.DailyWinsStatus do
   """
 
   @enforce_keys [:daily_position, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :daily_position,
@@ -50,6 +54,17 @@ defmodule Scry2.Events.Progression.DailyWinsStatus do
           weekly_reset_at: DateTime.t() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      daily_position: payload["daily_position"],
+      daily_reset_at: payload["daily_reset_at"],
+      weekly_position: payload["weekly_position"],
+      weekly_reset_at: payload["weekly_reset_at"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "daily_wins_status"

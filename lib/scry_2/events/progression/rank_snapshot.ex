@@ -43,6 +43,10 @@ defmodule Scry2.Events.Progression.RankSnapshot do
   `"rank_snapshot"` — stable, do not rename.
   """
 
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   @enforce_keys [:occurred_at]
   defstruct [
     :player_id,
@@ -83,6 +87,28 @@ defmodule Scry2.Events.Progression.RankSnapshot do
           season_ordinal: integer() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      constructed_class: payload["constructed_class"],
+      constructed_level: payload["constructed_level"],
+      constructed_step: payload["constructed_step"],
+      constructed_matches_won: payload["constructed_matches_won"],
+      constructed_matches_lost: payload["constructed_matches_lost"],
+      constructed_percentile: payload["constructed_percentile"],
+      constructed_leaderboard_placement: payload["constructed_leaderboard_placement"],
+      limited_class: payload["limited_class"],
+      limited_level: payload["limited_level"],
+      limited_step: payload["limited_step"],
+      limited_matches_won: payload["limited_matches_won"],
+      limited_matches_lost: payload["limited_matches_lost"],
+      limited_percentile: payload["limited_percentile"],
+      limited_leaderboard_placement: payload["limited_leaderboard_placement"],
+      season_ordinal: payload["season_ordinal"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "rank_snapshot"

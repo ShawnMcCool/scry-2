@@ -26,6 +26,10 @@ defmodule Scry2.Events.Event.EventJoined do
   """
 
   @enforce_keys [:event_name, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :event_name,
@@ -43,6 +47,17 @@ defmodule Scry2.Events.Event.EventJoined do
           entry_fee: integer() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      event_name: payload["event_name"],
+      course_id: payload["course_id"],
+      entry_currency_type: payload["entry_currency_type"],
+      entry_fee: payload["entry_fee"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "event_joined"

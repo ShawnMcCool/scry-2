@@ -27,6 +27,10 @@ defmodule Scry2.Events.Deck.DeckInventory do
   """
 
   @enforce_keys [:decks, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :decks,
@@ -44,6 +48,14 @@ defmodule Scry2.Events.Deck.DeckInventory do
           decks: [deck_summary()],
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      decks: payload["decks"] || [],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "deck_inventory"

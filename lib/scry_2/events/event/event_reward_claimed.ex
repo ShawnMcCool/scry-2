@@ -29,6 +29,10 @@ defmodule Scry2.Events.Event.EventRewardClaimed do
   """
 
   @enforce_keys [:event_name, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :event_name,
@@ -52,6 +56,20 @@ defmodule Scry2.Events.Event.EventRewardClaimed do
           card_pool: [integer()] | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      event_name: payload["event_name"],
+      final_wins: payload["final_wins"],
+      final_losses: payload["final_losses"],
+      gems_awarded: payload["gems_awarded"],
+      gold_awarded: payload["gold_awarded"],
+      boosters_awarded: payload["boosters_awarded"],
+      card_pool: payload["card_pool"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "event_reward_claimed"

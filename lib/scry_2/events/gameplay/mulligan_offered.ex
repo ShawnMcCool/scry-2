@@ -35,6 +35,10 @@ defmodule Scry2.Events.Gameplay.MulliganOffered do
   """
 
   @enforce_keys [:seat_id, :hand_size, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :mtga_match_id,
@@ -65,6 +69,23 @@ defmodule Scry2.Events.Gameplay.MulliganOffered do
           color_distribution: map() | nil,
           card_names: map() | nil
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_match_id: payload["mtga_match_id"],
+      seat_id: payload["seat_id"],
+      hand_size: payload["hand_size"],
+      hand_arena_ids: payload["hand_arena_ids"],
+      land_count: payload["land_count"],
+      nonland_count: payload["nonland_count"],
+      total_cmc: payload["total_cmc"],
+      cmc_distribution: payload["cmc_distribution"],
+      color_distribution: payload["color_distribution"],
+      card_names: payload["card_names"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "mulligan_offered"

@@ -25,6 +25,10 @@ defmodule Scry2.Events.Gameplay.SpellCast do
   `"spell_cast"` — stable, do not rename.
   """
 
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   @enforce_keys [:occurred_at]
   defstruct [
     :player_id,
@@ -47,6 +51,19 @@ defmodule Scry2.Events.Gameplay.SpellCast do
           card_name: String.t() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_match_id: payload["mtga_match_id"],
+      turn_number: payload["turn_number"],
+      phase: payload["phase"],
+      active_player: payload["active_player"],
+      card_arena_id: payload["card_arena_id"],
+      card_name: payload["card_name"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "spell_cast"

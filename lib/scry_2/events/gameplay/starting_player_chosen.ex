@@ -21,6 +21,10 @@ defmodule Scry2.Events.Gameplay.StartingPlayerChosen do
   `"starting_player_chosen"` — stable, do not rename.
   """
 
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   @enforce_keys [:occurred_at]
   defstruct [:player_id, :mtga_match_id, :chose_play, :occurred_at]
 
@@ -30,6 +34,15 @@ defmodule Scry2.Events.Gameplay.StartingPlayerChosen do
           chose_play: boolean() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_match_id: payload["mtga_match_id"],
+      chose_play: payload["chose_play"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "starting_player_chosen"

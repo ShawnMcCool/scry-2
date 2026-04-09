@@ -22,6 +22,10 @@ defmodule Scry2.Events.Gameplay.GameConceded do
   `"game_conceded"` — stable, do not rename.
   """
 
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   @enforce_keys [:occurred_at]
   defstruct [:player_id, :mtga_match_id, :scope, :occurred_at]
 
@@ -31,6 +35,15 @@ defmodule Scry2.Events.Gameplay.GameConceded do
           scope: String.t() | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_match_id: payload["mtga_match_id"],
+      scope: payload["scope"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "game_conceded"

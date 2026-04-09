@@ -34,6 +34,10 @@ defmodule Scry2.Events.Progression.MasteryProgress do
   """
 
   @enforce_keys [:node_states, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :node_states,
@@ -51,6 +55,17 @@ defmodule Scry2.Events.Progression.MasteryProgress do
           completed_nodes: non_neg_integer(),
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      node_states: payload["node_states"],
+      milestone_states: payload["milestone_states"],
+      total_nodes: payload["total_nodes"],
+      completed_nodes: payload["completed_nodes"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "mastery_progress"

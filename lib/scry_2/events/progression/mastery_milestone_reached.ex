@@ -22,6 +22,10 @@ defmodule Scry2.Events.Progression.MasteryMilestoneReached do
   """
 
   @enforce_keys [:milestone_key, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :milestone_key,
@@ -33,6 +37,14 @@ defmodule Scry2.Events.Progression.MasteryMilestoneReached do
           milestone_key: String.t(),
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      milestone_key: payload["milestone_key"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "mastery_milestone_reached"

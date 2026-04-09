@@ -26,6 +26,10 @@ defmodule Scry2.Events.Deck.DeckSelected do
   """
 
   @enforce_keys [:event_name, :main_deck, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :event_name,
@@ -47,6 +51,18 @@ defmodule Scry2.Events.Deck.DeckSelected do
           sideboard: [card_entry()] | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      event_name: payload["event_name"],
+      deck_id: payload["deck_id"],
+      deck_name: payload["deck_name"],
+      main_deck: payload["main_deck"] || [],
+      sideboard: payload["sideboard"] || [],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "deck_selected"

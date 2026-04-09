@@ -28,6 +28,10 @@ defmodule Scry2.Events.Deck.DeckSubmitted do
   """
 
   @enforce_keys [:mtga_match_id, :main_deck, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :mtga_match_id,
@@ -51,6 +55,19 @@ defmodule Scry2.Events.Deck.DeckSubmitted do
           sideboard: [card_count()],
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_match_id: payload["mtga_match_id"],
+      mtga_deck_id: payload["mtga_deck_id"],
+      game_number: payload["game_number"],
+      main_deck: payload["main_deck"] || [],
+      sideboard: payload["sideboard"] || [],
+      deck_colors: payload["deck_colors"],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "deck_submitted"
