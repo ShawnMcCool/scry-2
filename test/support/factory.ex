@@ -28,11 +28,34 @@ defmodule Scry2.TestFactory do
   }
 
   alias Scry2.Events.Deck.DeckInventory
-  alias Scry2.Events.Economy.{CollectionUpdated, InventorySnapshot, InventoryUpdated}
-  alias Scry2.Events.Event.EventCourseUpdated
+
+  alias Scry2.Events.Economy.{
+    CardsAcquired,
+    CardsRemoved,
+    CollectionUpdated,
+    InventorySnapshot,
+    InventoryUpdated
+  }
+
+  alias Scry2.Events.Event.{EventCourseUpdated, EventRecordChanged}
   alias Scry2.Events.Gameplay.{MulliganOffered, StartingPlayerChosen}
   alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
-  alias Scry2.Events.Progression.{DailyWinsStatus, MasteryProgress, QuestStatus, RankSnapshot}
+
+  alias Scry2.Events.Progression.{
+    DailyWinEarned,
+    DailyWinsStatus,
+    MasteryMilestoneReached,
+    MasteryProgress,
+    QuestAssigned,
+    QuestCompleted,
+    QuestProgressed,
+    QuestStatus,
+    RankAdvanced,
+    RankMatchRecorded,
+    RankSnapshot,
+    WeeklyWinEarned
+  }
+
   alias Scry2.Events.Session.{SessionDisconnected, SessionStarted}
   alias Scry2.Matches
   alias Scry2.Matches.{DeckSubmission, Game, Match}
@@ -564,6 +587,141 @@ defmodule Scry2.TestFactory do
     struct(EventCourseUpdated, Map.merge(defaults, Map.new(attrs)))
   end
 
+  def build_rank_advanced(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      constructed_class: "Gold",
+      constructed_level: 2,
+      constructed_step: 3,
+      constructed_matches_won: 15,
+      constructed_matches_lost: 10,
+      constructed_percentile: nil,
+      constructed_leaderboard_placement: nil,
+      limited_class: "Silver",
+      limited_level: 1,
+      limited_step: 0,
+      limited_matches_won: 5,
+      limited_matches_lost: 3,
+      limited_percentile: nil,
+      limited_leaderboard_placement: nil,
+      season_ordinal: 88,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(RankAdvanced, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_rank_match_recorded(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      format: :constructed,
+      won: true,
+      wins: 16,
+      losses: 10,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(RankMatchRecorded, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_daily_win_earned(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      new_position: 4,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(DailyWinEarned, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_weekly_win_earned(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      new_position: 11,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(WeeklyWinEarned, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_mastery_milestone_reached(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      milestone_key: "TutorialComplete",
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(MasteryMilestoneReached, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_quest_progressed(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      quest_id: "daily_win_1",
+      new_progress: 3,
+      goal: 5,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(QuestProgressed, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_quest_completed(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      quest_id: "daily_win_1",
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(QuestCompleted, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_quest_assigned(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      quest_id: "daily_win_2",
+      goal: 5,
+      quest_track: "Daily",
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(QuestAssigned, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_cards_acquired(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      cards: %{91_234 => 2, 91_235 => 1},
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(CardsAcquired, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_cards_removed(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      cards: %{91_236 => 1},
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(CardsRemoved, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_event_record_changed(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      event_name: "QuickDraft_FDN_20260323",
+      wins: 2,
+      losses: 1,
+      current_module: "Draft",
+      card_pool: [91_234, 91_235],
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(EventRecordChanged, Map.merge(defaults, Map.new(attrs)))
+  end
+
   # ── create_* domain events (persisted to event store) ──────────────────
 
   @doc """
@@ -679,24 +837,35 @@ defmodule Scry2.TestFactory do
   # Silence unused-alias warnings for test support code.
   @compile {:no_warn_unused,
             [
+              CardsAcquired,
+              CardsRemoved,
               Cursor,
+              DailyWinEarned,
               DeckSelected,
               DeckSubmission,
               DieRolled,
               CollectionUpdated,
               DraftCompleted,
               EventRecord,
+              EventRecordChanged,
               HumanDraftPackOffered,
               HumanDraftPickMade,
               InventorySnapshot,
               InventoryUpdated,
+              MasteryMilestoneReached,
               MasteryProgress,
               MtgaCard,
               Players,
+              QuestAssigned,
+              QuestCompleted,
+              QuestProgressed,
+              RankAdvanced,
+              RankMatchRecorded,
               RankSnapshot,
               ScryfallCard,
               SessionDisconnected,
               SessionStarted,
-              StartingPlayerChosen
+              StartingPlayerChosen,
+              WeeklyWinEarned
             ]}
 end

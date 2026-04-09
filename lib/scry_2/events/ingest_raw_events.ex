@@ -61,6 +61,7 @@ defmodule Scry2.Events.IngestRawEvents do
   alias Scry2.Events
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.IngestionState
+  alias Scry2.Events.SnapshotConvert
   alias Scry2.Events.SnapshotDiff
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.EventRecord
@@ -304,19 +305,19 @@ defmodule Scry2.Events.IngestRawEvents do
           all_events
           |> stamp_player_id(new_state.session.player_id, record)
           |> enrich_events(new_state)
-          |> Enum.with_index()
-          |> Enum.reduce({new_state, 0}, fn {event, _raw_index}, {acc_state, sequence} ->
-            case maybe_append_event(
-                   event,
-                   record,
-                   sequence,
-                   new_state.session.current_session_id,
-                   acc_state
-                 ) do
-              {:appended, updated_state} -> {updated_state, sequence + 1}
-              {:skipped, updated_state} -> {updated_state, sequence}
-            end
+          |> Enum.reduce({new_state, 0, 0}, fn event, {acc_state, sequence, total_appended} ->
+            {n_appended, updated_state} =
+              maybe_append_event(
+                event,
+                record,
+                sequence,
+                new_state.session.current_session_id,
+                acc_state
+              )
+
+            {updated_state, sequence + n_appended, total_appended + n_appended}
           end)
+          |> then(fn {final_state, _sequence, total} -> {final_state, total} end)
 
         MtgaLogIngestion.mark_processed!(record.id)
 
@@ -378,24 +379,51 @@ defmodule Scry2.Events.IngestRawEvents do
           |> stamp_player_id(new_state.session.player_id, record)
           |> enrich_events(new_state)
           |> Enum.reduce({new_state, 0, []}, fn event, {acc_state, sequence, acc_tuples} ->
-            case snapshot_changed?(event, acc_state) do
-              {:changed, slug, key} ->
-                tuple =
-                  {event, record,
-                   [sequence: sequence, session_id: new_state.session.current_session_id]}
+            slug = Events.Event.type_slug(event)
+            previous_key = acc_state.snapshot_state[slug]
 
-                updated_state = put_in(acc_state.snapshot_state[slug], key)
-                {updated_state, sequence + 1, [tuple | acc_tuples]}
+            case SnapshotConvert.convert(event, previous_key) do
+              {:converted, new_key, []} ->
+                # Snapshot changed but no events to emit; just update state
+                updated_state = put_in(acc_state.snapshot_state[slug], new_key)
+                {updated_state, sequence, acc_tuples}
 
-              :not_a_snapshot ->
-                tuple =
-                  {event, record,
-                   [sequence: sequence, session_id: new_state.session.current_session_id]}
+              {:converted, new_key, converted_events} ->
+                new_tuples =
+                  converted_events
+                  |> Enum.with_index(sequence)
+                  |> Enum.map(fn {converted_event, seq} ->
+                    {converted_event, record,
+                     [sequence: seq, session_id: new_state.session.current_session_id]}
+                  end)
 
-                {acc_state, sequence + 1, [tuple | acc_tuples]}
+                updated_state = put_in(acc_state.snapshot_state[slug], new_key)
+                {updated_state, sequence + length(converted_events), new_tuples ++ acc_tuples}
 
               :unchanged ->
                 {acc_state, sequence, acc_tuples}
+
+              :passthrough ->
+                if SnapshotDiff.snapshot_event?(event) do
+                  case SnapshotDiff.changed?(event, acc_state.snapshot_state[slug]) do
+                    {:changed, key} ->
+                      tuple =
+                        {event, record,
+                         [sequence: sequence, session_id: new_state.session.current_session_id]}
+
+                      updated_state = put_in(acc_state.snapshot_state[slug], key)
+                      {updated_state, sequence + 1, [tuple | acc_tuples]}
+
+                    :unchanged ->
+                      {acc_state, sequence, acc_tuples}
+                  end
+                else
+                  tuple =
+                    {event, record,
+                     [sequence: sequence, session_id: new_state.session.current_session_id]}
+
+                  {acc_state, sequence + 1, [tuple | acc_tuples]}
+                end
             end
           end)
 
@@ -523,41 +551,49 @@ defmodule Scry2.Events.IngestRawEvents do
     Enum.map(events, fn event -> %{event | player_id: player_id} end)
   end
 
-  # ── Snapshot deduplication ───────────────────────────────────────────
+  # ── Snapshot deduplication and conversion ────────────────────────────
 
-  # Checks whether a domain event is a snapshot type that has changed
-  # relative to the last-known diff key in state. Returns one of:
-  #
-  #   {:changed, slug, new_key} — snapshot event with new content; append it
-  #   :unchanged                — snapshot event with identical content; skip
-  #   :not_a_snapshot           — state-change event; always append
-  defp snapshot_changed?(event, state) do
-    if SnapshotDiff.snapshot_event?(event) do
-      slug = Events.Event.type_slug(event)
-
-      case SnapshotDiff.changed?(event, state.snapshot_state[slug]) do
-        {:changed, key} -> {:changed, slug, key}
-        :unchanged -> :unchanged
-      end
-    else
-      :not_a_snapshot
-    end
-  end
-
-  # Appends a single domain event to the log, applying snapshot dedup.
-  # Returns `{:appended, new_state}` or `{:skipped, new_state}`.
+  # Appends domain event(s) to the log, applying snapshot dedup and conversion
+  # via SnapshotConvert. Returns `{n_appended, new_state}` where n_appended is
+  # the number of events written (0 = skipped, 1+ = appended/converted).
   defp maybe_append_event(event, record, sequence, session_id, state) do
-    case snapshot_changed?(event, state) do
-      {:changed, slug, key} ->
-        Events.append!(event, record, sequence: sequence, session_id: session_id)
-        {:appended, put_in(state.snapshot_state[slug], key)}
+    slug = Events.Event.type_slug(event)
+    previous_key = state.snapshot_state[slug]
 
-      :not_a_snapshot ->
-        Events.append!(event, record, sequence: sequence, session_id: session_id)
-        {:appended, state}
+    case SnapshotConvert.convert(event, previous_key) do
+      {:converted, new_key, []} ->
+        # Snapshot changed (e.g., position reset) but no domain events to emit
+        {0, put_in(state.snapshot_state[slug], new_key)}
+
+      {:converted, new_key, converted_events} ->
+        # Append each converted event, assigning sequential sequence numbers
+        converted_events
+        |> Enum.with_index(sequence)
+        |> Enum.each(fn {converted_event, seq} ->
+          Events.append!(converted_event, record, sequence: seq, session_id: session_id)
+        end)
+
+        {length(converted_events), put_in(state.snapshot_state[slug], new_key)}
 
       :unchanged ->
-        {:skipped, state}
+        {0, state}
+
+      :passthrough ->
+        if SnapshotDiff.snapshot_event?(event) do
+          # Pass-through snapshot: use SnapshotDiff for dedup
+          case SnapshotDiff.changed?(event, state.snapshot_state[slug]) do
+            {:changed, key} ->
+              Events.append!(event, record, sequence: sequence, session_id: session_id)
+              {1, put_in(state.snapshot_state[slug], key)}
+
+            :unchanged ->
+              {0, state}
+          end
+        else
+          # Regular state-change event: always append
+          Events.append!(event, record, sequence: sequence, session_id: session_id)
+          {1, state}
+        end
     end
   end
 end

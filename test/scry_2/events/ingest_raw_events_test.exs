@@ -219,7 +219,7 @@ defmodule Scry2.Events.IngestRawEventsTest do
       _ = :sys.get_state(worker)
 
       counts = Events.count_by_type()
-      assert counts["rank_snapshot"] == 1
+      assert counts["rank_advanced"] == 1
     end
 
     test "snapshot event with changed payload processed twice produces two domain event rows",
@@ -230,7 +230,7 @@ defmodule Scry2.Events.IngestRawEventsTest do
       _ = :sys.get_state(worker)
 
       counts = Events.count_by_type()
-      assert counts["rank_snapshot"] == 2
+      assert counts["rank_advanced"] == 2
     end
 
     test "non-snapshot event (state-change) processed twice always produces two domain event rows",
