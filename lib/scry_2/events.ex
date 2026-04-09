@@ -418,7 +418,14 @@ defmodule Scry2.Events do
       |> Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
 
     # 3. Re-broadcast each raw event for retranslation via IngestRawEvents.
-    #    Stream to avoid loading the full event log into memory.
+    #    Suspend checkpointing — no crash-recovery value during full reingest.
+    #    Suspend all projectors — live projection during retranslation is wasted
+    #    work since rebuild! in replay_projections! rebuilds everything from
+    #    scratch. Projectors consume broadcasts from the mailbox (fast no-ops)
+    #    but skip the DB projection and watermark update.
+    suspend_ingest_raw_events_checkpointing()
+    suspend_all_projectors()
+
     Repo.transaction(fn ->
       Scry2.MtgaLogIngestion.EventRecord
       |> order_by([e], asc: e.id)
@@ -441,7 +448,9 @@ defmodule Scry2.Events do
     #    been sent and the GenServer's mailbox will process them in order.
     #    We sync by calling GenServer to drain its mailbox first.
     sync_ingest_raw_events()
+    resume_ingest_raw_events_checkpointing()
     replay_projections!()
+    resume_all_projectors()
 
     :ok
   end
@@ -454,6 +463,42 @@ defmodule Scry2.Events do
       nil -> :ok
       pid -> :sys.get_state(pid) && :ok
     end
+  end
+
+  defp suspend_ingest_raw_events_checkpointing do
+    case Process.whereis(Scry2.Events.IngestRawEvents) do
+      nil -> :ok
+      _pid -> Scry2.Events.IngestRawEvents.suspend_checkpointing()
+    end
+  end
+
+  defp resume_ingest_raw_events_checkpointing do
+    case Process.whereis(Scry2.Events.IngestRawEvents) do
+      nil -> :ok
+      _pid -> Scry2.Events.IngestRawEvents.resume_checkpointing()
+    end
+  end
+
+  # Suspend live projection on all running projectors so retranslation
+  # broadcasts are consumed but not projected. rebuild! in replay_projections!
+  # rebuilds everything from scratch, making live projections during reingest
+  # redundant waste.
+  defp suspend_all_projectors do
+    Enum.each(Scry2.Events.ProjectorRegistry.all(), fn mod ->
+      case Process.whereis(mod) do
+        nil -> :ok
+        _pid -> mod.suspend_live()
+      end
+    end)
+  end
+
+  defp resume_all_projectors do
+    Enum.each(Scry2.Events.ProjectorRegistry.all(), fn mod ->
+      case Process.whereis(mod) do
+        nil -> :ok
+        _pid -> mod.resume_live()
+      end
+    end)
   end
 
   @doc """
@@ -472,7 +517,13 @@ defmodule Scry2.Events do
     require Scry2.Log, as: Log
     Log.info(:ingester, "replay_projections: rebuilding all projections from event store")
 
-    Enum.each(Scry2.Events.ProjectorRegistry.all(), & &1.rebuild!())
+    Scry2.Events.ProjectorRegistry.all()
+    |> then(fn projectors ->
+      Task.Supervisor.async_stream(Scry2.TaskSupervisor, projectors, & &1.rebuild!(),
+        timeout: :infinity
+      )
+    end)
+    |> Stream.run()
 
     Log.info(:ingester, "replay_projections: all projections rebuilt")
     :ok
@@ -542,8 +593,14 @@ defmodule Scry2.Events do
     # Clear domain events
     Repo.delete_all(EventRecord)
 
-    # Each projector clears its own tables (ADR-029)
-    Enum.each(Scry2.Events.ProjectorRegistry.all(), & &1.rebuild!())
+    # Each projector clears its own tables in parallel (ADR-029)
+    Scry2.Events.ProjectorRegistry.all()
+    |> then(fn projectors ->
+      Task.Supervisor.async_stream(Scry2.TaskSupervisor, projectors, & &1.rebuild!(),
+        timeout: :infinity
+      )
+    end)
+    |> Stream.run()
 
     # Re-mark raw events as unprocessed so replay picks them up
     Scry2.MtgaLogIngestion.EventRecord

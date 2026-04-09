@@ -30,8 +30,6 @@ defmodule Scry2.Operations do
   alias Scry2.MtgaLogIngestion
   alias Scry2.Topics
 
-  @poll_interval_ms 250
-
   # ── Public API ──────────────────────────────────────────────────────
 
   @doc """
@@ -112,50 +110,53 @@ defmodule Scry2.Operations do
   # ── Background work with progress ──────────────────────────────────
 
   defp reingest_with_progress do
-    total_raw = MtgaLogIngestion.count_all()
+    alias Scry2.Events.IngestRawEvents
 
-    # Phase 1: Clear ingestion state, domain events, and re-mark raw events
+    # Reset domain events and ingestion state.
     Scry2.Repo.delete_all(Scry2.Events.IngestionState.Snapshot)
     Scry2.Repo.delete_all(Events.EventRecord)
 
     Scry2.MtgaLogIngestion.EventRecord
     |> Scry2.Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
 
-    # Re-broadcast raw events for IngestRawEvents
-    Scry2.MtgaLogIngestion.EventRecord
-    |> Scry2.Repo.all()
-    |> Enum.sort_by(& &1.id)
-    |> Enum.each(fn raw ->
-      Topics.broadcast(Topics.mtga_logs_events(), {:event, raw})
+    # Suspend live projectors — avoids redundant projection writes while
+    # retranslating. Phase 2 (rebuild_with_progress) rebuilds everything
+    # from scratch anyway.
+    Enum.each(ProjectorRegistry.all(), fn mod ->
+      case Process.whereis(mod) do
+        nil -> :ok
+        _pid -> mod.suspend_live()
+      end
     end)
 
-    # Poll until IngestRawEvents has processed everything
-    poll_retranslation_progress(total_raw)
+    # Phase 1: Retranslate every raw event synchronously.
+    # IngestRawEvents.retranslate_all! processes each event inside the GenServer
+    # and calls on_progress after each one — accurate per-event tracking with
+    # no polling and no race conditions.
+    IngestRawEvents.retranslate_all!(
+      on_progress: fn processed, total ->
+        report_every = max(1, div(total, 200))
 
-    # Sync to ensure IngestRawEvents mailbox is drained
-    sync_ingest_raw_events()
+        if rem(processed, report_every) == 0 or processed == total do
+          broadcast_progress(:reingest, %{
+            phase: :retranslation,
+            processed: processed,
+            total: total,
+            percent: percent(processed, total)
+          })
+        end
+      end
+    )
 
-    # Phase 2: Rebuild all projections
+    Enum.each(ProjectorRegistry.all(), fn mod ->
+      case Process.whereis(mod) do
+        nil -> :ok
+        _pid -> mod.resume_live()
+      end
+    end)
+
+    # Phase 2: Rebuild all projections from the fresh domain event log.
     rebuild_with_progress(ProjectorRegistry.all())
-  end
-
-  defp poll_retranslation_progress(total_raw) when total_raw == 0, do: :ok
-
-  defp poll_retranslation_progress(total_raw) do
-    unprocessed = MtgaLogIngestion.count_unprocessed()
-    processed = total_raw - unprocessed
-
-    broadcast_progress(:reingest, %{
-      phase: :retranslation,
-      processed: processed,
-      total: total_raw,
-      percent: percent(processed, total_raw)
-    })
-
-    if unprocessed > 0 do
-      Process.sleep(@poll_interval_ms)
-      poll_retranslation_progress(total_raw)
-    end
   end
 
   defp rebuild_with_progress(projector_modules) do
@@ -207,13 +208,6 @@ defmodule Scry2.Operations do
   end
 
   # ── Helpers ─────────────────────────────────────────────────────────
-
-  defp sync_ingest_raw_events do
-    case Process.whereis(Scry2.Events.IngestRawEvents) do
-      nil -> :ok
-      pid -> :sys.get_state(pid) && :ok
-    end
-  end
 
   defp percent(_done, 0), do: 100
   defp percent(done, total), do: round(done / total * 100)

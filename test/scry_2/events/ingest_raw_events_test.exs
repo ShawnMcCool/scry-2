@@ -141,6 +141,69 @@ defmodule Scry2.Events.IngestRawEventsTest do
     end
   end
 
+  describe "checkpointing suspension" do
+    test "suspend_checkpointing prevents IngestionState DB persistence during processing",
+         %{worker: worker} do
+      alias Scry2.Events.IngestionState
+
+      IngestRawEvents.suspend_checkpointing(worker)
+
+      raw = insert_raw_from_fixture!("match_game_room_state_changed_playing.log")
+      _ = :sys.get_state(worker)
+
+      loaded = IngestionState.load()
+      assert loaded.last_raw_event_id < raw.id
+
+      IngestRawEvents.resume_checkpointing(worker)
+      raw2 = insert_raw_from_fixture!("match_game_room_state_changed_completed.log")
+      _ = :sys.get_state(worker)
+
+      loaded2 = IngestionState.load()
+      assert loaded2.last_raw_event_id == raw2.id
+    end
+  end
+
+  describe "retranslate_all!" do
+    test "processes all events in id order and calls on_progress once per event",
+         %{worker: worker, projector: projector} do
+      raw1 = insert_raw_from_fixture!("match_game_room_state_changed_playing.log")
+      raw2 = insert_raw_from_fixture!("match_game_room_state_changed_completed.log")
+      sync_pipeline(worker, projector)
+
+      # Simulate the reingest DB reset
+      Scry2.Repo.delete_all(Scry2.Events.EventRecord)
+
+      Scry2.MtgaLogIngestion.EventRecord
+      |> Scry2.Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
+
+      test_pid = self()
+
+      IngestRawEvents.retranslate_all!(
+        [on_progress: fn processed, total -> send(test_pid, {:progress, processed, total}) end],
+        worker
+      )
+
+      # Domain events recreated from scratch
+      counts = Events.count_by_type()
+      assert counts["match_created"] == 1
+      assert counts["match_completed"] == 1
+
+      # All raw events marked processed
+      assert MtgaLogIngestion.get_event!(raw1.id).processed == true
+      assert MtgaLogIngestion.get_event!(raw2.id).processed == true
+
+      # Progress callback called once per event with accurate counts
+      assert_received {:progress, 1, 2}
+      assert_received {:progress, 2, 2}
+      refute_received {:progress, _, _}
+    end
+
+    test "works with no events", %{worker: worker} do
+      IngestRawEvents.retranslate_all!([], worker)
+      assert Events.count_by_type() == %{}
+    end
+  end
+
   describe "startup resume" do
     test "loads persisted state on init", %{projector: projector} do
       alias Scry2.Events.IngestionState

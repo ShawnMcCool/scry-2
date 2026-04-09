@@ -217,6 +217,23 @@ defmodule Scry2.Matches.UpdateFromEventTest do
       assert length(games) == 2
     end
 
+    test "deck_submitted with nil mtga_match_id persists submission without match association" do
+      player = create_player()
+
+      event =
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: nil,
+          mtga_deck_id: "pending:seat1"
+        })
+
+      project_events(UpdateFromEvent, event)
+
+      submissions = Scry2.Repo.all(Scry2.Matches.DeckSubmission)
+      assert length(submissions) == 1
+      assert hd(submissions).match_id == nil
+    end
+
     test "watermark advances to last processed event" do
       player = create_player()
 
