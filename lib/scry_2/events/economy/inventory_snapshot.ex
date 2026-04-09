@@ -1,17 +1,40 @@
 defmodule Scry2.Events.Economy.InventorySnapshot do
   @moduledoc """
-  Domain event — standalone inventory state pushed by MTGA outside of
-  event join/claim contexts. Captures the full economy state including
-  tokens and boosters.
+  Full inventory state pushed by MTGA outside of event join/claim flows.
+  Captures the complete economy state including tokens and boosters.
+
+  Event type: :snapshot
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from `DTO_InventoryInfo`
+  events. Fires when MTGA pushes an inventory update outside of the standard
+  event join/claim flows (e.g. after opening a pack, crafting a card, or
+  receiving a daily reward).
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `gold` — current gold balance
+  - `gems` — current gem balance
+  - `vault_progress` — vault completion percentage (0.0–100.0)
+  - `wildcards_common` — count of common wildcards available
+  - `wildcards_uncommon` — count of uncommon wildcards available
+  - `wildcards_rare` — count of rare wildcards available
+  - `wildcards_mythic` — count of mythic rare wildcards available
+  - `draft_tokens` — draft tokens available for use
+  - `sealed_tokens` — sealed tokens available for use
+  - `boosters` — list of `%{set_code, count}` for each set's booster count
+
+  ## Diff key
+
+  `SnapshotDiff` compares all economy fields including `boosters`. Any change
+  in gold, gems, wildcards, tokens, or booster counts triggers a new event.
+  `player_id` and `occurred_at` are excluded (metadata).
 
   ## Slug
 
   `"inventory_snapshot"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `DTO_InventoryInfo` events, which MTGA pushes on
-  inventory changes outside of event join/claim flows.
   """
 
   @enforce_keys [:occurred_at]

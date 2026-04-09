@@ -1,18 +1,46 @@
 defmodule Scry2.Events.Progression.RankSnapshot do
   @moduledoc """
-  Domain event — a point-in-time snapshot of the player's rank in
-  constructed and limited formats. Fires after match results are
-  processed by MTGA's servers.
+  Point-in-time snapshot of the player's constructed and limited ranks,
+  including class, level, step, win/loss record, and leaderboard position.
+
+  Event type: :snapshot
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from `RankGetSeasonAndRankDetails`
+  and `RankGetCombinedRankInfo` response events (Format A `<==` responses carrying
+  the full rank state). Fires after each ranked match and on login. Request events
+  (with `"request": "{}"`) are skipped.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `constructed_class` — constructed rank class (e.g. `"Gold"`, `"Mythic"`)
+  - `constructed_level` — tier within the rank class (1–4 for non-mythic)
+  - `constructed_step` — progress steps within the current tier
+  - `constructed_matches_won` — constructed wins this season
+  - `constructed_matches_lost` — constructed losses this season
+  - `constructed_percentile` — mythic percentile ranking (nil if not mythic)
+  - `constructed_leaderboard_placement` — leaderboard rank number (nil if not top placement)
+  - `limited_class` — limited rank class (e.g. `"Gold"`, `"Mythic"`)
+  - `limited_level` — tier within the rank class (1–4 for non-mythic)
+  - `limited_step` — progress steps within the current tier
+  - `limited_matches_won` — limited wins this season
+  - `limited_matches_lost` — limited losses this season
+  - `limited_percentile` — mythic percentile ranking (nil if not mythic)
+  - `limited_leaderboard_placement` — leaderboard rank number (nil if not top placement)
+  - `season_ordinal` — current ranked season number
+
+  ## Diff key
+
+  `SnapshotDiff` compares all class/level/step/wins/losses/season fields for
+  both constructed and limited. `player_id` and `occurred_at` are excluded
+  (metadata). Percentile and leaderboard placement are included as they reflect
+  rank position changes within mythic.
 
   ## Slug
 
   `"rank_snapshot"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `RankGetSeasonAndRankDetails` response events. These
-  are Format A `<==` responses carrying the full rank state. Request
-  events (with `"request": "{}"`) are skipped.
   """
 
   @enforce_keys [:occurred_at]

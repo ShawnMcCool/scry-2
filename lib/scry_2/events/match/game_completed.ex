@@ -1,28 +1,35 @@
 defmodule Scry2.Events.Match.GameCompleted do
   @moduledoc """
-  Domain event — an individual game within a match ended. A best-of-three
-  match produces 2–3 `%GameCompleted{}` events plus one `%MatchCompleted{}`.
+  An individual game within a match ended. A best-of-three match produces
+  2–3 `GameCompleted` events plus one `MatchCompleted`.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a `GreToClientEvent`
+  containing a `GREMessageType_GameStateMessage` with
+  `matchState: "MatchState_GameComplete"`. Fires when the game engine
+  signals that the current game is over (win, loss, or draw).
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match this game belongs to
+  - `game_number` — which game within the match (1, 2, or 3)
+  - `on_play` — true if the player was on the play (went first) for this game
+  - `won` — true if the player won this individual game
+  - `num_mulligans` — number of mulligans the player took this game
+  - `opponent_num_mulligans` — number of mulligans the opponent took
+  - `num_turns` — total number of turns in this game
+  - `self_life_total` — player's life total when the game ended
+  - `opponent_life_total` — opponent's life total when the game ended
+  - `win_reason` — raw MTGA win reason string (e.g. `"ResultReason_LifeLoss"`)
+  - `super_format` — format category (e.g. `"Constructed"`, `"Limited"`)
 
   ## Slug
 
   `"game_completed"` — stable, do not rename.
-
-  ## Source (future)
-
-  Will be produced by `Scry2.Events.IdentifyDomainEvents` from `GreToClientEvent`
-  messages containing a `GREMessageType_GameStateMessage` with
-  `matchState: "MatchState_GameComplete"`. See ADR-018 and
-  `TODO.md` > "Match ingestion follow-ups" > per-game results.
-
-  ## Projected by (future)
-
-  `Scry2.Matches.MatchProjection` will project to `matches_games` via
-  `Scry2.Matches.upsert_game!/1`, keyed on `(match_id, game_number)`.
-
-  ## Status
-
-  Struct defined; no translator clause or projector handler wired yet.
-  The struct exists to document the vocabulary and reserve the slug.
   """
 
   @enforce_keys [:mtga_match_id, :game_number, :occurred_at]

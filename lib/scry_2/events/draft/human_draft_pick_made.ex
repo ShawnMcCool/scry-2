@@ -1,19 +1,29 @@
 defmodule Scry2.Events.Draft.HumanDraftPickMade do
   @moduledoc """
-  Domain event — the player selected a card during a human draft
-  (Premier Draft, Traditional Draft). Unlike bot draft's `DraftPickMade`,
-  human drafts separate the pack presentation (`HumanDraftPackOffered`)
-  from the pick confirmation.
+  The player confirmed a card selection during a human draft (Premier Draft,
+  Traditional Draft). Unlike bot draft's `DraftPickMade`, human drafts separate
+  the pack presentation (`HumanDraftPackOffered`) from the pick confirmation.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
+  `EventPlayerDraftMakePick` response. Fires when the player confirms their
+  selection and the server acknowledges it. The `GrpIds` field is an array —
+  some formats like Pick Two Draft allow selecting multiple cards per pick.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_draft_id` — links this pick to a draft session
+  - `pack_number` — which pack was picked from (1–3)
+  - `pick_number` — position within the pack (1–15 for a normal pack)
+  - `picked_arena_ids` — list of arena_ids selected (usually one, more for Pick Two)
 
   ## Slug
 
   `"human_draft_pick_made"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `EventPlayerDraftMakePick` response events. The `GrpIds`
-  field is an array — some formats like Pick Two Draft allow selecting
-  multiple cards per pick.
   """
 
   @enforce_keys [:mtga_draft_id, :pack_number, :pick_number, :picked_arena_ids, :occurred_at]

@@ -1,26 +1,26 @@
 defmodule Scry2.Events.Draft.DraftStarted do
   @moduledoc """
-  Domain event — a new MTGA draft session began.
+  A new MTGA bot draft session began. Marks the opening of a Quick Draft
+  session before any picks are made.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw `BotDraftDraftStatus`
+  request. Fires when MTGA begins a bot draft session and the first status
+  message arrives indicating the draft is underway.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_draft_id` — stable identifier for this draft session; links all picks
+  - `event_name` — internal MTGA event name (e.g. `"QuickDraft_BLB_20250101"`)
+  - `set_code` — three-letter set code being drafted (e.g. `"BLB"`)
 
   ## Slug
 
   `"draft_started"` — stable, do not rename.
-
-  ## Source (future)
-
-  Will be produced by `Scry2.Events.IdentifyDomainEvents` once real draft fixtures
-  exist. The user's current Player.log has no draft activity — run a
-  draft with detailed logs enabled to collect fixtures. See
-  `TODO.md` > "Match ingestion follow-ups" > Drafts.
-
-  ## Projected by (future)
-
-  `Scry2.Drafts.DraftProjection` will project to `drafts_drafts` via
-  `Scry2.Drafts.upsert_draft!/1`, keyed on `mtga_draft_id`.
-
-  ## Status
-
-  Struct defined; no translator clause, no projector handler, no fixtures.
   """
 
   @enforce_keys [:mtga_draft_id, :occurred_at]

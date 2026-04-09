@@ -1,19 +1,38 @@
 defmodule Scry2.Events.Economy.InventoryUpdated do
   @moduledoc """
-  Domain event — snapshot of the player's economy and collection state.
+  Snapshot of the player's economy state — gold, gems, wildcards, vault progress,
+  and draft/sealed tokens. Excludes booster counts (see `InventorySnapshot`).
+
+  Event type: :snapshot
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from `StartHook` events (every
+  login) and `EventClaimPrize` events (after claiming event rewards). Fires when
+  the associated raw event carries `InventoryInfo` with the full economy totals.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `gold` — current gold balance
+  - `gems` — current gem balance
+  - `wildcards_common` — count of common wildcards available
+  - `wildcards_uncommon` — count of uncommon wildcards available
+  - `wildcards_rare` — count of rare wildcards available
+  - `wildcards_mythic` — count of mythic rare wildcards available
+  - `vault_progress` — vault completion percentage (0.0–100.0)
+  - `draft_tokens` — draft tokens available for use
+  - `sealed_tokens` — sealed tokens available for use
+
+  ## Diff key
+
+  `SnapshotDiff` compares all economy fields except boosters (boosters are
+  tracked separately by `InventorySnapshot`). `player_id` and `occurred_at`
+  are excluded (metadata).
 
   ## Slug
 
   `"inventory_updated"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `StartHook` raw events, which fire on every MTGA login.
-  The `InventoryInfo` section carries gold, gems, wildcards, and vault
-  progress. Tracking these over time reveals economy trends.
-
-  Also produced from `EventClaimPrize` events which update inventory
-  after claiming event rewards.
   """
 
   @enforce_keys [:occurred_at]

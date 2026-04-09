@@ -1,20 +1,31 @@
 defmodule Scry2.Events.Draft.HumanDraftPackOffered do
   @moduledoc """
-  Domain event — a pack was presented to the player during a human draft
-  (Premier Draft, Traditional Draft). Bot drafts use `DraftPickMade`
-  instead, which combines pack + pick.
+  MTGA presented a pack to the player during a human draft (Premier Draft,
+  Traditional Draft). Bot drafts use `DraftPickMade` instead, which bundles
+  pack and pick into a single event.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw `Draft.Notify`
+  response. Fires each time MTGA presents a pack for the player to pick from.
+  Note: the first pick of pack 1 does NOT generate a `Draft.Notify` — the
+  first event appears at pick 2. Entries with a `"method"` key are RPC
+  metadata and are filtered out. Pack contents arrive as a comma-separated
+  string of arena_ids in `PackCards`.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_draft_id` — links this pack offer to a draft session
+  - `pack_number` — which pack is being drafted (1–3)
+  - `pick_number` — position within the pack (1–15 for a normal pack)
+  - `pack_arena_ids` — list of arena_ids available for selection
 
   ## Slug
 
   `"human_draft_pack_offered"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `Draft.Notify` response events. The first pick of pack 1
-  does NOT generate a `Draft.Notify` — the first event appears at pick 2.
-  Filter out entries with a `"method"` key (those are RPC metadata, not packs).
-
-  Pack contents arrive as a comma-separated string of arena_ids in `PackCards`.
   """
 
   @enforce_keys [:mtga_draft_id, :pack_number, :pick_number, :pack_arena_ids, :occurred_at]

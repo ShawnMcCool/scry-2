@@ -1,14 +1,28 @@
 defmodule Scry2.Events.Gameplay.SpellCast do
   @moduledoc """
-  Domain event — a spell was cast from hand to the stack.
+  A spell was cast from hand to the stack.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a `GreToClientEvent`
+  containing an `AnnotationType_ZoneTransfer` annotation with category
+  `CastSpell`. Fires when a non-land card moves from hand to the stack.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match the spell was cast in
+  - `turn_number` — turn number when the spell was cast
+  - `phase` — game phase when the spell was cast
+  - `active_player` — seat ID of the player whose turn it is
+  - `card_arena_id` — arena_id of the spell cast
+  - `card_name` — resolved card name (enriched at ingestion)
 
   ## Slug
 
   `"spell_cast"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `AnnotationType_ZoneTransfer` annotations with category `CastSpell`.
   """
 
   @enforce_keys [:occurred_at]

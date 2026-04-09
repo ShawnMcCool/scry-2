@@ -1,32 +1,34 @@
 defmodule Scry2.Events.Match.MatchCompleted do
   @moduledoc """
-  Domain event — an MTGA match ended, with a final result. Pairs with
-  a preceding `%Scry2.Events.MatchCreated{}` sharing the same
-  `mtga_match_id`.
+  An MTGA match ended with a final result. Pairs with a preceding `MatchCreated`
+  sharing the same `mtga_match_id`.
 
-  ## Slug
-
-  `"match_completed"` — stable, do not rename.
+  Event type: :state_change
 
   ## Source
 
   Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
   `MatchGameRoomStateChangedEvent` with `stateType: "MatchGameRoomStateType_MatchCompleted"`.
+  Fires when the match game room transitions to the completed state.
   The translator computes `won` by comparing the `winningTeamId` from
-  `finalMatchResult.resultList[]` (the `MatchScope_Match` row) to the
-  self team id derived from `reservedPlayers[]`.
-
-  ## Projected by
-
-  `Scry2.Matches.MatchProjection` — enriches the existing `matches_matches`
-  row (keyed on `mtga_match_id`) via `Scry2.Matches.upsert_match!/1`.
-  Idempotent — replaying produces the same row state.
+  `finalMatchResult.resultList[]` (the `MatchScope_Match` row) to the self
+  team id derived from `reservedPlayers[]`.
 
   ## Fields
 
-  Self-contained — projectors never need to look up the `MatchCreated`
-  row to derive a field. The translator computes `won` at event-build
-  time using `self_user_id` config and the raw `reservedPlayers[]`.
+  Self-contained — projectors never need to look up the `MatchCreated` row
+  to derive a field. The translator computes `won` at event-build time.
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — stable match identifier linking to `MatchCreated`
+  - `won` — true if the player won the match
+  - `num_games` — total number of games played in the match
+  - `reason` — overall match result reason (e.g. `"ResultReason_LifeLoss"`)
+  - `game_results` — per-game list of `%{game_number, winning_team_id, reason}`
+
+  ## Slug
+
+  `"match_completed"` — stable, do not rename.
   """
 
   @enforce_keys [:mtga_match_id, :occurred_at, :won, :num_games]

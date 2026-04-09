@@ -1,14 +1,28 @@
 defmodule Scry2.Events.Gameplay.SpellResolved do
   @moduledoc """
-  Domain event — a spell or ability resolved from the stack.
+  A spell or ability resolved from the stack.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a `GreToClientEvent`
+  containing an `AnnotationType_ZoneTransfer` annotation with category
+  `Resolve`. Fires when a spell or ability leaves the stack after resolving.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match the spell resolved in
+  - `turn_number` — turn number when the spell resolved
+  - `phase` — game phase when the spell resolved
+  - `active_player` — seat ID of the player whose turn it is
+  - `card_arena_id` — arena_id of the spell or ability that resolved
+  - `card_name` — resolved card name (enriched at ingestion)
 
   ## Slug
 
   `"spell_resolved"` — stable, do not rename.
-
-  ## Source
-
-  Produced from `AnnotationType_ZoneTransfer` annotations with category `Resolve`.
   """
 
   @enforce_keys [:occurred_at]

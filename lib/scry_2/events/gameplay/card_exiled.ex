@@ -1,4 +1,30 @@
 defmodule Scry2.Events.Gameplay.CardExiled do
+  @moduledoc """
+  A card moved to the exile zone during a game.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a `GreToClientEvent`
+  containing an `AnnotationType_ZoneTransfer` annotation with the exile zone
+  as the destination. Fires whenever a card is exiled by any means.
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `mtga_match_id` — match the exile occurred in
+  - `turn_number` — turn number when the card was exiled
+  - `phase` — game phase during which the exile occurred
+  - `active_player` — seat ID of the player whose turn it is
+  - `card_arena_id` — arena_id of the exiled card
+  - `card_name` — resolved card name (enriched at ingestion)
+
+  ## Slug
+
+  `"card_exiled"` — stable, do not rename.
+  """
+
   @enforce_keys [:occurred_at]
   defstruct [
     :player_id,

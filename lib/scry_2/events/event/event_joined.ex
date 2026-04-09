@@ -1,18 +1,28 @@
 defmodule Scry2.Events.Event.EventJoined do
   @moduledoc """
-  Domain event — the player joined an MTGA event (draft, sealed,
-  constructed queue, etc.) and paid the entry fee.
+  The player joined an MTGA event and paid the entry fee. A companion
+  `InventoryChanged` event captures the currency delta from the same response.
+
+  Event type: :state_change
+
+  ## Source
+
+  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw `EventJoin`
+  response (the `<==` variant carrying `Course` + `InventoryInfo`). Fires when
+  the server confirms the player has entered an event (draft, sealed, constructed
+  queue, etc.).
+
+  ## Fields
+
+  - `player_id` — MTGA player identifier
+  - `event_name` — internal MTGA event identifier for the joined event
+  - `course_id` — MTGA course identifier for this specific run of the event
+  - `entry_currency_type` — currency used to enter (e.g. `"Gold"`, `"Gem"`)
+  - `entry_fee` — amount of currency paid to enter
 
   ## Slug
 
   `"event_joined"` — stable, do not rename.
-
-  ## Source
-
-  Produced by `Scry2.Events.IdentifyDomainEvents` from a raw
-  `EventJoin` response (the `<==` variant carrying `Course` +
-  `InventoryInfo`). The companion `InventoryChanged` event captures
-  the currency delta from the same response.
   """
 
   @enforce_keys [:event_name, :occurred_at]
