@@ -131,7 +131,15 @@ defmodule Scry2.Events.IngestRawEvents do
     {:reply, :ok, %{state | checkpointing: true}}
   end
 
-  @chunk_size 1_000
+  # Retranslation processes raw events in cursor-based chunks. The entire chunk —
+  # all derived domain events — is committed in one transaction before the next
+  # chunk loads. Larger chunks mean fewer round-trips and better throughput.
+  #
+  # append_batch! (in Events) transparently splits inserts at 3,000 rows to stay
+  # under SQLite's MAX_VARIABLE_NUMBER=32766 limit, so this chunk size is not
+  # constrained by that ceiling. Increase freely if profiling shows it helps;
+  # the only trade-off is peak memory (~1 MB per 1_000 raw events processed).
+  @retranslate_chunk_size 5_000
 
   @impl true
   def handle_call({:retranslate_all, opts}, _from, state) do
@@ -142,9 +150,6 @@ defmodule Scry2.Events.IngestRawEvents do
     # load/1 returns defaults, ensuring events are replayed from event 1.
     fresh_ingestion = IngestionState.load(self_user_id: Config.get(:mtga_self_user_id))
 
-    # Process in cursor-based chunks of @chunk_size raw events. Each chunk is
-    # committed atomically before loading the next, keeping peak memory
-    # proportional to chunk size rather than the full dataset (~5 MB vs ~40 MB).
     new_ingestion = do_retranslate_chunk(0, fresh_ingestion, total, 0, on_progress)
 
     final_ingestion = IngestionState.persist!(new_ingestion)
@@ -152,7 +157,7 @@ defmodule Scry2.Events.IngestRawEvents do
   end
 
   defp do_retranslate_chunk(cursor, ingestion, total, processed, on_progress) do
-    case MtgaLogIngestion.list_ordered_after(cursor, limit: @chunk_size) do
+    case MtgaLogIngestion.list_ordered_after(cursor, limit: @retranslate_chunk_size) do
       [] ->
         ingestion
 

@@ -117,16 +117,29 @@ defmodule Scry2.Events do
   @spec append_batch!([{struct(), struct() | nil, keyword()}]) :: :ok
   def append_batch!([]), do: :ok
 
-  def append_batch!(items) when is_list(items) do
-    attrs =
-      Enum.map(items, fn {domain_event, source_record, opts} ->
-        build_event_attrs(domain_event, source_record, opts)
-      end)
+  # SQLite bind-variable limit: MAX_VARIABLE_NUMBER=32766 (compiled into the
+  # bundled exqlite; verify with `PRAGMA compile_options` if upgrading SQLite).
+  # Repo.insert_all does NOT auto-split — it sends one statement per call.
+  # EventRecord has 10 bind-variable columns, so the hard ceiling is:
+  #   32_766 ÷ 10 = 3_276 rows per insert_all call.
+  # We chunk at 3_000 (30_000 variables) to keep safe headroom.
+  # Callers may pass any batch size; chunking is handled transparently here.
+  @insert_chunk_size 3_000
 
-    Repo.insert_all(EventRecord, attrs,
-      on_conflict: :nothing,
-      conflict_target: [:mtga_source_id, :event_type, :sequence]
-    )
+  def append_batch!(items) when is_list(items) do
+    items
+    |> Enum.chunk_every(@insert_chunk_size)
+    |> Enum.each(fn chunk ->
+      attrs =
+        Enum.map(chunk, fn {domain_event, source_record, opts} ->
+          build_event_attrs(domain_event, source_record, opts)
+        end)
+
+      Repo.insert_all(EventRecord, attrs,
+        on_conflict: :nothing,
+        conflict_target: [:mtga_source_id, :event_type, :sequence]
+      )
+    end)
 
     :ok
   end

@@ -202,7 +202,27 @@ defmodule Scry2.Operations do
   defp percent(_done, 0), do: 100
   defp percent(done, total), do: round(done / total * 100)
 
+  # ── Last-operation state ─────────────────────────────────────────────
+  #
+  # Stored in :persistent_term so a fresh LiveView mount (page reload,
+  # WebSocket reconnect) can restore the operation section without a
+  # running operation needing to be active. :persistent_term is process-less
+  # and survives reconnects; reads are near-zero cost.
+  #
+  # Written on every start/complete/fail. Reset to nil only on app restart.
+
+  @pt_key {__MODULE__, :last_operation}
+
+  @doc """
+  Returns the last known operation state, or `nil` if none has run this session.
+
+  Shape: `%{type: atom, running: boolean}` — enough for the UI to reconstruct
+  the section header and completion badge without full step history.
+  """
+  def last_operation, do: :persistent_term.get(@pt_key, nil)
+
   defp broadcast_started(type, metadata) do
+    :persistent_term.put(@pt_key, %{type: type, running: true})
     Topics.broadcast(Topics.operations(), {:operation_started, type, metadata})
   end
 
@@ -211,10 +231,12 @@ defmodule Scry2.Operations do
   end
 
   defp broadcast_completed(type) do
+    :persistent_term.put(@pt_key, %{type: type, running: false})
     Topics.broadcast(Topics.operations(), {:operation_completed, type})
   end
 
   defp broadcast_failed(type, reason) do
+    :persistent_term.put(@pt_key, %{type: type, running: false})
     Topics.broadcast(Topics.operations(), {:operation_failed, type, reason})
   end
 end
