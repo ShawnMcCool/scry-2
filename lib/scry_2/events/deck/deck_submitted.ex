@@ -49,7 +49,7 @@ defmodule Scry2.Events.Deck.DeckSubmitted do
 
   @type t :: %__MODULE__{
           player_id: String.t() | nil,
-          mtga_match_id: String.t(),
+          mtga_match_id: String.t() | nil,
           mtga_deck_id: String.t() | nil,
           game_number: pos_integer() | nil,
           main_deck: [card_count()],

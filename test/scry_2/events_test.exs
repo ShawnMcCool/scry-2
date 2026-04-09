@@ -359,6 +359,97 @@ defmodule Scry2.EventsTest do
     end
   end
 
+  describe "append_batch!/1" do
+    test "inserts multiple domain events in one call" do
+      source = TestFactory.create_event_record(%{event_type: "GreToClientEvent"})
+
+      items = [
+        {%Events.Gameplay.MulliganOffered{
+           mtga_match_id: "batch-1",
+           seat_id: 1,
+           hand_size: 7,
+           occurred_at: ~U[2026-04-05 12:00:00Z]
+         }, source, [sequence: 0]},
+        {%Events.Gameplay.MulliganOffered{
+           mtga_match_id: "batch-1",
+           seat_id: 2,
+           hand_size: 7,
+           occurred_at: ~U[2026-04-05 12:00:01Z]
+         }, source, [sequence: 1]}
+      ]
+
+      :ok = Events.append_batch!(items)
+
+      assert Events.count_by_type()["mulligan_offered"] == 2
+    end
+
+    test "duplicate items are silently skipped (idempotent)" do
+      source = TestFactory.create_event_record(%{event_type: "GreToClientEvent"})
+
+      item =
+        {%Events.Gameplay.MulliganOffered{
+           mtga_match_id: "idem-1",
+           seat_id: 1,
+           hand_size: 7,
+           occurred_at: ~U[2026-04-05 12:00:00Z]
+         }, source, [sequence: 0]}
+
+      :ok = Events.append_batch!([item])
+      :ok = Events.append_batch!([item])
+
+      assert Events.count_by_type()["mulligan_offered"] == 1
+    end
+
+    test "empty list is a no-op" do
+      :ok = Events.append_batch!([])
+      assert Events.count_by_type() == %{}
+    end
+  end
+
+  describe "projector suspension" do
+    test "projector drops live events when suspended, processes them after resume" do
+      alias Scry2.Matches.UpdateFromEvent
+
+      proj_name = Module.concat(__MODULE__, :"SuspendTest#{System.unique_integer([:positive])}")
+      start_supervised!({UpdateFromEvent, name: proj_name})
+
+      UpdateFromEvent.suspend_live(proj_name)
+
+      Events.append!(match_created("suspend-1"), nil)
+      _ = :sys.get_state(proj_name)
+
+      assert Scry2.Matches.count() == 0
+
+      UpdateFromEvent.resume_live(proj_name)
+
+      Events.append!(match_created("suspend-2"), nil)
+      _ = :sys.get_state(proj_name)
+
+      assert Scry2.Matches.count() == 1
+    end
+  end
+
+  describe "replay_projections!/0" do
+    test "rebuilds all projectors — data survives parallel execution" do
+      import Scry2.ProjectorCase
+      import Scry2.TestFactory
+
+      player = create_player()
+      scenario = match_scenario(player, games: [[won: true, on_play: true]], won: true)
+      for event <- scenario.events, do: Events.append!(event, nil)
+
+      Scry2.Repo.delete_all(Scry2.Matches.DeckSubmission)
+      Scry2.Repo.delete_all(Scry2.Matches.Game)
+      Scry2.Repo.delete_all(Scry2.Matches.Match)
+
+      Events.replay_projections!()
+
+      match = Scry2.Matches.get_by_mtga_id(scenario.match_id, player.id)
+      assert match != nil
+      assert match.won == true
+    end
+  end
+
   # ── helpers ──────────────────────────────────────────────────────────
 
   defp match_created(match_id) do

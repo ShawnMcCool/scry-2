@@ -71,24 +71,106 @@ defmodule Scry2.Events.IngestRawEvents do
     GenServer.start_link(__MODULE__, opts, name: name)
   end
 
+  @doc """
+  Suspends IngestionState DB persistence. While suspended, in-memory state
+  advances normally but is not written to the `ingestion_state` table.
+  Used by `Events.reingest!/0` to skip redundant checkpoint writes during
+  bulk re-broadcast.
+  """
+  def suspend_checkpointing(name \\ __MODULE__) do
+    GenServer.call(name, :suspend_checkpointing)
+  end
+
+  @doc "Resumes IngestionState DB persistence after `suspend_checkpointing/1`."
+  def resume_checkpointing(name \\ __MODULE__) do
+    GenServer.call(name, :resume_checkpointing)
+  end
+
+  @doc """
+  Retranslates all raw MTGA events from scratch with synchronous per-event
+  progress reporting. Used by `Operations.reingest_with_progress/0`.
+
+  Resets ingestion state to a clean baseline (caller must delete the
+  `IngestionState.Snapshot` row first so `IngestionState.load/1` returns
+  fresh defaults). Processes every raw event in id order via
+  `process_raw_event/3` with checkpointing disabled; persists a single
+  checkpoint when the batch is finished.
+
+  `on_progress/2` — a `(processed_count, total_count) -> any()` function
+  — is called after every event. This lets callers track exact progress
+  without polling.
+
+  This is a synchronous GenServer call that holds the GenServer for the
+  entire batch. Use only during a controlled reingest when no other
+  callers need the GenServer.
+  """
+  def retranslate_all!(opts \\ [], name \\ __MODULE__) do
+    GenServer.call(name, {:retranslate_all, opts}, :infinity)
+  end
+
   @impl true
   def init(_opts) do
     Topics.subscribe(Topics.mtga_logs_events())
-    state = IngestionState.load(self_user_id: Config.get(:mtga_self_user_id))
-    {:ok, state, {:continue, :catch_up}}
+    ingestion = IngestionState.load(self_user_id: Config.get(:mtga_self_user_id))
+    {:ok, %{ingestion: ingestion, checkpointing: true}, {:continue, :catch_up}}
   end
 
   @impl true
   def handle_continue(:catch_up, state) do
-    state = catch_up_unprocessed(state)
-    {:noreply, state}
+    ingestion = catch_up_unprocessed(state.ingestion)
+    {:noreply, %{state | ingestion: ingestion}}
+  end
+
+  @impl true
+  def handle_call(:suspend_checkpointing, _from, state) do
+    {:reply, :ok, %{state | checkpointing: false}}
+  end
+
+  @impl true
+  def handle_call(:resume_checkpointing, _from, state) do
+    {:reply, :ok, %{state | checkpointing: true}}
+  end
+
+  @impl true
+  def handle_call({:retranslate_all, opts}, _from, state) do
+    on_progress = Keyword.get(opts, :on_progress)
+    total = MtgaLogIngestion.count_all()
+
+    # Fresh state — caller deleted the IngestionState.Snapshot beforehand so
+    # load/1 returns defaults, ensuring events are replayed from event 1.
+    fresh_ingestion = IngestionState.load(self_user_id: Config.get(:mtga_self_user_id))
+
+    new_ingestion =
+      MtgaLogIngestion.list_all_ordered()
+      |> Enum.with_index(1)
+      |> Enum.reduce(fresh_ingestion, fn {record, index}, acc_ingestion ->
+        result =
+          try do
+            process_raw_event(record, acc_ingestion, false)
+          rescue
+            error ->
+              Log.error(
+                :ingester,
+                "retranslate_all failed on id=#{record.id}: #{inspect(error)}"
+              )
+
+              MtgaLogIngestion.mark_error!(record.id, error)
+              acc_ingestion
+          end
+
+        if on_progress, do: on_progress.(index, total)
+        result
+      end)
+
+    final_ingestion = IngestionState.persist!(new_ingestion)
+    {:reply, :ok, %{state | ingestion: final_ingestion}}
   end
 
   @impl true
   def handle_info({:event, %EventRecord{} = record}, state) do
-    state =
+    new_ingestion =
       try do
-        process_raw_event(record, state)
+        process_raw_event(record, state.ingestion, state.checkpointing)
       rescue
         error ->
           Log.error(
@@ -97,32 +179,32 @@ defmodule Scry2.Events.IngestRawEvents do
           )
 
           MtgaLogIngestion.mark_error!(record.id, error)
-          state
+          state.ingestion
       end
 
-    {:noreply, state}
+    {:noreply, %{state | ingestion: new_ingestion}}
   end
 
   def handle_info(_other, state), do: {:noreply, state}
 
   # ── Catch-up ─────────────────────────────────────────────────────────
 
-  defp catch_up_unprocessed(state) do
-    unprocessed = MtgaLogIngestion.list_unprocessed_after(state.last_raw_event_id)
+  defp catch_up_unprocessed(ingestion) do
+    unprocessed = MtgaLogIngestion.list_unprocessed_after(ingestion.last_raw_event_id)
 
     case unprocessed do
       [] ->
-        state
+        ingestion
 
       records ->
         Log.info(
           :ingester,
-          "catching up #{length(records)} unprocessed raw events from id=#{state.last_raw_event_id}"
+          "catching up #{length(records)} unprocessed raw events from id=#{ingestion.last_raw_event_id}"
         )
 
-        Enum.reduce(records, state, fn record, acc ->
+        Enum.reduce(records, ingestion, fn record, acc ->
           try do
-            process_raw_event(record, acc)
+            process_raw_event(record, acc, true)
           rescue
             error ->
               Log.error(:ingester, "catch-up failed on id=#{record.id}: #{inspect(error)}")
@@ -142,7 +224,7 @@ defmodule Scry2.Events.IngestRawEvents do
   # messages into match state. MTGA sends hand card data (gameObjects)
   # in a GameStateMessage that precedes the MulliganReq. The translator
   # uses cached objects as fallback when the MulliganReq itself lacks them.
-  defp process_raw_event(record, state) do
+  defp process_raw_event(record, state, checkpointing) do
     state = maybe_cache_game_objects(record, state)
     state = maybe_capture_rank(record, state)
 
@@ -192,12 +274,8 @@ defmodule Scry2.Events.IngestRawEvents do
 
         MtgaLogIngestion.mark_processed!(record.id)
 
-        new_state =
-          state
-          |> Map.get(:last_raw_event_id)
-          |> then(fn _ ->
-            IngestionState.advance(new_state, record.id) |> IngestionState.persist!()
-          end)
+        advanced = IngestionState.advance(new_state, record.id)
+        new_state = if checkpointing, do: IngestionState.persist!(advanced), else: advanced
 
         Log.info(
           :ingester,

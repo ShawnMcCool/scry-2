@@ -150,7 +150,8 @@ defmodule Scry2.Matches.UpdateFromEvent do
   end
 
   defp project(%DeckSubmitted{} = event) do
-    match = Matches.get_by_mtga_id(event.mtga_match_id, event.player_id)
+    match =
+      if event.mtga_match_id, do: Matches.get_by_mtga_id(event.mtga_match_id, event.player_id)
 
     # Upsert the deck submission row
     submission_attrs = %{

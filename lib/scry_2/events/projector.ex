@@ -65,6 +65,21 @@ defmodule Scry2.Events.Projector do
         GenServer.start_link(__MODULE__, opts, name: name)
       end
 
+      @doc """
+      Suspends live event processing. While suspended, `{:domain_event, ...}`
+      messages are consumed from the mailbox but not projected. Used by
+      `Events.reingest!/0` to avoid redundant live projections during retranslation
+      (all projections are rebuilt from scratch by `replay_projections!/0` afterwards).
+      """
+      def suspend_live(name \\ __MODULE__) do
+        GenServer.call(name, :suspend_live)
+      end
+
+      @doc "Resumes live event processing after `suspend_live/1`."
+      def resume_live(name \\ __MODULE__) do
+        GenServer.call(name, :resume_live)
+      end
+
       @doc "Returns the event type slugs this projector handles."
       def claimed_slugs, do: @claimed_slugs
 
@@ -171,22 +186,34 @@ defmodule Scry2.Events.Projector do
       @impl true
       def init(_opts) do
         Topics.subscribe(Topics.domain_events())
-        {:ok, %{}}
+        {:ok, %{paused: false}}
+      end
+
+      @impl true
+      def handle_call(:suspend_live, _from, state) do
+        {:reply, :ok, Map.put(state, :paused, true)}
+      end
+
+      @impl true
+      def handle_call(:resume_live, _from, state) do
+        {:reply, :ok, Map.put(state, :paused, false)}
       end
 
       @impl true
       def handle_info({:domain_event, id, type_slug}, state)
           when type_slug in @claimed_slugs do
-        try do
-          event = Events.get!(id)
-          project(event)
-          Events.put_watermark!(@projector_name, id)
-        rescue
-          error ->
-            Log.error(
-              :ingester,
-              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug}: #{inspect(error)}"
-            )
+        unless Map.get(state, :paused, false) do
+          try do
+            event = Events.get!(id)
+            project(event)
+            Events.put_watermark!(@projector_name, id)
+          rescue
+            error ->
+              Log.error(
+                :ingester,
+                "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug}: #{inspect(error)}"
+              )
+          end
         end
 
         {:noreply, state}

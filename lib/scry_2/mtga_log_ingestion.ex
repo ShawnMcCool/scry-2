@@ -145,6 +145,13 @@ defmodule Scry2.MtgaLogIngestion do
     |> Map.new()
   end
 
+  @doc "Returns all raw events ordered by id ascending."
+  def list_all_ordered do
+    EventRecord
+    |> order_by([e], asc: e.id)
+    |> Repo.all()
+  end
+
   @doc "Returns the total number of raw events."
   def count_all do
     Repo.aggregate(EventRecord, :count)
