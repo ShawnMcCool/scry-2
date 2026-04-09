@@ -16,8 +16,10 @@ defmodule Scry2Web.OperationsLive do
     {:ok,
      socket
      |> assign(:operation, nil)
+     |> assign(:operation_running, false)
      |> assign(:progress, nil)
      |> assign(:steps, [])
+     |> assign(:projector_progress, %{})
      |> assign(:reload_timer, nil)}
   end
 
@@ -92,8 +94,10 @@ defmodule Scry2Web.OperationsLive do
     {:noreply,
      socket
      |> assign(:operation, type)
+     |> assign(:operation_running, true)
      |> assign(:progress, nil)
-     |> assign(:steps, steps)}
+     |> assign(:steps, steps)
+     |> assign(:projector_progress, %{})}
   end
 
   def handle_info({:operation_progress, _type, %{phase: :retranslation} = progress}, socket) do
@@ -108,19 +112,41 @@ defmodule Scry2Web.OperationsLive do
     {:noreply, socket |> assign(:progress, progress) |> assign(:steps, steps)}
   end
 
-  def handle_info({:operation_progress, _type, %{phase: :projection} = progress}, socket) do
-    name = progress.current_projector
+  def handle_info(
+        {:operation_progress, _type, %{phase: :projection, projector: name} = progress},
+        socket
+      ) do
+    detail = "#{format_number(progress.processed)} / #{format_number(progress.total)} events"
 
+    # All projectors run concurrently — update only this projector's step.
+    # Mark the Retranslation step done when the first projection progress arrives.
     steps =
-      socket.assigns.steps
-      |> mark_prior_steps_done(name)
-      |> update_step(
-        name,
-        :in_progress,
-        "#{format_number(progress.processed)} / #{format_number(progress.total)} events"
-      )
+      Enum.map(socket.assigns.steps, fn
+        %{name: "Retranslation", status: :in_progress} = step ->
+          %{step | status: :done, detail: nil}
 
-    {:noreply, socket |> assign(:progress, progress) |> assign(:steps, steps)}
+        %{name: ^name} = step ->
+          %{step | status: :in_progress, detail: detail}
+
+        step ->
+          step
+      end)
+
+    # Track per-projector percent so the global bar shows mean completion.
+    projector_progress = Map.put(socket.assigns.projector_progress, name, progress.percent)
+
+    global_percent =
+      projector_progress
+      |> Map.values()
+      |> then(fn percents ->
+        if percents == [], do: 0, else: div(Enum.sum(percents), length(percents))
+      end)
+
+    {:noreply,
+     socket
+     |> assign(:steps, steps)
+     |> assign(:projector_progress, projector_progress)
+     |> assign(:progress, %{phase: :projection, percent: global_percent})}
   end
 
   def handle_info({:operation_progress, _type, progress}, socket) do
@@ -132,8 +158,8 @@ defmodule Scry2Web.OperationsLive do
 
     {:noreply,
      socket
-     |> assign(:operation, nil)
-     |> assign(:progress, nil)
+     |> assign(:operation_running, false)
+     |> assign(:progress, %{percent: 100})
      |> assign(:steps, steps)
      |> put_flash(:info, "#{operation_label(type)} completed.")
      |> load_status()}
@@ -143,6 +169,7 @@ defmodule Scry2Web.OperationsLive do
     {:noreply,
      socket
      |> assign(:operation, nil)
+     |> assign(:operation_running, false)
      |> assign(:progress, nil)
      |> assign(:steps, [])
      |> put_flash(:error, "#{operation_label(type)} failed: #{reason}")
@@ -185,18 +212,13 @@ defmodule Scry2Web.OperationsLive do
     end)
   end
 
-  defp mark_prior_steps_done(steps, current_name) do
-    {before, rest} = Enum.split_while(steps, &(&1.name != current_name))
-    Enum.map(before, &%{&1 | status: :done, detail: nil}) ++ rest
-  end
-
   # ── Formatting helpers ─────────────────────────────────────────────
 
   defp operation_label(:reingest), do: "Reingest"
   defp operation_label(:rebuild), do: "Rebuild"
   defp operation_label(:catch_up), do: "Catch up"
 
-  defp busy?(assigns), do: assigns.operation != nil
+  defp busy?(assigns), do: assigns.operation_running
 
   defp format_number(n) when is_integer(n) do
     n
@@ -242,16 +264,32 @@ defmodule Scry2Web.OperationsLive do
         />
       </section>
 
-      <%!-- Operation progress (shown when running) --%>
+      <%!-- Operation progress (shown while running and after completion) --%>
       <section :if={@operation} class="card bg-base-200">
         <div class="card-body p-5">
           <div class="flex items-center gap-2 mb-3">
-            <.icon name="hero-arrow-path" class="size-5 text-info animate-spin" />
-            <h2 class="card-title text-base">{operation_label(@operation)} in progress</h2>
+            <.icon
+              :if={@operation_running}
+              name="hero-arrow-path"
+              class="size-5 text-info animate-spin"
+            />
+            <.icon
+              :if={!@operation_running}
+              name="hero-check-circle"
+              class="size-5 text-success"
+            />
+            <h2 class="card-title text-base">
+              {if @operation_running,
+                do: "#{operation_label(@operation)} in progress",
+                else: "#{operation_label(@operation)} complete"}
+            </h2>
           </div>
 
           <progress
-            class="progress progress-info w-full mb-4"
+            class={[
+              "progress w-full mb-4",
+              if(@operation_running, do: "progress-info", else: "progress-success")
+            ]}
             value={progress_percent(@progress)}
             max="100"
           >
