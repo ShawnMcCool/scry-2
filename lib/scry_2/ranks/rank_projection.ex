@@ -1,20 +1,18 @@
 defmodule Scry2.Ranks.RankProjection do
   @moduledoc """
-  Projects `rank_snapshot` domain events into the `ranks_snapshots`
+  Projects `rank_advanced` domain events into the `ranks_snapshots`
   read model.
 
-  Each `RankSnapshot` event becomes one row — no deduplication, since
-  MTGA reports rank state after every match and we want the full
-  progression history.
+  Each `RankAdvanced` event becomes one row in the progression history.
   """
   use Scry2.Events.Projector,
-    claimed_slugs: ~w(rank_snapshot),
+    claimed_slugs: ~w(rank_advanced),
     projection_tables: [Scry2.Ranks.Snapshot]
 
-  alias Scry2.Events.Progression.RankSnapshot
+  alias Scry2.Events.Progression.RankAdvanced
   alias Scry2.Ranks
 
-  defp project(%RankSnapshot{} = event) do
+  defp project(%RankAdvanced{} = event) do
     Ranks.insert_snapshot!(%{
       player_id: event.player_id,
       constructed_class: event.constructed_class,
@@ -31,7 +29,7 @@ defmodule Scry2.Ranks.RankProjection do
       occurred_at: event.occurred_at
     })
 
-    Log.info(:ingester, "projected RankSnapshot at #{event.occurred_at}")
+    Log.info(:ingester, "projected RankAdvanced at #{event.occurred_at}")
     :ok
   end
 
