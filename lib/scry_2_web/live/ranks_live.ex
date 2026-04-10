@@ -36,6 +36,8 @@ defmodule Scry2Web.RanksLive do
        win_rate_limited: nil,
        peak_score_constructed: nil,
        peak_score_limited: nil,
+       chart_x_min: nil,
+       chart_x_max: nil,
        reload_timer: nil
      )}
   end
@@ -125,6 +127,8 @@ defmodule Scry2Web.RanksLive do
           percentile_series={@percentile_constructed}
           win_rate={@win_rate_constructed}
           peak_score={@peak_score_constructed}
+          x_min={@chart_x_min}
+          x_max={@chart_x_max}
         />
         <.format_section
           title="Limited"
@@ -135,6 +139,8 @@ defmodule Scry2Web.RanksLive do
           percentile_series={@percentile_limited}
           win_rate={@win_rate_limited}
           peak_score={@peak_score_limited}
+          x_min={@chart_x_min}
+          x_max={@chart_x_max}
         />
       </div>
     </Layouts.app>
@@ -188,6 +194,8 @@ defmodule Scry2Web.RanksLive do
   attr :percentile_series, :string, required: true
   attr :win_rate, :float, default: nil
   attr :peak_score, :integer, default: nil
+  attr :x_min, :string, default: nil
+  attr :x_max, :string, default: nil
 
   defp format_section(assigns) do
     {class, level, step, won, lost} =
@@ -263,19 +271,11 @@ defmodule Scry2Web.RanksLive do
             phx-hook="Chart"
             data-chart-type="climb"
             data-series={@climb_series}
+            data-results={@results_series}
+            data-x-min={@x_min}
+            data-x-max={@x_max}
             class="w-full rounded-lg bg-base-200"
-            style="height: 220px"
-          />
-        </div>
-        <div>
-          <p class="text-xs text-base-content/40 mb-1 uppercase tracking-wide">Match Results</p>
-          <div
-            id={"chart-results-#{@format}"}
-            phx-hook="Chart"
-            data-chart-type="match_results"
-            data-series={@results_series}
-            class="w-full rounded-lg bg-base-200"
-            style="height: 140px"
+            style="height: 300px"
           />
         </div>
         <div :if={@has_percentile}>
@@ -353,9 +353,13 @@ defmodule Scry2Web.RanksLive do
     snapshots = Ranks.list_snapshots_for_season(player_id: player_id, season: season)
     latest_snapshot = List.last(snapshots)
 
+    {x_min, x_max} = RanksHelpers.chart_time_bounds(snapshots)
+
     assign(socket,
       snapshots: snapshots,
       latest_snapshot: latest_snapshot,
+      chart_x_min: x_min,
+      chart_x_max: x_max,
       climb_constructed: Jason.encode!(RanksHelpers.climb_series(snapshots, :constructed)),
       climb_limited: Jason.encode!(RanksHelpers.climb_series(snapshots, :limited)),
       results_constructed:
