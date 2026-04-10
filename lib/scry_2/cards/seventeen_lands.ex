@@ -89,7 +89,7 @@ defmodule Scry2.Cards.SeventeenLands do
   defp fetch(nil, _opts), do: {:error, :no_url_configured}
 
   defp fetch(url, req_options) do
-    options = Keyword.merge([url: url, receive_timeout: 30_000], req_options)
+    options = Keyword.merge([url: url, receive_timeout: 30_000, decode_body: false], req_options)
 
     case Req.get(options) do
       {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
@@ -139,14 +139,24 @@ defmodule Scry2.Cards.SeventeenLands do
   defp row_to_card_attrs(row, set_ids_by_code) do
     with lands17_id when is_integer(lands17_id) <- parse_int(row["id"]),
          name when is_binary(name) and name != "" <- row["name"] do
+      types = row["types"] || ""
+
       %{
         lands17_id: lands17_id,
         name: name,
         rarity: row["rarity"],
         color_identity: row["color_identity"] || "",
         mana_value: parse_int(row["mana_value"]),
-        types: row["types"],
+        types: types,
         is_booster: parse_bool(row["is_booster"]),
+        is_creature: String.contains?(types, "Creature"),
+        is_instant: String.contains?(types, "Instant"),
+        is_sorcery: String.contains?(types, "Sorcery"),
+        is_enchantment: String.contains?(types, "Enchantment"),
+        is_artifact: String.contains?(types, "Artifact"),
+        is_planeswalker: String.contains?(types, "Planeswalker"),
+        is_land: String.contains?(types, "Land"),
+        is_battle: String.contains?(types, "Battle"),
         set_id: Map.get(set_ids_by_code, row["expansion"]),
         raw: row
       }
