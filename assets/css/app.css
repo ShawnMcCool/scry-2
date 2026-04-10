@@ -10,6 +10,11 @@
    The heroicons installation itself is managed by your mix.exs */
 @plugin "../vendor/heroicons";
 
+/* Mana icon font — 300+ MTG symbols. See UIDR-006 for usage policy.
+   Update: curl -sLO https://raw.githubusercontent.com/andrewgioia/Mana/master/css/mana.css
+   then re-apply absolute font paths (see assets/vendor/mana.css header comment). */
+@import "../vendor/mana.css";
+
 /* daisyUI Tailwind Plugin. You can update this file by fetching the latest version with:
    curl -sLO https://github.com/saadeghi/daisyui/releases/latest/download/daisyui.js
    Make sure to look at the daisyUI changelog: https://daisyui.com/docs/changelog/ */

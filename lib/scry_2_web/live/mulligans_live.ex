@@ -123,7 +123,7 @@ defmodule Scry2Web.MulligansLive do
                       :for={{color, count} <- hand.color_distribution}
                       class="flex items-center gap-0.5"
                     >
-                      <span class={mana_color_class(color)}>{color}</span>
+                      <.mana_pip color={color} />
                       <span class="text-base-content/25">×{count}</span>
                     </span>
                   </div>

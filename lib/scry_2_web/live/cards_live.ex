@@ -95,7 +95,10 @@ defmodule Scry2Web.CardsLive do
               <td>{Helpers.set_code(card)}</td>
               <td><.rarity_badge rarity={card.rarity} /></td>
               <td class="tabular-nums">{card.mana_value}</td>
-              <td>{Helpers.color_identity_label(card.color_identity)}</td>
+              <td>
+                <.mana_pips :if={card.color_identity not in [nil, ""]} colors={card.color_identity} />
+                <span :if={card.color_identity in [nil, ""]} class="text-base-content/40">—</span>
+              </td>
               <td class="tabular-nums text-base-content/60">{card.arena_id || "—"}</td>
             </tr>
           </tbody>
