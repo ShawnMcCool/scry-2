@@ -71,6 +71,7 @@ defmodule Scry2.Cards.ScryfallCard do
     field :color_identity, :string, default: ""
     field :rarity, :string
     field :layout, :string
+    field :booster, :boolean
     field :image_uris, :map
     field :raw, :map
 
@@ -97,6 +98,7 @@ defmodule Scry2.Cards.ScryfallCard do
       :color_identity,
       :rarity,
       :layout,
+      :booster,
       :image_uris,
       :raw
     ])
