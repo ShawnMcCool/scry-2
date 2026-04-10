@@ -70,6 +70,7 @@ defmodule Scry2.Cards do
     term = filters[:name_like]
 
     Card
+    |> exclude_tokens()
     |> filter_by_set(filters[:set_code])
     |> filter_by_rarity(filters[:rarity])
     |> filter_by_name(term)
@@ -89,6 +90,7 @@ defmodule Scry2.Cards do
     filters = Map.new(filters) |> Map.drop([:limit, :order_by])
 
     Card
+    |> exclude_tokens()
     |> filter_by_set(filters[:set_code])
     |> filter_by_rarity(filters[:rarity])
     |> filter_by_name(filters[:name_like])
@@ -169,6 +171,8 @@ defmodule Scry2.Cards do
       _ -> 0
     end
   end
+
+  defp exclude_tokens(query), do: where(query, [c], c.rarity != "token")
 
   defp filter_by_set(query, nil), do: query
 
@@ -267,7 +271,30 @@ defmodule Scry2.Cards do
   # Returns one row per unique card name, keeping the earliest-imported (MIN id)
   # representative from the already-filtered set.
   defp deduplicate_by_name(query) do
-    ids_query = from q in subquery(query), group_by: q.name, select: min(q.id)
+    # Priority when multiple printings share a name:
+    #   1. Most recent regular booster card with arena_id (booster=true = standard art, not showcase/borderless)
+    #   2. Most recent any card with arena_id (special art treatments still playable on Arena)
+    #   3. Most recent overall (no Arena version exists)
+    ids_query =
+      from q in subquery(query),
+        left_join: mc in "cards_mtga_cards",
+        on: mc.arena_id == q.arena_id,
+        left_join: sc in "cards_scryfall_cards",
+        on:
+          sc.set_code == mc.expansion_code and
+            sc.collector_number == mc.collector_number,
+        group_by: q.name,
+        select:
+          fragment(
+            "COALESCE(MAX(CASE WHEN ? IS NOT NULL AND ? = 1 THEN ? END), MAX(CASE WHEN ? IS NOT NULL THEN ? END), MAX(?))",
+            q.arena_id,
+            sc.booster,
+            q.id,
+            q.arena_id,
+            q.id,
+            q.id
+          )
+
     where(query, [c], c.id in subquery(ids_query))
   end
 
@@ -314,6 +341,119 @@ defmodule Scry2.Cards do
   end
 
   @doc """
+  Backfills `arena_id` on `cards_cards` rows using MTGA client data.
+
+  Two passes are run, each targeting cards whose `arena_id` is not yet set:
+
+  **Pass 1 — Scryfall-mediated:** joins `cards_mtga_cards` → `cards_scryfall_cards`
+  via `(expansion_code, collector_number)` to get the Scryfall name (handles
+  DFC " // " naming). Works when MTGA and Scryfall share the same set code.
+
+  **Pass 2 — Direct MTGA name:** matches `cards_mtga_cards` directly to
+  `cards_cards` via `(name, expansion_code)`, bypassing Scryfall entirely.
+  Catches cards where MTGA and Scryfall use different set codes for the same
+  set (e.g., MTGA "Y24" vs Scryfall "YMKM").
+
+  Complements the Scryfall-based backfill in `Scry2.Cards.Scryfall`.
+  ADR-014: never overwrites an existing `arena_id`.
+
+  Returns the count of newly backfilled arena_ids.
+  """
+  def backfill_arena_ids_from_client_data! do
+    count = backfill_via_scryfall_name(0)
+    backfill_via_direct_name(count)
+  end
+
+  # Pass 1: mtga_cards → scryfall_cards (for name) → cards_cards.
+  # Works when the set code matches between MTGA and Scryfall.
+  defp backfill_via_scryfall_name(count) do
+    pairs =
+      from(mc in "cards_mtga_cards",
+        join: sc in "cards_scryfall_cards",
+        on:
+          sc.set_code == mc.expansion_code and
+            sc.collector_number == mc.collector_number,
+        left_join: existing in Card,
+        on: existing.arena_id == mc.arena_id,
+        where: is_nil(existing.id),
+        select: %{
+          arena_id: mc.arena_id,
+          front_name:
+            fragment(
+              "CASE WHEN instr(?, ' // ') > 0 THEN substr(?, 1, instr(?, ' // ') - 1) ELSE ? END",
+              sc.name,
+              sc.name,
+              sc.name,
+              sc.name
+            ),
+          set_code: mc.expansion_code
+        },
+        distinct: true
+      )
+      |> Repo.all()
+
+    apply_backfill_pairs(pairs, count)
+  end
+
+  # Pass 2: mtga_cards → cards_cards directly by (name, expansion_code).
+  # Catches cards where MTGA and Scryfall use different set code aliases
+  # (e.g., MTGA "Y24" vs Scryfall "YMKM"). Skips blank/unknown names.
+  defp backfill_via_direct_name(count) do
+    pairs =
+      from(mc in "cards_mtga_cards",
+        left_join: existing in Card,
+        on: existing.arena_id == mc.arena_id,
+        where:
+          is_nil(existing.id) and mc.name != "" and
+            not like(mc.name, "Unknown %"),
+        select: %{
+          arena_id: mc.arena_id,
+          front_name:
+            fragment(
+              "CASE WHEN instr(?, ' // ') > 0 THEN substr(?, 1, instr(?, ' // ') - 1) ELSE ? END",
+              mc.name,
+              mc.name,
+              mc.name,
+              mc.name
+            ),
+          set_code: mc.expansion_code
+        },
+        distinct: true
+      )
+      |> Repo.all()
+
+    apply_backfill_pairs(pairs, count)
+  end
+
+  defp apply_backfill_pairs(pairs, initial_count) do
+    Enum.reduce(pairs, initial_count, fn %{
+                                           arena_id: arena_id,
+                                           front_name: name,
+                                           set_code: set_code
+                                         },
+                                         count ->
+      case get_by_name_and_set(name, set_code) do
+        [] ->
+          count
+
+        cards ->
+          card = Enum.find(cards, &is_nil(&1.arena_id))
+
+          if card do
+            try do
+              {:ok, _} = backfill_arena_id!(card, arena_id)
+              count + 1
+            rescue
+              _error in [Ecto.ConstraintError, Ecto.InvalidChangesetError] -> count
+            end
+          else
+            count
+          end
+      end
+    end)
+  end
+
+  @doc """
   Returns cards matching the given name and set code, or empty list.
   """
   def get_by_name_and_set(name, set_code)
@@ -328,6 +468,40 @@ defmodule Scry2.Cards do
   @doc "Returns the card for the given MTGA arena_id, or nil."
   def get_by_arena_id(arena_id) when is_integer(arena_id) do
     Repo.get_by(Card, arena_id: arena_id)
+  end
+
+  @doc """
+  Returns the Scryfall "normal" image URL for an arena_id, or nil if not found.
+
+  Tries two join paths (in order):
+  1. Direct: `cards_scryfall_cards.arena_id` — works for any card Scryfall tags
+     with an arena_id, regardless of set code naming differences.
+  2. Fallback: `cards_mtga_cards` → `cards_scryfall_cards` via `(expansion_code,
+     collector_number)` — catches cards where Scryfall lacks the arena_id field
+     but the set codes match.
+
+  Used by `ImageCache` to avoid redundant Scryfall API calls.
+  """
+  def get_image_url_for_arena_id(arena_id) when is_integer(arena_id) do
+    direct =
+      Repo.one(
+        from sc in "cards_scryfall_cards",
+          where: sc.arena_id == ^arena_id,
+          select: fragment("json_extract(?, '$.normal')", sc.image_uris),
+          limit: 1
+      )
+
+    direct ||
+      Repo.one(
+        from mc in "cards_mtga_cards",
+          join: sc in "cards_scryfall_cards",
+          on:
+            sc.set_code == mc.expansion_code and
+              sc.collector_number == mc.collector_number,
+          where: mc.arena_id == ^arena_id,
+          select: fragment("json_extract(?, '$.normal')", sc.image_uris),
+          limit: 1
+      )
   end
 
   @doc """
@@ -480,7 +654,7 @@ defmodule Scry2.Cards do
   which matters at ~113k cards per Scryfall bulk import.
   """
   def upsert_scryfall_card!(attrs) do
-    attrs = Map.new(attrs)
+    attrs = attrs |> Map.new() |> Map.update(:set_code, nil, &normalize_set_code/1)
 
     %ScryfallCard{}
     |> ScryfallCard.changeset(attrs)
@@ -489,4 +663,7 @@ defmodule Scry2.Cards do
       conflict_target: [:scryfall_id]
     )
   end
+
+  defp normalize_set_code(nil), do: nil
+  defp normalize_set_code(code) when is_binary(code), do: String.upcase(code)
 end

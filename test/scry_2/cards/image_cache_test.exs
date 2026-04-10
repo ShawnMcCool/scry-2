@@ -39,6 +39,40 @@ defmodule Scry2.Cards.ImageCacheTest do
                ImageCache.ensure_cached([91001], cache_dir: cache_dir)
     end
 
+    test "downloads image from stored scryfall URL without hitting the API", %{
+      cache_dir: cache_dir
+    } do
+      TestFactory.create_mtga_card(%{
+        arena_id: 91_005,
+        name: "DB Card",
+        expansion_code: "TST",
+        collector_number: "77"
+      })
+
+      TestFactory.create_scryfall_card(%{
+        name: "DB Card",
+        set_code: "tst",
+        collector_number: "77",
+        image_uris: %{"normal" => "http://stub.test/image.jpg"}
+      })
+
+      Req.Test.stub(ImageCache, fn conn ->
+        # Only the CDN download should fire — not the Scryfall API endpoint
+        refute conn.request_path =~ "/cards/tst/77",
+               "should not hit Scryfall API when image_uris are in DB"
+
+        Plug.Conn.resp(conn, 200, "cdn jpeg data")
+      end)
+
+      assert {:ok, %{cached: 0, downloaded: 1, failed: 0}} =
+               ImageCache.ensure_cached([91_005],
+                 cache_dir: cache_dir,
+                 req_options: [plug: {Req.Test, ImageCache}]
+               )
+
+      assert File.exists?(Path.join(cache_dir, "91005.jpg"))
+    end
+
     test "downloads missing images from Scryfall via set+collector lookup", %{
       cache_dir: cache_dir
     } do

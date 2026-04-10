@@ -12,6 +12,7 @@ defmodule Scry2.Workers.PeriodicallyBackfillArenaIds do
     max_attempts: 3,
     unique: [period: 60]
 
+  alias Scry2.Cards
   alias Scry2.Cards.Scryfall
 
   require Scry2.Log, as: Log
@@ -21,13 +22,16 @@ defmodule Scry2.Workers.PeriodicallyBackfillArenaIds do
     url = Map.get(job.args, "override_url")
     opts = if is_binary(url), do: [url: url], else: []
 
-    case Scryfall.run(opts) do
-      {:ok, %{matched: count}} ->
-        Log.info(:importer, "scryfall backfill completed — #{count} arena_ids set")
-        :ok
+    with {:ok, %{matched: scryfall_count}} <- Scryfall.run(opts) do
+      Log.info(:importer, "scryfall backfill completed — #{scryfall_count} arena_ids set")
 
-      {:error, reason} ->
-        {:error, reason}
+      client_count = Cards.backfill_arena_ids_from_client_data!()
+
+      if client_count > 0 do
+        Log.info(:importer, "client data backfill — #{client_count} arena_ids set")
+      end
+
+      :ok
     end
   end
 end
