@@ -27,6 +27,11 @@ export const CardHover = {
     })
   },
 
+  destroyed() {
+    this.popup.style.display = "none"
+    this.popupImg.src = ""
+  },
+
   _position(e) {
     const offset = 20
     const rect = this.popup.getBoundingClientRect()
