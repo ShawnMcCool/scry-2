@@ -129,6 +129,73 @@ defmodule Scry2.Cards do
     Repo.get_by(Card, arena_id: arena_id)
   end
 
+  @doc """
+  Returns a map of arena_id => card data for a list of arena_ids.
+
+  Queries `cards_cards` (17lands) first for rich data (human-readable types,
+  mana_value, color_identity). For any arena_ids not found there, falls back
+  to `cards_mtga_cards` — the primary card identity source that covers every
+  MTGA arena_id. MtgaCard fallback entries have `mana_value: 0` and
+  `color_identity: ""` with types decoded from MTGA integer enums.
+  """
+  def list_by_arena_ids(arena_ids) when is_list(arena_ids) do
+    arena_ids = Enum.filter(arena_ids, &is_integer/1)
+
+    from_cards =
+      Card
+      |> where([c], c.arena_id in ^arena_ids)
+      |> Repo.all()
+      |> Map.new(&{&1.arena_id, &1})
+
+    missing_ids = Enum.reject(arena_ids, &Map.has_key?(from_cards, &1))
+
+    from_mtga =
+      if missing_ids == [] do
+        %{}
+      else
+        MtgaCard
+        |> where([c], c.arena_id in ^missing_ids)
+        |> Repo.all()
+        |> Map.new(fn c ->
+          {c.arena_id,
+           %{
+             arena_id: c.arena_id,
+             name: c.name,
+             types: decode_mtga_types(c.types),
+             mana_value: c.mana_value,
+             color_identity: ""
+           }}
+        end)
+      end
+
+    Map.merge(from_mtga, from_cards)
+  end
+
+  # Decodes MTGA's comma-separated integer type enums to a space-separated
+  # human-readable string (e.g. "2,5" → "Creature Land"). Used only for
+  # MtgaCard fallback entries where 17lands data is unavailable.
+  #
+  # MTGA type enum values (from Raw_CardDatabase Cards.Types column):
+  #   1=Artifact, 2=Creature, 3=Enchantment, 4=Instant, 5=Land,
+  #   8=Planeswalker, 10=Sorcery
+  defp decode_mtga_types(nil), do: ""
+
+  defp decode_mtga_types(types_str) do
+    types_str
+    |> String.split(",", trim: true)
+    |> Enum.map(&mtga_type_name/1)
+    |> Enum.join(" ")
+  end
+
+  defp mtga_type_name("1"), do: "Artifact"
+  defp mtga_type_name("2"), do: "Creature"
+  defp mtga_type_name("3"), do: "Enchantment"
+  defp mtga_type_name("4"), do: "Instant"
+  defp mtga_type_name("5"), do: "Land"
+  defp mtga_type_name("8"), do: "Planeswalker"
+  defp mtga_type_name("10"), do: "Sorcery"
+  defp mtga_type_name(other), do: other
+
   @doc "Returns the card for the given 17lands lands17_id, or nil."
   def get_by_lands17_id(lands17_id) when is_integer(lands17_id) do
     Repo.get_by(Card, lands17_id: lands17_id)

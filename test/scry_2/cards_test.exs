@@ -230,4 +230,85 @@ defmodule Scry2.CardsTest do
       assert Enum.any?(results, &(&1.name == "Aardvark"))
     end
   end
+
+  describe "list_by_arena_ids/1" do
+    test "returns 17lands cards indexed by arena_id when found" do
+      TestFactory.create_card(%{
+        lands17_id: 8001,
+        arena_id: 80_001,
+        name: "Lightning Bolt",
+        types: "Instant"
+      })
+
+      result = Cards.list_by_arena_ids([80_001])
+
+      assert Map.has_key?(result, 80_001)
+      assert result[80_001].name == "Lightning Bolt"
+      assert result[80_001].types == "Instant"
+    end
+
+    test "falls back to MtgaCard for arena_ids not in cards_cards" do
+      TestFactory.create_mtga_card(%{arena_id: 80_002, name: "Token Creature", types: "2"})
+
+      result = Cards.list_by_arena_ids([80_002])
+
+      assert Map.has_key?(result, 80_002)
+      assert result[80_002].name == "Token Creature"
+    end
+
+    test "MtgaCard fallback decodes integer types to human-readable strings" do
+      # MTGA type enum: 10=Sorcery, 5=Land, 4=Instant, 2=Creature, 1=Artifact, 3=Enchantment, 8=Planeswalker
+      TestFactory.create_mtga_card(%{arena_id: 80_003, name: "Fireball", types: "10"})
+      TestFactory.create_mtga_card(%{arena_id: 80_004, name: "Forest", types: "5"})
+      TestFactory.create_mtga_card(%{arena_id: 80_005, name: "Bolt Instant", types: "4"})
+      TestFactory.create_mtga_card(%{arena_id: 80_006, name: "Bear", types: "2"})
+
+      result = Cards.list_by_arena_ids([80_003, 80_004, 80_005, 80_006])
+
+      assert String.contains?(result[80_003].types, "Sorcery")
+      assert String.contains?(result[80_004].types, "Land")
+      assert String.contains?(result[80_005].types, "Instant")
+      assert String.contains?(result[80_006].types, "Creature")
+    end
+
+    test "MtgaCard fallback uses stored mana_value" do
+      TestFactory.create_mtga_card(%{
+        arena_id: 80_007,
+        name: "Fallback Card",
+        types: "2",
+        mana_value: 3
+      })
+
+      result = Cards.list_by_arena_ids([80_007])
+
+      assert result[80_007].mana_value == 3
+    end
+
+    test "17lands card is preferred over MtgaCard when both exist for the same arena_id" do
+      TestFactory.create_card(%{
+        lands17_id: 8008,
+        arena_id: 80_008,
+        name: "Rich Card",
+        types: "Creature",
+        mana_value: 3
+      })
+
+      TestFactory.create_mtga_card(%{arena_id: 80_008, name: "Sparse Card", types: "2"})
+
+      result = Cards.list_by_arena_ids([80_008])
+
+      assert result[80_008].name == "Rich Card"
+      assert result[80_008].mana_value == 3
+    end
+
+    test "returns empty map for unknown arena_ids" do
+      result = Cards.list_by_arena_ids([99_999_999])
+      assert result == %{}
+    end
+
+    test "filters non-integer arena_ids" do
+      result = Cards.list_by_arena_ids([nil, "bad", 1])
+      assert result == %{}
+    end
+  end
 end

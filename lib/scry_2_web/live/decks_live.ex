@@ -1,0 +1,529 @@
+defmodule Scry2Web.DecksLive do
+  @moduledoc """
+  LiveView for the decks list and deck detail pages.
+
+  List view (`:index`) shows all constructed decks that have been played,
+  with BO1 and BO3 win/loss records. Detail view (`:show`) has two tabs:
+
+  - **Overview** — performance stats at top, composition (mana curve, card
+    list, card image stacks) below, current sideboard as a horizontal splay
+    at the bottom.
+  - **Changes** — timeline of DeckUpdated domain events showing how the deck
+    has evolved over time.
+  """
+  use Scry2Web, :live_view
+
+  alias Scry2.Cards
+  alias Scry2.Cards.ImageCache
+  alias Scry2.Decks
+  alias Scry2.Topics
+  alias Scry2Web.DecksHelpers
+
+  @impl true
+  def mount(_params, _session, socket) do
+    if connected?(socket), do: Topics.subscribe(Topics.decks_updates())
+
+    {:ok,
+     assign(socket,
+       decks: [],
+       deck: nil,
+       performance: nil,
+       evolution: [],
+       cards_by_arena_id: %{},
+       active_tab: :overview,
+       reload_timer: nil
+     )}
+  end
+
+  @impl true
+  def handle_params(%{"deck_id" => deck_id} = params, _uri, socket) do
+    deck = Decks.get_deck(deck_id)
+
+    if is_nil(deck) do
+      {:noreply, push_navigate(socket, to: ~p"/decks")}
+    else
+      tab = parse_tab(params["tab"])
+      socket = load_deck_detail(socket, deck, tab)
+      {:noreply, socket}
+    end
+  end
+
+  def handle_params(_params, _uri, socket) do
+    player_id = socket.assigns[:active_player_id]
+    decks = Decks.list_decks_with_stats(player_id)
+    {:noreply, assign(socket, decks: decks, deck: nil)}
+  end
+
+  @impl true
+  def handle_event("switch_tab", %{"tab" => tab}, socket) do
+    deck = socket.assigns.deck
+    {:noreply, push_patch(socket, to: ~p"/decks/#{deck.mtga_deck_id}?tab=#{tab}")}
+  end
+
+  @impl true
+  def handle_info({:deck_updated, _}, socket) do
+    {:noreply, schedule_reload(socket)}
+  end
+
+  def handle_info(:reload_data, socket) do
+    player_id = socket.assigns[:active_player_id]
+
+    socket =
+      case socket.assigns.deck do
+        nil ->
+          decks = Decks.list_decks_with_stats(player_id)
+          assign(socket, decks: decks, reload_timer: nil)
+
+        deck ->
+          fresh_deck = Decks.get_deck(deck.mtga_deck_id)
+
+          socket
+          |> load_deck_detail(fresh_deck, socket.assigns.active_tab)
+          |> assign(reload_timer: nil)
+      end
+
+    {:noreply, socket}
+  end
+
+  def handle_info(_other, socket), do: {:noreply, socket}
+
+  @impl true
+  def render(%{deck: nil} = assigns) do
+    ~H"""
+    <Layouts.console_mount socket={@socket} />
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
+      <h1 class="text-2xl font-semibold mb-6">Decks</h1>
+
+      <.empty_state :if={@decks == []}>
+        No constructed decks recorded yet. Play a match to start tracking deck performance.
+      </.empty_state>
+
+      <div :if={@decks != []} class="overflow-x-auto">
+        <table class="table table-zebra w-full">
+          <thead>
+            <tr class="text-xs text-base-content/60 uppercase">
+              <th>Deck</th>
+              <th>Format</th>
+              <th class="text-center">BO1</th>
+              <th class="text-center">BO3</th>
+              <th class="text-right">Last Played</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              :for={entry <- @decks}
+              class="cursor-pointer hover:bg-base-content/5 transition-colors"
+              phx-click={JS.navigate(~p"/decks/#{entry.deck.mtga_deck_id}")}
+            >
+              <td>
+                <div class="flex items-center gap-2">
+                  <span class="font-medium">{entry.deck.current_name || "Unnamed Deck"}</span>
+                  <span :if={entry.deck.format} class="flex gap-0.5">
+                    <.mana_pips
+                      :if={entry.deck.current_main_deck}
+                      colors={DecksHelpers.deck_colors(entry.deck)}
+                    />
+                  </span>
+                </div>
+              </td>
+              <td class="text-sm text-base-content/70">{entry.deck.format}</td>
+              <td class="text-center">
+                <.record_cell stats={entry.bo1} />
+              </td>
+              <td class="text-center">
+                <.record_cell stats={entry.bo3} />
+              </td>
+              <td class="text-right text-sm text-base-content/60">
+                {DecksHelpers.relative_time(entry.deck.last_played_at)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Layouts.app>
+    """
+  end
+
+  def render(assigns) do
+    ~H"""
+    <Layouts.console_mount socket={@socket} />
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
+      <%!-- Deck header --%>
+      <div class="flex items-start justify-between mb-6">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <.link
+              navigate={~p"/decks"}
+              class="text-sm text-base-content/50 hover:text-base-content transition-colors"
+            >
+              Decks
+            </.link>
+            <span class="text-base-content/30">/</span>
+            <span class="text-sm text-base-content/70">{@deck.current_name || "Unnamed Deck"}</span>
+          </div>
+          <h1 class="text-2xl font-semibold">{@deck.current_name || "Unnamed Deck"}</h1>
+          <div class="flex items-center gap-3 mt-1 text-sm text-base-content/60">
+            <.mana_pips
+              :if={DecksHelpers.deck_colors(@deck) != ""}
+              colors={DecksHelpers.deck_colors(@deck)}
+            />
+            <span :if={@deck.format}>{@deck.format}</span>
+            <span :if={@deck.first_seen_at}>
+              Since {DecksHelpers.format_date(@deck.first_seen_at)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <%!-- Tabs --%>
+      <div role="tablist" class="tabs tabs-border mb-6">
+        <.tab_link label="Overview" tab={:overview} active={@active_tab} deck={@deck} />
+        <.tab_link label="Changes" tab={:changes} active={@active_tab} deck={@deck} />
+      </div>
+
+      <%!-- Tab content --%>
+      <%= case @active_tab do %>
+        <% :overview -> %>
+          <.overview_tab
+            performance={@performance}
+            deck={@deck}
+            cards_by_arena_id={@cards_by_arena_id}
+          />
+        <% :changes -> %>
+          <.changes_tab evolution={@evolution} />
+      <% end %>
+    </Layouts.app>
+    """
+  end
+
+  # ── Private components ───────────────────────────────────────────────
+
+  attr :stats, :map, required: true
+
+  defp record_cell(%{stats: %{total: 0}} = assigns) do
+    ~H"""
+    <span class="text-base-content/30 text-sm">—</span>
+    """
+  end
+
+  defp record_cell(assigns) do
+    ~H"""
+    <div class="text-sm">
+      <span class={DecksHelpers.win_rate_class(@stats.win_rate)}>
+        {DecksHelpers.format_win_rate(@stats.win_rate)}
+      </span>
+      <span class="text-base-content/50 ml-1">{@stats.wins}W–{@stats.losses}L</span>
+    </div>
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :tab, :atom, required: true
+  attr :active, :atom, required: true
+  attr :deck, :map, required: true
+
+  defp tab_link(assigns) do
+    ~H"""
+    <a
+      role="tab"
+      class={["tab", @active == @tab && "tab-active"]}
+      phx-click="switch_tab"
+      phx-value-tab={@tab}
+    >
+      {@label}
+    </a>
+    """
+  end
+
+  attr :performance, :map, required: true
+  attr :deck, :map, required: true
+  attr :cards_by_arena_id, :map, required: true
+
+  defp overview_tab(assigns) do
+    card_groups = DecksHelpers.group_deck_cards(assigns.deck, assigns.cards_by_arena_id)
+    cmc_columns = DecksHelpers.group_cards_by_cmc(assigns.deck, assigns.cards_by_arena_id)
+    sideboard = DecksHelpers.sideboard_cards(assigns.deck, assigns.cards_by_arena_id)
+
+    assigns =
+      assign(assigns, card_groups: card_groups, cmc_columns: cmc_columns, sideboard: sideboard)
+
+    ~H"""
+    <div class="space-y-10">
+      <%!-- Performance --%>
+      <.performance_section performance={@performance} />
+
+      <%!-- Composition + Sideboard --%>
+      <div :if={@card_groups != []}>
+        <div class="flex gap-6 items-start">
+          <%!-- Left sidebar: mana curve + card list by type --%>
+          <div class="w-52 flex-shrink-0 space-y-4">
+            <div
+              id="deck-curve-chart"
+              phx-hook="Chart"
+              data-chart-type="curve"
+              data-series={DecksHelpers.mana_curve_series(@deck, @cards_by_arena_id)}
+              class="w-full rounded-lg bg-base-200"
+              style="height: 80px"
+            />
+
+            <div class="space-y-4">
+              <div :for={{type_label, cards} <- @card_groups}>
+                <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-1">
+                  {type_label} ({Enum.sum(Enum.map(cards, & &1.count))})
+                </h3>
+                <div class="space-y-0.5">
+                  <div :for={card <- cards} class="flex items-center gap-2 text-sm py-0.5">
+                    <span class="text-base-content/50 w-4 text-right tabular-nums shrink-0">
+                      {card.count}
+                    </span>
+                    <.card_name arena_id={card.arena_id} name={card.name} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <%!-- Right: card images stacked by CMC column --%>
+          <div class="flex gap-3 items-start overflow-x-auto flex-1 pb-4">
+            <div :for={{cmc_label, cards} <- @cmc_columns} class="flex flex-col items-center">
+              <p class="text-xs text-base-content/30 mb-1">{cmc_label}</p>
+              <div class="flex flex-col">
+                <div
+                  :for={{card, index} <- Enum.with_index(cards)}
+                  class={["relative", if(index > 0, do: "-mt-[7rem]")]}
+                >
+                  <.card_image
+                    id={"card-grid-#{card.arena_id}"}
+                    arena_id={card.arena_id}
+                    name={card.name}
+                    class="w-28"
+                  />
+                  <span class="absolute top-1 right-1 rounded bg-black/70 px-1 text-xs font-bold text-white">
+                    {card.count}/4
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <%!-- Sideboard: horizontal splay below main deck cards --%>
+        <.sideboard_splay :if={@sideboard != []} cards={@sideboard} />
+      </div>
+
+      <.empty_state :if={@card_groups == []}>
+        No composition data available. A DeckUpdated event is needed to show the current list.
+      </.empty_state>
+    </div>
+    """
+  end
+
+  attr :performance, :map, required: true
+
+  defp performance_section(%{performance: nil} = assigns) do
+    ~H"""
+    <.empty_state>No match data yet.</.empty_state>
+    """
+  end
+
+  defp performance_section(assigns) do
+    ~H"""
+    <div class="space-y-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <.stats_panel title="Best-of-1" stats={@performance.bo1} format={:bo1} />
+        <.stats_panel title="Best-of-3" stats={@performance.bo3} format={:bo3} />
+      </div>
+
+      <div :if={length(@performance.win_rate_by_week) >= 2}>
+        <h3 class="text-sm font-medium text-base-content/60 uppercase tracking-wide mb-3">
+          Win Rate Over Time
+        </h3>
+        <div
+          id="deck-winrate-chart"
+          phx-hook="Chart"
+          data-chart-type="winrate"
+          data-series={DecksHelpers.winrate_series(@performance.win_rate_by_week)}
+          class="w-full rounded-lg bg-base-200"
+          style="height: 220px"
+        />
+      </div>
+    </div>
+    """
+  end
+
+  attr :cards, :list, required: true
+
+  defp sideboard_splay(assigns) do
+    total = Enum.sum(Enum.map(assigns.cards, & &1.count))
+    assigns = assign(assigns, total: total)
+
+    ~H"""
+    <div class="mt-8">
+      <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-3">
+        Sideboard ({@total})
+      </h3>
+      <div class="flex items-start overflow-x-auto pb-4">
+        <div
+          :for={{card, index} <- Enum.with_index(@cards)}
+          class={["relative", if(index > 0, do: "-ml-[3.5rem]")]}
+        >
+          <.card_image
+            id={"sideboard-#{card.arena_id}"}
+            arena_id={card.arena_id}
+            name={card.name}
+            class="w-28"
+          />
+          <span class="absolute top-1 right-1 rounded bg-black/70 px-1 text-xs font-bold text-white">
+            {card.count}
+          </span>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :title, :string, required: true
+  attr :stats, :map, required: true
+  attr :format, :atom, required: true
+
+  defp stats_panel(%{stats: %{total: 0}} = assigns) do
+    ~H"""
+    <div class="bg-base-200 rounded-xl p-5">
+      <h3 class="text-sm font-medium text-base-content/50 mb-3">{@title}</h3>
+      <p class="text-base-content/30 text-sm">No matches yet</p>
+    </div>
+    """
+  end
+
+  defp stats_panel(assigns) do
+    ~H"""
+    <div class="bg-base-200 rounded-xl p-5 space-y-3">
+      <h3 class="text-sm font-medium text-base-content/50">{@title}</h3>
+
+      <div class="flex items-baseline gap-3">
+        <span class={[
+          "text-3xl font-black tabular-nums",
+          DecksHelpers.win_rate_class(@stats.win_rate)
+        ]}>
+          {DecksHelpers.format_win_rate(@stats.win_rate)}
+        </span>
+        <span class="text-base-content/60 text-sm">{@stats.wins}W – {@stats.losses}L</span>
+      </div>
+
+      <div class="grid grid-cols-2 gap-2 text-sm">
+        <.stat_row
+          label="On Play"
+          value={DecksHelpers.format_win_rate(@stats.on_play_win_rate)}
+          sub={
+            DecksHelpers.record_str(@stats.on_play_wins, @stats.on_play_total - @stats.on_play_wins)
+          }
+        />
+        <.stat_row
+          label="On Draw"
+          value={DecksHelpers.format_win_rate(@stats.on_draw_win_rate)}
+          sub={
+            DecksHelpers.record_str(@stats.on_draw_wins, @stats.on_draw_total - @stats.on_draw_wins)
+          }
+        />
+        <.stat_row
+          :if={@format == :bo3}
+          label="Game 1"
+          value={DecksHelpers.format_win_rate(@stats[:game1_win_rate])}
+          sub={
+            DecksHelpers.record_str(@stats[:game1_wins], @stats[:game1_total] - @stats[:game1_wins])
+          }
+        />
+        <.stat_row
+          :if={@format == :bo3}
+          label="Games 2–3"
+          value={DecksHelpers.format_win_rate(@stats[:games_2_3_win_rate])}
+          sub={
+            DecksHelpers.record_str(
+              @stats[:games_2_3_wins],
+              @stats[:games_2_3_total] - @stats[:games_2_3_wins]
+            )
+          }
+        />
+      </div>
+    </div>
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :value, :string, required: true
+  attr :sub, :string, default: nil
+
+  defp stat_row(assigns) do
+    ~H"""
+    <div>
+      <div class="text-base-content/50 text-xs">{@label}</div>
+      <div class="font-medium">
+        {@value} <span :if={@sub} class="text-xs text-base-content/50">{@sub}</span>
+      </div>
+    </div>
+    """
+  end
+
+  attr :evolution, :list, required: true
+
+  defp changes_tab(%{evolution: []} = assigns) do
+    ~H"""
+    <.empty_state>No deck update history found.</.empty_state>
+    """
+  end
+
+  defp changes_tab(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <div :for={event <- @evolution} class="bg-base-200 rounded-xl p-4">
+        <div class="flex items-center justify-between mb-2">
+          <span class="font-medium text-sm">{event.deck_name || "Deck updated"}</span>
+          <span class="text-xs text-base-content/50">
+            {DecksHelpers.format_date(event.occurred_at)}
+          </span>
+        </div>
+        <div class="text-xs text-base-content/50">
+          {event.action_type} — {length(event.main_deck)} unique cards in main deck
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  # ── Private helpers ───────────────────────────────────────────────────────
+
+  defp load_deck_detail(socket, deck, tab) do
+    performance = Decks.get_deck_performance(deck.mtga_deck_id)
+    evolution = if tab == :changes, do: Decks.get_deck_evolution(deck.mtga_deck_id), else: []
+    arena_ids = collect_arena_ids(deck)
+    cards_by_arena_id = Cards.list_by_arena_ids(arena_ids)
+
+    if connected?(socket) do
+      ImageCache.ensure_cached(arena_ids)
+    end
+
+    assign(socket,
+      deck: deck,
+      performance: performance,
+      evolution: evolution,
+      cards_by_arena_id: cards_by_arena_id,
+      active_tab: tab
+    )
+  end
+
+  defp collect_arena_ids(deck) do
+    (extract_card_ids(deck.current_main_deck) ++ extract_card_ids(deck.current_sideboard))
+    |> Enum.uniq()
+    |> Enum.filter(&is_integer/1)
+  end
+
+  defp extract_card_ids(%{"cards" => cards}), do: Enum.map(cards, &card_arena_id/1)
+  defp extract_card_ids(_), do: []
+
+  defp card_arena_id(%{"arena_id" => id}), do: id
+  defp card_arena_id(%{arena_id: id}), do: id
+  defp card_arena_id(_), do: nil
+
+  defp parse_tab("changes"), do: :changes
+  defp parse_tab(_), do: :overview
+end

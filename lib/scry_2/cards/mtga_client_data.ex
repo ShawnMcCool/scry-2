@@ -80,7 +80,8 @@ defmodule Scry2.Cards.MtgaClientData do
           c.IsDigitalOnly,
           c.ArtId,
           c.Power,
-          c.Toughness
+          c.Toughness,
+          c.Order_CMCWithXLast
         FROM Cards c
         LEFT JOIN Localizations_enUS l
           ON c.TitleId = l.LocId AND l.Formatted = 1
@@ -118,7 +119,8 @@ defmodule Scry2.Cards.MtgaClientData do
          is_digital_only,
          art_id,
          power,
-         toughness
+         toughness,
+         cmc
        ]) do
     %{
       arena_id: arena_id,
@@ -132,7 +134,8 @@ defmodule Scry2.Cards.MtgaClientData do
       is_digital_only: is_digital_only == 1,
       art_id: art_id,
       power: power || "",
-      toughness: toughness || ""
+      toughness: toughness || "",
+      mana_value: cmc || 0
     }
   end
 end

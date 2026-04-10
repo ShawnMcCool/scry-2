@@ -1,7 +1,7 @@
-// ECharts hook for rank progression charts.
+// ECharts hook for rank progression and deck performance charts.
 //
 // Each chart element must provide:
-//   data-chart-type  — "climb" | "momentum"
+//   data-chart-type  — "climb" | "momentum" | "winrate" | "curve"
 //   data-series      — JSON-encoded series data from the server
 //
 // The hook initialises ECharts on mount and updates data in-place on
@@ -129,12 +129,111 @@ function rankLabel(score) {
   return `${classes[classIndex] || "Bronze"} ${level}`
 }
 
+function winrateOption(data) {
+  const {weeks = [], bo1 = [], bo3 = []} = data
+  const hasBO1 = bo1.some(v => v !== null)
+  const hasBO3 = bo3.some(v => v !== null)
+  const series = []
+
+  if (hasBO1) {
+    series.push({
+      name: "BO1",
+      type: "line",
+      data: weeks.map((w, i) => [w, bo1[i]]),
+      connectNulls: false,
+      smooth: false,
+      symbol: "circle",
+      symbolSize: 4,
+      lineStyle: {color: "#6366f1", width: 2},
+      itemStyle: {color: "#6366f1"},
+    })
+  }
+  if (hasBO3) {
+    series.push({
+      name: "BO3",
+      type: "line",
+      data: weeks.map((w, i) => [w, bo3[i]]),
+      connectNulls: false,
+      smooth: false,
+      symbol: "circle",
+      symbolSize: 4,
+      lineStyle: {color: "#22c55e", width: 2},
+      itemStyle: {color: "#22c55e"},
+    })
+  }
+
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 52, right: 20, top: 16, bottom: 40},
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        const week = params[0].axisValue
+        const lines = params.map(p => `${p.seriesName}: <b>${p.data[1] ?? "—"}%</b>`).join("<br/>")
+        return `${week}<br/>${lines}`
+      },
+    },
+    xAxis: {
+      type: "category",
+      data: weeks,
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: {
+      type: "value",
+      min: 0,
+      max: 100,
+      axisLabel: {color: "#9ca3af", fontSize: 11, formatter: v => `${v}%`},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {lineStyle: {color: "#1f2937"}},
+    },
+    series,
+  }
+}
+
+function curveOption(data) {
+  const labels = data.map(([label]) => label)
+  const counts = data.map(([, count]) => count)
+
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 40, right: 20, top: 16, bottom: 36},
+    tooltip: {trigger: "axis"},
+    xAxis: {
+      type: "category",
+      data: labels,
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: {
+      type: "value",
+      minInterval: 1,
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {lineStyle: {color: "#1f2937"}},
+    },
+    series: [
+      {
+        type: "bar",
+        data: counts,
+        itemStyle: {color: "#6366f1", borderRadius: [3, 3, 0, 0]},
+      },
+    ],
+  }
+}
+
 function buildOption(el) {
   const type = el.dataset.chartType
   const parsed = JSON.parse(el.dataset.series || "[]")
 
   if (type === "climb") {
     return climbOption(parsed)
+  } else if (type === "winrate") {
+    return winrateOption(parsed)
+  } else if (type === "curve") {
+    return curveOption(parsed)
   } else {
     const [wins, losses] = parsed
     return momentumOption(wins || [], losses || [])

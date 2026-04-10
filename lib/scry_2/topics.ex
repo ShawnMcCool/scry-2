@@ -20,6 +20,10 @@ defmodule Scry2.Topics do
   @doc "Match/game/deck upserts."
   def matches_updates, do: "matches:updates"
 
+  # ── Decks ───────────────────────────────────────────────────────────
+  @doc "Deck projection upserts (deck state, match results, game submissions)."
+  def decks_updates, do: "decks:updates"
+
   # ── Drafts ─────────────────────────────────────────────────────────
   @doc "Draft/pick upserts."
   def drafts_updates, do: "drafts:updates"
