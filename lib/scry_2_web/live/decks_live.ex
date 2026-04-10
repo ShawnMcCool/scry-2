@@ -3,11 +3,12 @@ defmodule Scry2Web.DecksLive do
   LiveView for the decks list and deck detail pages.
 
   List view (`:index`) shows all constructed decks that have been played,
-  with BO1 and BO3 win/loss records. Detail view (`:show`) has two tabs:
+  with BO1 and BO3 win/loss records. Detail view (`:show`) has three tabs:
 
   - **Overview** — performance stats at top, composition (mana curve, card
     list, card image stacks) below, current sideboard as a horizontal splay
     at the bottom.
+  - **Matches** — chronological match history for this deck.
   - **Changes** — timeline of DeckUpdated domain events showing how the deck
     has evolved over time.
   """
@@ -29,6 +30,7 @@ defmodule Scry2Web.DecksLive do
        deck: nil,
        performance: nil,
        evolution: [],
+       matches: [],
        cards_by_arena_id: %{},
        active_tab: :overview,
        reload_timer: nil
@@ -166,12 +168,7 @@ defmodule Scry2Web.DecksLive do
             <.mana_pips
               :if={DecksHelpers.deck_colors(@deck) != ""}
               colors={DecksHelpers.deck_colors(@deck)}
-              size="2x"
             />
-            <span :if={@deck.format}>{@deck.format}</span>
-            <span :if={@deck.first_seen_at}>
-              Since {DecksHelpers.format_date(@deck.first_seen_at)}
-            </span>
           </div>
         </div>
       </div>
@@ -179,6 +176,7 @@ defmodule Scry2Web.DecksLive do
       <%!-- Tabs --%>
       <div role="tablist" class="tabs tabs-border mb-6">
         <.tab_link label="Overview" tab={:overview} active={@active_tab} deck={@deck} />
+        <.tab_link label="Matches" tab={:matches} active={@active_tab} deck={@deck} />
         <.tab_link label="Changes" tab={:changes} active={@active_tab} deck={@deck} />
       </div>
 
@@ -190,6 +188,8 @@ defmodule Scry2Web.DecksLive do
             deck={@deck}
             cards_by_arena_id={@cards_by_arena_id}
           />
+        <% :matches -> %>
+          <.matches_tab matches={@matches} />
         <% :changes -> %>
           <.changes_tab evolution={@evolution} />
       <% end %>
@@ -273,11 +273,18 @@ defmodule Scry2Web.DecksLive do
                   {type_label} ({Enum.sum(Enum.map(cards, & &1.count))})
                 </h3>
                 <div class="space-y-0.5">
-                  <div :for={card <- cards} class="flex items-center gap-2 text-sm py-0.5">
+                  <div
+                    :for={card <- cards}
+                    id={"card-row-#{card.arena_id}"}
+                    class="flex items-center gap-2 text-sm py-0.5 cursor-default"
+                    phx-hook={if ImageCache.cached?(card.arena_id), do: "CardHover"}
+                    data-card-src={ImageCache.url_for(card.arena_id)}
+                    data-card-alt={card.name}
+                  >
                     <span class="text-base-content/50 w-4 text-right tabular-nums shrink-0">
                       {card.count}
                     </span>
-                    <.card_name arena_id={card.arena_id} name={card.name} />
+                    <span>{card.name}</span>
                   </div>
                 </div>
               </div>
@@ -286,7 +293,7 @@ defmodule Scry2Web.DecksLive do
 
           <%!-- Right: card images + sideboard below --%>
           <div class="flex flex-col flex-1 min-w-0">
-            <div class="flex gap-3 items-start overflow-x-auto pb-4">
+            <div class="flex gap-3 items-start overflow-x-auto pb-4" data-deck-grid>
               <div :for={{cmc_label, cards} <- @cmc_columns} class="flex flex-col items-center">
                 <p class="text-xs text-base-content/30 mb-1">{cmc_label}</p>
                 <div class="flex flex-col">
@@ -300,7 +307,7 @@ defmodule Scry2Web.DecksLive do
                       name={card.name}
                       class="w-28"
                     />
-                    <span class="absolute top-1 right-1 rounded bg-black/70 px-1 text-xs font-bold text-white">
+                    <span class="absolute top-1 right-1 rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
                       {card.count}/4
                     </span>
                   </div>
@@ -367,7 +374,7 @@ defmodule Scry2Web.DecksLive do
             name={card.name}
             class="w-28"
           />
-          <span class="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-xs font-bold text-white">
+          <span class="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
             {card.count}
           </span>
         </div>
@@ -488,6 +495,61 @@ defmodule Scry2Web.DecksLive do
     """
   end
 
+  attr :matches, :list, required: true
+
+  defp matches_tab(%{matches: []} = assigns) do
+    ~H"""
+    <.empty_state>No matches recorded for this deck yet.</.empty_state>
+    """
+  end
+
+  defp matches_tab(assigns) do
+    ~H"""
+    <div class="overflow-x-auto">
+      <table class="table table-zebra w-full">
+        <thead>
+          <tr class="text-xs text-base-content/60 uppercase">
+            <th>Date</th>
+            <th>Result</th>
+            <th>Format</th>
+            <th>Event</th>
+            <th>Rank</th>
+            <th class="text-center">Games</th>
+            <th class="text-center">On Play</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr :for={match <- @matches}>
+            <td class="text-sm text-base-content/60 tabular-nums">
+              {DecksHelpers.format_date(match.started_at)}
+            </td>
+            <td>
+              <span class={
+                if match.won, do: "text-success font-semibold", else: "text-error font-semibold"
+              }>
+                {if match.won, do: "Win", else: "Loss"}
+              </span>
+            </td>
+            <td class="text-sm text-base-content/70">
+              {if match.format_type == "Traditional", do: "BO3", else: "BO1"}
+            </td>
+            <td class="text-sm text-base-content/70">{match.event_name || "—"}</td>
+            <td class="text-sm text-base-content/70">{match.player_rank || "—"}</td>
+            <td class="text-center text-sm">{match.num_games || "—"}</td>
+            <td class="text-center text-sm">
+              {case match.on_play do
+                true -> "Play"
+                false -> "Draw"
+                nil -> "—"
+              end}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    """
+  end
+
   attr :evolution, :list, required: true
 
   defp changes_tab(%{evolution: []} = assigns) do
@@ -519,6 +581,7 @@ defmodule Scry2Web.DecksLive do
   defp load_deck_detail(socket, deck, tab) do
     performance = Decks.get_deck_performance(deck.mtga_deck_id)
     evolution = if tab == :changes, do: Decks.get_deck_evolution(deck.mtga_deck_id), else: []
+    matches = if tab == :matches, do: Decks.list_matches_for_deck(deck.mtga_deck_id), else: []
     arena_ids = collect_arena_ids(deck)
     cards_by_arena_id = Cards.list_by_arena_ids(arena_ids)
 
@@ -530,6 +593,7 @@ defmodule Scry2Web.DecksLive do
       deck: deck,
       performance: performance,
       evolution: evolution,
+      matches: matches,
       cards_by_arena_id: cards_by_arena_id,
       active_tab: tab
     )
@@ -548,6 +612,7 @@ defmodule Scry2Web.DecksLive do
   defp card_arena_id(%{arena_id: id}), do: id
   defp card_arena_id(_), do: nil
 
+  defp parse_tab("matches"), do: :matches
   defp parse_tab("changes"), do: :changes
   defp parse_tab(_), do: :overview
 end

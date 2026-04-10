@@ -149,6 +149,16 @@ defmodule Scry2.Decks do
     |> Enum.sort_by(& &1.occurred_at, {:desc, DateTime})
   end
 
+  @doc """
+  Returns all completed match results for a deck, newest first.
+  """
+  def list_matches_for_deck(mtga_deck_id) when is_binary(mtga_deck_id) do
+    MatchResult
+    |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+    |> order_by([mr], desc: mr.started_at)
+    |> Repo.all()
+  end
+
   # ── Writes ────────────────────────────────────────────────────────────────
 
   @doc """
