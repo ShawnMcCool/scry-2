@@ -38,6 +38,7 @@ defmodule Scry2.Cards.MtgaCard do
     field :art_id, :integer
     field :power, :string, default: ""
     field :toughness, :string, default: ""
+    field :mana_value, :integer, default: 0
 
     timestamps(type: :utc_datetime)
   end
@@ -56,7 +57,8 @@ defmodule Scry2.Cards.MtgaCard do
       :is_digital_only,
       :art_id,
       :power,
-      :toughness
+      :toughness,
+      :mana_value
     ])
     |> validate_required([:arena_id, :name])
     |> unique_constraint(:arena_id)

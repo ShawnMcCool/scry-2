@@ -14,6 +14,7 @@ defmodule Scry2.TestFactory do
 
   alias Scry2.Cards
   alias Scry2.Cards.{Card, MtgaCard, ScryfallCard, Set}
+  alias Scry2.Decks
   alias Scry2.Drafts
   alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Events
@@ -193,7 +194,8 @@ defmodule Scry2.TestFactory do
       is_digital_only: false,
       art_id: 12_345,
       power: "",
-      toughness: ""
+      toughness: "",
+      mana_value: 0
     }
 
     struct(MtgaCard, Map.merge(defaults, Map.new(attrs)))
@@ -772,6 +774,38 @@ defmodule Scry2.TestFactory do
     |> Map.drop([:__meta__, :match])
     |> Map.put(:match_id, match.id)
     |> Matches.upsert_game!()
+  end
+
+  def create_deck(attrs \\ %{}) do
+    base = Map.new(attrs)
+    mtga_deck_id = base[:mtga_deck_id] || "deck-#{System.unique_integer([:positive])}"
+
+    Decks.upsert_deck!(%{
+      mtga_deck_id: mtga_deck_id,
+      current_name: base[:current_name] || "Test Deck",
+      current_main_deck: base[:current_main_deck] || %{"cards" => []},
+      current_sideboard: base[:current_sideboard] || %{"cards" => []},
+      format: base[:format] || "Standard",
+      deck_colors: base[:deck_colors] || "WU",
+      first_seen_at: base[:first_seen_at] || DateTime.utc_now(:second),
+      last_played_at: base[:last_played_at] || DateTime.utc_now(:second)
+    })
+  end
+
+  def create_deck_match_result(attrs \\ %{}) do
+    base = Map.new(attrs)
+    deck = base[:deck] || create_deck()
+
+    Decks.upsert_match_result!(%{
+      mtga_deck_id: deck.mtga_deck_id,
+      mtga_match_id: base[:mtga_match_id] || "match-#{System.unique_integer([:positive])}",
+      won: Map.get(base, :won, true),
+      format_type: base[:format_type] || "Standard",
+      on_play: Map.get(base, :on_play, true),
+      player_rank: base[:player_rank],
+      started_at: base[:started_at] || DateTime.utc_now(:second),
+      completed_at: base[:completed_at] || DateTime.utc_now(:second)
+    })
   end
 
   def create_draft(attrs \\ %{}) do

@@ -8,11 +8,11 @@ export const CardHover = {
     this.popupImg = document.getElementById("card-hover-popup-img")
 
     this.el.addEventListener("mouseenter", (e) => {
-      const src = this.el.src
+      const src = this.el.dataset.cardSrc || this.el.src
       if (!src) return
 
       this.popupImg.src = src
-      this.popupImg.alt = this.el.alt
+      this.popupImg.alt = this.el.dataset.cardAlt || this.el.alt || ""
       this.popup.style.display = "block"
       this._position(e)
     })

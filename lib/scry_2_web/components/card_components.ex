@@ -23,16 +23,21 @@ defmodule Scry2Web.CardComponents do
   alias Scry2.Cards.ImageCache
 
   @doc """
-  Renders a single card image.
+  Renders a single card image. If the image is not cached, shows a placeholder.
+
+  Pass `id` to override the default `"card-img-{arena_id}"` when the same
+  arena_id appears multiple times on the page (e.g. stacked copies in a grid).
 
   ## Examples
 
       <.card_image arena_id={91001} />
       <.card_image arena_id={91001} name="Lightning Bolt" class="w-24" />
+      <.card_image arena_id={91001} id="card-grid-91001-2" class="w-16" />
   """
   attr :arena_id, :integer, required: true
   attr :name, :string, default: "Card image"
   attr :class, :string, default: "w-[4.5rem]"
+  attr :id, :string, default: nil
 
   def card_image(assigns) do
     assigns =
@@ -43,7 +48,7 @@ defmodule Scry2Web.CardComponents do
     ~H"""
     <img
       :if={@cached?}
-      id={"card-img-#{@arena_id}"}
+      id={@id || "card-img-#{@arena_id}"}
       src={@src}
       alt={@name}
       loading="lazy"
@@ -59,6 +64,44 @@ defmodule Scry2Web.CardComponents do
     >
       <Scry2Web.CoreComponents.icon name="hero-photo" class="size-4" />
     </div>
+    """
+  end
+
+  @doc """
+  Renders a card name as a hoverable span that shows the card image popup on hover.
+  Falls back to a plain span if the image is not cached.
+
+  Pass `id` to override the default `"card-name-{arena_id}"` when the same
+  arena_id appears multiple times on the page.
+
+  ## Examples
+
+      <.card_name arena_id={91001} name="Lightning Bolt" />
+      <.card_name arena_id={91001} name="Lightning Bolt" class="text-sm" />
+  """
+  attr :arena_id, :integer, required: true
+  attr :name, :string, required: true
+  attr :id, :string, default: nil
+  attr :class, :string, default: nil
+
+  def card_name(assigns) do
+    assigns =
+      assigns
+      |> assign(:src, ImageCache.url_for(assigns.arena_id))
+      |> assign(:cached?, ImageCache.cached?(assigns.arena_id))
+
+    ~H"""
+    <span
+      :if={@cached?}
+      id={@id || "card-name-#{@arena_id}"}
+      phx-hook="CardHover"
+      data-card-src={@src}
+      data-card-alt={@name}
+      class={["cursor-default", @class]}
+    >
+      {@name}
+    </span>
+    <span :if={!@cached?} class={@class}>{@name}</span>
     """
   end
 

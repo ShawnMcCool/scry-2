@@ -8,6 +8,7 @@ defmodule Scry2.Events.ProjectorRegistry do
 
   @projectors [
     Scry2.Matches.MatchProjection,
+    Scry2.Decks.DeckProjection,
     Scry2.Drafts.DraftProjection,
     Scry2.Mulligans.MulliganProjection,
     Scry2.Ranks.RankProjection,
