@@ -21,19 +21,27 @@ defmodule Scry2.Decks do
   # ── Reads ─────────────────────────────────────────────────────────────────
 
   @doc """
-  Returns all decks that have at least one completed match, with aggregated
-  BO1 and BO3 stats. Sorted by last_played_at descending.
+  Returns decks with aggregated BO1 and BO3 stats.
+
+  Options:
+    * `:only_played` — when `true` (default), only returns decks with at least
+      one completed match. When `false`, returns all decks including unplayed ones.
+
+  Played decks sort by `last_played_at` descending; unplayed decks follow,
+  sorted by `last_updated_at` descending.
 
   Each entry is a map:
     * `:deck` — `%Deck{}`
     * `:bo1` — `%{total, wins, losses, win_rate}`
     * `:bo3` — `%{total, wins, losses, win_rate}`
   """
-  def list_decks_with_stats(player_id \\ nil) do
+  def list_decks_with_stats(player_id \\ nil, opts \\ []) do
+    only_played = Keyword.get(opts, :only_played, true)
+
     decks =
       Deck
       |> maybe_filter_player(player_id)
-      |> order_by([d], desc: d.last_played_at)
+      |> order_by([d], desc_nulls_last: d.last_played_at, desc: d.last_updated_at)
       |> Repo.all()
 
     deck_ids = Enum.map(decks, & &1.mtga_deck_id)
@@ -41,10 +49,7 @@ defmodule Scry2.Decks do
     stats_by_deck_id = aggregate_stats_for_decks(deck_ids)
 
     decks
-    |> Enum.filter(fn deck ->
-      row = Map.get(stats_by_deck_id, deck.mtga_deck_id, %{bo1_total: 0, bo3_total: 0})
-      row.bo1_total + row.bo3_total > 0
-    end)
+    |> maybe_filter_played(stats_by_deck_id, only_played)
     |> Enum.map(fn deck ->
       row = Map.get(stats_by_deck_id, deck.mtga_deck_id, %{})
       %{deck: deck, bo1: build_stats(row, :bo1), bo3: build_stats(row, :bo3)}
@@ -229,6 +234,15 @@ defmodule Scry2.Decks do
 
   # decks_decks has no player_id — the context is single-player by design.
   defp maybe_filter_player(query, _player_id), do: query
+
+  defp maybe_filter_played(decks, _stats_by_deck_id, false), do: decks
+
+  defp maybe_filter_played(decks, stats_by_deck_id, true) do
+    Enum.filter(decks, fn deck ->
+      row = Map.get(stats_by_deck_id, deck.mtga_deck_id, %{bo1_total: 0, bo3_total: 0})
+      row.bo1_total + row.bo3_total > 0
+    end)
+  end
 
   defp aggregate_stats_for_decks([]), do: %{}
 

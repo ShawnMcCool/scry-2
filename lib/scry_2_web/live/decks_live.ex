@@ -28,6 +28,7 @@ defmodule Scry2Web.DecksLive do
      assign(socket,
        decks: [],
        deck: nil,
+       deck_filter: :played,
        performance: nil,
        evolution: [],
        matches: [],
@@ -50,10 +51,11 @@ defmodule Scry2Web.DecksLive do
     end
   end
 
-  def handle_params(_params, _uri, socket) do
+  def handle_params(params, _uri, socket) do
     player_id = socket.assigns[:active_player_id]
-    decks = Decks.list_decks_with_stats(player_id)
-    {:noreply, assign(socket, decks: decks, deck: nil)}
+    deck_filter = parse_deck_filter(params["filter"])
+    decks = Decks.list_decks_with_stats(player_id, only_played: deck_filter == :played)
+    {:noreply, assign(socket, decks: decks, deck: nil, deck_filter: deck_filter)}
   end
 
   @impl true
@@ -73,7 +75,8 @@ defmodule Scry2Web.DecksLive do
     socket =
       case socket.assigns.deck do
         nil ->
-          decks = Decks.list_decks_with_stats(player_id)
+          deck_filter = socket.assigns.deck_filter
+          decks = Decks.list_decks_with_stats(player_id, only_played: deck_filter == :played)
           assign(socket, decks: decks, reload_timer: nil)
 
         deck ->
@@ -94,10 +97,30 @@ defmodule Scry2Web.DecksLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold mb-6">Decks</h1>
+      <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-semibold">Decks</h1>
+        <div class="flex items-center gap-1">
+          <.link
+            patch={~p"/decks?filter=played"}
+            class={["btn btn-sm", if(@deck_filter == :played, do: "btn-primary", else: "btn-ghost")]}
+          >
+            Played Decks
+          </.link>
+          <.link
+            patch={~p"/decks?filter=all"}
+            class={["btn btn-sm", if(@deck_filter == :all, do: "btn-primary", else: "btn-ghost")]}
+          >
+            All Decks
+          </.link>
+        </div>
+      </div>
 
-      <.empty_state :if={@decks == []}>
+      <.empty_state :if={@decks == [] and @deck_filter == :played}>
         No constructed decks recorded yet. Play a match to start tracking deck performance.
+      </.empty_state>
+
+      <.empty_state :if={@decks == [] and @deck_filter == :all}>
+        No decks found. Decks appear here after MTGA emits a DeckUpdated event.
       </.empty_state>
 
       <div :if={@decks != []} class="overflow-x-auto">
@@ -615,4 +638,7 @@ defmodule Scry2Web.DecksLive do
   defp parse_tab("matches"), do: :matches
   defp parse_tab("changes"), do: :changes
   defp parse_tab(_), do: :overview
+
+  defp parse_deck_filter("all"), do: :all
+  defp parse_deck_filter(_), do: :played
 end
