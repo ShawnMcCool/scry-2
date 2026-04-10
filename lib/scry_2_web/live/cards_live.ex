@@ -38,7 +38,7 @@ defmodule Scry2Web.CardsLive do
      |> assign(:filter_open, false)
      |> assign(:results, [])
      |> assign(:result_total, 0)
-     |> assign(:images_version, 0)
+     |> assign(:cached_arena_ids, MapSet.new())
      |> assign(:import_log, [])
      |> assign(:data_stats, Cards.data_source_stats())
      |> assign(:import_status, load_import_status())}
@@ -174,9 +174,12 @@ defmodule Scry2Web.CardsLive do
 
   @impl true
   def handle_async(:cache_images, {:ok, _stats}, socket) do
-    {:noreply, update(socket, :images_version, &(&1 + 1))}
+    arena_ids = socket.assigns.results |> Enum.map(& &1.arena_id) |> Enum.filter(& &1)
+    cached = arena_ids |> Enum.filter(&ImageCache.cached?/1) |> MapSet.new()
+    {:noreply, assign(socket, :cached_arena_ids, cached)}
   end
 
+  @impl true
   def handle_async(:cache_images, {:exit, _reason}, socket), do: {:noreply, socket}
 
   @impl true
@@ -266,12 +269,18 @@ defmodule Scry2Web.CardsLive do
           style="grid-template-columns: repeat(auto-fill, minmax(120px, 1fr))"
         >
           <div :for={card <- @results} class="flex flex-col gap-1">
-            <.card_image arena_id={card.arena_id || 0} name={card.name} class="w-full" />
+            <.card_image
+              arena_id={card.arena_id || 0}
+              name={card.name}
+              class="w-full"
+              cached={MapSet.member?(@cached_arena_ids, card.arena_id || 0)}
+            />
             <.card_name
               arena_id={card.arena_id || 0}
               name={card.name}
               id={"card-name-#{card.id}"}
               class="text-xs truncate"
+              cached={MapSet.member?(@cached_arena_ids, card.arena_id || 0)}
             />
             <.rarity_badge rarity={card.rarity} />
           </div>
@@ -619,15 +628,18 @@ defmodule Scry2Web.CardsLive do
       results = Cards.list_cards(filters)
 
       arena_ids = results |> Enum.map(& &1.arena_id) |> Enum.filter(& &1)
+      cached = arena_ids |> Enum.filter(&ImageCache.cached?/1) |> MapSet.new()
 
       socket
       |> assign(:results, results)
       |> assign(:result_total, total)
+      |> assign(:cached_arena_ids, cached)
       |> start_async(:cache_images, fn -> ImageCache.ensure_cached(arena_ids) end)
     else
       socket
       |> assign(:results, [])
       |> assign(:result_total, 0)
+      |> assign(:cached_arena_ids, MapSet.new())
     end
   end
 
