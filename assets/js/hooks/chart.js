@@ -18,30 +18,37 @@ const RANK_AXIS_TICKS = [
   [120, "Mythic"],
 ]
 
-function climbOption(series) {
-  return {
-    backgroundColor: "transparent",
-    grid: {left: 80, right: 20, top: 16, bottom: 40},
-    tooltip: {
-      trigger: "axis",
-      formatter(params) {
-        const [ts, score] = params[0].data
-        const date = new Date(ts).toLocaleString()
-        const label = rankLabel(score)
-        return `${date}<br/><b>${label}</b>`
-      },
-    },
-    xAxis: {
+function climbOption(climbSeries, resultsSeries, xMin, xMax) {
+  const hasResults = resultsSeries && resultsSeries.length > 0
+
+  const grids = hasResults
+    ? [
+        {left: 80, right: 20, top: 16, bottom: 100},
+        {left: 80, right: 20, top: 222, bottom: 36},
+      ]
+    : [{left: 80, right: 20, top: 16, bottom: 40}]
+
+  const xBounds = xMin && xMax ? {min: xMin, max: xMax} : {}
+
+  const xAxes = [
+    {
+      gridIndex: 0,
       type: "time",
-      axisLabel: {color: "#9ca3af", fontSize: 11},
+      ...xBounds,
+      axisLabel: hasResults ? {show: false} : {color: "#9ca3af", fontSize: 11},
       axisLine: {lineStyle: {color: "#374151"}},
       splitLine: {show: false},
     },
-    yAxis: {
+  ]
+
+  const yAxes = [
+    {
+      gridIndex: 0,
       type: "value",
       min: 0,
       max: 120,
       interval: 24,
+      minorTick: {show: true, splitNumber: 4},
       axisLabel: {
         color: "#9ca3af",
         fontSize: 11,
@@ -52,20 +59,90 @@ function climbOption(series) {
       },
       axisLine: {lineStyle: {color: "#374151"}},
       splitLine: {lineStyle: {color: "#1f2937"}},
+      minorSplitLine: {show: true, lineStyle: {color: "#111827"}},
     },
-    series: [
-      {
-        type: "line",
-        step: "end",
-        data: series,
-        smooth: false,
-        symbol: "circle",
-        symbolSize: 4,
-        lineStyle: {color: "#6366f1", width: 2},
-        itemStyle: {color: "#6366f1"},
-        areaStyle: {color: "rgba(99,102,241,0.08)"},
+  ]
+
+  const series = [
+    {
+      xAxisIndex: 0,
+      yAxisIndex: 0,
+      type: "line",
+      step: "end",
+      data: climbSeries,
+      smooth: false,
+      symbol: "circle",
+      symbolSize: 4,
+      lineStyle: {color: "#6366f1", width: 2},
+      itemStyle: {color: "#6366f1"},
+      areaStyle: {color: "rgba(99,102,241,0.08)"},
+    },
+  ]
+
+  if (hasResults) {
+    xAxes.push({
+      gridIndex: 1,
+      type: "time",
+      ...xBounds,
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    })
+    yAxes.push({
+      gridIndex: 1,
+      type: "value",
+      min: -1,
+      max: 1,
+      interval: 1,
+      axisLabel: {
+        color: "#9ca3af",
+        fontSize: 11,
+        formatter(value) {
+          if (value === 1) return "Win"
+          if (value === -1) return "Loss"
+          return ""
+        },
       },
-    ],
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    })
+    series.push({
+      xAxisIndex: 1,
+      yAxisIndex: 1,
+      type: "bar",
+      barMaxWidth: 8,
+      data: resultsSeries.map(([ts, value]) => ({
+        value: [ts, value],
+        itemStyle: {
+          color: value > 0 ? "#22c55e" : "#f97316",
+          borderRadius: value > 0 ? [3, 3, 0, 0] : [0, 0, 3, 3],
+        },
+      })),
+    })
+  }
+
+  return {
+    backgroundColor: "transparent",
+    axisPointer: hasResults ? {link: [{xAxisIndex: "all"}]} : {},
+    grid: grids,
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        if (!params.length) return ""
+        const ts = params[0].value[0]
+        const date = new Date(ts).toLocaleString()
+        const climbParam = params.find(p => p.yAxisIndex === 0)
+        const resultParam = params.find(p => p.yAxisIndex === 1)
+        const rank = climbParam ? rankLabel(climbParam.value[1]) : ""
+        const result = resultParam
+          ? `<br/>${resultParam.value[1] > 0 ? "<span style='color:#22c55e'>Win</span>" : "<span style='color:#f97316'>Loss</span>"}`
+          : ""
+        return `${date}<br/><b>${rank}</b>${result}`
+      },
+    },
+    xAxis: xAxes,
+    yAxis: yAxes,
+    series,
   }
 }
 
@@ -317,7 +394,8 @@ function buildOption(el) {
   const parsed = JSON.parse(el.dataset.series || "[]")
 
   if (type === "climb") {
-    return climbOption(parsed)
+    const results = JSON.parse(el.dataset.results || "[]")
+    return climbOption(parsed, results, el.dataset.xMin, el.dataset.xMax)
   } else if (type === "winrate") {
     return winrateOption(parsed)
   } else if (type === "curve") {
