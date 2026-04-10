@@ -331,25 +331,19 @@ defmodule Scry2Web.DecksLive do
 
   defp performance_section(assigns) do
     ~H"""
-    <div class="space-y-6">
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <.stats_panel title="Best-of-1" stats={@performance.bo1} format={:bo1} />
-        <.stats_panel title="Best-of-3" stats={@performance.bo3} format={:bo3} />
-      </div>
-
-      <div :if={length(@performance.win_rate_by_week) >= 2}>
-        <h3 class="text-sm font-medium text-base-content/60 uppercase tracking-wide mb-3">
-          Win Rate Over Time
-        </h3>
-        <div
-          id="deck-winrate-chart"
-          phx-hook="Chart"
-          data-chart-type="winrate"
-          data-series={DecksHelpers.winrate_series(@performance.win_rate_by_week)}
-          class="w-full rounded-lg bg-base-200"
-          style="height: 220px"
-        />
-      </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <.stats_panel
+        title="Best-of-1"
+        stats={@performance.bo1}
+        format={:bo1}
+        win_rate_by_week={@performance.win_rate_by_week}
+      />
+      <.stats_panel
+        title="Best-of-3"
+        stats={@performance.bo3}
+        format={:bo3}
+        win_rate_by_week={@performance.win_rate_by_week}
+      />
     </div>
     """
   end
@@ -385,6 +379,7 @@ defmodule Scry2Web.DecksLive do
   attr :title, :string, required: true
   attr :stats, :map, required: true
   attr :format, :atom, required: true
+  attr :win_rate_by_week, :list, default: []
 
   defp stats_panel(%{stats: %{total: 0}} = assigns) do
     ~H"""
@@ -396,6 +391,18 @@ defmodule Scry2Web.DecksLive do
   end
 
   defp stats_panel(assigns) do
+    format = assigns.format
+
+    has_chart =
+      Enum.count(assigns.win_rate_by_week, fn week ->
+        case format do
+          :bo1 -> not is_nil(week.bo1_win_rate)
+          :bo3 -> not is_nil(week.bo3_win_rate)
+        end
+      end) >= 2
+
+    assigns = assign(assigns, :has_chart, has_chart)
+
     ~H"""
     <div class="bg-base-200 rounded-xl p-5 space-y-3">
       <h3 class="text-sm font-medium text-base-content/50">{@title}</h3>
@@ -445,6 +452,21 @@ defmodule Scry2Web.DecksLive do
           }
         />
       </div>
+
+      <div
+        :if={@has_chart}
+        id={"deck-winrate-#{@format}"}
+        phx-hook="Chart"
+        data-chart-type="winrate"
+        data-series={
+          case @format do
+            :bo1 -> DecksHelpers.bo1_winrate_series(@win_rate_by_week)
+            :bo3 -> DecksHelpers.bo3_winrate_series(@win_rate_by_week)
+          end
+        }
+        class="w-full rounded-lg"
+        style="height: 120px"
+      />
     </div>
     """
   end
