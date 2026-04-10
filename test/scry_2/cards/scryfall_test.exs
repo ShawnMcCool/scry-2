@@ -228,7 +228,7 @@ defmodule Scry2.Cards.ScryfallTest do
 
       mountain = Cards.get_scryfall_by_arena_id(91_001)
       assert mountain.name == "Mountain"
-      assert mountain.set_code == "lci"
+      assert mountain.set_code == "LCI"
       assert mountain.type_line == "Basic Land — Mountain"
       assert mountain.rarity == "common"
       assert mountain.raw["id"] == "scryfallid-mountain-lci"
