@@ -11,7 +11,6 @@ defmodule Scry2Web.DashboardLive do
       Topics.subscribe(Topics.mtga_logs_status())
       Topics.subscribe(Topics.matches_updates())
       Topics.subscribe(Topics.drafts_updates())
-      Topics.subscribe(Topics.cards_updates())
     end
 
     {:ok,
@@ -29,26 +28,12 @@ defmodule Scry2Web.DashboardLive do
      |> assign(:unrecognized, %{})
      |> assign(:deferred_with_payloads, %{})
      |> assign(:errors, [])
-     |> assign(:refresh_result, nil)
      |> assign(:reload_timer, nil)}
   end
 
   @impl true
   def handle_params(_params, _uri, socket) do
     {:noreply, load_data(socket)}
-  end
-
-  @impl true
-  def handle_event("refresh_cards", _params, socket) do
-    {:ok, _job} =
-      %{}
-      |> Scry2.Workers.PeriodicallyUpdateCards.new()
-      |> Oban.insert()
-
-    {:noreply,
-     socket
-     |> put_flash(:info, "Refresh enqueued — reload after a moment.")
-     |> assign(:refresh_result, :enqueued)}
   end
 
   @impl true
@@ -62,13 +47,6 @@ defmodule Scry2Web.DashboardLive do
 
   def handle_info({:draft_updated, _}, socket) do
     {:noreply, schedule_reload(socket)}
-  end
-
-  def handle_info({:cards_refreshed, count}, socket) do
-    {:noreply,
-     socket
-     |> put_flash(:info, "Imported #{count} cards.")
-     |> schedule_reload()}
   end
 
   def handle_info(:reload_data, socket) do
@@ -131,12 +109,7 @@ defmodule Scry2Web.DashboardLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-semibold">Dashboard</h1>
-        <button class="btn btn-soft btn-primary btn-sm" phx-click="refresh_cards">
-          <.icon name="hero-arrow-path" class="size-4" /> Refresh cards from 17lands
-        </button>
-      </div>
+      <h1 class="text-2xl font-semibold">Dashboard</h1>
 
       <div :if={Helpers.show_detailed_logs_warning?(@watcher)} class="alert alert-warning">
         <.icon name="hero-exclamation-triangle" class="size-5" />

@@ -47,25 +47,127 @@ defmodule Scry2.Cards do
   end
 
   @doc """
-  Lists cards with optional filters.
+  Lists cards with optional filters. Results are deduplicated by name —
+  one row per unique card name (the earliest-imported representative is kept).
+  When `:name_like` is set, results are ordered by match quality: exact match
+  first, starts-with second, contains-anywhere third, then alphabetically
+  within each tier.
 
   Supported filters:
-    * `:set_code` — filter by set code
-    * `:rarity`   — filter by rarity string
-    * `:name_like` — ILIKE-style substring match on name
-    * `:limit`    — cap result count (default 100)
-    * `:order_by` — `:name` (default) or `:arena_id`
+    * `:set_code`    — filter by set code
+    * `:rarity`      — rarity string or list of rarity strings
+    * `:name_like`   — substring match on name
+    * `:colors`      — `MapSet` of color codes (`"W"`, `"U"`, `"B"`, `"R"`, `"G"`, `"M"`, `"C"`);
+                       OR semantics. `"M"` = multicolor. `"C"` = colorless.
+    * `:types`       — `MapSet` of type atoms (`:creature`, `:instant`, `:sorcery`,
+                       `:enchantment`, `:artifact`, `:planeswalker`, `:land`, `:battle`);
+                       OR semantics within, AND with other filters.
+    * `:mana_values` — `MapSet` of integers (0–6) and/or `:seven_plus`
+    * `:limit`       — cap result count (default 100)
   """
   def list_cards(filters \\ %{}) do
     filters = Map.new(filters)
+    term = filters[:name_like]
+
+    Card
+    |> filter_by_set(filters[:set_code])
+    |> filter_by_rarity(filters[:rarity])
+    |> filter_by_name(term)
+    |> filter_by_colors(filters[:colors])
+    |> filter_by_types(filters[:types])
+    |> filter_by_mana_values(filters[:mana_values])
+    |> deduplicate_by_name()
+    |> order_by_relevance(term)
+    |> limit(^Map.get(filters, :limit, 100))
+    |> Repo.all()
+  end
+
+  @doc """
+  Counts unique card names matching filters (same keys as `list_cards/1`, ignores `:limit`).
+  """
+  def count_cards(filters \\ %{}) do
+    filters = Map.new(filters) |> Map.drop([:limit, :order_by])
 
     Card
     |> filter_by_set(filters[:set_code])
     |> filter_by_rarity(filters[:rarity])
     |> filter_by_name(filters[:name_like])
-    |> order_by_field(Map.get(filters, :order_by, :name))
-    |> limit(^Map.get(filters, :limit, 100))
-    |> Repo.all()
+    |> filter_by_colors(filters[:colors])
+    |> filter_by_types(filters[:types])
+    |> filter_by_mana_values(filters[:mana_values])
+    |> deduplicate_by_name()
+    |> Repo.aggregate(:count)
+  end
+
+  @doc """
+  Returns storage stats for card data sources.
+
+  Keys: `:lands17_count`, `:lands17_bytes`, `:scryfall_count`, `:scryfall_bytes`,
+        `:db_bytes`, `:image_count`, `:image_bytes`.
+  """
+  def data_source_stats do
+    image_cache_dir = Scry2.Config.get(:image_cache_dir)
+    {image_count, image_bytes} = image_cache_stats(image_cache_dir)
+
+    %{
+      lands17_count: Repo.aggregate(Card, :count),
+      scryfall_count: Repo.aggregate(ScryfallCard, :count),
+      lands17_bytes: table_size_bytes("cards_cards"),
+      scryfall_bytes: table_size_bytes("cards_scryfall_cards"),
+      db_bytes: db_file_size(),
+      image_count: image_count,
+      image_bytes: image_bytes
+    }
+  end
+
+  @doc """
+  Returns the last `updated_at` for each card data source.
+
+  Keys: `:lands17_updated_at`, `:scryfall_updated_at` (both may be nil).
+  """
+  def import_timestamps do
+    %{
+      lands17_updated_at: from(c in Card, select: max(c.updated_at)) |> Repo.one(),
+      scryfall_updated_at: from(c in ScryfallCard, select: max(c.updated_at)) |> Repo.one()
+    }
+  end
+
+  defp image_cache_stats(nil), do: {0, 0}
+
+  defp image_cache_stats(dir) do
+    case File.ls(dir) do
+      {:ok, files} ->
+        {count, total_bytes} =
+          Enum.reduce(files, {0, 0}, fn file, {count, bytes} ->
+            path = Path.join(dir, file)
+
+            case File.stat(path) do
+              {:ok, %File.Stat{type: :regular, size: size}} -> {count + 1, bytes + size}
+              _ -> {count, bytes}
+            end
+          end)
+
+        {count, total_bytes}
+
+      {:error, _} ->
+        {0, 0}
+    end
+  end
+
+  defp table_size_bytes(table_name) do
+    result =
+      Repo.query!("SELECT COALESCE(SUM(pgsize), 0) FROM dbstat WHERE name = ?", [table_name])
+
+    result.rows |> List.first() |> List.first() |> Kernel.||(0)
+  end
+
+  defp db_file_size do
+    db_path = Scry2.Config.get(:database_path)
+
+    case db_path && File.stat(db_path) do
+      {:ok, %File.Stat{size: size}} -> size
+      _ -> 0
+    end
   end
 
   defp filter_by_set(query, nil), do: query
@@ -77,17 +179,116 @@ defmodule Scry2.Cards do
   end
 
   defp filter_by_rarity(query, nil), do: query
-  defp filter_by_rarity(query, rarity), do: where(query, [c], c.rarity == ^rarity)
+  defp filter_by_rarity(query, []), do: query
+
+  defp filter_by_rarity(query, rarities) when is_list(rarities) do
+    where(query, [c], c.rarity in ^rarities)
+  end
+
+  defp filter_by_rarity(query, rarity) when is_binary(rarity) do
+    where(query, [c], c.rarity == ^rarity)
+  end
 
   defp filter_by_name(query, nil), do: query
+  defp filter_by_name(query, ""), do: query
 
   defp filter_by_name(query, term) when is_binary(term) do
     pattern = "%#{term}%"
     where(query, [c], like(c.name, ^pattern))
   end
 
-  defp order_by_field(query, :arena_id), do: order_by(query, [c], asc: c.arena_id)
-  defp order_by_field(query, _), do: order_by(query, [c], asc: c.name)
+  # Colors: OR semantics. "M" = multicolor, "C" = colorless, others match color_identity substring.
+  defp filter_by_colors(query, nil), do: query
+  defp filter_by_colors(query, %MapSet{map: m}) when map_size(m) == 0, do: query
+
+  defp filter_by_colors(query, colors) do
+    dynamic_clause =
+      Enum.reduce(MapSet.to_list(colors), false, fn color, acc ->
+        dynamic([c], ^acc or ^color_condition(color))
+      end)
+
+    where(query, [c], ^dynamic_clause)
+  end
+
+  defp color_condition("C"), do: dynamic([c], c.color_identity == "")
+  defp color_condition("M"), do: dynamic([c], fragment("length(?)", c.color_identity) > 1)
+
+  defp color_condition(color) when color in ["W", "U", "B", "R", "G"] do
+    pattern = "%#{color}%"
+    dynamic([c], like(c.color_identity, ^pattern))
+  end
+
+  # Types: OR within, AND with all other filters. Uses indexed boolean columns.
+  defp filter_by_types(query, nil), do: query
+  defp filter_by_types(query, %MapSet{map: m}) when map_size(m) == 0, do: query
+
+  defp filter_by_types(query, types) do
+    dynamic_clause =
+      Enum.reduce(MapSet.to_list(types), false, fn type_atom, acc ->
+        dynamic([c], ^acc or ^type_condition(type_atom))
+      end)
+
+    where(query, [c], ^dynamic_clause)
+  end
+
+  defp type_condition(:creature), do: dynamic([c], c.is_creature == true)
+  defp type_condition(:instant), do: dynamic([c], c.is_instant == true)
+  defp type_condition(:sorcery), do: dynamic([c], c.is_sorcery == true)
+  defp type_condition(:enchantment), do: dynamic([c], c.is_enchantment == true)
+  defp type_condition(:artifact), do: dynamic([c], c.is_artifact == true)
+  defp type_condition(:planeswalker), do: dynamic([c], c.is_planeswalker == true)
+  defp type_condition(:land), do: dynamic([c], c.is_land == true)
+  defp type_condition(:battle), do: dynamic([c], c.is_battle == true)
+
+  # Mana values: OR semantics. :seven_plus matches mana_value >= 7.
+  defp filter_by_mana_values(query, nil), do: query
+  defp filter_by_mana_values(query, %MapSet{map: m}) when map_size(m) == 0, do: query
+
+  defp filter_by_mana_values(query, values) do
+    value_list = MapSet.to_list(values)
+    exact_values = Enum.filter(value_list, &is_integer/1)
+    include_seven_plus = :seven_plus in value_list
+
+    cond do
+      exact_values != [] and include_seven_plus ->
+        where(query, [c], c.mana_value in ^exact_values or c.mana_value >= 7)
+
+      exact_values != [] ->
+        where(query, [c], c.mana_value in ^exact_values)
+
+      include_seven_plus ->
+        where(query, [c], c.mana_value >= 7)
+
+      true ->
+        query
+    end
+  end
+
+  # Returns one row per unique card name, keeping the earliest-imported (MIN id)
+  # representative from the already-filtered set.
+  defp deduplicate_by_name(query) do
+    ids_query = from q in subquery(query), group_by: q.name, select: min(q.id)
+    where(query, [c], c.id in subquery(ids_query))
+  end
+
+  # When a name search is active: exact match (0) → starts-with (1) → contains (2),
+  # then alphabetical within each tier. Falls back to alphabetical with no term.
+  defp order_by_relevance(query, nil) do
+    order_by(query, [c], asc: c.name)
+  end
+
+  defp order_by_relevance(query, term) do
+    order_by(query, [c], [
+      fragment(
+        "CASE WHEN lower(?) = lower(?) THEN 0 WHEN lower(?) LIKE lower(?) || '%' THEN 1 ELSE 2 END",
+        c.name,
+        ^term,
+        c.name,
+        ^term
+      ),
+      asc: c.name
+    ])
+  end
 
   @doc """
   Sets `arena_id` on a card that doesn't have one yet.

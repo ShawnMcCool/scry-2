@@ -13,6 +13,14 @@ defmodule Scry2.Cards.Card do
     field :mana_value, :integer
     field :types, :string
     field :is_booster, :boolean, default: true
+    field :is_creature, :boolean, default: false
+    field :is_instant, :boolean, default: false
+    field :is_sorcery, :boolean, default: false
+    field :is_enchantment, :boolean, default: false
+    field :is_artifact, :boolean, default: false
+    field :is_planeswalker, :boolean, default: false
+    field :is_land, :boolean, default: false
+    field :is_battle, :boolean, default: false
     field :raw, :map
 
     belongs_to :set, Scry2.Cards.Set
@@ -48,6 +56,14 @@ defmodule Scry2.Cards.Card do
       :mana_value,
       :types,
       :is_booster,
+      :is_creature,
+      :is_instant,
+      :is_sorcery,
+      :is_enchantment,
+      :is_artifact,
+      :is_planeswalker,
+      :is_land,
+      :is_battle,
       :raw,
       :set_id
     ])

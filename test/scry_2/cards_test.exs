@@ -225,9 +225,210 @@ defmodule Scry2.CardsTest do
       assert Enum.all?(mythics, &(&1.rarity == "mythic"))
     end
 
+    test "filters by rarity list" do
+      results = Cards.list_cards(%{rarity: ["common", "mythic"]})
+      rarities = Enum.map(results, & &1.rarity) |> Enum.uniq() |> Enum.sort()
+      assert "common" in rarities
+      assert "mythic" in rarities
+      refute "rare" in rarities
+    end
+
     test "filters by name substring" do
       results = Cards.list_cards(%{name_like: "ardv"})
       assert Enum.any?(results, &(&1.name == "Aardvark"))
+    end
+  end
+
+  describe "list_cards/1 — color filters" do
+    setup do
+      TestFactory.create_card(%{
+        lands17_id: 9500,
+        name: "Red Card",
+        color_identity: "R"
+      })
+
+      TestFactory.create_card(%{
+        lands17_id: 9501,
+        name: "Blue Card",
+        color_identity: "U"
+      })
+
+      TestFactory.create_card(%{
+        lands17_id: 9502,
+        name: "Izzet Card",
+        color_identity: "UR"
+      })
+
+      TestFactory.create_card(%{
+        lands17_id: 9503,
+        name: "Colorless Card",
+        color_identity: ""
+      })
+
+      :ok
+    end
+
+    test "single color filter returns matching cards" do
+      results = Cards.list_cards(%{colors: MapSet.new(["R"])})
+      names = Enum.map(results, & &1.name)
+      assert "Red Card" in names
+      assert "Izzet Card" in names
+      refute "Blue Card" in names
+    end
+
+    test "two color filters use OR semantics (union)" do
+      results = Cards.list_cards(%{colors: MapSet.new(["R", "U"])})
+      names = Enum.map(results, & &1.name)
+      assert "Red Card" in names
+      assert "Blue Card" in names
+      assert "Izzet Card" in names
+    end
+
+    test "M filter returns only multicolor cards" do
+      results = Cards.list_cards(%{colors: MapSet.new(["M"])})
+      names = Enum.map(results, & &1.name)
+      assert "Izzet Card" in names
+      refute "Red Card" in names
+      refute "Colorless Card" in names
+    end
+
+    test "C filter returns only colorless cards" do
+      results = Cards.list_cards(%{colors: MapSet.new(["C"])})
+      names = Enum.map(results, & &1.name)
+      assert "Colorless Card" in names
+      refute "Red Card" in names
+    end
+
+    test "empty color filter returns all cards" do
+      results = Cards.list_cards(%{colors: MapSet.new()})
+      assert length(results) >= 4
+    end
+  end
+
+  describe "list_cards/1 — type filters" do
+    setup do
+      TestFactory.create_card(%{
+        lands17_id: 9600,
+        name: "Lightning Bolt",
+        types: "Instant",
+        is_instant: true
+      })
+
+      TestFactory.create_card(%{
+        lands17_id: 9601,
+        name: "Llanowar Elves",
+        types: "Creature Elf Druid",
+        is_creature: true
+      })
+
+      TestFactory.create_card(%{
+        lands17_id: 9602,
+        name: "Forest",
+        types: "Basic Land Forest",
+        is_land: true
+      })
+
+      TestFactory.create_card(%{
+        lands17_id: 9603,
+        name: "Thoughtseize",
+        types: "Sorcery",
+        is_sorcery: true
+      })
+
+      :ok
+    end
+
+    test "single type filter returns only matching cards" do
+      results = Cards.list_cards(%{types: MapSet.new([:instant])})
+      names = Enum.map(results, & &1.name)
+      assert "Lightning Bolt" in names
+      refute "Llanowar Elves" in names
+      refute "Forest" in names
+    end
+
+    test "multiple type filters use OR semantics" do
+      results = Cards.list_cards(%{types: MapSet.new([:instant, :creature])})
+      names = Enum.map(results, & &1.name)
+      assert "Lightning Bolt" in names
+      assert "Llanowar Elves" in names
+      refute "Forest" in names
+    end
+
+    test "land type filter" do
+      results = Cards.list_cards(%{types: MapSet.new([:land])})
+      names = Enum.map(results, & &1.name)
+      assert "Forest" in names
+      refute "Lightning Bolt" in names
+    end
+
+    test "empty type filter returns all cards" do
+      results = Cards.list_cards(%{types: MapSet.new()})
+      assert length(results) >= 4
+    end
+  end
+
+  describe "list_cards/1 — mana value filters" do
+    setup do
+      TestFactory.create_card(%{lands17_id: 9700, name: "Free Spell", mana_value: 0})
+      TestFactory.create_card(%{lands17_id: 9701, name: "One Drop", mana_value: 1})
+      TestFactory.create_card(%{lands17_id: 9702, name: "Three Drop", mana_value: 3})
+      TestFactory.create_card(%{lands17_id: 9703, name: "Big Spell", mana_value: 10})
+      :ok
+    end
+
+    test "exact mana value filter" do
+      results = Cards.list_cards(%{mana_values: MapSet.new([3])})
+      names = Enum.map(results, & &1.name)
+      assert "Three Drop" in names
+      refute "One Drop" in names
+    end
+
+    test "multiple mana values use OR semantics" do
+      results = Cards.list_cards(%{mana_values: MapSet.new([0, 1])})
+      names = Enum.map(results, & &1.name)
+      assert "Free Spell" in names
+      assert "One Drop" in names
+      refute "Three Drop" in names
+    end
+
+    test ":seven_plus matches mana_value >= 7" do
+      results = Cards.list_cards(%{mana_values: MapSet.new([:seven_plus])})
+      names = Enum.map(results, & &1.name)
+      assert "Big Spell" in names
+      refute "Three Drop" in names
+    end
+
+    test ":seven_plus combined with exact values" do
+      results = Cards.list_cards(%{mana_values: MapSet.new([1, :seven_plus])})
+      names = Enum.map(results, & &1.name)
+      assert "One Drop" in names
+      assert "Big Spell" in names
+      refute "Free Spell" in names
+    end
+  end
+
+  describe "count_cards/1" do
+    test "counts cards matching filters" do
+      TestFactory.create_card(%{
+        lands17_id: 9800,
+        name: "Count Me",
+        rarity: "rare",
+        is_creature: true
+      })
+
+      TestFactory.create_card(%{
+        lands17_id: 9801,
+        name: "Skip Me",
+        rarity: "common",
+        is_creature: false
+      })
+
+      count = Cards.count_cards(%{rarity: "rare"})
+      assert count >= 1
+    end
+
+    test "ignores :limit and :order_by keys" do
+      assert is_integer(Cards.count_cards(%{limit: 1, order_by: :name}))
     end
   end
 
