@@ -283,32 +283,34 @@ defmodule Scry2Web.DecksLive do
             </div>
           </div>
 
-          <%!-- Right: card images stacked by CMC column --%>
-          <div class="flex gap-3 items-start overflow-x-auto flex-1 pb-4">
-            <div :for={{cmc_label, cards} <- @cmc_columns} class="flex flex-col items-center">
-              <p class="text-xs text-base-content/30 mb-1">{cmc_label}</p>
-              <div class="flex flex-col">
-                <div
-                  :for={{card, index} <- Enum.with_index(cards)}
-                  class={["relative", if(index > 0, do: "-mt-[7rem]")]}
-                >
-                  <.card_image
-                    id={"card-grid-#{card.arena_id}"}
-                    arena_id={card.arena_id}
-                    name={card.name}
-                    class="w-28"
-                  />
-                  <span class="absolute top-1 right-1 rounded bg-black/70 px-1 text-xs font-bold text-white">
-                    {card.count}/4
-                  </span>
+          <%!-- Right: card images + sideboard below --%>
+          <div class="flex flex-col flex-1 min-w-0">
+            <div class="flex gap-3 items-start overflow-x-auto pb-4">
+              <div :for={{cmc_label, cards} <- @cmc_columns} class="flex flex-col items-center">
+                <p class="text-xs text-base-content/30 mb-1">{cmc_label}</p>
+                <div class="flex flex-col">
+                  <div
+                    :for={{card, index} <- Enum.with_index(cards)}
+                    class={["relative", if(index > 0, do: "-mt-[7rem]")]}
+                  >
+                    <.card_image
+                      id={"card-grid-#{card.arena_id}"}
+                      arena_id={card.arena_id}
+                      name={card.name}
+                      class="w-28"
+                    />
+                    <span class="absolute top-1 right-1 rounded bg-black/70 px-1 text-xs font-bold text-white">
+                      {card.count}/4
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
+
+            <%!-- Sideboard: horizontal splay below main deck cards --%>
+            <.sideboard_splay :if={@sideboard != []} cards={@sideboard} />
           </div>
         </div>
-
-        <%!-- Sideboard: horizontal splay below main deck cards --%>
-        <.sideboard_splay :if={@sideboard != []} cards={@sideboard} />
       </div>
 
       <.empty_state :if={@card_groups == []}>
@@ -358,22 +360,19 @@ defmodule Scry2Web.DecksLive do
     assigns = assign(assigns, total: total)
 
     ~H"""
-    <div class="mt-8">
+    <div id="sideboard-splay" phx-hook="SideboardSplay" class="mt-8">
       <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-3">
         Sideboard ({@total})
       </h3>
-      <div class="flex items-start overflow-x-auto pb-4">
-        <div
-          :for={{card, index} <- Enum.with_index(@cards)}
-          class={["relative", if(index > 0, do: "-ml-[3.5rem]")]}
-        >
+      <div data-splay-container class="flex items-end pb-4">
+        <div :for={card <- @cards} class="relative flex-shrink-0">
           <.card_image
             id={"sideboard-#{card.arena_id}"}
             arena_id={card.arena_id}
             name={card.name}
             class="w-28"
           />
-          <span class="absolute top-1 right-1 rounded bg-black/70 px-1 text-xs font-bold text-white">
+          <span class="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-xs font-bold text-white">
             {card.count}
           </span>
         </div>
