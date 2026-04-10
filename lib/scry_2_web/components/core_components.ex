@@ -555,17 +555,105 @@ defmodule Scry2Web.CoreComponents do
   end
 
   @doc """
-  Returns a CSS text color class for an MTG mana color symbol.
+  Renders any symbol from the Mana icon font by its exact suffix code.
 
-  These are the canonical MTG color styles for the app — use them
-  wherever a mana color label appears (mulligan stats, deck breakdowns,
-  card filters, etc.).
+  Use the full catalog at https://mana.andrewgioia.com/icons.html to find the
+  right suffix. The `ms-{symbol}` class is applied directly — no enumeration,
+  no mapping. See UIDR-006 for the usage policy and full symbol taxonomy.
+
+  ## Attributes
+
+  - `:symbol` — required. The suffix code, e.g. `"u"`, `"tap"`, `"ability-flying"`,
+    `"guild-izzet"`, `"counter-plus"`, `"artifact"`.
+  - `:cost` — boolean, default `false`. Adds `ms-cost` for the round pip style.
+    Use for mana color pips; omit for ability symbols, card types, tap, etc.
+  - `:size` — optional. `"2x"` | `"3x"` | `"4x"` | `"5x"` | `"6x"`.
+  - `:class` — optional extra CSS classes.
+  - `:label` — optional aria-label override. Defaults to the symbol code.
 
   ## Examples
 
-      <span class={mana_color_class("G")}>G</span>
-      <span class={mana_color_class("U")}>U×3</span>
+      <.mana_symbol symbol="u" cost />
+      <.mana_symbol symbol="tap" />
+      <.mana_symbol symbol="ability-flying" size="2x" />
+      <.mana_symbol symbol="guild-izzet" />
+      <.mana_symbol symbol="artifact" />
+      <.mana_symbol symbol="counter-plus" />
   """
+  attr :symbol, :string, required: true
+  attr :cost, :boolean, default: false
+  attr :size, :string, default: nil
+  attr :class, :string, default: nil
+  attr :label, :string, default: nil
+
+  def mana_symbol(assigns) do
+    ~H"""
+    <i
+      class={["ms", "ms-#{@symbol}", @cost && "ms-cost", @size && "ms-#{@size}", @class]}
+      role="img"
+      aria-label={@label || @symbol}
+    />
+    """
+  end
+
+  @doc """
+  Renders a single MTG mana color pip using the Mana icon font.
+
+  Colorless ("C") renders the `ms-c` glyph. Empty string or nil renders nothing.
+
+  ## Examples
+
+      <.mana_pip color="U" />
+      <.mana_pip color="W" size="2x" />
+  """
+  attr :color, :string, required: true
+  attr :size, :string, default: nil
+
+  def mana_pip(%{color: color} = assigns) when color in [nil, ""], do: ~H""
+
+  def mana_pip(assigns) do
+    assigns =
+      assigns
+      |> assign(:symbol, String.downcase(assigns.color))
+      |> assign(:label, mana_color_label(assigns.color))
+
+    ~H"""
+    <.mana_symbol symbol={@symbol} cost size={@size} label={@label} />
+    """
+  end
+
+  @doc """
+  Renders MTG mana color pips from a color string like "GRW".
+
+  An empty or nil string means colorless — renders a single `ms-c` pip.
+
+  ## Examples
+
+      <.mana_pips colors="GRW" />
+      <.mana_pips colors="" />
+      <.mana_pips colors="UB" size="2x" />
+  """
+  attr :colors, :string, required: true
+  attr :size, :string, default: nil
+
+  def mana_pips(assigns) do
+    pips =
+      case assigns.colors do
+        nil -> ["C"]
+        "" -> ["C"]
+        colors -> String.graphemes(colors)
+      end
+
+    assigns = assign(assigns, :pips, pips)
+
+    ~H"""
+    <span class="inline-flex gap-0.5 items-center">
+      <.mana_pip :for={color <- @pips} color={color} size={@size} />
+    </span>
+    """
+  end
+
+  @doc false
   def mana_color_class("W"), do: "text-amber-100"
   def mana_color_class("U"), do: "text-sky-400"
   def mana_color_class("B"), do: "text-violet-400"
@@ -573,24 +661,13 @@ defmodule Scry2Web.CoreComponents do
   def mana_color_class("G"), do: "text-emerald-400"
   def mana_color_class(_), do: "text-base-content/40"
 
-  @doc """
-  Renders MTG mana color pips from a color string like "GRW".
-
-  ## Examples
-
-      <.mana_pips colors="GRW" />
-      <.mana_pips colors="" />
-  """
-  attr :colors, :string, required: true
-
-  def mana_pips(assigns) do
-    assigns =
-      assign(assigns, :pips, assigns.colors |> String.graphemes() |> Enum.reject(&(&1 == "")))
-
-    ~H"""
-    <span :for={pip <- @pips} class={["font-bold", mana_color_class(pip)]}>{pip}</span>
-    """
-  end
+  defp mana_color_label("W"), do: "White mana"
+  defp mana_color_label("U"), do: "Blue mana"
+  defp mana_color_label("B"), do: "Black mana"
+  defp mana_color_label("R"), do: "Red mana"
+  defp mana_color_label("G"), do: "Green mana"
+  defp mana_color_label("C"), do: "Colorless mana"
+  defp mana_color_label(other), do: "#{other} mana"
 
   @doc """
   Formats an MTGA event name into a readable label.

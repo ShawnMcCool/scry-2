@@ -166,6 +166,7 @@ defmodule Scry2Web.DecksLive do
             <.mana_pips
               :if={DecksHelpers.deck_colors(@deck) != ""}
               colors={DecksHelpers.deck_colors(@deck)}
+              size="2x"
             />
             <span :if={@deck.format}>{@deck.format}</span>
             <span :if={@deck.first_seen_at}>
