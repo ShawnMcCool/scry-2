@@ -15,6 +15,7 @@ defmodule Scry2Web.CardsLive do
   import Ecto.Query, only: [from: 2]
 
   alias Scry2.{Cards, Console, Repo, Topics}
+  alias Scry2.Cards.ImageCache
   alias Scry2.Workers.{PeriodicallyBackfillArenaIds, PeriodicallyUpdateCards}
   alias Scry2Web.CardsHelpers, as: Helpers
 
@@ -37,29 +38,37 @@ defmodule Scry2Web.CardsLive do
      |> assign(:filter_open, false)
      |> assign(:results, [])
      |> assign(:result_total, 0)
+     |> assign(:images_version, 0)
      |> assign(:import_log, [])
      |> assign(:data_stats, Cards.data_source_stats())
      |> assign(:import_status, load_import_status())}
   end
 
   @impl true
-  def handle_params(_params, _uri, socket) do
-    {:noreply, socket}
+  def handle_params(params, _uri, socket) do
+    {:noreply,
+     socket
+     |> assign(:search, Helpers.decode_search(params))
+     |> assign(:colors, Helpers.decode_colors(params))
+     |> assign(:rarities, Helpers.decode_rarities(params))
+     |> assign(:mana_values, Helpers.decode_mana_values(params))
+     |> assign(:types, Helpers.decode_types(params))
+     |> run_search()}
   end
 
   @impl true
   def handle_event("search", %{"search" => search}, socket) do
-    {:noreply, socket |> assign(:search, search) |> run_search()}
+    {:noreply, socket |> assign(:search, search) |> push_filter_patch()}
   end
 
   @impl true
   def handle_event("clear_search", _params, socket) do
-    {:noreply, socket |> assign(:search, "") |> run_search()}
+    {:noreply, socket |> assign(:search, "") |> push_filter_patch()}
   end
 
   @impl true
   def handle_event("toggle_color", %{"color" => color}, socket) do
-    {:noreply, socket |> update(:colors, &toggle_set(&1, color)) |> run_search()}
+    {:noreply, socket |> update(:colors, &toggle_set(&1, color)) |> push_filter_patch()}
   end
 
   @impl true
@@ -74,19 +83,19 @@ defmodule Scry2Web.CardsLive do
 
   @impl true
   def handle_event("toggle_rarity", %{"rarity" => rarity}, socket) do
-    {:noreply, socket |> update(:rarities, &toggle_set(&1, rarity)) |> run_search()}
+    {:noreply, socket |> update(:rarities, &toggle_set(&1, rarity)) |> push_filter_patch()}
   end
 
   @impl true
   def handle_event("toggle_mana_value", %{"value" => value}, socket) do
     parsed = Helpers.parse_mana_value(value)
-    {:noreply, socket |> update(:mana_values, &toggle_set(&1, parsed)) |> run_search()}
+    {:noreply, socket |> update(:mana_values, &toggle_set(&1, parsed)) |> push_filter_patch()}
   end
 
   @impl true
   def handle_event("toggle_type", %{"type" => type}, socket) do
     type_atom = String.to_existing_atom(type)
-    {:noreply, socket |> update(:types, &toggle_set(&1, type_atom)) |> run_search()}
+    {:noreply, socket |> update(:types, &toggle_set(&1, type_atom)) |> push_filter_patch()}
   end
 
   @impl true
@@ -97,7 +106,7 @@ defmodule Scry2Web.CardsLive do
      |> assign(:rarities, MapSet.new())
      |> assign(:mana_values, MapSet.new())
      |> assign(:types, MapSet.new())
-     |> run_search()}
+     |> push_filter_patch()}
   end
 
   @impl true
@@ -162,6 +171,13 @@ defmodule Scry2Web.CardsLive do
 
   @impl true
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_async(:cache_images, {:ok, _stats}, socket) do
+    {:noreply, update(socket, :images_version, &(&1 + 1))}
+  end
+
+  def handle_async(:cache_images, {:exit, _reason}, socket), do: {:noreply, socket}
 
   @impl true
   def render(assigns) do
@@ -251,14 +267,12 @@ defmodule Scry2Web.CardsLive do
         >
           <div :for={card <- @results} class="flex flex-col gap-1">
             <.card_image arena_id={card.arena_id || 0} name={card.name} class="w-full" />
-            <span
-              class="text-xs truncate"
-              phx-hook="CardHover"
+            <.card_name
+              arena_id={card.arena_id || 0}
+              name={card.name}
               id={"card-name-#{card.id}"}
-              data-arena-id={card.arena_id}
-            >
-              {card.name}
-            </span>
+              class="text-xs truncate"
+            />
             <.rarity_badge rarity={card.rarity} />
           </div>
         </div>
@@ -574,6 +588,14 @@ defmodule Scry2Web.CardsLive do
 
   # ── Private helpers ─────────────────────────────────────────────────────
 
+  defp push_filter_patch(socket) do
+    %{search: search, colors: colors, rarities: rarities, mana_values: mana_values, types: types} =
+      socket.assigns
+
+    params = Helpers.params_from_filters(search, colors, rarities, mana_values, types)
+    push_patch(socket, to: ~p"/cards?#{params}")
+  end
+
   defp run_search(socket) do
     %{
       search: search,
@@ -596,9 +618,12 @@ defmodule Scry2Web.CardsLive do
       total = Cards.count_cards(filters)
       results = Cards.list_cards(filters)
 
+      arena_ids = results |> Enum.map(& &1.arena_id) |> Enum.filter(& &1)
+
       socket
       |> assign(:results, results)
       |> assign(:result_total, total)
+      |> start_async(:cache_images, fn -> ImageCache.ensure_cached(arena_ids) end)
     else
       socket
       |> assign(:results, [])

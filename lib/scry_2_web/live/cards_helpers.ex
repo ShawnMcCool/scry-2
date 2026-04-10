@@ -83,4 +83,104 @@ defmodule Scry2Web.CardsHelpers do
   @spec oban_status_class(boolean()) :: String.t()
   def oban_status_class(true), do: "bg-warning"
   def oban_status_class(false), do: "bg-success"
+
+  # ── URL param encoding / decoding ────────────────────────────────────────
+
+  @doc """
+  Builds a URI params map from the current filter state.
+
+  Only includes keys with non-default values so the URL stays clean.
+  Param keys:
+    * `q`      — search text
+    * `colors` — comma-separated mana color codes (W,U,B,R,G,M,C)
+    * `r`      — comma-separated rarities
+    * `mv`     — comma-separated mana values (0–6 or 7+ for seven_plus)
+    * `t`      — comma-separated card types
+  """
+  @spec params_from_filters(String.t(), MapSet.t(), MapSet.t(), MapSet.t(), MapSet.t()) :: map()
+  def params_from_filters(search, colors, rarities, mana_values, types) do
+    %{}
+    |> put_unless_empty("q", search)
+    |> put_unless_empty("colors", encode_set(colors))
+    |> put_unless_empty("r", encode_set(rarities))
+    |> put_unless_empty("mv", encode_mana_values(mana_values))
+    |> put_unless_empty("t", encode_set_atoms(types))
+  end
+
+  @doc "Decodes the `q` search param, defaulting to empty string."
+  @spec decode_search(map()) :: String.t()
+  def decode_search(params), do: Map.get(params, "q", "")
+
+  @doc "Decodes the `colors` param into a MapSet of color code strings."
+  @spec decode_colors(map()) :: MapSet.t()
+  def decode_colors(params) do
+    valid = ~w(W U B R G M C)
+
+    params
+    |> Map.get("colors", "")
+    |> split_param()
+    |> Enum.filter(&(&1 in valid))
+    |> MapSet.new()
+  end
+
+  @doc "Decodes the `r` param into a MapSet of rarity strings."
+  @spec decode_rarities(map()) :: MapSet.t()
+  def decode_rarities(params) do
+    valid = ~w(common uncommon rare mythic)
+
+    params
+    |> Map.get("r", "")
+    |> split_param()
+    |> Enum.filter(&(&1 in valid))
+    |> MapSet.new()
+  end
+
+  @doc "Decodes the `mv` param into a MapSet of integers and/or `:seven_plus`."
+  @spec decode_mana_values(map()) :: MapSet.t()
+  def decode_mana_values(params) do
+    params
+    |> Map.get("mv", "")
+    |> split_param()
+    |> Enum.map(fn
+      "7+" -> :seven_plus
+      n -> parse_mana_value(n)
+    end)
+    |> MapSet.new()
+  end
+
+  @doc "Decodes the `t` param into a MapSet of card type atoms."
+  @spec decode_types(map()) :: MapSet.t()
+  def decode_types(params) do
+    valid = ~w(creature instant sorcery enchantment artifact planeswalker land battle)
+
+    params
+    |> Map.get("t", "")
+    |> split_param()
+    |> Enum.filter(&(&1 in valid))
+    |> Enum.map(&String.to_existing_atom/1)
+    |> MapSet.new()
+  end
+
+  defp put_unless_empty(map, _key, ""), do: map
+  defp put_unless_empty(map, key, value), do: Map.put(map, key, value)
+
+  defp encode_set(set), do: set |> MapSet.to_list() |> Enum.sort() |> Enum.join(",")
+
+  defp encode_set_atoms(set) do
+    set |> MapSet.to_list() |> Enum.map(&to_string/1) |> Enum.sort() |> Enum.join(",")
+  end
+
+  defp encode_mana_values(set) do
+    set
+    |> MapSet.to_list()
+    |> Enum.map(fn
+      :seven_plus -> "7+"
+      n -> to_string(n)
+    end)
+    |> Enum.sort()
+    |> Enum.join(",")
+  end
+
+  defp split_param(""), do: []
+  defp split_param(value) when is_binary(value), do: String.split(value, ",")
 end
