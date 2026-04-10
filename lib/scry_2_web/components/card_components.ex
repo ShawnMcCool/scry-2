@@ -56,7 +56,7 @@ defmodule Scry2Web.CardComponents do
       src={@src}
       alt={@name}
       loading="lazy"
-      class={["rounded-sm", @class]}
+      class={["rounded-sm aspect-[488/680]", @class]}
       phx-hook="CardHover"
     />
     <div
