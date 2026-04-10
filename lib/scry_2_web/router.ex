@@ -33,8 +33,6 @@ defmodule Scry2Web.Router do
       live "/decks/:deck_id", DecksLive, :show
       live "/drafts", DraftsLive, :index
       live "/drafts/:id", DraftsLive, :show
-      live "/events", EventsLive, :index
-      live "/events/:id", EventsLive, :show
       live "/mulligans", MulligansLive, :index
       live "/settings", SettingsLive, :index
       live "/operations", OperationsLive, :index

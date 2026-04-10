@@ -54,7 +54,6 @@ defmodule Scry2Web.Layouts do
           <li><.link navigate={~p"/decks"}>Decks</.link></li>
           <li><.link navigate={~p"/drafts"}>Drafts</.link></li>
           <li><.link navigate={~p"/cards"}>Cards</.link></li>
-          <li><.link navigate={~p"/events"}>Events</.link></li>
           <li><.link navigate={~p"/mulligans"}>Mulligans</.link></li>
           <li><.link navigate={~p"/settings"}>Settings</.link></li>
           <li><.link navigate={~p"/operations"}>Ops</.link></li>

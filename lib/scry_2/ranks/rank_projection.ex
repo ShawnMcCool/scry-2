@@ -20,11 +20,15 @@ defmodule Scry2.Ranks.RankProjection do
       constructed_step: event.constructed_step,
       constructed_matches_won: event.constructed_matches_won,
       constructed_matches_lost: event.constructed_matches_lost,
+      constructed_percentile: event.constructed_percentile,
+      constructed_leaderboard_placement: event.constructed_leaderboard_placement,
       limited_class: event.limited_class,
       limited_level: event.limited_level,
       limited_step: event.limited_step,
       limited_matches_won: event.limited_matches_won,
       limited_matches_lost: event.limited_matches_lost,
+      limited_percentile: event.limited_percentile,
+      limited_leaderboard_placement: event.limited_leaderboard_placement,
       season_ordinal: event.season_ordinal,
       occurred_at: event.occurred_at
     })
