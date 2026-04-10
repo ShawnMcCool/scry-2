@@ -164,15 +164,13 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          # Deck deletion confirmation — no analytics value
                          "DeckDeleteDeck",
                          # Format catalogue — static reference data, not player activity
-                         "GetFormats"
+                         "GetFormats",
+                         # Startup reconnection probe — always empty in normal sessions;
+                         # real match data flows through MatchGameRoomStateChangedEvent
+                         "EventGetActiveMatches"
                        ])
 
-  # Empty payload so far — deferred until we see a real body.
-  # When a deferred type arrives with raw_json other than "{}",
-  # the dashboard flags it so we know a handler can be written.
-  @deferred_event_types MapSet.new([
-                          "EventGetActiveMatches"
-                        ])
+  @deferred_event_types MapSet.new([])
 
   @known_event_types @handled_event_types
                      |> MapSet.union(@ignored_event_types)

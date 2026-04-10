@@ -184,7 +184,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "returns {[], []} for an unrelated raw event type" do
       record = %EventRecord{
         id: 1,
-        event_type: "EventGetActiveMatches",
+        event_type: "SomeUnknownEvent",
         file_offset: 0,
         source_file: "Player.log",
         raw_json: ~s({"foo":"bar"}),
@@ -391,16 +391,15 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert IdentifyDomainEvents.recognized?("GraphGetGraphState")
       assert IdentifyDomainEvents.recognized?("DeckDeleteDeck")
       assert IdentifyDomainEvents.recognized?("GetFormats")
+      assert IdentifyDomainEvents.recognized?("EventGetActiveMatches")
     end
 
     test "recognized? returns true for deferred types" do
-      assert IdentifyDomainEvents.recognized?("EventGetActiveMatches")
       assert IdentifyDomainEvents.recognized?("StartHook")
     end
 
-    test "deferred_event_types returns a MapSet of deferred types" do
-      deferred = IdentifyDomainEvents.deferred_event_types()
-      assert MapSet.member?(deferred, "EventGetActiveMatches")
+    test "deferred_event_types returns an empty MapSet" do
+      assert MapSet.equal?(IdentifyDomainEvents.deferred_event_types(), MapSet.new())
     end
   end
 
