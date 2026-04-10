@@ -98,6 +98,16 @@ defmodule Scry2.Cards.ImageCache do
   # ── Internals ───────────────────────────────────────────────────────────
 
   defp download_image(arena_id, path, req_options) do
+    case Cards.get_image_url_for_arena_id(arena_id) do
+      nil ->
+        download_image_via_api(arena_id, path, req_options)
+
+      image_url ->
+        fetch_and_save(image_url, path, req_options)
+    end
+  end
+
+  defp download_image_via_api(arena_id, path, req_options) do
     case Cards.get_mtga_card(arena_id) do
       nil ->
         :error
@@ -149,7 +159,6 @@ defmodule Scry2.Cards.ImageCache do
     case Req.get(options) do
       {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
         File.write!(path, body)
-        Process.sleep(100)
         :ok
 
       {:ok, %Req.Response{status: status}} ->
