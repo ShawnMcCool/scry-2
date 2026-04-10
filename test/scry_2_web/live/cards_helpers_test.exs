@@ -125,4 +125,152 @@ defmodule Scry2Web.CardsHelpersTest do
       assert H.oban_status_class(false) == "bg-success"
     end
   end
+
+  describe "params_from_filters/5" do
+    test "returns empty map when all filters are default" do
+      assert H.params_from_filters("", MapSet.new(), MapSet.new(), MapSet.new(), MapSet.new()) ==
+               %{}
+    end
+
+    test "encodes search text under q" do
+      result =
+        H.params_from_filters("bolt", MapSet.new(), MapSet.new(), MapSet.new(), MapSet.new())
+
+      assert result["q"] == "bolt"
+    end
+
+    test "encodes colors as sorted comma-separated string" do
+      result =
+        H.params_from_filters(
+          "",
+          MapSet.new(["R", "U"]),
+          MapSet.new(),
+          MapSet.new(),
+          MapSet.new()
+        )
+
+      assert result["colors"] == "R,U"
+    end
+
+    test "encodes rarities under r" do
+      result =
+        H.params_from_filters(
+          "",
+          MapSet.new(),
+          MapSet.new(["rare", "mythic"]),
+          MapSet.new(),
+          MapSet.new()
+        )
+
+      colors = String.split(result["r"], ",")
+      assert "rare" in colors
+      assert "mythic" in colors
+    end
+
+    test "encodes mana values under mv, seven_plus as 7+" do
+      result =
+        H.params_from_filters(
+          "",
+          MapSet.new(),
+          MapSet.new(),
+          MapSet.new([2, :seven_plus]),
+          MapSet.new()
+        )
+
+      parts = String.split(result["mv"], ",")
+      assert "2" in parts
+      assert "7+" in parts
+    end
+
+    test "encodes types under t" do
+      result =
+        H.params_from_filters(
+          "",
+          MapSet.new(),
+          MapSet.new(),
+          MapSet.new(),
+          MapSet.new([:creature, :instant])
+        )
+
+      parts = String.split(result["t"], ",")
+      assert "creature" in parts
+      assert "instant" in parts
+    end
+
+    test "omits empty filter keys" do
+      result =
+        H.params_from_filters("bolt", MapSet.new(), MapSet.new(), MapSet.new(), MapSet.new())
+
+      refute Map.has_key?(result, "colors")
+      refute Map.has_key?(result, "r")
+      refute Map.has_key?(result, "mv")
+      refute Map.has_key?(result, "t")
+    end
+  end
+
+  describe "decode_search/1" do
+    test "returns empty string when q absent" do
+      assert H.decode_search(%{}) == ""
+    end
+
+    test "returns the q value" do
+      assert H.decode_search(%{"q" => "bolt"}) == "bolt"
+    end
+  end
+
+  describe "decode_colors/1" do
+    test "returns empty MapSet when colors absent" do
+      assert H.decode_colors(%{}) == MapSet.new()
+    end
+
+    test "parses comma-separated colors" do
+      assert H.decode_colors(%{"colors" => "W,R"}) == MapSet.new(["W", "R"])
+    end
+
+    test "ignores invalid color codes" do
+      assert H.decode_colors(%{"colors" => "W,X,R"}) == MapSet.new(["W", "R"])
+    end
+  end
+
+  describe "decode_rarities/1" do
+    test "returns empty MapSet when r absent" do
+      assert H.decode_rarities(%{}) == MapSet.new()
+    end
+
+    test "parses comma-separated rarities" do
+      assert H.decode_rarities(%{"r" => "common,mythic"}) == MapSet.new(["common", "mythic"])
+    end
+
+    test "ignores invalid rarity values" do
+      assert H.decode_rarities(%{"r" => "common,bogus"}) == MapSet.new(["common"])
+    end
+  end
+
+  describe "decode_mana_values/1" do
+    test "returns empty MapSet when mv absent" do
+      assert H.decode_mana_values(%{}) == MapSet.new()
+    end
+
+    test "parses integer mana values" do
+      assert H.decode_mana_values(%{"mv" => "2,4"}) == MapSet.new([2, 4])
+    end
+
+    test "parses 7+ as :seven_plus" do
+      assert H.decode_mana_values(%{"mv" => "3,7+"}) == MapSet.new([3, :seven_plus])
+    end
+  end
+
+  describe "decode_types/1" do
+    test "returns empty MapSet when t absent" do
+      assert H.decode_types(%{}) == MapSet.new()
+    end
+
+    test "parses comma-separated type strings to atoms" do
+      assert H.decode_types(%{"t" => "creature,instant"}) == MapSet.new([:creature, :instant])
+    end
+
+    test "ignores invalid type values" do
+      assert H.decode_types(%{"t" => "creature,bogus"}) == MapSet.new([:creature])
+    end
+  end
 end
