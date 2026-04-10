@@ -75,18 +75,32 @@ defmodule Scry2Web.DecksHelpersTest do
     end
   end
 
-  describe "winrate_series/1" do
-    test "encodes weeks, bo1, and bo3 as JSON" do
+  describe "bo1_winrate_series/1" do
+    test "encodes weeks and bo1 rates; bo3 is empty" do
       data = [
         %{week: "2026-01-01", bo1_win_rate: 50.0, bo3_win_rate: 60.0},
         %{week: "2026-01-08", bo1_win_rate: nil, bo3_win_rate: 55.0}
       ]
 
-      json = DecksHelpers.winrate_series(data)
-      decoded = Jason.decode!(json)
+      decoded = DecksHelpers.bo1_winrate_series(data) |> Jason.decode!()
 
       assert decoded["weeks"] == ["2026-01-01", "2026-01-08"]
       assert decoded["bo1"] == [50.0, nil]
+      assert decoded["bo3"] == []
+    end
+  end
+
+  describe "bo3_winrate_series/1" do
+    test "encodes weeks and bo3 rates; bo1 is empty" do
+      data = [
+        %{week: "2026-01-01", bo1_win_rate: 50.0, bo3_win_rate: 60.0},
+        %{week: "2026-01-08", bo1_win_rate: nil, bo3_win_rate: 55.0}
+      ]
+
+      decoded = DecksHelpers.bo3_winrate_series(data) |> Jason.decode!()
+
+      assert decoded["weeks"] == ["2026-01-01", "2026-01-08"]
+      assert decoded["bo1"] == []
       assert decoded["bo3"] == [60.0, 55.0]
     end
   end
