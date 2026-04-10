@@ -381,43 +381,60 @@ defmodule Scry2Web.DecksLive do
   attr :format, :atom, required: true
   attr :win_rate_by_week, :list, default: []
 
-  defp stats_panel(%{stats: %{total: 0}} = assigns) do
+  defp stats_panel(assigns) do
+    chart_series =
+      case assigns.format do
+        :bo1 -> DecksHelpers.bo1_winrate_series(assigns.win_rate_by_week)
+        :bo3 -> DecksHelpers.bo3_winrate_series(assigns.win_rate_by_week)
+      end
+
+    assigns = assign(assigns, :chart_series, chart_series)
+
     ~H"""
-    <div class="bg-base-200 rounded-xl p-5">
-      <h3 class="text-sm font-medium text-base-content/50 mb-3">{@title}</h3>
-      <p class="text-base-content/30 text-sm">No matches yet</p>
+    <div class="bg-base-200 rounded-xl p-5 flex gap-4">
+      <div class="flex flex-col gap-3 w-44 shrink-0">
+        <h3 class="text-xs font-semibold text-base-content/40 uppercase tracking-widest">
+          {@title}
+        </h3>
+        <.stats_body stats={@stats} format={@format} />
+      </div>
+      <div
+        id={"deck-winrate-#{@format}"}
+        phx-hook="Chart"
+        data-chart-type="winrate"
+        data-series={@chart_series}
+        class="flex-1 min-w-0 rounded-lg bg-base-300/40"
+      />
     </div>
     """
   end
 
-  defp stats_panel(assigns) do
-    format = assigns.format
+  attr :stats, :map, required: true
+  attr :format, :atom, required: true
 
-    has_chart =
-      Enum.count(assigns.win_rate_by_week, fn week ->
-        case format do
-          :bo1 -> not is_nil(week.bo1_win_rate)
-          :bo3 -> not is_nil(week.bo3_win_rate)
-        end
-      end) >= 2
-
-    assigns = assign(assigns, :has_chart, has_chart)
-
+  defp stats_body(%{stats: %{total: 0}} = assigns) do
     ~H"""
-    <div class="bg-base-200 rounded-xl p-5 space-y-3">
-      <h3 class="text-sm font-medium text-base-content/50">{@title}</h3>
+    <div class="flex-1 flex flex-col justify-center gap-1">
+      <span class="text-3xl font-black tabular-nums text-base-content/20">—</span>
+      <span class="text-base-content/30 text-sm">No matches yet</span>
+    </div>
+    """
+  end
 
-      <div class="flex items-baseline gap-3">
+  defp stats_body(assigns) do
+    ~H"""
+    <div class="flex flex-col gap-2">
+      <div class="flex flex-col gap-0.5">
         <span class={[
           "text-3xl font-black tabular-nums",
           DecksHelpers.win_rate_class(@stats.win_rate)
         ]}>
           {DecksHelpers.format_win_rate(@stats.win_rate)}
         </span>
-        <span class="text-base-content/60 text-sm">{@stats.wins}W – {@stats.losses}L</span>
+        <span class="text-base-content/50 text-sm">{@stats.wins}W – {@stats.losses}L</span>
       </div>
-
-      <div class="grid grid-cols-2 gap-2 text-sm">
+      <div class="border-t border-base-300" />
+      <div class="grid grid-cols-2 gap-x-2 gap-y-2 text-sm">
         <.stat_row
           label="On Play"
           value={DecksHelpers.format_win_rate(@stats.on_play_win_rate)}
@@ -452,21 +469,6 @@ defmodule Scry2Web.DecksLive do
           }
         />
       </div>
-
-      <div
-        :if={@has_chart}
-        id={"deck-winrate-#{@format}"}
-        phx-hook="Chart"
-        data-chart-type="winrate"
-        data-series={
-          case @format do
-            :bo1 -> DecksHelpers.bo1_winrate_series(@win_rate_by_week)
-            :bo3 -> DecksHelpers.bo3_winrate_series(@win_rate_by_week)
-          end
-        }
-        class="w-full rounded-lg"
-        style="height: 120px"
-      />
     </div>
     """
   end
