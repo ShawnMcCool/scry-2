@@ -2,9 +2,10 @@ defmodule Scry2Web.RanksLive do
   @moduledoc """
   LiveView for rank progression display.
 
-  Shows the player's current rank state and two charts per format:
+  Shows the player's current rank state and charts per format:
   - Climb chart: rank position over the season (step line)
-  - Momentum chart: cumulative wins vs losses (area lines)
+  - Match results chart: per-match win/loss bars (+1/-1)
+  - Percentile chart: mythic percentile over time (when applicable)
 
   A season picker (prev/next + select dropdown) lets the user navigate
   across years of data. Subscribes to `ranks:updates` for live updates.
@@ -27,8 +28,14 @@ defmodule Scry2Web.RanksLive do
        latest_snapshot: nil,
        climb_constructed: "[]",
        climb_limited: "[]",
-       momentum_constructed: "[[],[]]",
-       momentum_limited: "[[],[]]",
+       results_constructed: "[]",
+       results_limited: "[]",
+       percentile_constructed: "[]",
+       percentile_limited: "[]",
+       win_rate_constructed: nil,
+       win_rate_limited: nil,
+       peak_score_constructed: nil,
+       peak_score_limited: nil,
        reload_timer: nil
      )}
   end
@@ -114,14 +121,20 @@ defmodule Scry2Web.RanksLive do
           format={:constructed}
           latest={@latest_snapshot}
           climb_series={@climb_constructed}
-          momentum_series={@momentum_constructed}
+          results_series={@results_constructed}
+          percentile_series={@percentile_constructed}
+          win_rate={@win_rate_constructed}
+          peak_score={@peak_score_constructed}
         />
         <.format_section
           title="Limited"
           format={:limited}
           latest={@latest_snapshot}
           climb_series={@climb_limited}
-          momentum_series={@momentum_limited}
+          results_series={@results_limited}
+          percentile_series={@percentile_limited}
+          win_rate={@win_rate_limited}
+          peak_score={@peak_score_limited}
         />
       </div>
     </Layouts.app>
@@ -171,7 +184,10 @@ defmodule Scry2Web.RanksLive do
   attr :format, :atom, required: true
   attr :latest, :any, default: nil
   attr :climb_series, :string, required: true
-  attr :momentum_series, :string, required: true
+  attr :results_series, :string, required: true
+  attr :percentile_series, :string, required: true
+  attr :win_rate, :float, default: nil
+  attr :peak_score, :integer, default: nil
 
   defp format_section(assigns) do
     {class, level, step, won, lost} =
@@ -203,13 +219,22 @@ defmodule Scry2Web.RanksLive do
             else: {nil, nil, nil, nil, nil}
       end
 
+    peak_label =
+      if assigns.peak_score,
+        do: RanksHelpers.rank_label_from_score(assigns.peak_score),
+        else: nil
+
+    has_percentile = assigns.percentile_series != "[]"
+
     assigns =
       assign(assigns,
         rank_class: class,
         rank_level: level,
         rank_step: step,
         won: won,
-        lost: lost
+        lost: lost,
+        peak_label: peak_label,
+        has_percentile: has_percentile
       )
 
     ~H"""
@@ -225,6 +250,8 @@ defmodule Scry2Web.RanksLive do
         rank_step={@rank_step}
         won={@won}
         lost={@lost}
+        win_rate={@win_rate}
+        peak_label={@peak_label}
         format_type={@title}
       />
 
@@ -241,12 +268,25 @@ defmodule Scry2Web.RanksLive do
           />
         </div>
         <div>
-          <p class="text-xs text-base-content/40 mb-1 uppercase tracking-wide">Win / Loss</p>
+          <p class="text-xs text-base-content/40 mb-1 uppercase tracking-wide">Match Results</p>
           <div
-            id={"chart-momentum-#{@format}"}
+            id={"chart-results-#{@format}"}
             phx-hook="Chart"
-            data-chart-type="momentum"
-            data-series={@momentum_series}
+            data-chart-type="match_results"
+            data-series={@results_series}
+            class="w-full rounded-lg bg-base-200"
+            style="height: 140px"
+          />
+        </div>
+        <div :if={@has_percentile}>
+          <p class="text-xs text-base-content/40 mb-1 uppercase tracking-wide">
+            Mythic Percentile
+          </p>
+          <div
+            id={"chart-percentile-#{@format}"}
+            phx-hook="Chart"
+            data-chart-type="percentile"
+            data-series={@percentile_series}
             class="w-full rounded-lg bg-base-200"
             style="height: 180px"
           />
@@ -261,6 +301,8 @@ defmodule Scry2Web.RanksLive do
   attr :rank_step, :integer, default: nil
   attr :won, :integer, default: nil
   attr :lost, :integer, default: nil
+  attr :win_rate, :float, default: nil
+  attr :peak_label, :string, default: nil
   attr :format_type, :string, required: true
 
   defp rank_card(assigns) do
@@ -286,9 +328,17 @@ defmodule Scry2Web.RanksLive do
               />
             </div>
           </div>
-          <p class="ml-auto text-sm text-base-content/60 tabular-nums">
-            {RanksHelpers.format_record(@won, @lost)}
-          </p>
+          <div class="ml-auto text-right space-y-0.5">
+            <p class="text-sm text-base-content/60 tabular-nums">
+              {RanksHelpers.format_record(@won, @lost)}
+            </p>
+            <p :if={@win_rate} class="text-xs text-base-content/40 tabular-nums">
+              {:erlang.float_to_binary(@win_rate, decimals: 1)}% win rate
+            </p>
+            <p :if={@peak_label} class="text-xs text-base-content/40">
+              Peak: {@peak_label}
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -303,16 +353,29 @@ defmodule Scry2Web.RanksLive do
     snapshots = Ranks.list_snapshots_for_season(player_id: player_id, season: season)
     latest_snapshot = List.last(snapshots)
 
-    {wins_c, losses_c} = RanksHelpers.momentum_series(snapshots, :constructed)
-    {wins_l, losses_l} = RanksHelpers.momentum_series(snapshots, :limited)
-
     assign(socket,
       snapshots: snapshots,
       latest_snapshot: latest_snapshot,
       climb_constructed: Jason.encode!(RanksHelpers.climb_series(snapshots, :constructed)),
       climb_limited: Jason.encode!(RanksHelpers.climb_series(snapshots, :limited)),
-      momentum_constructed: Jason.encode!([wins_c, losses_c]),
-      momentum_limited: Jason.encode!([wins_l, losses_l])
+      results_constructed:
+        Jason.encode!(RanksHelpers.match_results_series(snapshots, :constructed)),
+      results_limited: Jason.encode!(RanksHelpers.match_results_series(snapshots, :limited)),
+      percentile_constructed:
+        Jason.encode!(RanksHelpers.percentile_series(snapshots, :constructed)),
+      percentile_limited: Jason.encode!(RanksHelpers.percentile_series(snapshots, :limited)),
+      win_rate_constructed:
+        RanksHelpers.win_rate(
+          latest_snapshot && latest_snapshot.constructed_matches_won,
+          latest_snapshot && latest_snapshot.constructed_matches_lost
+        ),
+      win_rate_limited:
+        RanksHelpers.win_rate(
+          latest_snapshot && latest_snapshot.limited_matches_won,
+          latest_snapshot && latest_snapshot.limited_matches_lost
+        ),
+      peak_score_constructed: RanksHelpers.peak_rank_score(snapshots, :constructed),
+      peak_score_limited: RanksHelpers.peak_rank_score(snapshots, :limited)
     )
   end
 

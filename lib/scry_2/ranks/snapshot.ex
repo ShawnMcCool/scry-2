@@ -26,6 +26,10 @@ defmodule Scry2.Ranks.Snapshot do
     field :limited_step, :integer
     field :limited_matches_won, :integer
     field :limited_matches_lost, :integer
+    field :constructed_percentile, :float
+    field :constructed_leaderboard_placement, :integer
+    field :limited_percentile, :float
+    field :limited_leaderboard_placement, :integer
     field :season_ordinal, :integer
     field :occurred_at, :utc_datetime
 
@@ -46,6 +50,10 @@ defmodule Scry2.Ranks.Snapshot do
       :limited_step,
       :limited_matches_won,
       :limited_matches_lost,
+      :constructed_percentile,
+      :constructed_leaderboard_placement,
+      :limited_percentile,
+      :limited_leaderboard_placement,
       :season_ordinal,
       :occurred_at
     ])

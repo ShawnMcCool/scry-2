@@ -1,7 +1,7 @@
 // ECharts hook for rank progression and deck performance charts.
 //
 // Each chart element must provide:
-//   data-chart-type  — "climb" | "momentum" | "winrate" | "curve"
+//   data-chart-type  — "climb" | "momentum" | "winrate" | "curve" | "match_results" | "percentile"
 //   data-series      — JSON-encoded series data from the server
 //
 // The hook initialises ECharts on mount and updates data in-place on
@@ -224,6 +224,94 @@ function curveOption(data) {
   }
 }
 
+function matchResultsOption(series) {
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 60, right: 20, top: 16, bottom: 40},
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        const [ts, value] = params[0].data
+        const date = new Date(ts).toLocaleString()
+        const label = value > 0 ? "Win" : "Loss"
+        return `${date}<br/><b>${label}</b>`
+      },
+    },
+    xAxis: {
+      type: "time",
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: {
+      type: "value",
+      min: -1,
+      max: 1,
+      interval: 1,
+      axisLabel: {
+        color: "#9ca3af",
+        fontSize: 11,
+        formatter(value) {
+          if (value === 1) return "Win"
+          if (value === -1) return "Loss"
+          return ""
+        },
+      },
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {lineStyle: {color: "#1f2937"}},
+    },
+    series: [
+      {
+        type: "bar",
+        data: series.map(([ts, value]) => ({
+          value: [ts, value],
+          itemStyle: {color: value > 0 ? "#22c55e" : "#f97316", borderRadius: value > 0 ? [3, 3, 0, 0] : [0, 0, 3, 3]},
+        })),
+      },
+    ],
+  }
+}
+
+function percentileOption(series) {
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 56, right: 20, top: 16, bottom: 40},
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        const [ts, pct] = params[0].data
+        const date = new Date(ts).toLocaleString()
+        return `${date}<br/><b>${pct.toFixed(1)}% (lower is better)</b>`
+      },
+    },
+    xAxis: {
+      type: "time",
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: {
+      type: "value",
+      inverse: true,
+      axisLabel: {color: "#9ca3af", fontSize: 11, formatter: v => `${v}%`},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {lineStyle: {color: "#1f2937"}},
+    },
+    series: [
+      {
+        type: "line",
+        data: series,
+        smooth: false,
+        symbol: "circle",
+        symbolSize: 4,
+        lineStyle: {color: "#f59e0b", width: 2},
+        itemStyle: {color: "#f59e0b"},
+        areaStyle: {color: "rgba(245,158,11,0.10)"},
+      },
+    ],
+  }
+}
+
 function buildOption(el) {
   const type = el.dataset.chartType
   const parsed = JSON.parse(el.dataset.series || "[]")
@@ -234,6 +322,10 @@ function buildOption(el) {
     return winrateOption(parsed)
   } else if (type === "curve") {
     return curveOption(parsed)
+  } else if (type === "match_results") {
+    return matchResultsOption(parsed)
+  } else if (type === "percentile") {
+    return percentileOption(parsed)
   } else {
     const [wins, losses] = parsed
     return momentumOption(wins || [], losses || [])

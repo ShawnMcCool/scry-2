@@ -3,6 +3,8 @@ defmodule Scry2Web.RanksHelpers do
   Pure helper functions for `Scry2Web.RanksLive`. Extracted per ADR-013.
   """
 
+  @class_order ~w(Bronze Silver Gold Platinum Diamond)
+
   @doc """
   Formats a rank as "Class Level" (e.g. "Gold 1").
   Returns "—" when class is nil.
@@ -45,6 +47,21 @@ defmodule Scry2Web.RanksHelpers do
     safe_level = level || 4
     safe_step = step || 0
     class_index * 24 + (4 - safe_level) * 6 + safe_step
+  end
+
+  @doc """
+  Converts a continuous rank score back to a human-readable label such as "Gold 2".
+  Used to display peak rank. Mirrors the `rankLabel` function in chart.js.
+  """
+  @spec rank_label_from_score(integer()) :: String.t()
+  def rank_label_from_score(score) when score >= 120, do: "Mythic"
+
+  def rank_label_from_score(score) do
+    class_index = div(score, 24)
+    within_class = rem(score, 24)
+    level = 4 - div(within_class, 6)
+    class = Enum.at(@class_order, class_index, "Bronze")
+    "#{class} #{level}"
   end
 
   @doc """
@@ -133,11 +150,99 @@ defmodule Scry2Web.RanksHelpers do
     {wins, losses}
   end
 
-  # ── Private ──────────────────────────────────────────────────────────
+  @doc """
+  Computes win rate as a percentage (0.0–100.0).
+  Returns nil when there are no games played or either argument is nil.
+  """
+  @spec win_rate(integer() | nil, integer() | nil) :: float() | nil
+  def win_rate(nil, _), do: nil
+  def win_rate(_, nil), do: nil
 
-  @class_order ~w(Bronze Silver Gold Platinum Diamond)
+  def win_rate(won, lost) when won + lost == 0, do: nil
+
+  def win_rate(won, lost) do
+    won / (won + lost) * 100.0
+  end
+
+  @doc """
+  Returns the peak (maximum) rank score across all snapshots for the given format.
+  Returns nil for empty snapshot lists.
+  """
+  @spec peak_rank_score([map()], :constructed | :limited) :: integer() | nil
+  def peak_rank_score([], _format), do: nil
+
+  def peak_rank_score(snapshots, :constructed) do
+    snapshots
+    |> Enum.map(&rank_score(&1.constructed_class, &1.constructed_level, &1.constructed_step))
+    |> Enum.max()
+  end
+
+  def peak_rank_score(snapshots, :limited) do
+    snapshots
+    |> Enum.map(&rank_score(&1.limited_class, &1.limited_level, &1.limited_step))
+    |> Enum.max()
+  end
+
+  @doc """
+  Builds a per-match results series for the given format.
+
+  Returns a list of `[iso8601_timestamp, value]` pairs where value is
+  `+1` for a win and `-1` for a loss. Computed from deltas between
+  consecutive snapshots. Snapshots with no match delta are skipped.
+  """
+  @spec match_results_series([map()], :constructed | :limited) :: [[String.t() | integer()]]
+  def match_results_series(snapshots, _format) when length(snapshots) < 2, do: []
+
+  def match_results_series(snapshots, :constructed) do
+    snapshots
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.flat_map(fn [prev, curr] ->
+      delta_wins = (curr.constructed_matches_won || 0) - (prev.constructed_matches_won || 0)
+      delta_losses = (curr.constructed_matches_lost || 0) - (prev.constructed_matches_lost || 0)
+      match_result_point(curr.occurred_at, delta_wins, delta_losses)
+    end)
+  end
+
+  def match_results_series(snapshots, :limited) do
+    snapshots
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.flat_map(fn [prev, curr] ->
+      delta_wins = (curr.limited_matches_won || 0) - (prev.limited_matches_won || 0)
+      delta_losses = (curr.limited_matches_lost || 0) - (prev.limited_matches_lost || 0)
+      match_result_point(curr.occurred_at, delta_wins, delta_losses)
+    end)
+  end
+
+  @doc """
+  Builds mythic percentile series for the given format.
+
+  Returns `[[iso8601_timestamp, percentile], ...]`. Snapshots with nil
+  percentile are filtered out. Returns empty list for non-mythic seasons.
+  """
+  @spec percentile_series([map()], :constructed | :limited) :: [[String.t() | float()]]
+  def percentile_series(snapshots, :constructed) do
+    snapshots
+    |> Enum.filter(&(&1.constructed_percentile != nil))
+    |> Enum.map(&[DateTime.to_iso8601(&1.occurred_at), &1.constructed_percentile])
+  end
+
+  def percentile_series(snapshots, :limited) do
+    snapshots
+    |> Enum.filter(&(&1.limited_percentile != nil))
+    |> Enum.map(&[DateTime.to_iso8601(&1.occurred_at), &1.limited_percentile])
+  end
+
+  # ── Private ──────────────────────────────────────────────────────────
 
   defp class_to_index(class) do
     Enum.find_index(@class_order, &(&1 == class)) || 0
   end
+
+  defp match_result_point(_ts, 0, 0), do: []
+
+  defp match_result_point(ts, delta_wins, _delta_losses) when delta_wins > 0,
+    do: [[DateTime.to_iso8601(ts), 1]]
+
+  defp match_result_point(ts, _delta_wins, _delta_losses),
+    do: [[DateTime.to_iso8601(ts), -1]]
 end
