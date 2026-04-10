@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="night">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scry2 — Card Browser</title>
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* ── DaisyUI night theme overrides ── */
+    :root {
+      --color-base-100: #1d232a;
+      --color-base-200: #191e24;
+      --color-base-300: #15191e;
+      --color-base-content: #a6adbb;
+      --color-primary: #38bdf8;
+      --color-primary-content: #003251;
+    }
+
+    body {
+      background-color: #15191e;
+      color: #a6adbb;
+      font-family: ui-sans-serif, system-ui, sans-serif;
+    }
+
+    /* ── Mana symbol circles ── */
+    .mana-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: box-shadow 0.15s, border-color 0.15s, opacity 0.15s;
+      flex-shrink: 0;
+      user-select: none;
+    }
+    .mana-btn:hover { opacity: 0.85; }
+    .mana-btn.active {
+      box-shadow: 0 0 0 2px #38bdf8;
+      border-color: #38bdf8;
+    }
+    .mana-W { background: #fef9c3; color: #1c1917; }
+    .mana-U { background: #3b82f6; color: #fff; }
+    .mana-B { background: #1f2937; color: #d1d5db; border: 2px solid #4b5563; }
+    .mana-R { background: #dc2626; color: #fff; }
+    .mana-G { background: #16a34a; color: #fff; }
+    .mana-M { background: #eab308; color: #1c1917; }
+    .mana-C { background: #9ca3af; color: #1c1917; }
+
+    /* ── Card image placeholder ── */
+    .card-art {
+      aspect-ratio: 5 / 7;
+      border-radius: 3px;
+      background: linear-gradient(160deg, #1a2030 0%, #0d1117 55%, #1a1208 100%);
+      overflow: hidden;
+      position: relative;
+    }
+    .card-art::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 35%, rgba(255,200,80,0.08) 0%, transparent 65%),
+                  linear-gradient(180deg, transparent 50%, rgba(0,0,0,0.5) 100%);
+    }
+
+    /* ── Rarity dots / badges ── */
+    .rarity-mythic  { color: #f59e0b; }
+    .rarity-rare    { color: #a855f7; }
+    .rarity-uncommon{ color: #22d3ee; }
+    .rarity-common  { color: #6b7280; }
+
+    /* ── Search input ── */
+    .search-wrap {
+      position: relative;
+      flex: 1 1 0%;
+      min-width: 0;
+    }
+    .search-input {
+      width: 100%;
+      background: #191e24;
+      border: 1px solid #2a313c;
+      border-radius: 9999px;
+      padding: 0.4rem 2.4rem 0.4rem 1rem;
+      font-size: 0.875rem;
+      color: #a6adbb;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-input::placeholder { color: #4b5563; }
+    .search-input:focus { border-color: #38bdf8; }
+    .search-clear {
+      position: absolute;
+      right: 0.6rem;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: #6b7280;
+      cursor: pointer;
+      font-size: 14px;
+      line-height: 1;
+      padding: 2px 4px;
+    }
+    .search-clear:hover { color: #a6adbb; }
+
+    /* ── Panel base ── */
+    .panel {
+      background: #191e24;
+      border: 1px solid #2a313c;
+      border-radius: 0.5rem;
+      padding: 1rem;
+    }
+    .panel-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #6b7280;
+      margin-bottom: 0.75rem;
+    }
+
+    /* ── Progress bar ── */
+    .data-bar-track {
+      height: 3px;
+      background: #2a313c;
+      border-radius: 9999px;
+      overflow: hidden;
+      flex: 1 1 0%;
+    }
+    .data-bar-fill {
+      height: 100%;
+      border-radius: 9999px;
+      background: #38bdf8;
+      opacity: 0.5;
+    }
+
+    /* ── Filter drawer ── */
+    .filter-drawer {
+      position: fixed;
+      top: 0;
+      right: -280px; /* partially revealed: show ~80px */
+      width: 360px;
+      height: 100vh;
+      background: #191e24;
+      border-left: 1px solid #2a313c;
+      padding: 1.25rem;
+      overflow-y: auto;
+      box-shadow: -8px 0 32px rgba(0,0,0,0.5);
+      z-index: 50;
+    }
+
+    /* ── Pill mana-value buttons ── */
+    .mv-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 32px;
+      height: 28px;
+      padding: 0 8px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+      background: #1d232a;
+      border: 1px solid #2a313c;
+      color: #6b7280;
+      cursor: pointer;
+      transition: background 0.12s, color 0.12s;
+    }
+    .mv-pill:hover { background: #2a313c; color: #a6adbb; }
+    .mv-pill.active { background: #1e3a5f; color: #38bdf8; border-color: #38bdf8; }
+
+    /* ── Status dot ── */
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 9999px;
+      flex-shrink: 0;
+    }
+    .status-idle    { background: #22c55e; box-shadow: 0 0 4px #22c55e88; }
+    .status-running { background: #f97316; box-shadow: 0 0 4px #f9731688; }
+
+    /* ── Card grid item ── */
+    .card-item {
+      cursor: pointer;
+      transition: transform 0.12s;
+    }
+    .card-item:hover { transform: translateY(-2px); }
+    .card-item:hover .card-art {
+      box-shadow: 0 4px 16px rgba(56,189,248,0.15);
+    }
+
+    /* ── Divider ── */
+    .panel-divider {
+      border: none;
+      border-top: 1px solid #2a313c;
+      margin: 0.625rem 0;
+    }
+
+    /* ── Filter section header ── */
+    .filter-section-title {
+      font-size: 0.7rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: #4b5563;
+      margin-bottom: 0.5rem;
+    }
+  </style>
+</head>
+<body class="min-h-screen">
+
+<!-- ═══════════════════════════════════════════════════════════
+     MAIN LAYOUT — page uses overflow-hidden so drawer peek works
+     ═══════════════════════════════════════════════════════════ -->
+<div style="overflow: hidden; position: relative;">
+
+  <!-- ── Page wrapper with right margin to show drawer peek ── -->
+  <div style="margin-right: 80px; max-width: 1600px; margin-left: auto; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 1rem;">
+
+    <!-- ════════════════════════════════
+         1. SEARCH BAR ROW
+         ════════════════════════════════ -->
+    <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: nowrap;">
+
+      <!-- Search input -->
+      <div class="search-wrap">
+        <input
+          class="search-input"
+          type="text"
+          value="lightning"
+          placeholder="Search cards…"
+        />
+        <button class="search-clear" title="Clear search">✕</button>
+      </div>
+
+      <!-- Mana color toggles -->
+      <div style="display: flex; gap: 5px; align-items: center; flex-shrink: 0;">
+        <button class="mana-btn mana-W" title="White">W</button>
+        <button class="mana-btn mana-U active" title="Blue">U</button>
+        <button class="mana-btn mana-B" title="Black">B</button>
+        <button class="mana-btn mana-R active" title="Red">R</button>
+        <button class="mana-btn mana-G" title="Green">G</button>
+        <button class="mana-btn mana-M" title="Multicolor">M</button>
+        <button class="mana-btn mana-C" title="Colorless">C</button>
+      </div>
+
+      <!-- Filter icon button -->
+      <button
+        title="Advanced filters"
+        style="
+          display: inline-flex; align-items: center; justify-content: center;
+          width: 36px; height: 36px; border-radius: 0.375rem;
+          background: #191e24; border: 1px solid #2a313c;
+          color: #6b7280; cursor: pointer; flex-shrink: 0;
+          transition: border-color 0.15s, color 0.15s;
+        "
+        onmouseenter="this.style.borderColor='#38bdf8';this.style.color='#38bdf8'"
+        onmouseleave="this.style.borderColor='#2a313c';this.style.color='#6b7280'"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="4" y1="6" x2="20" y2="6"/>
+          <line x1="8" y1="12" x2="16" y2="12"/>
+          <line x1="11" y1="18" x2="13" y2="18"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- ════════════════════════════════
+         2. RESULTS AREA
+         ════════════════════════════════ -->
+    <div>
+      <!-- Results header -->
+      <div style="font-size: 0.72rem; color: #4b5563; margin-bottom: 0.5rem; padding-left: 2px;">
+        Showing <span style="color: #6b7280; font-weight: 600;">100</span> of
+        <span style="color: #6b7280; font-weight: 600;">10,432</span> cards
+        &mdash; refine to see more
+      </div>
+
+      <!-- Card grid -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(108px, 1fr)); gap: 0.5rem;">
+
+        <!-- Card 1 — Mythic -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(155deg, #1e1008 0%, #0d0a03 50%, #2a1400 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%, rgba(220,80,20,0.25) 0%, transparent 60%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+            <!-- Subtle lightning suggestion -->
+            <svg style="position:absolute;inset:0;width:100%;height:100%;opacity:0.12" viewBox="0 0 56 80" fill="none">
+              <polyline points="32,8 20,38 30,38 18,72" stroke="#f97316" stroke-width="3" stroke-linejoin="round"/>
+            </svg>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Lightning Bolt</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-mythic" style="font-size:9px; font-weight:700;">◆ M</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 2 — Rare -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(155deg, #12101e 0%, #0a0810 50%, #1a1428 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 35%, rgba(168,85,247,0.18) 0%, transparent 60%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Lightning Strike</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-rare" style="font-size:9px; font-weight:700;">◆ R</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 3 — Uncommon -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(155deg, #0e1810 0%, #080f09 50%, #121e14 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%, rgba(34,211,238,0.12) 0%, transparent 60%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Lightning Helix</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-uncommon" style="font-size:9px; font-weight:700;">◆ U</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 4 — Common -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(155deg, #0d0d12 0%, #080808 50%, #14120e 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 35%, rgba(220,38,38,0.10) 0%, transparent 60%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Shock</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-common" style="font-size:9px; font-weight:700;">◆ C</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 5 — Mythic -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(160deg, #1e0e08 0%, #120a04 55%, #281810 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 40% 25%, rgba(251,191,36,0.20) 0%, transparent 55%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Electrostatic…</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-mythic" style="font-size:9px; font-weight:700;">◆ M</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 6 — Rare -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(150deg, #100e1e 0%, #0a0814 50%, #1a1630 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 60% 30%, rgba(59,130,246,0.15) 0%, transparent 55%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Stormchaser Mage</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-rare" style="font-size:9px; font-weight:700;">◆ R</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 7 — Common -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(160deg, #0c1208 0%, #07090a 50%, #0f1408 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 40%, rgba(22,163,74,0.12) 0%, transparent 60%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Lightning Runner</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-common" style="font-size:9px; font-weight:700;">◆ C</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 8 — Uncommon -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(155deg, #181008 0%, #100d06 50%, #1e1408 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%, rgba(234,179,8,0.12) 0%, transparent 60%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Thunderclap Wyvern</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-uncommon" style="font-size:9px; font-weight:700;">◆ U</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 9 — Mythic -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(160deg, #1a0808 0%, #110606 55%, #200e0a 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 28%, rgba(239,68,68,0.20) 0%, transparent 55%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Embercleave</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-mythic" style="font-size:9px; font-weight:700;">◆ M</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 10 — Rare -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(155deg, #0e1010 0%, #080a0a 50%, #161818 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 35%, rgba(156,163,175,0.10) 0%, transparent 60%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Static Discharge</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-rare" style="font-size:9px; font-weight:700;">◆ R</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 11 — Common -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(160deg, #10100e 0%, #0a0a08 50%, #181614 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 32%, rgba(251,191,36,0.08) 0%, transparent 60%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Zap</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-common" style="font-size:9px; font-weight:700;">◆ C</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 12 — Uncommon -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(155deg, #0e1218 0%, #080c12 50%, #141820 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 50% 30%, rgba(56,189,248,0.14) 0%, transparent 60%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Izzet Guildmage</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-uncommon" style="font-size:9px; font-weight:700;">◆ U</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 13 — Rare -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(160deg, #1a1008 0%, #120c06 55%, #20160a 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 45% 28%, rgba(220,100,20,0.18) 0%, transparent 55%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Inferno of the Star…</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-rare" style="font-size:9px; font-weight:700;">◆ R</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Card 14 — Mythic -->
+        <div class="card-item">
+          <div class="card-art" style="background: linear-gradient(160deg, #0a0e18 0%, #060a12 55%, #10141e 100%);">
+            <div style="position:absolute;inset:0;background:radial-gradient(ellipse at 55% 30%, rgba(99,102,241,0.18) 0%, transparent 55%), linear-gradient(180deg,transparent 50%,rgba(0,0,0,0.6) 100%);"></div>
+          </div>
+          <div style="margin-top: 4px;">
+            <div style="font-size: 0.72rem; font-weight: 600; color: #cbd5e1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Torrential Gearhulk</div>
+            <div style="display:flex;align-items:center;gap:4px;margin-top:1px;">
+              <span class="rarity-mythic" style="font-size:9px; font-weight:700;">◆ M</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+      <!-- End card grid -->
+    </div>
+
+    <!-- ════════════════════════════════
+         3. BOTTOM ROW — Two panels
+         ════════════════════════════════ -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+
+      <!-- ── Left panel: Data Sources ── -->
+      <div class="panel">
+        <div class="panel-title">Data Sources</div>
+
+        <!-- 17lands row -->
+        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+          <span style="font-size:0.8rem; font-weight:600; color:#9ca3af; min-width:80px;">17lands</span>
+          <div class="data-bar-track">
+            <div class="data-bar-fill" style="width:36%; background:#38bdf8;"></div>
+          </div>
+          <span style="font-size:0.72rem; color:#4b5563; text-align:right; min-width:52px;">92,411</span>
+          <span style="font-size:0.72rem; color:#374151; min-width:36px;">4.2 MB</span>
+        </div>
+
+        <!-- Scryfall row -->
+        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+          <span style="font-size:0.8rem; font-weight:600; color:#9ca3af; min-width:80px;">Scryfall</span>
+          <div class="data-bar-track">
+            <div class="data-bar-fill" style="width:50%; background:#a855f7;"></div>
+          </div>
+          <span style="font-size:0.72rem; color:#4b5563; text-align:right; min-width:52px;">113,000</span>
+          <span style="font-size:0.72rem; color:#374151; min-width:36px;">8.1 MB</span>
+        </div>
+
+        <!-- Card images row -->
+        <div style="display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;">
+          <span style="font-size:0.8rem; font-weight:600; color:#9ca3af; min-width:80px;">Card Images</span>
+          <div class="data-bar-track">
+            <div class="data-bar-fill" style="width:80%; background:#22d3ee; opacity:0.35;"></div>
+          </div>
+          <span style="font-size:0.72rem; color:#4b5563; text-align:right; min-width:52px;">4,891</span>
+          <span style="font-size:0.72rem; color:#374151; min-width:36px;">312 MB</span>
+        </div>
+
+        <hr class="panel-divider" />
+
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:0.72rem; color:#374151;">Database total: <span style="color:#6b7280;">48.3 MB</span></span>
+          <span style="font-size:0.72rem; color:#374151;">Image cache: <span style="color:#6b7280;">312 MB</span></span>
+        </div>
+      </div>
+
+      <!-- ── Right panel: Import Controls ── -->
+      <div class="panel">
+        <div class="panel-title">Import Controls</div>
+
+        <!-- 17lands import row -->
+        <div style="display:flex; align-items:center; gap:0.625rem; margin-bottom:0.625rem;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:0.8rem; font-weight:600; color:#9ca3af;">17lands card data</div>
+            <div style="font-size:0.68rem; color:#374151; margin-top:1px;">Last updated: 3 days ago</div>
+          </div>
+          <button
+            style="
+              display:inline-flex; align-items:center; gap:4px;
+              padding: 4px 10px; border-radius: 0.375rem;
+              border: 1px solid #2a313c; background: transparent;
+              font-size: 0.72rem; color: #6b7280; cursor: pointer;
+              transition: border-color 0.15s, color 0.15s; flex-shrink:0;
+            "
+            onmouseenter="this.style.borderColor='#38bdf8';this.style.color='#38bdf8'"
+            onmouseleave="this.style.borderColor='#2a313c';this.style.color='#6b7280'"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            Refresh
+          </button>
+          <div class="status-dot status-idle" title="Idle"></div>
+        </div>
+
+        <!-- Scryfall import row -->
+        <div style="display:flex; align-items:center; gap:0.625rem; margin-bottom:0.75rem;">
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:0.8rem; font-weight:600; color:#9ca3af;">Scryfall arena IDs</div>
+            <div style="font-size:0.68rem; color:#374151; margin-top:1px;">Last updated: 12 days ago</div>
+          </div>
+          <button
+            style="
+              display:inline-flex; align-items:center; gap:4px;
+              padding: 4px 10px; border-radius: 0.375rem;
+              border: 1px solid #2a313c; background: transparent;
+              font-size: 0.72rem; color: #6b7280; cursor: pointer;
+              transition: border-color 0.15s, color 0.15s; flex-shrink:0;
+            "
+            onmouseenter="this.style.borderColor='#f97316';this.style.color='#f97316'"
+            onmouseleave="this.style.borderColor='#2a313c';this.style.color='#6b7280'"
+          >
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            Refresh
+          </button>
+          <div class="status-dot status-running" title="Running"></div>
+        </div>
+
+        <hr class="panel-divider" />
+
+        <div style="font-size:0.68rem; color:#374151;">
+          Oban queue:
+          <span style="color:#22c55e; font-weight:600;">idle</span>
+          &nbsp;·&nbsp;
+          <span style="color:#f97316; font-weight:600;">1 running</span>
+        </div>
+      </div>
+
+    </div>
+    <!-- End bottom row -->
+
+  </div>
+  <!-- End page wrapper -->
+
+  <!-- ════════════════════════════════
+       4. FILTER DRAWER (partially revealed)
+       ════════════════════════════════ -->
+  <div class="filter-drawer">
+
+    <!-- Drawer header -->
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
+      <span style="font-size:0.8rem; font-weight:700; color:#cbd5e1; text-transform:uppercase; letter-spacing:0.06em;">Advanced Filters</span>
+      <button
+        style="background:none; border:none; color:#4b5563; cursor:pointer; font-size:16px; line-height:1; padding:2px 4px;"
+        onmouseenter="this.style.color='#a6adbb'"
+        onmouseleave="this.style.color='#4b5563'"
+      >✕</button>
+    </div>
+
+    <!-- Rarity section -->
+    <div style="margin-bottom:1rem;">
+      <div class="filter-section-title">Rarity</div>
+      <div style="display:flex; flex-direction:column; gap:0.375rem;">
+
+        <!-- Common -->
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" checked style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span class="rarity-common" style="font-size:16px; line-height:1;">◆</span>
+          <span style="font-size:0.8rem; color:#9ca3af;">Common</span>
+        </label>
+
+        <!-- Uncommon -->
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" checked style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span class="rarity-uncommon" style="font-size:16px; line-height:1;">◆</span>
+          <span style="font-size:0.8rem; color:#9ca3af;">Uncommon</span>
+        </label>
+
+        <!-- Rare -->
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" checked style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span class="rarity-rare" style="font-size:16px; line-height:1;">◆</span>
+          <span style="font-size:0.8rem; color:#9ca3af;">Rare</span>
+        </label>
+
+        <!-- Mythic -->
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span class="rarity-mythic" style="font-size:16px; line-height:1;">◆</span>
+          <span style="font-size:0.8rem; color:#9ca3af;">Mythic Rare</span>
+        </label>
+
+      </div>
+    </div>
+
+    <hr class="panel-divider" style="margin-bottom:0.875rem;" />
+
+    <!-- Mana Value section -->
+    <div style="margin-bottom:1rem;">
+      <div class="filter-section-title">Mana Value</div>
+      <div style="display:flex; flex-wrap:wrap; gap:0.375rem;">
+        <button class="mv-pill active">0</button>
+        <button class="mv-pill">1</button>
+        <button class="mv-pill active">2</button>
+        <button class="mv-pill active">3</button>
+        <button class="mv-pill">4</button>
+        <button class="mv-pill">5</button>
+        <button class="mv-pill">6</button>
+        <button class="mv-pill">7+</button>
+      </div>
+    </div>
+
+    <hr class="panel-divider" style="margin-bottom:0.875rem;" />
+
+    <!-- Card Type section (bonus — shows more content) -->
+    <div style="margin-bottom:1rem;">
+      <div class="filter-section-title">Card Type</div>
+      <div style="display:flex; flex-direction:column; gap:0.3rem;">
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span style="font-size:0.8rem; color:#9ca3af;">Instant</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" checked style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span style="font-size:0.8rem; color:#9ca3af;">Sorcery</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span style="font-size:0.8rem; color:#9ca3af;">Creature</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span style="font-size:0.8rem; color:#9ca3af;">Enchantment</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span style="font-size:0.8rem; color:#9ca3af;">Artifact</span>
+        </label>
+        <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+          <input type="checkbox" style="accent-color:#38bdf8; width:14px; height:14px;" />
+          <span style="font-size:0.8rem; color:#9ca3af;">Land</span>
+        </label>
+      </div>
+    </div>
+
+  </div>
+  <!-- End filter drawer -->
+
+</div>
+<!-- End main layout -->
+
+</body>
+</html>
