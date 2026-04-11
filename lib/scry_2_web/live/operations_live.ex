@@ -36,8 +36,7 @@ defmodule Scry2Web.OperationsLive do
     domain_event_types = Events.count_by_type()
     total_domain = domain_event_types |> Map.values() |> Enum.sum()
 
-    # Raw-event breakdowns — used by the bottom tables that moved over
-    # from the old dashboard.
+    # Raw-event breakdowns — used by the unrecognized/deferred alert sections.
     raw_events_by_type = MtgaLogIngestion.count_by_type()
     known_types = IdentifyDomainEvents.known_event_types()
     deferred_types = IdentifyDomainEvents.deferred_event_types()
@@ -80,7 +79,6 @@ defmodule Scry2Web.OperationsLive do
     |> assign(:domain_event_count, total_domain)
     |> assign(:error_count, status.error_count)
     |> assign(:projectors, status.projectors)
-    |> assign(:raw_events_by_type, raw_events_by_type)
     |> assign(:unrecognized, unrecognized)
     |> assign(:deferred_with_payloads, deferred_with_payloads)
     |> assign(:errors, errors)
@@ -108,6 +106,17 @@ defmodule Scry2Web.OperationsLive do
   def handle_event("reingest", _params, socket) do
     Operations.start_reingest!()
     {:noreply, socket}
+  end
+
+  def handle_event("dismiss_operation", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:operation, nil)
+     |> assign(:operation_running, false)
+     |> assign(:progress, nil)
+     |> assign(:steps, [])
+     |> assign(:projector_progress, %{})
+     |> assign(:pending_rebuilds, nil)}
   end
 
   def handle_event("rebuild_one", %{"module" => module_string}, socket) do
@@ -401,7 +410,17 @@ defmodule Scry2Web.OperationsLive do
 
       <%!-- Operation progress (shown while running and after completion) --%>
       <section :if={@operation} class="card bg-base-200">
-        <div class="card-body p-5">
+        <div class="card-body p-5 relative">
+          <button
+            :if={!@operation_running}
+            type="button"
+            phx-click="dismiss_operation"
+            aria-label="Dismiss"
+            class="btn btn-ghost btn-xs btn-circle absolute top-3 right-3"
+          >
+            <.icon name="hero-x-mark" class="size-4" />
+          </button>
+
           <div class="flex items-center gap-2 mb-3">
             <.icon
               :if={@operation_running}
@@ -600,27 +619,6 @@ defmodule Scry2Web.OperationsLive do
               </tbody>
             </table>
           </div>
-        </div>
-      </section>
-
-      <%!-- Full log-events-by-type breakdown --%>
-      <section :if={map_size(@raw_events_by_type) > 0}>
-        <h2 class="text-lg font-semibold mb-2">Log events by type</h2>
-        <div class="overflow-x-auto">
-          <table class="table table-sm">
-            <thead>
-              <tr>
-                <th>Event type</th>
-                <th class="text-right">Count</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr :for={{type, count} <- sort_events_by_count(@raw_events_by_type)}>
-                <td><code>{type}</code></td>
-                <td class="text-right tabular-nums">{count}</td>
-              </tr>
-            </tbody>
-          </table>
         </div>
       </section>
 
