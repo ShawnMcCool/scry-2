@@ -60,7 +60,8 @@ ADR-013 requires extracted pure helpers with `async: true` tests for every LiveV
 
 | LiveView | Helpers | Integration test |
 |---|---|---|
-| DashboardLive | `dashboard_helpers.ex` ✓ | missing |
+| HealthLive | `health_helpers.ex` ✓ | present ✓ |
+| SetupLive | `setup_flow.ex` + `state.ex` ✓ | present ✓ |
 | MatchesLive | `matches_helpers.ex` ✓ | missing |
 | CardsLive | `cards_helpers.ex` ✓ | missing |
 | DraftsLive | missing | missing |

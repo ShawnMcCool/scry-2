@@ -2,7 +2,8 @@ defmodule Scry2Web.HealthLive do
   @moduledoc """
   Landing page LiveView — the scry_2 health screen.
 
-  Replaces `DashboardLive` at `/`. Runs a full `Scry2.Health.run_all/0`
+  Mounted at `/` as the permanent landing page. Runs a full
+  `Scry2.Health.run_all/0`
   snapshot on every mount/patch and subscribes to PubSub for live
   updates as the watcher reports status changes, cards refresh, and
   domain events flow.
