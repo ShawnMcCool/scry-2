@@ -143,8 +143,8 @@ jobs:
           cp -r _build/prod/rel/scry_2/. "$ARCHIVE/"
           cp scry2-tray "$ARCHIVE/scry2-tray"
           rm -f "$ARCHIVE/install.bat" "$ARCHIVE/uninstall.bat"
-          cp scripts/install "$ARCHIVE/install"
-          cp scripts/uninstall "$ARCHIVE/uninstall"
+          cp scripts/install-linux "$ARCHIVE/install"
+          cp scripts/uninstall-linux "$ARCHIVE/uninstall"
           printf "Run ./install to set up Scry2.\nSee https://github.com/${{ github.repository }} for full instructions.\n" > "$ARCHIVE/README.txt"
           tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
 

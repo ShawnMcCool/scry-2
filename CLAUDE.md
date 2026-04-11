@@ -93,17 +93,18 @@ Disconnect the REPL with `Ctrl+\` (leaves the server running).
 
 ```bash
 scripts/release              # build prod release + tray, stage to _build/prod/package/
-scripts/deploy               # build + install locally in one step
+scripts/install              # build + install locally in one step (for devs who
+                             #   also run the production app for gameplay analysis)
 scripts/tag-release 0.2.0    # run precommit, bump version, tag, push — triggers CI
 ```
 
 The release workflow:
 
 1. **Local build** — `scripts/release` builds the Elixir release and tray binary, stages everything in `_build/prod/package/`. Use this to verify a release builds before tagging.
-2. **Local install** — `scripts/deploy` builds and installs in one step. Use this to test the production release on your machine.
+2. **Local install** — `scripts/install` builds and installs in one step. Use this to test the production release on your machine, or to keep the production app installed for your own gameplay analysis.
 3. **Tag and publish** — `scripts/tag-release <version>` runs `mix precommit`, bumps the version in `mix.exs`, creates a jj tag, and pushes to GitHub. GitHub Actions then builds all three platform archives (Linux, macOS, Windows) and publishes them to GitHub Releases.
 
-The CI build is authoritative for multi-platform releases. `scripts/release` and `scripts/deploy` are for local development and testing only.
+The CI build is authoritative for multi-platform releases. `scripts/release` and `scripts/install` are for local development and testing only. Platform-specific package installers live at `scripts/install-linux` and `scripts/install-macos` — these are copied into the release package and run *from inside* it, not from the repo root.
 
 Migrations in a release: `bin/scry_2 eval "Scry2.Release.migrate()"`.
 

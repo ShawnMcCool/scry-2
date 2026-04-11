@@ -6,7 +6,9 @@ set -euo pipefail
 #
 # Usage:
 #   scripts/release          # build and stage
-#   scripts/deploy           # build, stage, and install locally
+#   scripts/install          # build, stage, and install locally (for devs
+#                            #   who run the production app on their own
+#                            #   machine for gameplay analysis)
 
 cd "$(dirname "$0")/.."
 
@@ -24,8 +26,8 @@ banner "Building tray binary"
 case "$(uname -s)" in
   Linux)
     (cd tray && go build -ldflags="-X 'scry2/tray/updater.CurrentVersion=${VERSION}'" -o ../scry2-tray .)
-    install_script="scripts/install"
-    uninstall_script="scripts/uninstall"
+    install_script="scripts/install-linux"
+    uninstall_script="scripts/uninstall-linux"
     ;;
   Darwin)
     (cd tray && go build -ldflags="-X 'scry2/tray/updater.CurrentVersion=${VERSION}'" -o ../scry2-tray .)
@@ -49,5 +51,5 @@ cp "$uninstall_script" "$package/uninstall"
 chmod +x "$package/install" "$package/uninstall" "$package/scry2-tray"
 
 banner "Release staged at $package"
-echo "  Install locally:  scripts/deploy"
+echo "  Install locally:  scripts/install"
 echo "  Manual install:   cd $package && ./install"

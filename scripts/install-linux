@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_DIR="$HOME/.local/lib/scry_2"
+DESKTOP_FILE="$HOME/.config/autostart/scry2.desktop"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "Installing Scry2..."
+
+# Stop existing tray and backend if running
+if pgrep -x scry2-tray &>/dev/null; then
+    echo "Stopping existing Scry2 tray..."
+    pkill -x scry2-tray 2>/dev/null || true
+    sleep 1
+fi
+
+# Copy release files
+echo "Copying files to $INSTALL_DIR..."
+rm -rf "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+cp -r "$SCRIPT_DIR/." "$INSTALL_DIR/"
+chmod +x "$INSTALL_DIR/scry2-tray"
+
+# Enable autostart on login via XDG
+mkdir -p "$(dirname "$DESKTOP_FILE")"
+cat > "$DESKTOP_FILE" << EOF
+[Desktop Entry]
+Type=Application
+Name=Scry2
+Exec=$INSTALL_DIR/scry2-tray
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
+EOF
+
+# Launch tray (which will start the backend)
+echo "Starting Scry2..."
+"$INSTALL_DIR/scry2-tray" &
+
+echo ""
+echo "Scry2 installed! It will start automatically on login."
+echo "Access your stats at: http://localhost:6015"
+echo ""
+echo "To uninstall later, run: $INSTALL_DIR/uninstall"
+echo ""
+echo "Note: On GNOME, install 'gnome-shell-extension-appindicator' if the tray icon does not appear."

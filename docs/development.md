@@ -40,10 +40,18 @@ This runs `MIX_ENV=prod mix assets.deploy`, `mix release`, and `go build` for th
 ### Local install
 
 ```bash
-scripts/deploy    # scripts/release + installs the staged package locally
+scripts/install    # scripts/release + installs the staged package locally
 ```
 
-Use this to smoke-test the production binary against your real `Player.log` before publishing.
+Use this to smoke-test the production binary against your real `Player.log`
+before publishing, or to keep the production app installed alongside your
+dev checkout for your own gameplay analysis.
+
+Platform-specific package installers live at `scripts/install-linux` and
+`scripts/install-macos`. Those are templates that get copied into the
+release package by `scripts/release` — they expect the tray binary to be
+a sibling and aren't meant to be run from the repo root. Use
+`scripts/install` for developer-local installs.
 
 ### Tagging and publishing
 
@@ -61,7 +69,7 @@ This script does the following in sequence:
 6. Pushes the `main` bookmark and the tag to GitHub
 7. GitHub Actions builds Linux, macOS, and Windows archives and publishes them to GitHub Releases
 
-The CI build is authoritative for multi-platform releases. `scripts/release` and `scripts/deploy` are local-only.
+The CI build is authoritative for multi-platform releases. `scripts/release` and `scripts/install` are local-only.
 
 ### Typical release workflow
 
@@ -70,7 +78,7 @@ The CI build is authoritative for multi-platform releases. `scripts/release` and
 scripts/release
 
 # 2. Optionally smoke-test the local install
-scripts/deploy
+scripts/install
 
 # 3. Tag and publish
 scripts/tag-release 0.2.0
