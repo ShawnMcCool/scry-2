@@ -1,7 +1,8 @@
 defmodule Scry2Web.OperationsLive do
   use Scry2Web, :live_view
 
-  alias Scry2.{Events, Operations, Topics}
+  alias Scry2.{Events, MtgaLogIngestion, Operations, Topics}
+  alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.ProjectorRegistry
 
   @impl true
@@ -35,6 +36,20 @@ defmodule Scry2Web.OperationsLive do
     domain_event_types = Events.count_by_type()
     total_domain = domain_event_types |> Map.values() |> Enum.sum()
 
+    # Raw-event breakdowns — used by the bottom tables that moved over
+    # from the old dashboard.
+    raw_events_by_type = MtgaLogIngestion.count_by_type()
+    known_types = IdentifyDomainEvents.known_event_types()
+    deferred_types = IdentifyDomainEvents.deferred_event_types()
+
+    unrecognized =
+      Map.reject(raw_events_by_type, fn {type, _count} -> MapSet.member?(known_types, type) end)
+
+    deferred_with_payloads = MtgaLogIngestion.deferred_types_with_payloads(deferred_types)
+
+    errors =
+      if status.error_count > 0, do: MtgaLogIngestion.list_errors(), else: []
+
     # Restore last operation state so the section survives page reload /
     # WebSocket reconnect. Only applied when no operation is already tracked
     # in assigns (i.e. fresh mount) — live PubSub updates take precedence.
@@ -65,6 +80,16 @@ defmodule Scry2Web.OperationsLive do
     |> assign(:domain_event_count, total_domain)
     |> assign(:error_count, status.error_count)
     |> assign(:projectors, status.projectors)
+    |> assign(:raw_events_by_type, raw_events_by_type)
+    |> assign(:unrecognized, unrecognized)
+    |> assign(:deferred_with_payloads, deferred_with_payloads)
+    |> assign(:errors, errors)
+  end
+
+  # Orders a `type => count` map by count descending — used by the raw
+  # event breakdown tables at the bottom of the page.
+  defp sort_events_by_count(map) when is_map(map) do
+    Enum.sort_by(map, fn {_type, count} -> count end, :desc)
   end
 
   # ── Events (button clicks) ─────────────────────────────────────────
@@ -490,6 +515,112 @@ defmodule Scry2Web.OperationsLive do
               </button>
             </div>
           </div>
+        </div>
+      </section>
+
+      <%!-- Unrecognized event types (moved from the old dashboard) --%>
+      <section :if={map_size(@unrecognized) > 0} class="alert alert-warning">
+        <.icon name="hero-exclamation-triangle" class="size-5" />
+        <div>
+          <p class="font-semibold">Unrecognized event types</p>
+          <p class="text-sm mb-2">
+            These MTGA event types have no handler or ignore clause in
+            IdentifyDomainEvents (ADR-020).
+          </p>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Event type</th>
+                  <th class="text-right">Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={{type, count} <- sort_events_by_count(@unrecognized)}>
+                  <td><code>{type}</code></td>
+                  <td class="text-right tabular-nums">{count}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <%!-- Deferred event types with payloads --%>
+      <section :if={map_size(@deferred_with_payloads) > 0} class="alert alert-info">
+        <.icon name="hero-light-bulb" class="size-5" />
+        <div>
+          <p class="font-semibold">Deferred events now have payloads</p>
+          <p class="text-sm mb-2">
+            These event types were deferred because all prior payloads were empty.
+            They now have non-empty data and may be ready for a handler.
+          </p>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>Event type</th>
+                  <th class="text-right">Count</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={{type, count} <- sort_events_by_count(@deferred_with_payloads)}>
+                  <td><code>{type}</code></td>
+                  <td class="text-right tabular-nums">{count}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <%!-- Processing errors --%>
+      <section :if={@errors != []} class="alert alert-error">
+        <.icon name="hero-exclamation-circle" class="size-5" />
+        <div>
+          <p class="font-semibold">Processing errors ({@error_count})</p>
+          <p class="text-sm mb-2">
+            Raw events that failed translation. Check the console drawer for details.
+          </p>
+          <div class="overflow-x-auto">
+            <table class="table table-sm">
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Event type</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr :for={error <- @errors}>
+                  <td class="tabular-nums">{error.id}</td>
+                  <td><code>{error.event_type}</code></td>
+                  <td class="text-sm max-w-md truncate">{error.processing_error}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <%!-- Full log-events-by-type breakdown --%>
+      <section :if={map_size(@raw_events_by_type) > 0}>
+        <h2 class="text-lg font-semibold mb-2">Log events by type</h2>
+        <div class="overflow-x-auto">
+          <table class="table table-sm">
+            <thead>
+              <tr>
+                <th>Event type</th>
+                <th class="text-right">Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={{type, count} <- sort_events_by_count(@raw_events_by_type)}>
+                <td><code>{type}</code></td>
+                <td class="text-right tabular-nums">{count}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
