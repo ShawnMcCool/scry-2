@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+VERSION="${1:-}"
+if [[ -z "$VERSION" ]]; then
+    echo "Usage: scripts/tag-release <version>"
+    echo "  e.g. scripts/tag-release 0.2.0"
+    exit 1
+fi
+
+TAG="v${VERSION}"
+
+# Ensure version looks like semver
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Error: version must be semver (e.g. 0.2.0)"
+    exit 1
+fi
+
+# Ensure working copy is clean
+if jj diff --summary 2>/dev/null | grep -q .; then
+    echo "Error: working copy has uncommitted changes. Commit or stash them first."
+    jj diff --summary
+    exit 1
+fi
+
+# Bump version in mix.exs
+echo "Bumping version in mix.exs to $VERSION..."
+VERSION="$VERSION" python3 -c "
+import re, sys, os
+version = os.environ['VERSION']
+content = open('mix.exs').read()
+updated = re.sub(r'version: \"[^\"]+\"', f'version: \"{version}\"', content)
+if content == updated:
+    sys.exit('Error: version pattern not found in mix.exs')
+with open('mix.exs', 'w') as f:
+    f.write(updated)
+print('mix.exs updated')
+"
+
+# Describe the jj change
+jj describe -m "chore: release ${TAG}"
+
+# Create the git tag at the current revision
+echo "Creating tag ${TAG}..."
+jj tag set "${TAG}"
+
+# Push the current bookmark and the tag
+# Note: jj git push handles bookmarks; git push is needed to push the tag ref
+echo "Pushing bookmark to remote..."
+jj git push --allow-new
+
+echo "Pushing tag to remote..."
+git push origin "refs/tags/${TAG}"
+
+echo ""
+echo "Released ${TAG}. GitHub Actions will build and publish the release."
+REPO=$(jj git remote list 2>/dev/null | grep origin | awk '{print $2}' | sed 's|.*github.com[:/]||;s|\.git$||')
+if [[ -n "$REPO" ]]; then
+    echo "Monitor at: https://github.com/${REPO}/actions"
+fi

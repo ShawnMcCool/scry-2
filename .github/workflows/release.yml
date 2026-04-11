@@ -29,6 +29,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set version from tag
+        shell: python
+        run: |
+          import re, os
+          tag = os.environ.get('GITHUB_REF_NAME', '')
+          version = tag.lstrip('v') if tag.startswith('v') else tag
+          if not re.match(r'^\d+\.\d+\.\d+', version):
+              raise ValueError(f"Tag '{tag}' does not produce a valid semver: '{version}'")
+          with open('mix.exs') as f:
+              content = f.read()
+          updated = re.sub(r'version: "[^"]+"', f'version: "{version}"', content)
+          with open('mix.exs', 'w') as f:
+              f.write(updated)
+          print(f"Set version to {version}")
+
       - uses: erlef/setup-beam@v1
         with:
           elixir-version: '1.18'
@@ -40,8 +55,8 @@ jobs:
           path: |
             deps
             _build
-          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ${{ runner.os }}-mix-
+          key: ${{ runner.os }}-mix-1.18-27-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-1.18-27-
 
       - name: Install dependencies
         run: mix deps.get --only prod
