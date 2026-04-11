@@ -2,6 +2,7 @@ package main
 
 import (
 	_ "embed"
+	"time"
 
 	"github.com/getlantern/systray"
 	"scry2/tray/updater"
@@ -30,8 +31,18 @@ func onReady() {
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Quit", "Stop Scry2 and quit")
 
+	firstRun := IsFirstRun()
+
 	backend.Start()
 	backend.StartWatchdog(quitCh)
+
+	if firstRun {
+		go func() {
+			if waitForBackendReady(30 * time.Second) {
+				openBrowser(DashboardURL)
+			}
+		}()
+	}
 
 	u := updater.New(
 		updater.CurrentVersion,
@@ -47,7 +58,7 @@ func onReady() {
 		for {
 			select {
 			case <-mOpen.ClickedCh:
-				openBrowser("http://localhost:6015")
+				openBrowser(DashboardURL)
 			case <-mAutoStart.ClickedCh:
 				if mAutoStart.Checked() {
 					if err := SetAutoStart(false); err == nil {
