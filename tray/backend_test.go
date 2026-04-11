@@ -1,0 +1,101 @@
+package main
+
+import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"testing"
+	"time"
+)
+
+var fakeBackendBin string
+
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "fakebackend-*")
+	if err != nil {
+		panic("failed to create temp dir: " + err.Error())
+	}
+	defer os.RemoveAll(dir)
+
+	fakeBackendBin = filepath.Join(dir, "fakebackend")
+	if runtime.GOOS == "windows" {
+		fakeBackendBin += ".exe"
+	}
+
+	cmd := exec.Command("go", "build", "-o", fakeBackendBin, "./testutil/fakebackend")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		panic("failed to build fakebackend: " + err.Error())
+	}
+
+	os.Exit(m.Run())
+}
+
+func newTestBackend(t *testing.T) (*RealBackend, string) {
+	t.Helper()
+	pidFile := filepath.Join(t.TempDir(), "backend.pid")
+	b := &RealBackend{
+		binPath:          fakeBackendBin,
+		extraEnv:         []string{"FAKE_BACKEND_PIDFILE=" + pidFile},
+		WatchdogInterval: 100 * time.Millisecond,
+		GracePeriod:      100 * time.Millisecond,
+		RestartDelay:     100 * time.Millisecond,
+	}
+	return b, pidFile
+}
+
+func TestStart(t *testing.T) {
+	b, _ := newTestBackend(t)
+
+	b.Start()
+
+	// Give the subprocess a moment to write the PID file.
+	time.Sleep(200 * time.Millisecond)
+
+	if !b.IsRunning() {
+		t.Fatal("expected IsRunning() == true after Start()")
+	}
+}
+
+func TestStop(t *testing.T) {
+	b, _ := newTestBackend(t)
+
+	b.Start()
+	time.Sleep(200 * time.Millisecond)
+
+	if !b.IsRunning() {
+		t.Fatal("expected IsRunning() == true after Start()")
+	}
+
+	b.Stop()
+
+	if b.IsRunning() {
+		t.Fatal("expected IsRunning() == false after Stop()")
+	}
+}
+
+func TestWatchdogRestarts(t *testing.T) {
+	pidFile := filepath.Join(t.TempDir(), "backend.pid")
+	b := &RealBackend{
+		binPath:          fakeBackendBin,
+		extraEnv:         []string{"FAKE_BACKEND_PIDFILE=" + pidFile, "FAKE_BACKEND_CRASH_AFTER=1"},
+		WatchdogInterval: 100 * time.Millisecond,
+		GracePeriod:      100 * time.Millisecond,
+		RestartDelay:     100 * time.Millisecond,
+	}
+
+	quit := make(chan struct{})
+	defer close(quit)
+
+	b.Start()
+	b.StartWatchdog(quit)
+
+	// Wait for crash + watchdog restart cycle (crash after 1s, watchdog polls every 100ms).
+	time.Sleep(3 * time.Second)
+
+	if !b.IsRunning() {
+		t.Fatal("expected watchdog to have restarted the backend after crash")
+	}
+}

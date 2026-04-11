@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PLIST_LABEL="com.scry_2"
+PLIST_LABEL="com.scry2"
 PLIST_FILE="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
 INSTALL_DIR="$HOME/.local/lib/scry_2"
 
 echo "Uninstalling Scry2..."
 
-# Unload launch agent
+# Unload launch agent and stop tray
 if launchctl list "$PLIST_LABEL" &>/dev/null; then
     launchctl unload "$PLIST_FILE" 2>/dev/null || true
 fi
+pkill -x scry2-tray 2>/dev/null || true
 
-# Remove plist
+# Stop backend directly in case tray was not running
+if [[ -f "$INSTALL_DIR/bin/scry_2" ]]; then
+    "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
+fi
+
+# Remove plist and install directory
 rm -f "$PLIST_FILE"
-
-# Remove install directory
 if [[ -d "$INSTALL_DIR" ]]; then
     rm -rf "$INSTALL_DIR"
     echo "Removed $INSTALL_DIR"
