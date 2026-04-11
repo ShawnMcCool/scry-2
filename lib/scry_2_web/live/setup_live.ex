@@ -138,18 +138,18 @@ defmodule Scry2Web.SetupLive do
   def render(assigns) do
     ~H"""
     <main class="min-h-screen flex items-center justify-center px-4 py-8">
-      <div class="w-full max-w-2xl space-y-6">
+      <div class="setup-wizard-scale w-full max-w-2xl space-y-5">
         <header class="text-center">
-          <h1 class="text-3xl font-semibold flex items-center justify-center gap-2">
-            <.icon name="hero-eye" class="size-8 text-primary" /> Scry 2
+          <h1 class="text-2xl font-semibold flex items-center justify-center gap-2">
+            <.icon name="hero-eye" class="size-6 text-primary" /> Scry 2
           </h1>
-          <p class="text-sm text-base-content/60 mt-1">First-run setup</p>
+          <p class="text-xs text-base-content/60 mt-1">First-run setup</p>
         </header>
 
         <.progress_indicator state={@state} />
 
         <section class="card bg-base-200">
-          <div class="card-body">
+          <div class="card-body p-6">
             {render_step(assigns)}
           </div>
         </section>
@@ -167,12 +167,16 @@ defmodule Scry2Web.SetupLive do
           <button
             :if={@state.step != :done}
             phx-click="next"
-            class="btn btn-primary btn-sm"
+            class="btn btn-soft btn-primary btn-sm border border-primary/40"
           >
             {next_label(@state.step)}
             <.icon name="hero-arrow-right" class="size-4" />
           </button>
-          <button :if={@state.step == :done} phx-click="finish" class="btn btn-primary btn-sm">
+          <button
+            :if={@state.step == :done}
+            phx-click="finish"
+            class="btn btn-soft btn-primary btn-sm border border-primary/40"
+          >
             Go to dashboard <.icon name="hero-arrow-right" class="size-4" />
           </button>
         </div>
