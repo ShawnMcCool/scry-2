@@ -62,10 +62,15 @@ If Scry2 can't find your `Player.log` automatically, set the path in
 
 ## Uninstall
 
-Run the uninstall script from the extracted archive:
+The uninstall script is copied into the install directory during installation,
+so you don't need to keep the original release archive around.
 
-- **Windows:** double-click `uninstall.bat`
-- **macOS / Linux:** `./uninstall` in a terminal
+- **Windows:** `%LOCALAPPDATA%\scry_2\uninstall.bat`
+- **macOS:**   `~/.local/lib/scry_2/uninstall`
+- **Linux:**   `~/.local/lib/scry_2/uninstall`
+
+You can also run `uninstall` / `uninstall.bat` directly from the extracted
+release archive if you still have it.
 
 **Your database is never deleted by the uninstall script.** The script removes
 only the application binaries and the autostart entry. It then prints the
