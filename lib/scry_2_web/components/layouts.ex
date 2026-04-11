@@ -46,7 +46,7 @@ defmodule Scry2Web.Layouts do
       </div>
       <div class="flex-none">
         <ul class="menu menu-horizontal gap-2">
-          <li><.link navigate={~p"/"}>Dashboard</.link></li>
+          <li><.link navigate={~p"/"}>Health</.link></li>
           <li><.link navigate={~p"/stats"}>Stats</.link></li>
           <li><.link navigate={~p"/ranks"}>Ranks</.link></li>
           <li><.link navigate={~p"/economy"}>Economy</.link></li>
