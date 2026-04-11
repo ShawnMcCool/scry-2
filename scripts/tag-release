@@ -29,9 +29,9 @@ VERSION="$VERSION" python3 -c "
 import re, sys, os
 version = os.environ['VERSION']
 content = open('mix.exs').read()
-updated = re.sub(r'version: \"[^\"]+\"', f'version: \"{version}\"', content)
-if content == updated:
+if not re.search(r'version: \"[^\"]+\"', content):
     sys.exit('Error: version pattern not found in mix.exs')
+updated = re.sub(r'version: \"[^\"]+\"', f'version: \"{version}\"', content)
 with open('mix.exs', 'w') as f:
     f.write(updated)
 print('mix.exs updated')
