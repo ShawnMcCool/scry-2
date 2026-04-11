@@ -12,6 +12,7 @@ defmodule Scry2.MtgaLogIngestion.Cursor do
   schema "mtga_logs_cursor" do
     field :file_path, :string
     field :byte_offset, :integer, default: 0
+    field :log_epoch, :integer, default: 0
     field :inode, :integer
     field :last_read_at, :utc_datetime
 
@@ -20,7 +21,7 @@ defmodule Scry2.MtgaLogIngestion.Cursor do
 
   def changeset(cursor, attrs) do
     cursor
-    |> cast(attrs, [:file_path, :byte_offset, :inode, :last_read_at])
+    |> cast(attrs, [:file_path, :byte_offset, :log_epoch, :inode, :last_read_at])
     |> validate_required([:file_path, :byte_offset])
     |> unique_constraint(:file_path)
   end

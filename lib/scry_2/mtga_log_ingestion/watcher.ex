@@ -64,6 +64,7 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
     state = %{
       path: nil,
       offset: 0,
+      log_epoch: 0,
       inode: nil,
       status: :starting,
       fs_pid: nil,
@@ -147,7 +148,7 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
 
   defp start_watching(state, path) do
     cursor = MtgaLogIngestion.get_cursor(path)
-    {offset, inode} = cursor_initial(cursor)
+    {offset, inode, log_epoch} = cursor_initial(cursor)
 
     {:ok, fs_pid} = FileSystem.start_link(dirs: [Path.dirname(path)])
     FileSystem.subscribe(fs_pid)
@@ -157,6 +158,7 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
         state
         | path: path,
           offset: offset,
+          log_epoch: log_epoch,
           inode: inode,
           fs_pid: fs_pid,
           status: :running
@@ -166,8 +168,10 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
     drain_file(state)
   end
 
-  defp cursor_initial(nil), do: {0, nil}
-  defp cursor_initial(%{byte_offset: offset, inode: inode}), do: {offset, inode}
+  defp cursor_initial(nil), do: {0, nil, 0}
+
+  defp cursor_initial(%{byte_offset: offset, inode: inode, log_epoch: log_epoch}),
+    do: {offset, inode, log_epoch || 0}
 
   defp stop_fs(%{fs_pid: nil} = state), do: state
 
@@ -176,13 +180,19 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
     %{state | fs_pid: nil}
   end
 
-  defp drain_file(%{path: path, offset: offset} = state) when is_binary(path) do
+  defp drain_file(%{path: path, offset: offset, log_epoch: log_epoch} = state)
+       when is_binary(path) do
     case ReadNewBytes.read_since(path, offset) do
       {:ok, %{bytes: "", new_offset: new_offset, inode: inode}} ->
         %{state | offset: new_offset, inode: inode}
 
       {:ok, %{bytes: bytes, new_offset: new_offset, rotated?: rotated, inode: inode}} ->
         base_offset = if rotated, do: 0, else: offset
+        new_epoch = if rotated, do: log_epoch + 1, else: log_epoch
+
+        if rotated do
+          Log.info(:watcher, "log rotation detected — advancing to epoch #{new_epoch}")
+        end
 
         {events, warnings} = ExtractEventsFromLog.parse_chunk(bytes, path, base_offset)
 
@@ -194,16 +204,17 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
         end
 
         Scry2.Repo.transaction(fn ->
-          Enum.each(events, &persist_event/1)
+          Enum.each(events, &persist_event(&1, new_epoch))
 
           MtgaLogIngestion.put_cursor!(%{
             file_path: path,
             byte_offset: new_offset,
+            log_epoch: new_epoch,
             inode: inode
           })
         end)
 
-        %{state | offset: new_offset, inode: inode}
+        %{state | offset: new_offset, log_epoch: new_epoch, inode: inode}
 
       {:error, reason} ->
         Log.warning(:watcher, "drain_file error: #{inspect(reason)}")
@@ -213,12 +224,13 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
 
   defp drain_file(state), do: state
 
-  defp persist_event(%Scry2.MtgaLogIngestion.Event{} = event) do
+  defp persist_event(%Scry2.MtgaLogIngestion.Event{} = event, log_epoch) do
     MtgaLogIngestion.insert_event!(%{
       event_type: event.type,
       mtga_timestamp: event.mtga_timestamp,
       file_offset: event.file_offset,
       source_file: event.source_file,
+      log_epoch: log_epoch,
       raw_json: event.raw_json
     })
   rescue
