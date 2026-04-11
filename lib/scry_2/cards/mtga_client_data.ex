@@ -22,7 +22,7 @@ defmodule Scry2.Cards.MtgaClientData do
   """
 
   alias Scry2.Cards
-  alias Scry2.Config
+  alias Scry2.Settings
 
   require Scry2.Log, as: Log
 
@@ -38,7 +38,9 @@ defmodule Scry2.Cards.MtgaClientData do
   def run(opts \\ []) do
     db_path =
       Keyword.get_lazy(opts, :database_path, fn ->
-        data_dir = Config.get(:mtga_data_dir) || default_raw_dir()
+        data_dir =
+          Settings.get_or_config("mtga_logs_data_dir", :mtga_data_dir) || default_raw_dir()
+
         if data_dir, do: find_database_path(data_dir)
       end)
 
