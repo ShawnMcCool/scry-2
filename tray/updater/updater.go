@@ -61,7 +61,10 @@ func (u *Updater) CheckOnce() {
 		return // unsupported platform — skip silently
 	}
 	release, err := u.checker.LatestRelease(archiveName)
-	if err != nil || !IsNewer(release.Version, u.currentVersion) {
+	if err != nil {
+		return // silent — preserve existing pendingRelease and menu title
+	}
+	if !IsNewer(release.Version, u.currentVersion) {
 		u.pendingRelease = nil
 		u.item.SetTitle("Check for Updates")
 		return
@@ -84,6 +87,8 @@ func (u *Updater) ApplyUpdate() {
 		u.resetAfterFailure(release.Version)
 		return
 	}
+	// Defers only run in tests (where exitFn is a no-op).
+	// In production, os.Exit terminates before they fire; the OS cleans up temp files.
 	defer os.Remove(archivePath)
 
 	destDir, err := os.MkdirTemp("", "scry2-update-*")
