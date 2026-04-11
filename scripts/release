@@ -10,6 +10,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+VERSION=$(grep -oP '(?<=version: ")[^"]+' mix.exs)
+
 banner() { echo "==> $1"; }
 
 banner "Building Elixir assets"
@@ -21,12 +23,12 @@ MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8 MIX_ENV=prod mix release
 banner "Building tray binary"
 case "$(uname -s)" in
   Linux)
-    (cd tray && go build -o ../scry2-tray .)
+    (cd tray && go build -ldflags="-X 'scry2/tray/updater.CurrentVersion=${VERSION}'" -o ../scry2-tray .)
     install_script="scripts/install"
     uninstall_script="scripts/uninstall"
     ;;
   Darwin)
-    (cd tray && go build -o ../scry2-tray .)
+    (cd tray && go build -ldflags="-X 'scry2/tray/updater.CurrentVersion=${VERSION}'" -o ../scry2-tray .)
     install_script="scripts/install-macos"
     uninstall_script="scripts/uninstall-macos"
     ;;
