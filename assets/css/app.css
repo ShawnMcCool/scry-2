@@ -61,11 +61,6 @@
   --noise: 0;
 }
 
-/* Responsive root font — scales with viewport for DPI adaptation */
-html {
-  font-size: clamp(14px, 0.85vw + 6px, 18px);
-}
-
 /* Add variants based on LiveView classes */
 @custom-variant phx-click-loading (.phx-click-loading&, .phx-click-loading &);
 @custom-variant phx-submit-loading (.phx-submit-loading&, .phx-submit-loading &);
