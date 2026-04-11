@@ -1,20 +1,38 @@
 # Scry2
 
-A self-hosted Magic: The Gathering Arena stats tracker. Scry2 watches your
-`Player.log` file, parses match and draft events, and serves a rich analytics
-dashboard at `http://localhost:6015`.
+**A self-hosted Magic: The Gathering Arena stats tracker.** Scry2 quietly
+watches your MTGA `Player.log` file, parses every match and draft as it
+happens, and serves a personal analytics dashboard at
+`http://localhost:6015`.
 
-Inspired by [17lands.com](https://17lands.com). Built with Elixir/Phoenix.
+Your data is yours. Nothing leaves your machine. No accounts, no cloud, no
+telemetry — just a small Elixir/Phoenix app sitting in your system tray,
+turning MTGA's raw event stream into history you can actually learn from.
 
-- Real-time log watching — stats update as you play, no manual imports
-- Match history with win rates by deck, format, and Limited season
-- Draft pick history and deck submitted per draft
-- Card performance charts — win rate and drawn/mulliganed stats per card
-- Season-scoped climb charts showing rank progression over time
-- Card image browser with auto-download from Scryfall
-- Automatic card database refresh from 17lands public datasets
-- MTGA client data import for complete card identity coverage
-- Self-hosted — all data stays local, no accounts or internet dependency
+Inspired by [17lands.com](https://17lands.com), but self-hosted and
+Constructed-first.
+
+## Features
+
+- **Real-time ingestion** — stats update the moment a match ends, no manual
+  imports or uploads
+- **Match history** — full play-by-play with deck, format, opponent, and
+  result; win rates sliced by deck, format, and Limited season
+- **Draft tracking** — every pick, every pack, plus the deck you actually
+  submitted at the end of the draft
+- **Card performance** — per-card win rate, games drawn, games in opening
+  hand, and mulligan stats across your own play history
+- **Rank climb charts** — season-scoped rank progression over time, for both
+  Constructed and Limited queues
+- **Card browser** — searchable card database with images auto-downloaded
+  from Scryfall on demand
+- **Complete card coverage** — automatic refresh from 17lands' public card
+  datasets, with MTGA client data import for card identity fallback
+- **Event-sourced architecture** — every raw MTGA event is persisted before
+  any downstream processing, so projections can always be rebuilt from the
+  log of record
+- **Zero-config install** — the Elixir runtime is bundled; no BEAM, no
+  dependencies, no database server to set up
 
 ---
 
@@ -90,16 +108,39 @@ command to run.
 
 ---
 
-## Card Data Attribution
+## Acknowledgements
 
-Card reference data is sourced from [17lands](https://17lands.com) public
-datasets, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Scry2 is built on the work of a lot of generous people.
 
----
+- **[Mana font](https://github.com/andrewgioia/mana)** by Andrew Gioia —
+  the mana symbols, set icons, and loyalty badges that make MTG content
+  recognizable on the web. Licensed under SIL OFL 1.1 (font) and MIT (CSS).
+  If you ever need to render Magic symbols in your own project, start there.
+- **[17lands](https://17lands.com)** — for the public card reference
+  datasets that make card-aware analytics possible without scraping, and for
+  setting the standard on what self-service MTGA stats should feel like.
+  Card data is licensed
+  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+- **[Scryfall](https://scryfall.com)** — for the card image API that
+  powers Scry2's card browser. Please respect their
+  [rate limits and guidelines](https://scryfall.com/docs/api) if you fork
+  this project.
+- **[Wizards of the Coast](https://magic.wizards.com)** — Magic: The
+  Gathering, MTG Arena, mana symbols, set symbols, and all card text and
+  imagery are property of Wizards of the Coast LLC. Scry2 is an independent,
+  unofficial tool and is not affiliated with, endorsed, or sponsored by
+  Wizards of the Coast. See Wizards'
+  [Fan Content Policy](https://company.wizards.com/en/legal/fancontentpolicy)
+  for how fan projects like this one are permitted to exist.
+- **The Elixir and Phoenix communities** — for building a stack where a
+  single-developer project can credibly take on real-time ingestion,
+  event sourcing, and a live admin UI without a team behind it.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+Scry2 itself is licensed under the MIT License — see [LICENSE](LICENSE).
+
+Third-party assets retain their original licenses as noted above.
 
 ---
 
