@@ -51,7 +51,7 @@ defmodule Scry2.Events do
 
   import Ecto.Query
 
-  alias Scry2.Events.{Event, EventRecord, ProjectorWatermark}
+  alias Scry2.Events.{Event, EventRecord, IngestionState, ProjectorWatermark}
   alias Scry2.Repo
   alias Scry2.Topics
 
@@ -427,6 +427,16 @@ defmodule Scry2.Events do
   @spec max_event_id() :: non_neg_integer()
   def max_event_id do
     Repo.aggregate(EventRecord, :max, :id) || 0
+  end
+
+  @doc """
+  Loads the persisted ingestion state and returns a friendly map
+  projection suitable for display in the diagnostics panel. See
+  `Scry2.Events.IngestionState.project/1` for the shape.
+  """
+  @spec inspect_ingestion_state() :: map()
+  def inspect_ingestion_state do
+    IngestionState.load() |> IngestionState.project()
   end
 
   @doc "Returns the highest domain event id for the given event type slugs, or 0 if none."
