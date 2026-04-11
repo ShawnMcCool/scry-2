@@ -81,33 +81,18 @@ defmodule Scry2.Config do
 
   # ── Platform helpers ─────────────────────────────────────────────────────
 
-  defp config_path do
-    Application.get_env(:scry_2, :config_path_override) ||
-      case :os.type() do
-        {:win32, _} ->
-          Path.join([
-            System.get_env("APPDATA") || System.user_home!(),
-            "scry_2",
-            "config.toml"
-          ])
+  @doc """
+  Returns the platform-appropriate path to the user's config.toml.
 
-        _ ->
-          Path.expand("~/.config/scry_2/config.toml")
-      end
+  Delegates to `Scry2.Platform.config_path/0`, with an optional
+  `:config_path_override` application env for tests.
+  """
+  @spec config_path() :: String.t()
+  def config_path do
+    Application.get_env(:scry_2, :config_path_override) || Scry2.Platform.config_path()
   end
 
-  defp platform_data_dir do
-    case :os.type() do
-      {:win32, _} ->
-        Path.join([System.get_env("LOCALAPPDATA") || System.user_home!(), "scry_2"])
-
-      {:unix, :darwin} ->
-        Path.join([System.user_home!(), "Library", "Application Support", "scry_2"])
-
-      _ ->
-        Path.expand("~/.local/share/scry_2")
-    end
-  end
+  defp platform_data_dir, do: Scry2.Platform.data_dir()
 
   # ── Config loading ───────────────────────────────────────────────────────
 

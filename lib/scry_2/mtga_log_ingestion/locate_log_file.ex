@@ -18,8 +18,6 @@ defmodule Scry2.MtgaLogIngestion.LocateLogFile do
 
   @type result :: {:ok, String.t()} | {:error, :not_found}
 
-  @mtga_appid "2141910"
-
   @doc """
   Resolves the `Player.log` path using override → multi-path scan.
   """
@@ -53,56 +51,7 @@ defmodule Scry2.MtgaLogIngestion.LocateLogFile do
   Exposed for inspection / display in the settings LiveView.
   """
   @spec default_candidates() :: [String.t()]
-  def default_candidates do
-    home = System.user_home!()
-
-    [
-      # Steam (Flatpak) + Proton — most common Linux setup
-      Path.join([
-        home,
-        ".var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata",
-        @mtga_appid,
-        "pfx/drive_c/users/steamuser/AppData/LocalLow/Wizards Of The Coast/MTGA/Player.log"
-      ]),
-
-      # Steam (native install) + Proton
-      Path.join([
-        home,
-        ".local/share/Steam/steamapps/compatdata",
-        @mtga_appid,
-        "pfx/drive_c/users/steamuser/AppData/LocalLow/Wizards Of The Coast/MTGA/Player.log"
-      ]),
-
-      # Lutris
-      Path.join([
-        home,
-        "Games/magic-the-gathering-arena/drive_c/users",
-        System.get_env("USER", "steamuser"),
-        "AppData/LocalLow/Wizards Of The Coast/MTGA/Player.log"
-      ]),
-
-      # Bottles (Flatpak)
-      Path.join([
-        home,
-        ".var/app/com.usebottles.bottles/data/bottles/bottles/MTG-Arena/drive_c/users",
-        System.get_env("USER", "steamuser"),
-        "AppData/LocalLow/Wizards Of The Coast/MTGA/Player.log"
-      ]),
-
-      # Windows (native MTGA client)
-      Path.join([
-        home,
-        "AppData",
-        "LocalLow",
-        "Wizards Of The Coast",
-        "MTGA",
-        "Player.log"
-      ]),
-
-      # macOS (native)
-      Path.join([home, "Library/Logs/Wizards Of The Coast/MTGA/Player.log"])
-    ]
-  end
+  def default_candidates, do: Scry2.Platform.mtga_log_candidates()
 
   defp override do
     Scry2.Config.get(:mtga_logs_player_log_path)

@@ -3,8 +3,6 @@ defmodule Scry2.Repo do
     otp_app: :scry_2,
     adapter: Ecto.Adapters.SQLite3
 
-  @toml_path "~/.config/scry_2/config.toml"
-
   @doc """
   Overrides the database path at runtime from the user's TOML config file.
 
@@ -28,7 +26,7 @@ defmodule Scry2.Repo do
   end
 
   defp read_database_path_from_toml do
-    path = Path.expand(@toml_path)
+    path = Scry2.Config.config_path()
 
     with {:ok, contents} <- File.read(path),
          {:ok, toml} <- Toml.decode(contents),

@@ -26,8 +26,6 @@ defmodule Scry2.Cards.MtgaClientData do
 
   require Scry2.Log, as: Log
 
-  @default_raw_dir "/home/shawn/.local/share/Steam/steamapps/common/MTGA/MTGA_Data/Downloads/Raw"
-
   @type run_result :: {:ok, %{imported: non_neg_integer()}} | {:error, term()}
 
   @doc """
@@ -40,8 +38,8 @@ defmodule Scry2.Cards.MtgaClientData do
   def run(opts \\ []) do
     db_path =
       Keyword.get_lazy(opts, :database_path, fn ->
-        data_dir = Config.get(:mtga_data_dir) || @default_raw_dir
-        find_database_path(data_dir)
+        data_dir = Config.get(:mtga_data_dir) || default_raw_dir()
+        if data_dir, do: find_database_path(data_dir)
       end)
 
     case db_path do
@@ -60,6 +58,10 @@ defmodule Scry2.Cards.MtgaClientData do
       [path | _] -> path
       [] -> nil
     end
+  end
+
+  defp default_raw_dir do
+    Enum.find(Scry2.Platform.mtga_raw_dir_candidates(), &File.dir?/1)
   end
 
   defp import_from(db_path) do

@@ -14,18 +14,7 @@ if config_env() == :prod do
   # ── Bootstrap config resolution ─────────────────────────────────────────
   # Read config.toml if present. On first run it may not exist yet —
   # Scry2.Config.load!/0 will generate it during Application.start/2.
-  toml_path =
-    case :os.type() do
-      {:win32, _} ->
-        Path.join([
-          System.get_env("APPDATA") || System.user_home!(),
-          "scry_2",
-          "config.toml"
-        ])
-
-      _ ->
-        Path.expand("~/.config/scry_2/config.toml")
-    end
+  toml_path = Scry2.Platform.config_path()
 
   toml =
     with {:ok, contents} <- File.read(toml_path),
@@ -37,21 +26,7 @@ if config_env() == :prod do
 
   # Platform-appropriate default database path (used on first run before
   # config.toml exists).
-  default_db_path =
-    case :os.type() do
-      {:win32, _} ->
-        Path.join([
-          System.get_env("LOCALAPPDATA") || System.user_home!(),
-          "scry_2",
-          "scry_2.db"
-        ])
-
-      {:unix, :darwin} ->
-        Path.join([System.user_home!(), "Library", "Application Support", "scry_2", "scry_2.db"])
-
-      _ ->
-        Path.expand("~/.local/share/scry_2/scry_2.db")
-    end
+  default_db_path = Path.join(Scry2.Platform.data_dir(), "scry_2.db")
 
   database_path =
     System.get_env("DATABASE_PATH") ||
