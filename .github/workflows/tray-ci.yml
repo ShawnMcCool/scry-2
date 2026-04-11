@@ -15,6 +15,9 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: tray/go.mod
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y libayatana-appindicator3-dev
       - name: Test
         run: go test ./...
         working-directory: tray
