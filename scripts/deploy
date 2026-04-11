@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build and install a production release locally.
+# Combines scripts/release + install into one step.
+#
+# Usage:
+#   scripts/deploy
+
+cd "$(dirname "$0")/.."
+
+banner() { echo "==> $1"; }
+
+banner "Building release"
+scripts/release
+
+banner "Installing"
+(cd _build/prod/package && bash ./install)

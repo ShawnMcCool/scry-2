@@ -16,9 +16,14 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-# Ensure working copy is clean
+# Run precommit checks — catches broken builds and format drift before tagging
+echo "Running precommit checks..."
+mix precommit
+
+# Ensure working copy is clean (precommit may have formatted files)
 if jj diff --summary 2>/dev/null | grep -q .; then
-    echo "Error: working copy has uncommitted changes. Commit or stash them first."
+    echo "Error: working copy has uncommitted changes after precommit (mix format likely changed files)."
+    echo "Review, commit the changes, then re-run scripts/tag-release."
     jj diff --summary
     exit 1
 fi

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Build a production release for the current platform.
+# Stages the result in _build/prod/package/ — ready to install.
+#
+# Usage:
+#   scripts/release          # build and stage
+#   scripts/deploy           # build, stage, and install locally
+
+cd "$(dirname "$0")/.."
+
+banner() { echo "==> $1"; }
+
+banner "Building Elixir assets"
+MIX_ENV=prod mix assets.deploy
+
+banner "Building Elixir release"
+MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8 MIX_ENV=prod mix release
+
+banner "Building tray binary"
+case "$(uname -s)" in
+  Linux)
+    (cd tray && go build -o ../scry2-tray ./...)
+    install_script="scripts/install"
+    uninstall_script="scripts/uninstall"
+    ;;
+  Darwin)
+    (cd tray && go build -o ../scry2-tray ./...)
+    install_script="scripts/install-macos"
+    uninstall_script="scripts/uninstall-macos"
+    ;;
+  *)
+    echo "Error: unsupported platform $(uname -s)"
+    exit 1
+    ;;
+esac
+
+banner "Staging package"
+package="_build/prod/package"
+rm -rf "$package"
+mkdir -p "$package"
+cp -r _build/prod/rel/scry_2/. "$package/"
+cp scry2-tray "$package/"
+cp "$install_script" "$package/install"
+cp "$uninstall_script" "$package/uninstall"
+chmod +x "$package/install" "$package/uninstall" "$package/scry2-tray"
+
+banner "Release staged at $package"
+echo "  Install locally:  scripts/deploy"
+echo "  Manual install:   cd $package && ./install"

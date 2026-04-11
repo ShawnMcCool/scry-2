@@ -80,16 +80,18 @@ Disconnect the REPL with `Ctrl+\` (leaves the server running).
 ### Release
 
 ```bash
-scripts/release              # build production release
-scripts/install              # install to ~/.local/lib/scry_2/ and set up systemd
+scripts/release              # build prod release + tray, stage to _build/prod/package/
+scripts/deploy               # build + install locally in one step
+scripts/tag-release 0.2.0    # run precommit, bump version, tag, push — triggers CI
 ```
 
-Manual build (if needed):
+The release workflow:
 
-```bash
-MIX_ENV=prod mix assets.deploy && MIX_ENV=prod mix release   # build release
-_build/prod/rel/scry_2/bin/scry_2 start                      # run release
-```
+1. **Local build** — `scripts/release` builds the Elixir release and tray binary, stages everything in `_build/prod/package/`. Use this to verify a release builds before tagging.
+2. **Local install** — `scripts/deploy` builds and installs in one step. Use this to test the production release on your machine.
+3. **Tag and publish** — `scripts/tag-release <version>` runs `mix precommit`, bumps the version in `mix.exs`, creates a jj tag, and pushes to GitHub. GitHub Actions then builds all three platform archives (Linux, macOS, Windows) and publishes them to GitHub Releases.
+
+The CI build is authoritative for multi-platform releases. `scripts/release` and `scripts/deploy` are for local development and testing only.
 
 Migrations in a release: `bin/scry_2 eval "Scry2.Release.migrate()"`.
 
