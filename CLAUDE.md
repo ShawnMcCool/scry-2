@@ -95,6 +95,17 @@ Migrations in a release: `bin/scry_2 eval "Scry2.Release.migrate()"`.
 
 > Note: When compiling, always use the environment variable `MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8` to parallelize and speed up compilation.
 
+### Running dev and prod simultaneously
+
+Dev runs on port 4002. The production release defaults to 4002 as well, so running both requires the prod instance to use a different port. Add to `~/.config/scry_2/config.toml`:
+
+```toml
+[server]
+port = 4003
+```
+
+Each instance has its own independent database (`scry_2_dev.db` in the project root for dev; `~/.local/share/scry_2/scry_2.db` for prod). Both watch `Player.log` and ingest events independently — there is no shared state between the two environments.
+
 Run `mix precommit` before finishing any set of changes and fix all issues it reports.
 
 **Zero warnings policy.** Application code and tests must compile and run with zero warnings. This applies to our own code only — warnings from third-party dependencies are excluded. This includes unused variables, unused aliases, unused imports, and any log output during tests that indicates misconfiguration (e.g., HTTP requests hitting real endpoints instead of stubs). Treat every warning as a bug — fix it before moving on.

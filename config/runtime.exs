@@ -8,9 +8,6 @@ if System.get_env("PHX_SERVER") || System.get_env("RELEASE_NAME") do
 end
 
 if config_env() == :prod do
-  config :scry_2, Scry2Web.Endpoint,
-    http: [port: String.to_integer(System.get_env("PORT", "4002"))]
-
   # ── Bootstrap config resolution ─────────────────────────────────────────
   # Read config.toml if present. On first run it may not exist yet —
   # Scry2.Config.load!/0 will generate it during Application.start/2.
@@ -22,6 +19,15 @@ if config_env() == :prod do
       parsed
     else
       _ -> %{}
+    end
+
+  # HTTP port: PORT env var → TOML [server][port] → 4002.
+  # Set [server] port = 4003 in ~/.config/scry_2/config.toml to run a
+  # production release alongside a dev server on the same machine.
+  port =
+    case System.get_env("PORT") do
+      nil -> get_in(toml, ["server", "port"]) || 4002
+      p -> String.to_integer(p)
     end
 
   # Platform-appropriate default database path (used on first run before
@@ -52,10 +58,11 @@ if config_env() == :prod do
   config :scry_2, :dns_cluster_query, System.get_env("DNS_CLUSTER_QUERY")
 
   config :scry_2, Scry2Web.Endpoint,
-    url: [host: "localhost", port: 4002, scheme: "http"],
+    url: [host: "localhost", port: port, scheme: "http"],
     http: [
       # Bind to localhost only — this is a local desktop tool, not a server.
-      ip: {127, 0, 0, 1}
+      ip: {127, 0, 0, 1},
+      port: port
     ],
     secret_key_base: secret_key_base
 end
