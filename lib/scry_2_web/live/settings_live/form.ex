@@ -67,6 +67,33 @@ defmodule Scry2Web.SettingsLive.Form do
   end
 
   @doc """
+  Validates an integer `poll_interval_ms` value in the range
+  100–10000. Accepts a trimmed binary or an integer.
+  """
+  @spec validate_poll_interval_ms(String.t() | integer()) ::
+          {:ok, pos_integer()} | {:error, atom()}
+  def validate_poll_interval_ms(value) when is_integer(value) do
+    cond do
+      value < 100 -> {:error, :too_small}
+      value > 10_000 -> {:error, :too_large}
+      true -> {:ok, value}
+    end
+  end
+
+  def validate_poll_interval_ms(value) when is_binary(value) do
+    case String.trim(value) do
+      "" ->
+        {:error, :blank}
+
+      trimmed ->
+        case Integer.parse(trimmed) do
+          {int, ""} -> validate_poll_interval_ms(int)
+          _ -> {:error, :not_an_integer}
+        end
+    end
+  end
+
+  @doc """
   Converts a `{field, reason}` tuple into a user-facing error string.
   """
   @spec error_message(atom(), atom() | String.t()) :: String.t()
@@ -77,4 +104,11 @@ defmodule Scry2Web.SettingsLive.Form do
   def error_message(:refresh_cron, :blank), do: "Cron expression cannot be blank."
   def error_message(:refresh_cron, reason) when is_binary(reason), do: "Invalid cron: #{reason}"
   def error_message(:refresh_cron, reason), do: "Invalid cron: #{inspect(reason)}"
+  def error_message(:poll_interval_ms, :blank), do: "Interval cannot be blank."
+
+  def error_message(:poll_interval_ms, :not_an_integer),
+    do: "Must be a whole number of milliseconds."
+
+  def error_message(:poll_interval_ms, :too_small), do: "Must be at least 100 ms."
+  def error_message(:poll_interval_ms, :too_large), do: "Must be at most 10000 ms."
 end

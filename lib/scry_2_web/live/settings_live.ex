@@ -20,6 +20,7 @@ defmodule Scry2Web.SettingsLive do
   @player_log_path_key "mtga_logs_player_log_path"
   @data_dir_key "mtga_logs_data_dir"
   @refresh_cron_key "cards_refresh_cron"
+  @poll_interval_key "mtga_logs_poll_interval_ms"
 
   @impl true
   def mount(_params, _session, socket) do
@@ -53,7 +54,8 @@ defmodule Scry2Web.SettingsLive do
     field_values = %{
       player_log_path: current_value(@player_log_path_key, :mtga_logs_player_log_path),
       data_dir: current_value(@data_dir_key, :mtga_data_dir),
-      refresh_cron: current_value(@refresh_cron_key, :cards_refresh_cron)
+      refresh_cron: current_value(@refresh_cron_key, :cards_refresh_cron),
+      poll_interval_ms: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms)
     }
 
     {:noreply,
@@ -122,6 +124,25 @@ defmodule Scry2Web.SettingsLive do
          socket
          |> put_field_value(:data_dir, value)
          |> put_field_error(:data_dir, Form.error_message(:data_dir, reason))}
+    end
+  end
+
+  def handle_event("save_poll_interval_ms", %{"value" => value}, socket) do
+    case Form.validate_poll_interval_ms(value) do
+      {:ok, int} ->
+        Settings.put!(@poll_interval_key, int)
+
+        {:noreply,
+         socket
+         |> put_field_value(:poll_interval_ms, Integer.to_string(int))
+         |> clear_field_error(:poll_interval_ms)
+         |> put_flash(:info, "Poll interval saved — watcher will pick up the new value.")}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> put_field_value(:poll_interval_ms, value)
+         |> put_field_error(:poll_interval_ms, Form.error_message(:poll_interval_ms, reason))}
     end
   end
 
@@ -252,6 +273,33 @@ defmodule Scry2Web.SettingsLive do
             save_event="save_refresh_cron"
             help="Standard 5-field cron or shorthand like @daily."
           />
+        </div>
+      </section>
+
+      <section class="card bg-base-200">
+        <div class="card-body">
+          <details>
+            <summary class="card-title text-base cursor-pointer">
+              Advanced
+            </summary>
+            <div class="mt-3">
+              <h3 class="text-sm font-semibold">Watcher drain interval</h3>
+              <p class="text-xs text-base-content/70 mt-1">
+                Debounce window after a <code>Player.log</code> modification before
+                draining new bytes. Shorter = lower latency, longer = more burst
+                coalescing. Range: 100–10000 ms.
+              </p>
+
+              <.setting_form
+                field={:poll_interval_ms}
+                label="poll_interval_ms"
+                value={@field_values.poll_interval_ms}
+                error={@field_errors[:poll_interval_ms]}
+                save_event="save_poll_interval_ms"
+                help="Default: 500 ms"
+              />
+            </div>
+          </details>
         </div>
       </section>
 

@@ -31,9 +31,13 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
 
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.{ExtractEventsFromLog, LocateLogFile, ReadNewBytes}
+  alias Scry2.Settings
   alias Scry2.Topics
 
   @default_poll_interval 500
+  @min_poll_interval 100
+  @max_poll_interval 10_000
+  @poll_interval_setting_key "mtga_logs_poll_interval_ms"
 
   # ── Public API ──────────────────────────────────────────────────────────
 
@@ -57,10 +61,36 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
     GenServer.cast(__MODULE__, :reload_path)
   end
 
+  @doc """
+  Clamps a `poll_interval_ms` value into the valid range
+  (#{@min_poll_interval}–#{@max_poll_interval} ms), returning the
+  default (#{@default_poll_interval} ms) for `nil`, empty strings, or
+  non-integer input.
+
+  Exposed as a public function so it can be unit-tested without the
+  GenServer. Called internally during `init/1` and when Settings
+  broadcasts a `poll_interval_ms` change.
+  """
+  @spec clamp_interval(term()) :: pos_integer()
+  def clamp_interval(value) when is_integer(value) do
+    value |> max(@min_poll_interval) |> min(@max_poll_interval)
+  end
+
+  def clamp_interval(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} -> clamp_interval(int)
+      _ -> @default_poll_interval
+    end
+  end
+
+  def clamp_interval(_), do: @default_poll_interval
+
   # ── Callbacks ───────────────────────────────────────────────────────────
 
   @impl true
   def init(opts) do
+    Topics.subscribe(Topics.settings_updates())
+
     state = %{
       path: nil,
       offset: 0,
@@ -68,11 +98,27 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
       inode: nil,
       status: :starting,
       fs_pid: nil,
-      poll_interval: Keyword.get(opts, :poll_interval, @default_poll_interval),
+      poll_interval: resolve_poll_interval(opts),
+      drain_timer: nil,
       override_path: Keyword.get(opts, :path)
     }
 
     {:ok, state, {:continue, :bootstrap}}
+  end
+
+  defp resolve_poll_interval(opts) do
+    case Keyword.fetch(opts, :poll_interval) do
+      {:ok, value} ->
+        clamp_interval(value)
+
+      :error ->
+        Settings.get_or_config(@poll_interval_setting_key, :mtga_logs_poll_interval_ms)
+        |> clamp_interval()
+    end
+  rescue
+    # Settings table may not be available in very early boot or in unit
+    # tests that don't set up the sandbox. Fall back gracefully.
+    _ -> @default_poll_interval
   end
 
   @impl true
@@ -119,7 +165,7 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
       when path == watched_path do
     cond do
       :modified in events or :created in events ->
-        {:noreply, drain_file(state)}
+        {:noreply, schedule_drain(state)}
 
       :deleted in events or :renamed in events ->
         broadcast_status(:path_missing)
@@ -134,6 +180,27 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
   def handle_info({:file_event, _fs_pid, :stop}, state) do
     {:noreply, stop_fs(state)}
   end
+
+  @impl true
+  def handle_info(:drain, state) do
+    {:noreply, %{drain_file(state) | drain_timer: nil}}
+  end
+
+  @impl true
+  def handle_info({:setting_changed, @poll_interval_setting_key}, state) do
+    new_interval =
+      Settings.get_or_config(@poll_interval_setting_key, :mtga_logs_poll_interval_ms)
+      |> clamp_interval()
+
+    if new_interval != state.poll_interval do
+      Log.info(:watcher, "poll_interval_ms updated: #{state.poll_interval} → #{new_interval}")
+    end
+
+    {:noreply, %{state | poll_interval: new_interval}}
+  end
+
+  @impl true
+  def handle_info({:setting_changed, _key}, state), do: {:noreply, state}
 
   @impl true
   def handle_info(_other, state), do: {:noreply, state}
@@ -178,6 +245,15 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
   defp stop_fs(%{fs_pid: fs_pid} = state) do
     if Process.alive?(fs_pid), do: Process.exit(fs_pid, :normal)
     %{state | fs_pid: nil}
+  end
+
+  # Debounce drains: if a drain is already scheduled, let it fire; we
+  # coalesce rapid bursts of :modified events into a single drain pass.
+  defp schedule_drain(%{drain_timer: timer} = state) when is_reference(timer), do: state
+
+  defp schedule_drain(%{poll_interval: interval} = state) do
+    timer = Process.send_after(self(), :drain, interval)
+    %{state | drain_timer: timer}
   end
 
   defp drain_file(%{path: path, offset: offset, log_epoch: log_epoch} = state)

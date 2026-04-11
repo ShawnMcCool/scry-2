@@ -86,6 +86,39 @@ defmodule Scry2Web.SettingsLive.FormTest do
     end
   end
 
+  describe "validate_poll_interval_ms/1" do
+    test "ok on integers in range" do
+      assert {:ok, 500} = Form.validate_poll_interval_ms(500)
+      assert {:ok, 100} = Form.validate_poll_interval_ms(100)
+      assert {:ok, 10_000} = Form.validate_poll_interval_ms(10_000)
+    end
+
+    test "ok on binary integers in range" do
+      assert {:ok, 750} = Form.validate_poll_interval_ms("750")
+      assert {:ok, 750} = Form.validate_poll_interval_ms("  750  ")
+    end
+
+    test "error below the minimum" do
+      assert {:error, :too_small} = Form.validate_poll_interval_ms(99)
+      assert {:error, :too_small} = Form.validate_poll_interval_ms("50")
+    end
+
+    test "error above the maximum" do
+      assert {:error, :too_large} = Form.validate_poll_interval_ms(10_001)
+      assert {:error, :too_large} = Form.validate_poll_interval_ms("20000")
+    end
+
+    test "error on non-integer input" do
+      assert {:error, :not_an_integer} = Form.validate_poll_interval_ms("abc")
+      assert {:error, :not_an_integer} = Form.validate_poll_interval_ms("500ms")
+    end
+
+    test "error when blank" do
+      assert {:error, :blank} = Form.validate_poll_interval_ms("")
+      assert {:error, :blank} = Form.validate_poll_interval_ms("  ")
+    end
+  end
+
   describe "error_message/2" do
     test "player_log_path errors are human-readable" do
       assert Form.error_message(:player_log_path, :blank) =~ "cannot be blank"
