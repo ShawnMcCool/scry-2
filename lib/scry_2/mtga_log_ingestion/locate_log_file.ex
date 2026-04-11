@@ -62,18 +62,7 @@ defmodule Scry2.MtgaLogIngestion.LocateLogFile do
   # override still work because Config fallback is consulted when Settings
   # has nothing.
   defp override do
-    case runtime_override() do
-      path when is_binary(path) and path != "" -> path
-      _ -> Scry2.Config.get(:mtga_logs_player_log_path)
-    end
-  end
-
-  defp runtime_override do
-    Scry2.Settings.get("mtga_logs_player_log_path")
-  rescue
-    # Settings table may not be available in very early boot or in unit
-    # tests that don't set up the sandbox. Fall back gracefully.
-    _ -> nil
+    Scry2.Settings.get_or_config("mtga_logs_player_log_path", :mtga_logs_player_log_path)
   end
 
   defp scan_candidates(candidates) do
