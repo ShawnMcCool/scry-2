@@ -21,12 +21,11 @@ if config_env() == :prod do
       _ -> %{}
     end
 
-  # HTTP port: PORT env var → TOML [server][port] → 4002.
-  # Set [server] port = 4003 in ~/.config/scry_2/config.toml to run a
-  # production release alongside a dev server on the same machine.
+  # HTTP port: PORT env var → TOML [server][port] → 6015.
+  # Set [server] port in ~/.config/scry_2/config.toml to override.
   port =
     case System.get_env("PORT") do
-      nil -> get_in(toml, ["server", "port"]) || 4002
+      nil -> get_in(toml, ["server", "port"]) || 6015
       p -> String.to_integer(p)
     end
 

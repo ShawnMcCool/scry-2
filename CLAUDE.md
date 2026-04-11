@@ -55,7 +55,7 @@ All repositories use **JJ (Jujutsu)** — never use raw `git` commands.
 
 ```bash
 mix setup              # install deps, create DB, run migrations, build assets
-mix phx.server         # start dev server (http://localhost:4002)
+mix phx.server         # start dev server (http://localhost:4444)
 mix test               # run tests (creates and migrates test DB automatically)
 mix precommit          # compile --warning-as-errors, unlock unused deps, format, test
 ```
@@ -99,12 +99,7 @@ Migrations in a release: `bin/scry_2 eval "Scry2.Release.migrate()"`.
 
 ### Running dev and prod simultaneously
 
-Dev runs on port 4002. The production release defaults to 4002 as well, so running both requires the prod instance to use a different port. Add to `~/.config/scry_2/config.toml`:
-
-```toml
-[server]
-port = 4003
-```
+Dev runs on port 4444 and prod runs on port 6015 — they do not conflict by default.
 
 Each instance has its own independent database (`scry_2_dev.db` in the project root for dev; `~/.local/share/scry_2/scry_2.db` for prod). Both watch `Player.log` and ingest events independently — there is no shared state between the two environments.
 

@@ -18,8 +18,8 @@ config :scry_2, Scry2.Repo,
 config :scry_2, Scry2Web.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  # Port 4002 — media-centaur uses 4001, leave room for coexistence.
-  http: [ip: {127, 0, 0, 1}, port: 4002],
+  # Port 4444 — media-centaur uses 4001, leave room for coexistence.
+  http: [ip: {127, 0, 0, 1}, port: 4444],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

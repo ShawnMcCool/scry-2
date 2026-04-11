@@ -38,7 +38,7 @@ fi
 banner "Install complete"
 echo "  Source:  $source_dir"
 echo "  Unit:    $unit_dst"
-echo "  URL:     http://localhost:4002"
+echo "  URL:     http://localhost:4444"
 echo "  Logs:    journalctl --user -u $service_name -f"
 echo "  REPL:    iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1"
 echo ""
