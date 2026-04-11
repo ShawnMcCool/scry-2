@@ -50,4 +50,4 @@ launchctl load "$PLIST_FILE"
 
 echo ""
 echo "Scry2 installed! It will start automatically on login."
-echo "Access your stats at: http://localhost:4002"
+echo "Access your stats at: http://localhost:6015"

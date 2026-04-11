@@ -32,7 +32,7 @@ config :scry_2, skip_user_config: true
 # We don't run a server during test. If one is required,
 # you can enable the server option below.
 config :scry_2, Scry2Web.Endpoint,
-  http: [ip: {127, 0, 0, 1}, port: 4002],
+  http: [ip: {127, 0, 0, 1}, port: 4444],
   secret_key_base: "ZYOB18YhLALbK7xneBtbxrvmsK6wE/DxePNtu6lsLJ01DBejHcpk7cTgB6NZ31UO",
   server: false
 

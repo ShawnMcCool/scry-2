@@ -77,6 +77,6 @@ start_importer = true
 # ── Server ────────────────────────────────────────────────────────────────
 [server]
 # HTTP port the web UI listens on. Change this if running a production
-# release alongside a dev server on the same machine (dev uses 4002 by
-# default, so set prod to 4003 in ~/.config/scry_2/config.toml).
-port = 4002
+# release alongside a dev server on the same machine (dev uses 4444 by
+# default, so they do not conflict).
+port = 6015
