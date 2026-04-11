@@ -9,8 +9,44 @@ permissions:
   contents: write
 
 jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    env:
+      MIX_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '27'
+
+      - name: Cache Mix deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.18-27-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.18-27-
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y inotify-tools
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Compile (warnings as errors)
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        run: mix test
+
   build:
     name: Build (${{ matrix.os }})
+    needs: test
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -80,9 +116,7 @@ jobs:
           ARCHIVE="scry_2-${{ github.ref_name }}-${{ matrix.platform }}"
           mkdir "$ARCHIVE"
           cp -r _build/prod/rel/scry_2/. "$ARCHIVE/"
-          # Remove Windows scripts from Linux archive
           rm -f "$ARCHIVE/install.bat" "$ARCHIVE/uninstall.bat"
-          # Add Linux install scripts
           cp scripts/install "$ARCHIVE/install"
           cp scripts/uninstall "$ARCHIVE/uninstall"
           printf "Run ./install to set up Scry2.\nSee https://github.com/${{ github.repository }} for full instructions.\n" > "$ARCHIVE/README.txt"
