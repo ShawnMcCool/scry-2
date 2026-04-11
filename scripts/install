@@ -14,15 +14,6 @@ if pgrep -x scry2-tray &>/dev/null; then
     sleep 1
 fi
 
-# Disable legacy systemd service if present (from pre-tray installs)
-if systemctl --user is-active --quiet scry-2 2>/dev/null; then
-    echo "Disabling legacy systemd service..."
-    systemctl --user stop scry-2 2>/dev/null || true
-    systemctl --user disable scry-2 2>/dev/null || true
-fi
-rm -f "$HOME/.config/systemd/user/scry-2.service"
-systemctl --user daemon-reload 2>/dev/null || true
-
 # Copy release files
 echo "Copying files to $INSTALL_DIR..."
 rm -rf "$INSTALL_DIR"
