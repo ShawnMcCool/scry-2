@@ -31,8 +31,8 @@ defmodule Scry2Web.SetupLive.Steps do
 
   def welcome_step(assigns) do
     ~H"""
-    <div class="space-y-4">
-      <h2 class="card-title text-xl">Welcome to Scry 2</h2>
+    <div class="space-y-3 text-sm leading-relaxed text-base-content/80">
+      <h2 class="text-lg font-semibold text-base-content">Welcome to Scry 2</h2>
 
       <p>
         Scry 2 watches MTG Arena's log file in the background, records
@@ -40,13 +40,13 @@ defmodule Scry2Web.SetupLive.Steps do
         your play history on this site.
       </p>
 
-      <div class="alert alert-soft alert-info">
-        <.icon name="hero-light-bulb" class="size-5" />
+      <div class="alert alert-soft alert-info text-sm">
+        <.icon name="hero-light-bulb" class="size-4" />
         <div>
           <p class="font-semibold">
             Enable <em>Detailed Logs (Plugin Support)</em> in MTGA now
           </p>
-          <p class="text-sm">
+          <p class="text-xs mt-1">
             Without this setting, <code>Player.log</code>
             only contains plain-text entries and Scry 2 can't parse any events.
             In MTGA, go to <strong>Options → View Account</strong>
@@ -56,7 +56,7 @@ defmodule Scry2Web.SetupLive.Steps do
         </div>
       </div>
 
-      <p class="text-sm text-base-content/70">
+      <p class="text-xs text-base-content/60">
         This walkthrough will take a minute. Everything Scry 2 needs is
         already being set up automatically in the background — this tour
         just shows you what's happening.
@@ -71,33 +71,30 @@ defmodule Scry2Web.SetupLive.Steps do
 
   def locate_log_step(assigns) do
     ~H"""
-    <div class="space-y-4">
-      <h2 class="card-title text-xl">Locate your Player.log</h2>
+    <div class="space-y-3 text-sm leading-relaxed text-base-content/80">
+      <h2 class="text-lg font-semibold text-base-content">Locate your Player.log</h2>
 
       <p>
         Scry 2 scans the common install locations for MTGA's <code>Player.log</code>
-        file. If yours is somewhere unusual, you can enter
-        the path manually.
+        file. If yours is somewhere unusual, you can enter the path manually.
       </p>
 
-      <div :if={@state.detected_path}>
-        <div class="alert alert-soft alert-success">
-          <.icon name="hero-check-circle" class="size-5" />
-          <div>
-            <p class="font-semibold">Found automatically</p>
-            <p class="text-sm break-all">
-              <code>{@state.detected_path}</code>
-            </p>
-          </div>
+      <div :if={@state.detected_path} class="alert alert-soft alert-success text-sm">
+        <.icon name="hero-check-circle" class="size-4" />
+        <div>
+          <p class="font-semibold">Found automatically</p>
+          <p class="text-xs break-all mt-1">
+            <code>{@state.detected_path}</code>
+          </p>
         </div>
       </div>
 
       <div :if={is_nil(@state.detected_path)} class="space-y-3">
-        <div class="alert alert-soft alert-warning">
-          <.icon name="hero-exclamation-triangle" class="size-5" />
+        <div class="alert alert-soft alert-warning text-sm">
+          <.icon name="hero-exclamation-triangle" class="size-4" />
           <div>
             <p class="font-semibold">Couldn't find Player.log automatically</p>
-            <p class="text-sm">
+            <p class="text-xs mt-1">
               This usually means MTGA isn't installed, or it lives in a
               custom location. If you've already launched MTGA at least once
               with Detailed Logs enabled, paste the path below.
@@ -106,21 +103,24 @@ defmodule Scry2Web.SetupLive.Steps do
         </div>
 
         <form phx-submit="save_manual_path" class="space-y-2">
-          <label class="label">
-            <span class="label-text">Path to Player.log</span>
+          <label class="label py-1">
+            <span class="label-text text-xs">Path to Player.log</span>
           </label>
           <input
             type="text"
             name="path"
             value={@state.manual_path || ""}
             placeholder="/home/you/.wine/.../Player.log"
-            class="input input-bordered w-full font-mono text-sm"
+            class="input input-bordered input-sm w-full font-mono text-xs"
             phx-debounce="500"
           />
-          <p :if={@state.manual_path_error} class="text-error text-sm">
+          <p :if={@state.manual_path_error} class="text-error text-xs">
             {@state.manual_path_error}
           </p>
-          <button type="submit" class="btn btn-primary btn-sm">
+          <button
+            type="submit"
+            class="btn btn-soft btn-primary btn-sm border border-primary/40"
+          >
             Try this path
           </button>
         </form>
@@ -143,8 +143,8 @@ defmodule Scry2Web.SetupLive.Steps do
 
   def card_status_step(assigns) do
     ~H"""
-    <div class="space-y-4">
-      <h2 class="card-title text-xl">Card reference data</h2>
+    <div class="space-y-3 text-sm leading-relaxed text-base-content/80">
+      <h2 class="text-lg font-semibold text-base-content">Card reference data</h2>
 
       <p>
         Scry 2 downloads card data from
@@ -155,22 +155,22 @@ defmodule Scry2Web.SetupLive.Steps do
         refreshes on a schedule after that — you don't need to do anything.
       </p>
 
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
         <.card_source_row
           label="17lands"
           count={@lands17_count}
           updated_at={@lands17_updated_at}
-          schedule="Refreshes daily at 04:00 UTC"
+          schedule="Daily at 04:00 UTC"
         />
         <.card_source_row
           label="Scryfall"
           count={@scryfall_count}
           updated_at={@scryfall_updated_at}
-          schedule="Refreshes weekly on Sundays at 05:00 UTC"
+          schedule="Weekly on Sundays at 05:00 UTC"
         />
       </div>
 
-      <p class="text-sm text-base-content/70">
+      <p class="text-xs text-base-content/60">
         Don't worry if the counts are still zero — the import may still be running
         in the background. You can continue and come back to the health screen to
         verify it completes.
@@ -186,21 +186,19 @@ defmodule Scry2Web.SetupLive.Steps do
 
   defp card_source_row(assigns) do
     ~H"""
-    <div class="card bg-base-200">
-      <div class="card-body p-4">
-        <div class="flex items-center justify-between">
-          <h3 class="font-semibold">{@label}</h3>
-          <.status_badge count={@count} />
-        </div>
-        <p class="text-sm text-base-content/70">
-          <span :if={@count > 0}>{@count} rows</span>
-          <span :if={@count == 0}>Import in progress…</span>
-          <span :if={@updated_at}>
-            · updated {Calendar.strftime(@updated_at, "%Y-%m-%d %H:%M UTC")}
-          </span>
-        </p>
-        <p class="text-xs text-base-content/50">{@schedule}</p>
+    <div class="rounded bg-base-300/40 px-3 py-2">
+      <div class="flex items-center justify-between gap-2">
+        <h3 class="font-semibold text-sm text-base-content">{@label}</h3>
+        <.status_badge count={@count} />
       </div>
+      <p class="text-xs text-base-content/60 mt-0.5">
+        <span :if={@count > 0}>{@count} rows</span>
+        <span :if={@count == 0}>Import in progress…</span>
+        <span :if={@updated_at}>
+          · {Calendar.strftime(@updated_at, "%Y-%m-%d %H:%M UTC")}
+        </span>
+      </p>
+      <p class="text-xs text-base-content/40">{@schedule}</p>
     </div>
     """
   end
@@ -209,8 +207,8 @@ defmodule Scry2Web.SetupLive.Steps do
 
   defp status_badge(assigns) do
     ~H"""
-    <span :if={@count > 0} class="badge badge-soft badge-success badge-sm">Ready</span>
-    <span :if={@count == 0} class="badge badge-soft badge-warning badge-sm">Importing</span>
+    <span :if={@count > 0} class="badge badge-soft badge-success badge-xs">Ready</span>
+    <span :if={@count == 0} class="badge badge-soft badge-warning badge-xs">Importing</span>
     """
   end
 
@@ -221,8 +219,8 @@ defmodule Scry2Web.SetupLive.Steps do
 
   def verify_events_step(assigns) do
     ~H"""
-    <div class="space-y-4">
-      <h2 class="card-title text-xl">Verify events are flowing</h2>
+    <div class="space-y-3 text-sm leading-relaxed text-base-content/80">
+      <h2 class="text-lg font-semibold text-base-content">Verify events are flowing</h2>
 
       <p>
         Launch MTGA (or bring it to the foreground if it's already open)
@@ -231,21 +229,21 @@ defmodule Scry2Web.SetupLive.Steps do
         in real time.
       </p>
 
-      <div :if={@raw_event_count > 0} class="alert alert-soft alert-success">
-        <.icon name="hero-check-circle" class="size-5" />
+      <div :if={@raw_event_count > 0} class="alert alert-soft alert-success text-sm">
+        <.icon name="hero-check-circle" class="size-4" />
         <div>
           <p class="font-semibold">Events are flowing</p>
-          <p class="text-sm">
+          <p class="text-xs mt-1">
             {@raw_event_count} raw events recorded so far. You're all set.
           </p>
         </div>
       </div>
 
-      <div :if={@raw_event_count == 0} class="alert alert-soft alert-info">
-        <.icon name="hero-arrow-path" class="size-5 animate-spin" />
+      <div :if={@raw_event_count == 0} class="alert alert-soft alert-info text-sm">
+        <.icon name="hero-arrow-path" class="size-4 animate-spin" />
         <div>
           <p class="font-semibold">Waiting for your first event</p>
-          <p class="text-sm">
+          <p class="text-xs mt-1">
             This will update automatically as soon as MTGA writes to the log.
             If nothing appears after a couple of minutes, double-check that
             <em>Detailed Logs (Plugin Support)</em>
@@ -270,8 +268,8 @@ defmodule Scry2Web.SetupLive.Steps do
 
   def done_step(assigns) do
     ~H"""
-    <div class="space-y-4">
-      <h2 class="card-title text-xl">You're set up</h2>
+    <div class="space-y-3 text-sm leading-relaxed text-base-content/80">
+      <h2 class="text-lg font-semibold text-base-content">You're set up</h2>
 
       <p>
         Scry 2 is now running. From here on, the dashboard at <code>/</code>
@@ -280,7 +278,7 @@ defmodule Scry2Web.SetupLive.Steps do
         needs your attention.
       </p>
 
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+      <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
         <.summary_row
           label="Player.log located"
           value={@state.detected_path || "(manual path pending)"}
@@ -298,7 +296,7 @@ defmodule Scry2Web.SetupLive.Steps do
         />
       </div>
 
-      <p class="text-sm text-base-content/70">
+      <p class="text-xs text-base-content/60">
         Clicking the button below will mark this tour as complete. You can
         always re-run it from the health screen if you want to revisit the
         explanations.
@@ -313,13 +311,13 @@ defmodule Scry2Web.SetupLive.Steps do
 
   defp summary_row(assigns) do
     ~H"""
-    <div class="flex items-center gap-2">
+    <div class="flex items-start gap-2 rounded bg-base-300/40 px-3 py-2">
       <.icon
         name={if @ok, do: "hero-check-circle", else: "hero-clock"}
-        class={"size-5 #{if @ok, do: "text-success", else: "text-warning"}"}
+        class={"size-4 shrink-0 mt-0.5 #{if @ok, do: "text-success", else: "text-warning"}"}
       />
-      <div class="flex-1">
-        <p class="text-sm font-medium">{@label}</p>
+      <div class="flex-1 min-w-0">
+        <p class="text-xs font-medium text-base-content">{@label}</p>
         <p class="text-xs text-base-content/60 break-all">{@value}</p>
       </div>
     </div>
