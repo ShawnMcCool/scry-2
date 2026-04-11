@@ -21,12 +21,12 @@ MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8 MIX_ENV=prod mix release
 banner "Building tray binary"
 case "$(uname -s)" in
   Linux)
-    (cd tray && go build -o ../scry2-tray ./...)
+    (cd tray && go build -o ../scry2-tray .)
     install_script="scripts/install"
     uninstall_script="scripts/uninstall"
     ;;
   Darwin)
-    (cd tray && go build -o ../scry2-tray ./...)
+    (cd tray && go build -o ../scry2-tray .)
     install_script="scripts/install-macos"
     uninstall_script="scripts/uninstall-macos"
     ;;
