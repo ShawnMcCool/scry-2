@@ -4,6 +4,18 @@ Read `AGENTS.md` for Elixir, Phoenix, LiveView, Ecto, and CSS/JS guidelines.
 
 **Prefer scripts over AI workflows for repeatable tasks.** When the steps are known and mechanical, write a shell script — don't reach for subagents, hooks, or AI-driven loops. Scripts are auditable, fast, version-controlled, and token-free. Reserve AI workflows for tasks that require judgment or adaptation at runtime.
 
+## Data Integrity
+
+**Data loss is unacceptable.** Every decision that touches the database, file ingestion, migrations, or database replacement must preserve all existing data. This includes:
+
+- **Never replace or overwrite a database** without first verifying the target has all data the source has, or explicitly merging both datasets.
+- **Never drop or truncate tables** that contain user data without a recovery path.
+- **Migrations must be reversible** and must not silently discard rows (e.g., dropping a column with data).
+- **Ingestion must be idempotent and complete.** If an event could be lost (rotation, crash, restart), the pipeline must have a mechanism to recover it — not just detect the loss after the fact.
+- **When in doubt, backup first.** Before any destructive operation (database swap, schema change, bulk update), snapshot the current state.
+
+The MTGA event log is irreplaceable once MTGA rotates it. Every raw event must be persisted before any downstream processing touches it.
+
 ## Design Philosophy
 
 **Only the best software design is worth building. No half-measures.** When in doubt, invest in structure over quick wins.
