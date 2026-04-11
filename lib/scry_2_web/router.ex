@@ -36,7 +36,7 @@ defmodule Scry2Web.Router do
         {Scry2Web.SetupGate, :default},
         {Scry2Web.PlayerScope, :default}
       ] do
-      live "/", DashboardLive, :index
+      live "/", HealthLive, :index
       live "/stats", StatsLive, :index
       live "/ranks", RanksLive, :index
       live "/economy", EconomyLive, :index
