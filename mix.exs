@@ -69,7 +69,6 @@ defmodule Scry2.MixProject do
       {:oban, "~> 2.19"},
       {:req, "~> 0.5"},
       {:nimble_csv, "~> 1.2"},
-      {:jaxon, "~> 2.0"},
       {:toml, "~> 0.7"},
       # Dev-only tooling
       {:tidewave, "~> 0.5", only: :dev},

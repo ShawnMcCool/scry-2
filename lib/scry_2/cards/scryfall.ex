@@ -14,7 +14,7 @@ defmodule Scry2.Cards.Scryfall do
 
   1. GET the bulk-data catalog to obtain the rotating `download_uri`.
   2. Stream-download the ~80 MB JSON file to a temp path.
-  3. Stream-parse with Jaxon, calling `parse_card/1` on every object.
+  3. Decode the JSON file with Jason, calling `parse_card/1` on every object.
   4. For each parsed card, upsert into `cards_scryfall_cards` via
      `Cards.upsert_scryfall_card!/1`.
   5. For cards with a non-nil `arena_id`, look up the 17lands card by
@@ -166,9 +166,9 @@ defmodule Scry2.Cards.Scryfall do
     # Without this, 113k individual inserts take 10+ minutes on SQLite.
     Scry2.Repo.transaction(
       fn ->
-        File.stream!(tmp_path, 65_536)
-        |> Jaxon.Stream.from_enumerable()
-        |> Jaxon.Stream.query([:root, :all])
+        tmp_path
+        |> File.read!()
+        |> Jason.decode!()
         |> Enum.reduce(%{matched: 0, skipped: 0, persisted: 0}, fn card_map, stats ->
           case parse_card(card_map) do
             nil ->
