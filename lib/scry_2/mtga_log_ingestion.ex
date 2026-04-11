@@ -43,17 +43,22 @@ defmodule Scry2.MtgaLogIngestion do
   @doc """
   Persists a raw parsed event and broadcasts `{:event, record}`.
 
-  Idempotent — if a row with the same `(source_file, file_offset)` already
-  exists, the insert is silently skipped and no broadcast fires. This
+  Idempotent — if a row with the same `(source_file, log_epoch, file_offset)`
+  already exists, the insert is silently skipped and no broadcast fires. This
   prevents duplicate raw events when the watcher re-reads overlapping byte
-  ranges after a crash/restart.
+  ranges after a crash/restart within the same log cycle.
+
+  `log_epoch` distinguishes events from different physical log files that share
+  the same path (see ADR-032 — MTGA log rotation). Events from a post-rotation
+  Player.log always carry an incremented epoch, so they never collide with events
+  from the previous file.
   """
   def insert_event!(attrs) do
     changeset = EventRecord.changeset(%EventRecord{}, Map.new(attrs))
 
     case Repo.insert(changeset,
            on_conflict: :nothing,
-           conflict_target: [:source_file, :file_offset]
+           conflict_target: [:source_file, :log_epoch, :file_offset]
          ) do
       {:ok, %{id: id} = record} when not is_nil(id) ->
         Topics.broadcast(Topics.mtga_logs_events(), {:event, record})

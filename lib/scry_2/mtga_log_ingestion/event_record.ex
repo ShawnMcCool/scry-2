@@ -16,6 +16,7 @@ defmodule Scry2.MtgaLogIngestion.EventRecord do
     field :mtga_timestamp, :utc_datetime
     field :file_offset, :integer
     field :source_file, :string
+    field :log_epoch, :integer, default: 0
     field :raw_json, :string
     field :processed, :boolean, default: false
     field :processed_at, :utc_datetime
@@ -30,6 +31,7 @@ defmodule Scry2.MtgaLogIngestion.EventRecord do
       :mtga_timestamp,
       :file_offset,
       :source_file,
+      :log_epoch,
       :raw_json,
       :processed,
       :processed_at,
