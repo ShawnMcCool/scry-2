@@ -6,13 +6,15 @@ echo Installing Scry2...
 set INSTALL_DIR=%LOCALAPPDATA%\scry_2
 set SCRIPT_DIR=%~dp0
 
-REM Remove previous install if present
+REM Stop existing tray and backend if running
+taskkill /f /im scry2-tray.exe 2>nul
+if exist "%INSTALL_DIR%\bin\scry_2.bat" (
+    call "%INSTALL_DIR%\bin\scry_2.bat" stop 2>nul
+)
+timeout /t 2 /nobreak >nul
+
+REM Remove previous install
 if exist "%INSTALL_DIR%" (
-    echo Stopping previous installation...
-    if exist "%INSTALL_DIR%\bin\scry_2.bat" (
-        call "%INSTALL_DIR%\bin\scry_2.bat" stop 2>nul
-    )
-    timeout /t 2 /nobreak >nul
     rmdir /s /q "%INSTALL_DIR%"
 )
 
@@ -21,20 +23,16 @@ echo Copying files to %INSTALL_DIR%...
 mkdir "%INSTALL_DIR%"
 xcopy /e /i /q /h "%SCRIPT_DIR%." "%INSTALL_DIR%" >nul
 
-REM Register autostart on login
+REM Register autostart on login — point to tray, not backend
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" ^
     /v "Scry2" ^
     /t REG_SZ ^
-    /d "\"%INSTALL_DIR%\bin\scry_2.bat\" start" ^
+    /d "\"%INSTALL_DIR%\scry2-tray.exe\"" ^
     /f >nul
 
-REM Start the app
+REM Start the tray (it will launch the backend and open the browser)
 echo Starting Scry2...
-start "" /B "%INSTALL_DIR%\bin\scry_2.bat" start
-
-REM Open browser after the app has time to boot
-timeout /t 4 /nobreak >nul
-start "" http://localhost:4002
+start "" /B "%INSTALL_DIR%\scry2-tray.exe"
 
 echo.
 echo Scry2 installed successfully!

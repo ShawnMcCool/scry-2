@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SERVICE_NAME="scry-2"
 INSTALL_DIR="$HOME/.local/lib/scry_2"
-SERVICE_FILE="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
+DESKTOP_FILE="$HOME/.config/autostart/scry2.desktop"
 
 echo "Uninstalling Scry2..."
 
-# Stop and disable service
-if systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-    systemctl --user stop "$SERVICE_NAME"
+# Stop tray (it will also stop the backend on exit)
+if pgrep -x scry2-tray &>/dev/null; then
+    pkill -x scry2-tray 2>/dev/null || true
+    sleep 2
 fi
 
-if systemctl --user is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
-    systemctl --user disable "$SERVICE_NAME"
+# Stop backend directly in case tray was not running
+if [[ -f "$INSTALL_DIR/bin/scry_2" ]]; then
+    "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
 fi
 
-# Remove service file
-rm -f "$SERVICE_FILE"
-systemctl --user daemon-reload
+# Remove autostart entry
+rm -f "$DESKTOP_FILE"
 
 # Remove install directory
 if [[ -d "$INSTALL_DIR" ]]; then

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 INSTALL_DIR="$HOME/.local/lib/scry_2"
-PLIST_LABEL="com.scry_2"
+PLIST_LABEL="com.scry2"
 PLIST_FILE="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -10,17 +10,20 @@ echo "Installing Scry2..."
 
 # Unload existing launch agent if present
 if launchctl list "$PLIST_LABEL" &>/dev/null; then
-    echo "Stopping existing Scry2 service..."
+    echo "Stopping existing Scry2..."
     launchctl unload "$PLIST_FILE" 2>/dev/null || true
+    pkill -x scry2-tray 2>/dev/null || true
+    sleep 1
 fi
 
 # Copy release files
 echo "Copying files to $INSTALL_DIR..."
 rm -rf "$INSTALL_DIR"
-mkdir -p "$(dirname "$INSTALL_DIR")"
+mkdir -p "$INSTALL_DIR"
 cp -r "$SCRIPT_DIR/." "$INSTALL_DIR/"
+chmod +x "$INSTALL_DIR/scry2-tray"
 
-# Write launchd plist
+# Write LaunchAgent pointing to tray binary
 mkdir -p "$(dirname "$PLIST_FILE")"
 cat > "$PLIST_FILE" << EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -32,31 +35,19 @@ cat > "$PLIST_FILE" << EOF
     <string>${PLIST_LABEL}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${INSTALL_DIR}/bin/scry_2</string>
-        <string>start</string>
+        <string>${INSTALL_DIR}/scry2-tray</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <false/>
-    <key>StandardOutPath</key>
-    <string>/tmp/scry_2.log</string>
-    <key>StandardErrorPath</key>
-    <string>/tmp/scry_2.log</string>
 </dict>
 </plist>
 EOF
 
-# Load and start
+# Load the agent (tray will start and launch the backend)
 launchctl load "$PLIST_FILE"
-
-echo "Scry2 is running at http://localhost:4002"
-
-# Open browser after boot time
-sleep 3
-open "http://localhost:4002" 2>/dev/null || true
 
 echo ""
 echo "Scry2 installed! It will start automatically on login."
 echo "Access your stats at: http://localhost:4002"
-echo "View logs with: tail -f /tmp/scry_2.log"

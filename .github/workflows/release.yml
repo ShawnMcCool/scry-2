@@ -116,12 +116,32 @@ jobs:
           MIX_ENV: prod
           MIX_OS_DEPS_COMPILE_PARTITION_COUNT: "8"
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: tray/go.sum
+
+      - name: Install tray system dependencies (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: sudo apt-get install -y libayatana-appindicator3-dev
+
+      - name: Build tray binary (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: cd tray && go build -o ../scry2-tray ./...
+
+      - name: Build tray binary (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: cd tray && go build -ldflags="-H windowsgui" -o ../scry2-tray.exe ./...
+
       - name: Package release (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           ARCHIVE="scry_2-${{ github.ref_name }}-${{ matrix.platform }}"
           mkdir "$ARCHIVE"
           cp -r _build/prod/rel/scry_2/. "$ARCHIVE/"
+          cp scry2-tray "$ARCHIVE/scry2-tray"
           rm -f "$ARCHIVE/install.bat" "$ARCHIVE/uninstall.bat"
           cp scripts/install "$ARCHIVE/install"
           cp scripts/uninstall "$ARCHIVE/uninstall"
@@ -134,6 +154,7 @@ jobs:
           ARCHIVE="scry_2-${{ github.ref_name }}-${{ matrix.platform }}"
           mkdir "$ARCHIVE"
           cp -r _build/prod/rel/scry_2/. "$ARCHIVE/"
+          cp scry2-tray "$ARCHIVE/scry2-tray"
           rm -f "$ARCHIVE/install.bat" "$ARCHIVE/uninstall.bat"
           cp scripts/install-macos "$ARCHIVE/install"
           cp scripts/uninstall-macos "$ARCHIVE/uninstall"
@@ -147,6 +168,7 @@ jobs:
           $ARCHIVE = "scry_2-${{ github.ref_name }}-${{ matrix.platform }}"
           New-Item -ItemType Directory -Name $ARCHIVE
           Copy-Item -Recurse "_build\prod\rel\scry_2\*" "$ARCHIVE\"
+          Copy-Item "scry2-tray.exe" "$ARCHIVE\scry2-tray.exe"
           "Run install.bat to set up Scry2.`nSee https://github.com/${{ github.repository }} for full instructions." | Out-File "$ARCHIVE\README.txt" -Encoding UTF8
           Compress-Archive -Path "$ARCHIVE" -DestinationPath "${ARCHIVE}.zip"
 

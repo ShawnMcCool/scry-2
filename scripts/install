@@ -2,58 +2,52 @@
 set -euo pipefail
 
 INSTALL_DIR="$HOME/.local/lib/scry_2"
-SERVICE_NAME="scry-2"
-SERVICE_FILE="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
+DESKTOP_FILE="$HOME/.config/autostart/scry2.desktop"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Installing Scry2..."
 
-# Stop existing service if running
-if systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
-    echo "Stopping existing Scry2 service..."
-    systemctl --user stop "$SERVICE_NAME"
+# Stop existing tray and backend if running
+if pgrep -x scry2-tray &>/dev/null; then
+    echo "Stopping existing Scry2 tray..."
+    pkill -x scry2-tray 2>/dev/null || true
+    sleep 1
 fi
+
+# Disable legacy systemd service if present (from pre-tray installs)
+if systemctl --user is-active --quiet scry-2 2>/dev/null; then
+    echo "Disabling legacy systemd service..."
+    systemctl --user stop scry-2 2>/dev/null || true
+    systemctl --user disable scry-2 2>/dev/null || true
+fi
+rm -f "$HOME/.config/systemd/user/scry-2.service"
+systemctl --user daemon-reload 2>/dev/null || true
 
 # Copy release files
 echo "Copying files to $INSTALL_DIR..."
 rm -rf "$INSTALL_DIR"
-mkdir -p "$(dirname "$INSTALL_DIR")"
+mkdir -p "$INSTALL_DIR"
 cp -r "$SCRIPT_DIR/." "$INSTALL_DIR/"
+chmod +x "$INSTALL_DIR/scry2-tray"
 
-# Write systemd service unit
-mkdir -p "$(dirname "$SERVICE_FILE")"
-cat > "$SERVICE_FILE" << EOF
-[Unit]
-Description=Scry2 — MTGA stats tracker
-After=network.target
-
-[Service]
-Type=simple
-ExecStart=$INSTALL_DIR/bin/scry_2 start
-ExecStop=$INSTALL_DIR/bin/scry_2 stop
-Restart=on-failure
-RestartSec=5
-StandardOutput=journal
-StandardError=journal
-
-[Install]
-WantedBy=default.target
+# Enable autostart on login via XDG
+mkdir -p "$(dirname "$DESKTOP_FILE")"
+cat > "$DESKTOP_FILE" << EOF
+[Desktop Entry]
+Type=Application
+Name=Scry2
+Exec=$INSTALL_DIR/scry2-tray
+Hidden=false
+NoDisplay=false
+X-GNOME-Autostart-enabled=true
 EOF
 
-# Enable and start
-systemctl --user daemon-reload
-systemctl --user enable "$SERVICE_NAME"
-systemctl --user start "$SERVICE_NAME"
-
-echo "Scry2 is running at http://localhost:4002"
-
-# Open browser if possible
-if command -v xdg-open &>/dev/null; then
-    sleep 3
-    xdg-open "http://localhost:4002" &>/dev/null &
-fi
+# Launch tray (which will start the backend)
+echo "Starting Scry2..."
+"$INSTALL_DIR/scry2-tray" &
 
 echo ""
 echo "Scry2 installed! It will start automatically on login."
 echo "Access your stats at: http://localhost:4002"
-echo "View logs with: journalctl --user -u scry-2 -f"
+echo ""
+echo "Note: On GNOME, install 'gnome-shell-extension-appindicator' if the tray icon does not appear."

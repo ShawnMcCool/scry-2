@@ -1,7 +1,11 @@
 @echo off
 echo Uninstalling Scry2...
 
-REM Stop the running instance
+REM Stop the tray (it will stop the backend on exit)
+taskkill /f /im scry2-tray.exe 2>nul
+timeout /t 2 /nobreak >nul
+
+REM Also stop backend directly in case tray was not running
 if exist "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" (
     call "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" stop 2>nul
     timeout /t 2 /nobreak >nul
