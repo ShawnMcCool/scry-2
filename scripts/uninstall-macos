@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PLIST_LABEL="com.scry_2"
+PLIST_FILE="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
+INSTALL_DIR="$HOME/.local/lib/scry_2"
+
+echo "Uninstalling Scry2..."
+
+# Unload launch agent
+if launchctl list "$PLIST_LABEL" &>/dev/null; then
+    launchctl unload "$PLIST_FILE" 2>/dev/null || true
+fi
+
+# Remove plist
+rm -f "$PLIST_FILE"
+
+# Remove install directory
+if [[ -d "$INSTALL_DIR" ]]; then
+    rm -rf "$INSTALL_DIR"
+    echo "Removed $INSTALL_DIR"
+fi
+
+echo ""
+echo "Scry2 uninstalled. Your data has been preserved:"
+echo "  Config: ~/.config/scry_2/config.toml"
+echo "  Data:   ~/Library/Application Support/scry_2/"
+echo ""
+echo "To also remove your data:"
+echo "  rm -rf ~/Library/Application\ Support/scry_2/ ~/.config/scry_2/"

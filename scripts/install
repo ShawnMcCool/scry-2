@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+INSTALL_DIR="$HOME/.local/lib/scry_2"
+SERVICE_NAME="scry-2"
+SERVICE_FILE="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+echo "Installing Scry2..."
+
+# Stop existing service if running
+if systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    echo "Stopping existing Scry2 service..."
+    systemctl --user stop "$SERVICE_NAME"
+fi
+
+# Copy release files
+echo "Copying files to $INSTALL_DIR..."
+rm -rf "$INSTALL_DIR"
+mkdir -p "$(dirname "$INSTALL_DIR")"
+cp -r "$SCRIPT_DIR/." "$INSTALL_DIR/"
+
+# Write systemd service unit
+mkdir -p "$(dirname "$SERVICE_FILE")"
+cat > "$SERVICE_FILE" << EOF
+[Unit]
+Description=Scry2 — MTGA stats tracker
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$INSTALL_DIR/bin/scry_2 start
+ExecStop=$INSTALL_DIR/bin/scry_2 stop
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
+EOF
+
+# Enable and start
+systemctl --user daemon-reload
+systemctl --user enable "$SERVICE_NAME"
+systemctl --user start "$SERVICE_NAME"
+
+echo "Scry2 is running at http://localhost:4002"
+
+# Open browser if possible
+if command -v xdg-open &>/dev/null; then
+    sleep 3
+    xdg-open "http://localhost:4002" &>/dev/null &
+fi
+
+echo ""
+echo "Scry2 installed! It will start automatically on login."
+echo "Access your stats at: http://localhost:4002"
+echo "View logs with: journalctl --user -u scry-2 -f"

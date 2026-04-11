@@ -89,6 +89,16 @@ defmodule Scry2.MtgaLogIngestion.LocateLogFile do
         "AppData/LocalLow/Wizards Of The Coast/MTGA/Player.log"
       ]),
 
+      # Windows (native MTGA client)
+      Path.join([
+        home,
+        "AppData",
+        "LocalLow",
+        "Wizards Of The Coast",
+        "MTGA",
+        "Player.log"
+      ]),
+
       # macOS (native)
       Path.join([home, "Library/Logs/Wizards Of The Coast/MTGA/Player.log"])
     ]

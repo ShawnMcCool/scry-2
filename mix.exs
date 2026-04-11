@@ -11,7 +11,8 @@ defmodule Scry2.MixProject do
       aliases: aliases(),
       deps: deps(),
       compilers: [:phoenix_live_view] ++ Mix.compilers(),
-      listeners: [Phoenix.CodeReloader]
+      listeners: [Phoenix.CodeReloader],
+      releases: releases()
     ]
   end
 
@@ -72,7 +73,7 @@ defmodule Scry2.MixProject do
       {:toml, "~> 0.7"},
       # Dev-only tooling
       {:tidewave, "~> 0.5", only: :dev},
-      {:visualizer, path: "../visualizer"}
+      {:visualizer, path: "../visualizer", only: :dev}
     ]
   end
 
@@ -96,6 +97,14 @@ defmodule Scry2.MixProject do
         "phx.digest"
       ],
       precommit: ["compile --warnings-as-errors", "deps.unlock --unused", "format", "test"]
+    ]
+  end
+
+  defp releases do
+    [
+      scry_2: [
+        include_executables_for: [:unix, :windows]
+      ]
     ]
   end
 end

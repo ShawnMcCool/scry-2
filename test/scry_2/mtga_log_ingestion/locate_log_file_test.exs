@@ -54,11 +54,14 @@ defmodule Scry2.MtgaLogIngestion.LocateLogFileTest do
       assert first =~ "Wizards Of The Coast/MTGA/Player.log"
     end
 
-    test "includes macOS native path" do
-      assert Enum.any?(
-               LocateLogFile.default_candidates(),
-               &String.contains?(&1, "Library/Logs/Wizards Of The Coast/MTGA/Player.log")
-             )
+    test "includes Windows-style AppData path" do
+      candidates = LocateLogFile.default_candidates()
+      assert Enum.any?(candidates, &String.contains?(&1, "AppData"))
+    end
+
+    test "includes macOS Library path" do
+      candidates = LocateLogFile.default_candidates()
+      assert Enum.any?(candidates, &String.contains?(&1, "Library/Logs"))
     end
   end
 

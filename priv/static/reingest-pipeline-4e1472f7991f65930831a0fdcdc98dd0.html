@@ -1,0 +1,1463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>reingest!() Pipeline</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #0b0b12;
+      --surface:    #12121e;
+      --surface2:   #1a1a2c;
+      --border:     rgba(255,255,255,0.07);
+      --text:       #dde3ef;
+      --muted:      #5a647a;
+      --dim:        #8892a4;
+
+      --seq:        #e8503a;
+      --seq-glow:   rgba(232,80,58,0.2);
+      --seq-border: rgba(232,80,58,0.4);
+
+      --par:        #2ea86e;
+      --par-glow:   rgba(46,168,110,0.15);
+      --par-border: rgba(46,168,110,0.35);
+
+      --blue:       #4a8ff7;
+      --blue-glow:  rgba(74,143,247,0.15);
+      --blue-border:rgba(74,143,247,0.3);
+
+      --purple:     #9b6df5;
+      --purple-glow:rgba(155,109,245,0.15);
+
+      --amber:      #e8a030;
+      --amber-glow: rgba(232,160,48,0.15);
+      --amber-border:rgba(232,160,48,0.35);
+
+      --cyan:       #28bfd8;
+    }
+
+    html {
+      scroll-snap-type: y mandatory;
+      overflow-y: scroll;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 15px;
+    }
+
+    /* ── Slide shell ─────────────────────────────────────── */
+
+    .slide {
+      min-height: 100vh;
+      scroll-snap-align: start;
+      display: flex;
+      flex-direction: column;
+      padding: 48px 72px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+
+    .slide-num {
+      position: absolute;
+      top: 24px; right: 36px;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Typography ──────────────────────────────────────── */
+
+    h1 { font-size: 2.4rem; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; }
+    h2 { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; }
+    h3 { font-size: 1rem; font-weight: 600; letter-spacing: 0.01em; text-transform: uppercase; }
+    p  { line-height: 1.65; }
+
+    code {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      font-size: 0.88em;
+      background: rgba(255,255,255,0.06);
+      padding: 0.1em 0.35em;
+      border-radius: 4px;
+      color: #b8c9f0;
+    }
+
+    .fn { color: #6fb3f7; font-weight: 600; }
+    .mod { color: #9b6df5; }
+    .kw  { color: #e8a030; }
+
+    /* ── Labels ──────────────────────────────────────────── */
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 10px; font-weight: 700; letter-spacing: 0.12em;
+      text-transform: uppercase; padding: 3px 8px;
+      border-radius: 4px; white-space: nowrap;
+    }
+    .badge-seq  { background: var(--seq-glow);  color: var(--seq);  border: 1px solid var(--seq-border); }
+    .badge-par  { background: var(--par-glow);  color: var(--par);  border: 1px solid var(--par-border); }
+    .badge-blue { background: var(--blue-glow); color: var(--blue); border: 1px solid var(--blue-border); }
+    .badge-amber{ background: var(--amber-glow);color: var(--amber);border: 1px solid var(--amber-border); }
+
+    /* ── Cards ───────────────────────────────────────────── */
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 18px 22px;
+    }
+
+    .card-seq {
+      background: var(--seq-glow);
+      border: 1px solid var(--seq-border);
+      border-radius: 10px;
+      padding: 18px 22px;
+    }
+
+    .card-par {
+      background: var(--par-glow);
+      border: 1px solid var(--par-border);
+      border-radius: 10px;
+      padding: 18px 22px;
+    }
+
+    .card-blue {
+      background: var(--blue-glow);
+      border: 1px solid var(--blue-border);
+      border-radius: 10px;
+      padding: 18px 22px;
+    }
+
+    .card-amber {
+      background: var(--amber-glow);
+      border: 1px solid var(--amber-border);
+      border-radius: 10px;
+      padding: 18px 22px;
+    }
+
+    /* ── Pipeline chains ─────────────────────────────────── */
+
+    .chain {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .chain-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      position: relative;
+    }
+
+    .chain-item + .chain-item {
+      margin-top: 0;
+    }
+
+    .chain-left {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 28px;
+      flex-shrink: 0;
+    }
+
+    .chain-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      margin-top: 5px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .chain-line {
+      width: 2px;
+      flex: 1;
+      min-height: 18px;
+      background: var(--border);
+      margin-top: 2px;
+      margin-bottom: 2px;
+    }
+
+    .chain-body {
+      flex: 1;
+      padding-bottom: 18px;
+    }
+
+    .chain-item:last-child .chain-body { padding-bottom: 0; }
+
+    .step-label {
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .step-desc {
+      font-size: 0.9rem;
+      color: var(--dim);
+      line-height: 1.5;
+    }
+
+    .step-tag {
+      display: inline-flex;
+      font-size: 0.75rem;
+      color: var(--muted);
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 1px 6px;
+      margin-top: 4px;
+    }
+
+    /* ── Overview flow ───────────────────────────────────── */
+
+    .phase-row {
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      margin-top: auto;
+      margin-bottom: auto;
+    }
+
+    .phase-block {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 28px 20px;
+      border-radius: 12px;
+      text-align: center;
+      gap: 10px;
+    }
+
+    .phase-arrow {
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      color: var(--muted);
+      font-size: 1.5rem;
+    }
+
+    .phase-icon { font-size: 2.2rem; }
+    .phase-name { font-size: 1rem; font-weight: 700; }
+    .phase-sub  { font-size: 0.78rem; color: var(--dim); line-height: 1.4; }
+    .phase-dur  { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; margin-top: 6px; }
+
+    /* ── Loop block ──────────────────────────────────────── */
+
+    .loop-block {
+      border: 2px solid var(--seq-border);
+      border-radius: 12px;
+      background: rgba(232,80,58,0.06);
+      position: relative;
+    }
+
+    .loop-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--seq-border);
+      background: rgba(232,80,58,0.1);
+      border-radius: 10px 10px 0 0;
+    }
+
+    .loop-body {
+      padding: 18px 20px;
+    }
+
+    .loop-counter {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--seq);
+      font-family: 'SF Mono', monospace;
+      letter-spacing: 0.05em;
+    }
+
+    /* ── Sub-step grid ───────────────────────────────────── */
+
+    .substep-grid {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 6px 12px;
+      align-items: start;
+    }
+
+    .substep-num {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--muted);
+      text-align: right;
+      padding-top: 2px;
+      font-family: monospace;
+    }
+
+    .substep-content {
+      font-size: 0.88rem;
+      line-height: 1.5;
+      padding-bottom: 6px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    .substep-content:last-of-type { border-bottom: none; }
+
+    .substep-note {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    /* ── Parallel lanes ──────────────────────────────────── */
+
+    .lanes {
+      display: grid;
+      gap: 10px;
+    }
+
+    .lane {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+    }
+
+    .lane-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+    }
+
+    .lane-steps {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .lane-step {
+      font-size: 0.72rem;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 3px 8px;
+      color: var(--dim);
+      white-space: nowrap;
+    }
+
+    /* ── Message path ────────────────────────────────────── */
+
+    .msg-flow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+    }
+
+    .msg-box {
+      background: rgba(155,109,245,0.12);
+      border: 1px solid rgba(155,109,245,0.3);
+      border-radius: 6px;
+      padding: 5px 10px;
+      color: var(--purple);
+      font-family: monospace;
+      font-size: 0.8rem;
+      white-space: nowrap;
+    }
+
+    .msg-arrow { color: var(--muted); }
+
+    .process-box {
+      background: rgba(74,143,247,0.1);
+      border: 1px solid rgba(74,143,247,0.25);
+      border-radius: 6px;
+      padding: 5px 10px;
+      color: var(--blue);
+      font-family: monospace;
+      font-size: 0.8rem;
+      white-space: nowrap;
+    }
+
+    /* ── Comparison table ────────────────────────────────── */
+
+    .compare {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .compare-col h3 {
+      margin-bottom: 14px;
+    }
+
+    .compare-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      font-size: 0.87rem;
+      line-height: 1.5;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      color: var(--dim);
+    }
+
+    .compare-item:last-child { border-bottom: none; }
+
+    .compare-icon { flex-shrink: 0; font-size: 0.9rem; margin-top: 1px; }
+
+    /* ── Bottleneck callout ───────────────────────────────── */
+
+    .bottleneck {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      background: var(--seq-glow);
+      border: 1px solid var(--seq-border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 0.88rem;
+      line-height: 1.55;
+    }
+
+    .bottleneck-icon { font-size: 1.3rem; flex-shrink: 0; }
+
+    /* ── Process diagram ─────────────────────────────────── */
+
+    .proc-diagram {
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+    }
+
+    .proc-box {
+      flex: 1;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .proc-header {
+      padding: 10px 14px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .proc-body {
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .proc-op {
+      font-size: 0.82rem;
+      color: var(--dim);
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      line-height: 1.4;
+    }
+
+    .proc-op:last-child { border-bottom: none; }
+
+    /* ── Timeline bar ────────────────────────────────────── */
+
+    .timeline {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .tl-row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .tl-label {
+      font-size: 0.8rem;
+      color: var(--dim);
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tl-bar-wrap {
+      height: 28px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .tl-bar {
+      height: 100%;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      padding-left: 8px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: rgba(255,255,255,0.9);
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    /* ── Helpers ─────────────────────────────────────────── */
+
+    .mt-xs { margin-top: 6px; }
+    .mt-sm { margin-top: 12px; }
+    .mt-md { margin-top: 20px; }
+    .mt-lg { margin-top: 32px; }
+
+    .mb-sm { margin-bottom: 12px; }
+    .mb-md { margin-bottom: 20px; }
+
+    .flex { display: flex; }
+    .flex-col { display: flex; flex-direction: column; }
+    .gap-sm { gap: 8px; }
+    .gap-md { gap: 16px; }
+    .gap-lg { gap: 24px; }
+    .items-center { align-items: center; }
+    .grow { flex: 1; }
+    .w-full { width: 100%; }
+
+    .text-muted { color: var(--muted); }
+    .text-dim   { color: var(--dim); }
+    .text-seq   { color: var(--seq); }
+    .text-par   { color: var(--par); }
+    .text-blue  { color: var(--blue); }
+    .text-amber { color: var(--amber); }
+    .text-purple{ color: var(--purple); }
+    .text-cyan  { color: var(--cyan); }
+    .text-sm    { font-size: 0.85rem; }
+    .text-xs    { font-size: 0.75rem; }
+    .font-mono  { font-family: 'SF Mono', 'Fira Code', monospace; }
+    .font-bold  { font-weight: 700; }
+
+    .divider {
+      width: 100%;
+      height: 1px;
+      background: var(--border);
+      margin: 20px 0;
+    }
+
+    /* ── Navigation ──────────────────────────────────────── */
+
+    #nav {
+      position: fixed;
+      bottom: 24px;
+      right: 28px;
+      display: flex;
+      gap: 8px;
+      z-index: 100;
+    }
+
+    .nav-btn {
+      width: 36px; height: 36px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      color: var(--dim);
+      font-size: 1.1rem;
+      transition: all 0.15s;
+      user-select: none;
+    }
+
+    .nav-btn:hover {
+      background: var(--surface);
+      color: var(--text);
+      border-color: rgba(255,255,255,0.15);
+    }
+
+    #progress {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--border);
+      z-index: 100;
+    }
+
+    #progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--blue), var(--purple));
+      transition: width 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+
+<div id="progress"><div id="progress-bar" style="width:14%"></div></div>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SLIDE 1 — OVERVIEW
+     ══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s1">
+  <span class="slide-num">1 / 7</span>
+
+  <div class="flex items-center gap-md mb-sm">
+    <h1><span class="font-mono text-blue">Events.reingest!()</span></h1>
+  </div>
+  <p class="text-dim" style="max-width:640px">
+    Full pipeline from raw MTGA log events to projected read models.
+    Three distinct phases — the middle one is the bottleneck.
+  </p>
+
+  <div class="phase-row mt-lg">
+
+    <!-- Phase 1 -->
+    <div class="phase-block card">
+      <div class="phase-icon">🧹</div>
+      <span class="badge badge-blue">Phase 1</span>
+      <div class="phase-name">Setup</div>
+      <div class="phase-sub">
+        Delete stale data<br>
+        Suspend workers<br>
+        Prepare for retranslation
+      </div>
+      <div class="phase-dur text-blue">Sequential · fast</div>
+    </div>
+
+    <div class="phase-arrow">→</div>
+
+    <!-- Phase 2 — BOTTLENECK -->
+    <div class="phase-block card-seq" style="flex:2.2">
+      <div class="phase-icon">🔄</div>
+      <span class="badge badge-seq">Phase 2 · BOTTLENECK</span>
+      <div class="phase-name">Retranslation</div>
+      <div class="phase-sub" style="color:rgba(232,80,58,0.8)">
+        Re-broadcast every raw event<br>
+        Single GenServer processes each one<br>
+        DB write per event, in order
+      </div>
+      <div class="phase-dur text-seq">Sequential · ~8 000 events · walls the clock</div>
+    </div>
+
+    <div class="phase-arrow">→</div>
+
+    <!-- Phase 3 -->
+    <div class="phase-block card-par">
+      <div class="phase-icon">⚡</div>
+      <span class="badge badge-par">Phase 3</span>
+      <div class="phase-name">Parallel Rebuild</div>
+      <div class="phase-sub" style="color:rgba(46,168,110,0.8)">
+        5 projectors rebuild<br>
+        concurrently from<br>
+        the domain event store
+      </div>
+      <div class="phase-dur text-par">Concurrent · 5 tasks · fast</div>
+    </div>
+
+    <div class="phase-arrow">→</div>
+
+    <!-- Phase 4 -->
+    <div class="phase-block card">
+      <div class="phase-icon">✅</div>
+      <span class="badge badge-blue">Phase 4</span>
+      <div class="phase-name">Resume</div>
+      <div class="phase-sub">
+        Re-enable live<br>
+        projection for all<br>
+        5 projectors
+      </div>
+      <div class="phase-dur text-blue">Sequential · instant</div>
+    </div>
+
+  </div>
+
+  <div class="bottleneck mt-lg">
+    <span class="bottleneck-icon">⚠</span>
+    <span>
+      <strong class="text-seq">Why is retranslation slow?</strong>
+      The BEAM <code>IngestRawEvents</code> GenServer is a single process with a single mailbox.
+      Every raw event is broadcast into that mailbox and processed one at a time — decoding JSON,
+      running the translator, writing domain events to SQLite, marking each raw event processed.
+      There is no way to parallelize across events without breaking ordering guarantees.
+    </span>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SLIDE 2 — PHASE 1: SETUP
+     ══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s2">
+  <span class="slide-num">2 / 7</span>
+
+  <div class="flex items-center gap-md mb-sm">
+    <span class="badge badge-blue">Phase 1</span>
+    <h2>Setup — clearing state &amp; suspending workers</h2>
+  </div>
+  <p class="text-dim text-sm mt-xs mb-md">All five steps are sequential DB calls or synchronous GenServer calls. Total time: milliseconds.</p>
+
+  <div class="chain">
+
+    <div class="chain-item">
+      <div class="chain-left">
+        <div class="chain-dot" style="background:var(--blue)"></div>
+        <div class="chain-line"></div>
+      </div>
+      <div class="chain-body">
+        <div class="step-label text-blue">Step 1 — DB delete</div>
+        <div class="step-desc"><code>Repo.delete_all(IngestionState.Snapshot)</code> — wipes the crash-recovery singleton row so <code>IngestRawEvents</code> starts fresh on restart.</div>
+      </div>
+    </div>
+
+    <div class="chain-item">
+      <div class="chain-left">
+        <div class="chain-dot" style="background:var(--blue)"></div>
+        <div class="chain-line"></div>
+      </div>
+      <div class="chain-body">
+        <div class="step-label text-blue">Step 2 — DB delete</div>
+        <div class="step-desc"><code>Repo.delete_all(Events.EventRecord)</code> — deletes all domain events. Projections are <em>not</em> deleted here — each projector's <code>rebuild!</code> owns that in Phase 3.</div>
+      </div>
+    </div>
+
+    <div class="chain-item">
+      <div class="chain-left">
+        <div class="chain-dot" style="background:var(--blue)"></div>
+        <div class="chain-line"></div>
+      </div>
+      <div class="chain-body">
+        <div class="step-label text-blue">Step 3 — DB bulk update</div>
+        <div class="step-desc"><code>Repo.update_all(..., set: [processed: false])</code> on all <code>mtga_logs_events</code> rows. One SQL statement, fast regardless of row count.</div>
+        <span class="step-tag">single UPDATE ... SET</span>
+      </div>
+    </div>
+
+    <div class="chain-item">
+      <div class="chain-left">
+        <div class="chain-dot" style="background:var(--amber)"></div>
+        <div class="chain-line"></div>
+      </div>
+      <div class="chain-body">
+        <div class="step-label text-amber">Step 4 — GenServer.call</div>
+        <div class="step-desc">
+          <code>suspend_ingest_raw_events_checkpointing()</code> — tells <code>IngestRawEvents</code> to stop writing <code>IngestionState</code> to the DB after each event.
+          Without this, reingest would do ~8 000 singleton upserts with zero crash-recovery value.
+        </div>
+        <span class="step-tag">optimization: skips ~8k DB writes</span>
+      </div>
+    </div>
+
+    <div class="chain-item">
+      <div class="chain-left">
+        <div class="chain-dot" style="background:var(--amber)"></div>
+      </div>
+      <div class="chain-body">
+        <div class="step-label text-amber">Step 5 — 5 × GenServer.call</div>
+        <div class="step-desc">
+          <code>suspend_all_projectors()</code> — suspends all 5 projectors
+          (<code>Matches</code>, <code>Drafts</code>, <code>Mulligans</code>, <code>Ranks</code>, <code>Economy</code>).
+          While suspended, projectors consume <code>{:domain_event, ...}</code> PubSub messages as fast no-ops instead of projecting.
+          Without this, every domain event produced during retranslation would be live-projected — then immediately thrown away by <code>rebuild!</code> in Phase 3.
+        </div>
+        <span class="step-tag">optimization: eliminates 5× redundant projection</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SLIDE 3 — PHASE 2: RETRANSLATION
+     ══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s3">
+  <span class="slide-num">3 / 7</span>
+
+  <div class="flex items-center gap-md mb-sm">
+    <span class="badge badge-seq">Phase 2 · Bottleneck</span>
+    <h2>Retranslation — the serialized loop</h2>
+  </div>
+
+  <div class="proc-diagram mt-md">
+
+    <!-- Left: broadcaster process -->
+    <div class="proc-box" style="max-width:300px">
+      <div class="proc-header" style="background:rgba(74,143,247,0.12);color:var(--blue)">
+        Caller process (any)
+      </div>
+      <div class="proc-body" style="background:var(--surface);border:1px solid var(--border);border-top:none;border-radius:0 0 10px 10px">
+        <div class="proc-op">Open DB cursor via <code>Repo.stream</code></div>
+        <div class="proc-op">Wrapped in <code>Repo.transaction</code></div>
+        <div class="proc-op" style="color:var(--text)"><strong>For each raw event:</strong></div>
+        <div class="proc-op" style="padding-left:12px">
+          <code>Topics.broadcast(</code><br>
+          <span style="padding-left:16px;display:block"><code>mtga_logs:events,</code></span>
+          <span style="padding-left:16px;display:block"><code>{:event, raw})</code></span>
+        </div>
+        <div class="proc-op text-muted text-xs">Broadcasts are fast (mailbox enqueue).<br>Caller can outrun the GenServer.</div>
+        <div class="proc-op" style="color:var(--text)"><code>sync_ingest_raw_events()</code></div>
+        <div class="proc-op text-muted text-xs">Calls <code>:sys.get_state(pid)</code> — blocks until GenServer mailbox is drained</div>
+      </div>
+    </div>
+
+    <!-- Arrow -->
+    <div class="flex-col items-center" style="padding-top:80px;gap:8px;color:var(--purple)">
+      <div class="msg-box">{:event, %EventRecord{}}</div>
+      <div style="font-size:1.6rem">→</div>
+      <div class="text-xs text-muted" style="text-align:center">PubSub<br>mtga_logs:events</div>
+    </div>
+
+    <!-- Right: IngestRawEvents GenServer -->
+    <div class="proc-box grow">
+      <div class="proc-header" style="background:var(--seq-glow);color:var(--seq)">
+        IngestRawEvents GenServer — single process, serialized mailbox
+      </div>
+      <div class="loop-block" style="border:none;border-radius:0;background:transparent">
+        <div class="loop-body" style="background:var(--surface);border:1px solid var(--seq-border);border-top:none;border-radius:0 0 10px 10px">
+          <div class="flex items-center gap-md mb-sm">
+            <span class="loop-counter">handle_info per event</span>
+            <span class="badge badge-seq">one at a time</span>
+          </div>
+          <div class="substep-grid">
+            <span class="substep-num">1</span>
+            <div class="substep-content">
+              <code>maybe_cache_game_objects</code>
+              <div class="substep-note">JSON decode if GreToClientEvent — caches hand cards for mulligan translation</div>
+            </div>
+
+            <span class="substep-num">2</span>
+            <div class="substep-content">
+              <code>maybe_capture_rank</code>
+              <div class="substep-note">JSON decode if RankGetCombinedRankInfo — updates rank state</div>
+            </div>
+
+            <span class="substep-num">3</span>
+            <div class="substep-content">
+              <code>IdentifyDomainEvents.translate(record, self_user_id, match_state)</code>
+              <div class="substep-note">Pure function — raw JSON → <code>[%DomainEvent{}, ...]</code>. No DB, no I/O.</div>
+            </div>
+
+            <span class="substep-num">4</span>
+            <div class="substep-content">
+              <code>Events.append!(event, record)</code> × N domain events
+              <div class="substep-note">
+                INSERT into <code>domain_events</code> + PubSub broadcast to <code>domain:events</code><br>
+                → 5 projectors receive broadcast → <strong class="text-par">paused: fast no-op</strong>
+              </div>
+            </div>
+
+            <span class="substep-num">5</span>
+            <div class="substep-content">
+              <code>MtgaLogIngestion.mark_processed!(record.id)</code>
+              <div class="substep-note">UPDATE single row in <code>mtga_logs_events</code></div>
+            </div>
+
+            <span class="substep-num">6</span>
+            <div class="substep-content">
+              <code>IngestionState.advance(new_state, record.id)</code>
+              <div class="substep-note text-par">In-memory only — checkpointing suspended, no DB write</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottleneck mt-md">
+    <span class="bottleneck-icon">⚠</span>
+    <span>
+      <strong class="text-seq">The serialization point:</strong>
+      The GenServer processes one <code>handle_info</code> at a time. While it is executing step 3–6,
+      new broadcasts accumulate in its mailbox. There is no way to parallelize this without
+      abandoning ordering guarantees — and ordering is the foundation of deterministic replay.
+    </span>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SLIDE 4 — PER-EVENT COST BREAKDOWN
+     ══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s4">
+  <span class="slide-num">4 / 7</span>
+
+  <div class="flex items-center gap-md mb-sm">
+    <span class="badge badge-seq">Phase 2 · Detail</span>
+    <h2>Per-event cost breakdown</h2>
+  </div>
+  <p class="text-dim text-sm mb-md">Every one of ~8 000 raw events runs this work. Costs multiply linearly.</p>
+
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px">
+
+    <!-- Left column: DB operations -->
+    <div>
+      <h3 class="text-amber mb-sm">DB operations per event</h3>
+      <div class="chain">
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--amber)"></div>
+            <div class="chain-line"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-amber">N × INSERT — domain_events</div>
+            <div class="step-desc">One row per domain event produced. Most raw events produce 0–1 domain events. GreToClientEvent (mulligan) can produce several.</div>
+          </div>
+        </div>
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--amber)"></div>
+            <div class="chain-line"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-amber">1 × UPDATE — mtga_logs_events</div>
+            <div class="step-desc"><code>mark_processed!(id)</code> — sets <code>processed = true</code> and <code>processed_at</code> on the raw event row.</div>
+          </div>
+        </div>
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--par)"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-par">0 × UPSERT — ingestion_state (suppressed)</div>
+            <div class="step-desc">
+              Without checkpointing suspension: <code>IngestionState.persist!</code> would write a singleton row after every event.
+              <strong class="text-par">Suspended → eliminated.</strong>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Right column: process work -->
+    <div>
+      <h3 class="text-blue mb-sm">In-process work per event</h3>
+      <div class="chain">
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--blue)"></div>
+            <div class="chain-line"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-blue">JSON decode (conditional)</div>
+            <div class="step-desc">Only <code>GreToClientEvent</code> and <code>RankGetCombinedRankInfo</code> events require JSON decode before translation. All others skip this.</div>
+          </div>
+        </div>
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--blue)"></div>
+            <div class="chain-line"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-blue">Translation (always)</div>
+            <div class="step-desc"><code>IdentifyDomainEvents.translate/3</code> — pure function, CPU-only. For unrecognized event types this is a near-instant lookup miss. For handled types it parses the JSON payload.</div>
+          </div>
+        </div>
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--par)"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-par">5 × PubSub no-op (suppressed)</div>
+            <div class="step-desc">
+              Without projector suspension: each <code>Events.append!</code> broadcast would wake all 5 projector GenServers
+              to do a full DB fetch + project + watermark write.
+              <strong class="text-par">Suspended → message consumed, no DB work.</strong>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div class="divider"></div>
+
+  <h3 class="text-muted mb-sm">Rough scale at 8 000 raw events</h3>
+  <div class="timeline">
+    <div class="tl-row">
+      <span class="tl-label">mark_processed updates</span>
+      <div class="tl-bar-wrap">
+        <div class="tl-bar" style="width:100%;background:var(--amber)">8 000 UPDATEs</div>
+      </div>
+    </div>
+    <div class="tl-row">
+      <span class="tl-label">domain event INSERTs</span>
+      <div class="tl-bar-wrap">
+        <div class="tl-bar" style="width:35%;background:var(--amber)">~2 800 INSERTs</div>
+      </div>
+    </div>
+    <div class="tl-row">
+      <span class="tl-label text-par" style="text-decoration:line-through">ingestion_state upserts (was)</span>
+      <div class="tl-bar-wrap">
+        <div class="tl-bar" style="width:100%;background:var(--par);opacity:0.4">8 000 UPSERTs — eliminated</div>
+      </div>
+    </div>
+    <div class="tl-row">
+      <span class="tl-label text-par" style="text-decoration:line-through">live projections (was)</span>
+      <div class="tl-bar-wrap">
+        <div class="tl-bar" style="width:35%;background:var(--par);opacity:0.4">~2 800 × 5 DB ops — eliminated</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SLIDE 5 — SYNC + PHASE 3: PARALLEL REBUILD
+     ══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s5">
+  <span class="slide-num">5 / 7</span>
+
+  <div class="flex items-center gap-md mb-sm">
+    <span class="badge badge-blue">Sync</span>
+    <h2>Draining the mailbox + parallel rebuild</h2>
+  </div>
+
+  <!-- Sync step -->
+  <div class="card-amber mt-md" style="max-width:600px">
+    <div class="flex items-center gap-md mb-sm">
+      <span class="badge badge-amber">Sync point</span>
+      <code class="fn">sync_ingest_raw_events()</code>
+    </div>
+    <p class="text-dim text-sm">
+      Calls <code>:sys.get_state(IngestRawEvents)</code> — a synchronous GenServer call.
+      The call cannot be handled until all prior <code>handle_info</code> messages in the mailbox
+      are processed. This is how the retranslation loop becomes blocking: we wait here until
+      every raw event has been translated and persisted.
+    </p>
+    <div class="flex gap-md mt-sm" style="flex-wrap:wrap">
+      <div class="msg-flow">
+        <div class="process-box">caller process</div>
+        <span class="msg-arrow">────── GenServer.call ──────▶</span>
+        <div class="process-box">IngestRawEvents (drained)</div>
+      </div>
+    </div>
+    <p class="text-dim text-sm mt-sm">Then: <code>resume_ingest_raw_events_checkpointing()</code> — checkpointing re-enabled for live ingestion.</p>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- replay_projections! -->
+  <div class="flex items-center gap-md mb-sm">
+    <span class="badge badge-par">Phase 3 · Concurrent</span>
+    <code class="fn" style="font-size:1rem">replay_projections!()</code>
+    <span class="text-dim text-sm">— 5 Task.Supervisor tasks run in parallel</span>
+  </div>
+
+  <div class="lanes mt-md" style="grid-template-columns: repeat(5, 1fr)">
+
+    <div class="lane" style="border-color:rgba(74,143,247,0.25);background:rgba(74,143,247,0.06)">
+      <div class="lane-title text-blue">Matches</div>
+      <div class="text-xs text-muted mb-sm">
+        <code>match_created</code><br>
+        <code>match_completed</code><br>
+        <code>deck_submitted</code><br>
+        <code>game_completed</code>
+      </div>
+      <div class="lane-steps">
+        <span class="lane-step">reset watermark</span>
+        <span class="lane-step">delete matches_*</span>
+        <span class="lane-step">batch replay</span>
+        <span class="lane-step">update watermark</span>
+      </div>
+    </div>
+
+    <div class="lane" style="border-color:rgba(155,109,245,0.25);background:rgba(155,109,245,0.06)">
+      <div class="lane-title text-purple">Drafts</div>
+      <div class="text-xs text-muted mb-sm">
+        <code>draft_started</code><br>
+        <code>draft_pick_made</code>
+      </div>
+      <div class="lane-steps">
+        <span class="lane-step">reset watermark</span>
+        <span class="lane-step">delete drafts_*</span>
+        <span class="lane-step">batch replay</span>
+        <span class="lane-step">update watermark</span>
+      </div>
+    </div>
+
+    <div class="lane" style="border-color:rgba(40,191,216,0.25);background:rgba(40,191,216,0.06)">
+      <div class="lane-title text-cyan">Mulligans</div>
+      <div class="text-xs text-muted mb-sm">
+        <code>mulligan_offered</code><br>
+        <code>match_created</code><br>
+        <code>match_completed</code>
+      </div>
+      <div class="lane-steps">
+        <span class="lane-step">reset watermark</span>
+        <span class="lane-step">delete mulligans_*</span>
+        <span class="lane-step">batch replay</span>
+        <span class="lane-step">update watermark</span>
+      </div>
+    </div>
+
+    <div class="lane" style="border-color:rgba(232,160,48,0.25);background:rgba(232,160,48,0.06)">
+      <div class="lane-title text-amber">Ranks</div>
+      <div class="text-xs text-muted mb-sm">
+        <code>rank_snapshot</code>
+      </div>
+      <div class="lane-steps">
+        <span class="lane-step">reset watermark</span>
+        <span class="lane-step">delete ranks_*</span>
+        <span class="lane-step">batch replay</span>
+        <span class="lane-step">update watermark</span>
+      </div>
+    </div>
+
+    <div class="lane" style="border-color:rgba(46,168,110,0.25);background:rgba(46,168,110,0.06)">
+      <div class="lane-title text-par">Economy</div>
+      <div class="text-xs text-muted mb-sm">
+        <code>event_joined</code><br>
+        <code>event_reward_claimed</code><br>
+        <code>inventory_updated</code><br>
+        <code>inventory_changed</code>
+      </div>
+      <div class="lane-steps">
+        <span class="lane-step">reset watermark</span>
+        <span class="lane-step">delete economy_*</span>
+        <span class="lane-step">batch replay</span>
+        <span class="lane-step">update watermark</span>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="text-dim text-sm mt-md">
+    Each projector runs <code>rebuild!()</code> in its own <code>Task.Supervisor</code> task — not through its GenServer mailbox.
+    They read non-overlapping slices of <code>domain_events</code> (different <code>event_type</code> filters)
+    and write to entirely separate tables. No coordination needed; no conflicts possible.
+    The 5 tasks execute in parallel, bounded only by SQLite's write concurrency (WAL mode).
+  </p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SLIDE 6 — REBUILD! INTERNALS
+     ══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s6">
+  <span class="slide-num">6 / 7</span>
+
+  <div class="flex items-center gap-md mb-sm">
+    <span class="badge badge-par">Phase 3 · Detail</span>
+    <h2>Inside <code>rebuild!()</code> — cursor-based batch replay</h2>
+  </div>
+  <p class="text-dim text-sm mb-md">Every projector follows the same steps, operating on its own claimed event types.</p>
+
+  <div style="display:grid;grid-template-columns:1fr 1.5fr;gap:24px">
+
+    <!-- Steps -->
+    <div>
+      <div class="chain">
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--seq)"></div>
+            <div class="chain-line"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-seq">Count total events</div>
+            <div class="step-desc"><code>Events.count_for_types(claimed_slugs)</code> — used for progress reporting</div>
+          </div>
+        </div>
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--seq)"></div>
+            <div class="chain-line"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-seq">Reset watermark</div>
+            <div class="step-desc"><code>Events.put_watermark!(name, 0)</code> — tells the system this projector is starting fresh</div>
+          </div>
+        </div>
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--seq)"></div>
+            <div class="chain-line"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-seq">Truncate projection tables</div>
+            <div class="step-desc">
+              <code>Repo.delete_all</code> on each owned table, in reverse FK order (children before parents).
+              <div class="step-tag mt-xs">Matches: deck_submissions → games → matches</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--par)"></div>
+            <div class="chain-line"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-par">Cursor-based batch replay</div>
+            <div class="step-desc">
+              <code>Events.replay_by_types(slugs, project_fn, ...)</code><br>
+              Reads 500 events at a time from <code>domain_events</code>, calls <code>project/1</code> on each,
+              advances the watermark cursor after each batch.
+            </div>
+            <div class="mt-xs">
+              <span class="step-tag">batch size: 500 events</span>
+              <span class="step-tag" style="margin-left:6px">watermark advanced per batch</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="chain-item">
+          <div class="chain-left">
+            <div class="chain-dot" style="background:var(--par)"></div>
+          </div>
+          <div class="chain-body">
+            <div class="step-label text-par">Final watermark</div>
+            <div class="step-desc"><code>Events.put_watermark!(name, max_event_id)</code> — positions the projector at the tip of the log so live events resume from the right place</div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Batch loop diagram -->
+    <div>
+      <div class="loop-block">
+        <div class="loop-header">
+          <span class="text-sm font-bold text-par">Batch loop — <code>replay_by_types</code></span>
+          <span class="loop-counter" style="color:var(--par)">500 events / batch</span>
+        </div>
+        <div class="loop-body">
+          <div class="substep-grid">
+            <span class="substep-num">1</span>
+            <div class="substep-content">
+              SELECT 500 rows from <code>domain_events</code> WHERE <code>event_type IN claimed_slugs AND id > cursor</code>
+              <div class="substep-note">Single indexed query — fast even on large tables</div>
+            </div>
+
+            <span class="substep-num">2</span>
+            <div class="substep-content">
+              Rehydrate each row: <code>Events.get!(id)</code> deserializes JSON payload → typed struct
+              <div class="substep-note">e.g. <code>%MatchCreated{}</code>, <code>%MulliganOffered{}</code></div>
+            </div>
+
+            <span class="substep-num">3</span>
+            <div class="substep-content">
+              Call <code>project(event)</code> on each — upserts to projection table
+              <div class="substep-note">Idempotent: safe to replay the same event twice</div>
+            </div>
+
+            <span class="substep-num">4</span>
+            <div class="substep-content">
+              <code>Events.put_watermark!(name, last_id)</code>
+              <div class="substep-note">Advances cursor for next batch; safe to interrupt here</div>
+            </div>
+          </div>
+
+          <div class="mt-sm text-dim text-xs" style="border-top:1px solid var(--border);padding-top:10px">
+            Loop continues until no more rows returned. Final watermark set to max event ID in log.
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-md text-sm text-dim">
+        <strong class="text-text">Why cursor-based instead of loading all events?</strong>
+        <br>
+        Bounded memory — never loads more than 500 rehydrated structs at once.
+        Crash-safe — the watermark after each batch means a partial rebuild can resume
+        via <code>catch_up!()</code> without re-projecting already-processed events.
+      </div>
+    </div>
+  </div>
+
+  <!-- Phase 4: Resume -->
+  <div class="divider"></div>
+  <div class="flex items-center gap-md">
+    <span class="badge badge-blue">Phase 4</span>
+    <h3 class="text-blue">Resume all projectors</h3>
+    <span class="text-dim text-sm">— <code>resume_all_projectors()</code> — 5 × GenServer.call</span>
+  </div>
+  <p class="text-dim text-sm mt-xs">
+    Sets <code>paused: false</code> on each projector GenServer. From this point, <code>{:domain_event, id, type}</code>
+    broadcasts from live MTGA ingestion are processed normally. Projectors are now at the correct watermark
+    (set by <code>rebuild!</code>), so any events that arrived during the reingest are handled in order.
+  </p>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════
+     SLIDE 7 — OPTIMIZATIONS SUMMARY
+     ══════════════════════════════════════════════════════════════ -->
+<section class="slide" id="s7">
+  <span class="slide-num">7 / 7</span>
+
+  <div class="flex items-center gap-md mb-sm">
+    <h2>What was optimized — before vs after</h2>
+  </div>
+
+  <div class="compare mt-md">
+
+    <div class="compare-col card-seq">
+      <h3 class="text-seq mb-md">Before</h3>
+
+      <div class="compare-item">
+        <span class="compare-icon">🐢</span>
+        <span>
+          <strong>Sequential projector rebuild</strong><br>
+          <code>Enum.each(projectors, &amp; &amp;1.rebuild!())</code> —
+          5 projectors rebuilt one after another. Total time = sum of all 5.
+        </span>
+      </div>
+
+      <div class="compare-item">
+        <span class="compare-icon">🐢</span>
+        <span>
+          <strong>IngestionState persisted per event</strong><br>
+          <code>IngestionState.persist!/1</code> called after every raw event —
+          ~8 000 singleton DB upserts during retranslation with zero crash-recovery value.
+        </span>
+      </div>
+
+      <div class="compare-item">
+        <span class="compare-icon">🐢</span>
+        <span>
+          <strong>5× redundant live projection during retranslation</strong><br>
+          Every domain event produced during retranslation was immediately live-projected
+          by all 5 projectors — then completely discarded by <code>rebuild!</code>.
+          ~2 800 domain events × 5 projectors = ~14 000 wasted DB operations.
+        </span>
+      </div>
+
+      <div class="compare-item">
+        <span class="compare-icon">💥</span>
+        <span>
+          <strong>KeyError on hot code reload</strong><br>
+          Adding <code>paused</code> key to projector state while GenServers were live
+          caused <code>state.paused</code> to raise <code>KeyError</code> on old in-flight state.
+          Projectors crashed and the pipeline stalled.
+        </span>
+      </div>
+    </div>
+
+    <div class="compare-col card-par">
+      <h3 class="text-par mb-md">After</h3>
+
+      <div class="compare-item">
+        <span class="compare-icon">⚡</span>
+        <span>
+          <strong>Parallel projector rebuild</strong><br>
+          <code>Task.Supervisor.async_stream(..., timeout: :infinity)</code> —
+          5 projectors rebuild concurrently. Total time ≈ slowest projector (Matches).
+        </span>
+      </div>
+
+      <div class="compare-item">
+        <span class="compare-icon">⚡</span>
+        <span>
+          <strong>Checkpointing suspended during reingest</strong><br>
+          <code>suspend_ingest_raw_events_checkpointing()</code> before broadcast,
+          <code>resume_ingest_raw_events_checkpointing()</code> after drain.
+          Zero DB writes for IngestionState during retranslation.
+        </span>
+      </div>
+
+      <div class="compare-item">
+        <span class="compare-icon">⚡</span>
+        <span>
+          <strong>Projectors suspended during retranslation</strong><br>
+          <code>suspend_all_projectors()</code> / <code>resume_all_projectors()</code>.
+          Projectors consume PubSub messages as fast no-ops.
+          Zero wasted projection work — <code>rebuild!</code> does it cleanly once, from scratch.
+        </span>
+      </div>
+
+      <div class="compare-item">
+        <span class="compare-icon">✅</span>
+        <span>
+          <strong>Defensive state access</strong><br>
+          <code>Map.get(state, :paused, false)</code> and <code>Map.put(state, :paused, ...)</code>
+          instead of struct-update syntax. Works with both old state <code>%{}</code> (hot reload)
+          and new state <code>%{paused: false}</code>.
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="card mt-lg" style="display:flex;gap:32px;align-items:flex-start">
+    <div>
+      <h3 class="text-muted mb-sm">Remaining bottleneck</h3>
+      <p class="text-dim text-sm" style="max-width:560px">
+        Retranslation (Phase 2) is still fundamentally sequential — one GenServer, one event at a time.
+        This cannot be parallelized without breaking event ordering. The only path to faster retranslation
+        is reducing per-event cost: batching DB writes (e.g. multi-row INSERTs), avoiding JSON re-decode
+        (the raw JSON is re-decoded by the translator on every event), or reducing the number of raw events
+        that produce domain events (filtering truly irrelevant event types at ingest time).
+      </p>
+    </div>
+    <div style="min-width:200px">
+      <h3 class="text-muted mb-sm">Cost reduced by</h3>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div style="display:flex;justify-content:space-between;gap:12px">
+          <span class="text-dim text-sm">IngestionState upserts</span>
+          <span class="text-par font-bold">−100%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:12px">
+          <span class="text-dim text-sm">Redundant live projections</span>
+          <span class="text-par font-bold">−100%</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:12px">
+          <span class="text-dim text-sm">Projector rebuild time</span>
+          <span class="text-par font-bold">~−5×</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Navigation ─────────────────────────────────────────────── -->
+<div id="nav">
+  <button class="nav-btn" id="btn-up" title="Previous (↑)">↑</button>
+  <button class="nav-btn" id="btn-dn" title="Next (↓)">↓</button>
+</div>
+
+<script>
+  const slides = Array.from(document.querySelectorAll('.slide'));
+  const bar = document.getElementById('progress-bar');
+
+  function current() {
+    const mid = window.scrollY + window.innerHeight / 2;
+    let best = 0;
+    slides.forEach((s, i) => {
+      if (s.offsetTop <= mid) best = i;
+    });
+    return best;
+  }
+
+  function go(idx) {
+    idx = Math.max(0, Math.min(slides.length - 1, idx));
+    slides[idx].scrollIntoView({ behavior: 'smooth' });
+    bar.style.width = ((idx + 1) / slides.length * 100) + '%';
+  }
+
+  document.getElementById('btn-up').addEventListener('click', () => go(current() - 1));
+  document.getElementById('btn-dn').addEventListener('click', () => go(current() + 1));
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault(); go(current() + 1);
+    } else if (e.key === 'ArrowUp' || e.key === 'PageUp') {
+      e.preventDefault(); go(current() - 1);
+    }
+  });
+
+  window.addEventListener('scroll', () => {
+    const idx = current();
+    bar.style.width = ((idx + 1) / slides.length * 100) + '%';
+  }, { passive: true });
+</script>
+</body>
+</html>
