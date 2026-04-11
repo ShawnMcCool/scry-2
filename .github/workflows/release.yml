@@ -61,8 +61,6 @@ jobs:
           - os: windows-latest
             platform: windows-x86_64
             ext: zip
-            # CLOCK_MONOTONIC_RAW is Linux-only; alias it for MinGW
-            cflags: "-DCLOCK_MONOTONIC_RAW=CLOCK_MONOTONIC"
 
     steps:
       - uses: actions/checkout@v4
@@ -96,10 +94,6 @@ jobs:
           key: ${{ runner.os }}-mix-1.18-27-${{ hashFiles('**/mix.lock') }}
           restore-keys: ${{ runner.os }}-mix-1.18-27-
 
-      - name: Install make (Windows)
-        if: matrix.os == 'windows-latest'
-        run: choco install make --no-progress -y
-
       - name: Install dependencies
         run: mix deps.get --only prod
         env:
@@ -110,7 +104,6 @@ jobs:
         env:
           MIX_ENV: prod
           MIX_OS_DEPS_COMPILE_PARTITION_COUNT: "8"
-          CFLAGS: ${{ matrix.cflags }}
 
       - name: Deploy assets
         run: mix assets.deploy
