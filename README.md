@@ -6,6 +6,16 @@ dashboard at `http://localhost:4002`.
 
 Inspired by [17lands.com](https://17lands.com). Built with Elixir/Phoenix.
 
+- Real-time log watching — stats update as you play, no manual imports
+- Match history with win rates by deck, format, and Limited season
+- Draft pick history and deck submitted per draft
+- Card performance charts — win rate and drawn/mulliganed stats per card
+- Season-scoped climb charts showing rank progression over time
+- Card image browser with auto-download from Scryfall
+- Automatic card database refresh from 17lands public datasets
+- MTGA client data import for complete card identity coverage
+- Self-hosted — all data stays local, no accounts or internet dependency
+
 ---
 
 ## Requirements
