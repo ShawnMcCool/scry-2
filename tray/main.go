@@ -47,7 +47,7 @@ func onReady() {
 		for {
 			select {
 			case <-mOpen.ClickedCh:
-				openBrowser("http://localhost:4002")
+				openBrowser("http://localhost:6015")
 			case <-mAutoStart.ClickedCh:
 				if mAutoStart.Checked() {
 					if err := SetAutoStart(false); err == nil {

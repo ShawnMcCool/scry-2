@@ -3,6 +3,9 @@ set -euo pipefail
 
 INSTALL_DIR="$HOME/.local/lib/scry_2"
 DESKTOP_FILE="$HOME/.config/autostart/scry2.desktop"
+DATA_DIR="$HOME/.local/share/scry_2"
+CONFIG_DIR="$HOME/.config/scry_2"
+DB_FILE="$DATA_DIR/scry_2.db"
 
 echo "Uninstalling Scry2..."
 
@@ -20,15 +23,28 @@ fi
 # Remove autostart entry
 rm -f "$DESKTOP_FILE"
 
-# Remove install directory
+# Remove install directory (binaries only — data dir is untouched)
 if [[ -d "$INSTALL_DIR" ]]; then
     rm -rf "$INSTALL_DIR"
     echo "Removed $INSTALL_DIR"
 fi
 
 echo ""
-echo "Scry2 uninstalled. Your data has been preserved:"
-echo "  Config: ~/.config/scry_2/config.toml"
-echo "  Data:   ~/.local/share/scry_2/"
+echo "Scry2 has been uninstalled."
 echo ""
-echo "To also remove your data: rm -rf ~/.local/share/scry_2/ ~/.config/scry_2/"
+echo "Your database has NOT been deleted."
+echo ""
+
+if [[ -f "$DB_FILE" ]]; then
+    DB_SIZE=$(du -h "$DB_FILE" | cut -f1)
+    echo "  Database: $DB_FILE"
+    echo "  Size:     $DB_SIZE"
+else
+    echo "  Database: $DB_FILE (not found)"
+fi
+
+echo "  Config:   $CONFIG_DIR/config.toml"
+echo ""
+echo "If you want to delete your database and config, run:"
+echo "  rm -rf \"$DATA_DIR\" \"$CONFIG_DIR\""
+echo ""

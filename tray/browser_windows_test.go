@@ -8,7 +8,7 @@ import (
 )
 
 func TestOpenBrowserWindows(t *testing.T) {
-	cmd := browserCmdFn("http://localhost:4002")
+	cmd := browserCmdFn("http://localhost:6015")
 	// Expected: cmd /c start <url>
 	if len(cmd.Args) < 4 {
 		t.Fatalf("expected at least 4 args, got %v", cmd.Args)
@@ -19,7 +19,7 @@ func TestOpenBrowserWindows(t *testing.T) {
 	if cmd.Args[1] != "/c" || cmd.Args[2] != "start" {
 		t.Fatalf("expected /c start, got %v", cmd.Args[1:3])
 	}
-	if cmd.Args[3] != "http://localhost:4002" {
+	if cmd.Args[3] != "http://localhost:6015" {
 		t.Fatalf("expected URL as fourth arg, got %q", cmd.Args[3])
 	}
 }
