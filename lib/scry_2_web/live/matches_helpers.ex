@@ -7,10 +7,10 @@ defmodule Scry2Web.MatchesHelpers do
   `Scry2Web.LiveHelpers`.
   """
 
-  @doc "Returns a badge class for the win/loss state."
+  @doc "Returns a badge class for the win/loss state (UIDR-008)."
   @spec result_class(boolean() | nil) :: String.t()
-  def result_class(true), do: "badge-success"
-  def result_class(false), do: "badge-error"
+  def result_class(true), do: "badge-soft badge-success"
+  def result_class(false), do: "badge-soft badge-error"
   def result_class(nil), do: "badge-ghost"
 
   @doc "Returns a human label for the win/loss state."

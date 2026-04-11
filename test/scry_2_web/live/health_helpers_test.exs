@@ -6,11 +6,11 @@ defmodule Scry2Web.HealthHelpersTest do
   alias Scry2Web.HealthHelpers
 
   describe "status_class/1" do
-    test "maps statuses to daisyUI alert variants" do
-      assert HealthHelpers.status_class(:ok) == "alert-success"
-      assert HealthHelpers.status_class(:warning) == "alert-warning"
-      assert HealthHelpers.status_class(:error) == "alert-error"
-      assert HealthHelpers.status_class(:pending) == "alert-info"
+    test "maps statuses to soft daisyUI alert variants (UIDR-008)" do
+      assert HealthHelpers.status_class(:ok) == "alert-soft alert-success"
+      assert HealthHelpers.status_class(:warning) == "alert-soft alert-warning"
+      assert HealthHelpers.status_class(:error) == "alert-soft alert-error"
+      assert HealthHelpers.status_class(:pending) == "alert-soft alert-info"
     end
   end
 
@@ -60,10 +60,10 @@ defmodule Scry2Web.HealthHelpersTest do
       assert HealthHelpers.overall_message(:error) == "Some checks are failing"
     end
 
-    test "classes match severity" do
-      assert HealthHelpers.overall_class(:ok) == "alert-success"
-      assert HealthHelpers.overall_class(:warning) == "alert-warning"
-      assert HealthHelpers.overall_class(:error) == "alert-error"
+    test "classes match severity with soft variant (UIDR-008)" do
+      assert HealthHelpers.overall_class(:ok) == "alert-soft alert-success"
+      assert HealthHelpers.overall_class(:warning) == "alert-soft alert-warning"
+      assert HealthHelpers.overall_class(:error) == "alert-soft alert-error"
     end
   end
 end

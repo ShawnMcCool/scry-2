@@ -5,8 +5,8 @@ defmodule Scry2Web.MatchesHelpersTest do
 
   describe "result_class/1 and result_label/1" do
     test "map true/false/nil to matching daisyUI classes and labels" do
-      assert H.result_class(true) == "badge-success"
-      assert H.result_class(false) == "badge-error"
+      assert H.result_class(true) == "badge-soft badge-success"
+      assert H.result_class(false) == "badge-soft badge-error"
       assert H.result_class(nil) == "badge-ghost"
 
       assert H.result_label(true) == "Won"
