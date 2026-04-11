@@ -1,5 +1,9 @@
 Read `AGENTS.md` for Elixir, Phoenix, LiveView, Ecto, and CSS/JS guidelines.
 
+## Automation Philosophy
+
+**Prefer scripts over AI workflows for repeatable tasks.** When the steps are known and mechanical, write a shell script — don't reach for subagents, hooks, or AI-driven loops. Scripts are auditable, fast, version-controlled, and token-free. Reserve AI workflows for tasks that require judgment or adaptation at runtime.
+
 ## Design Philosophy
 
 **Only the best software design is worth building. No half-measures.** When in doubt, invest in structure over quick wins.

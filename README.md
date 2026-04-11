@@ -69,18 +69,6 @@ Your data and config are preserved; delete `~/.local/share/scry_2/` (Linux),
 
 ---
 
-## Running from Source
-
-Requires Elixir 1.18+ and Erlang/OTP 27+.
-
-```bash
-mix setup          # install deps, create DB, build assets
-mix phx.server     # start dev server at http://localhost:4002
-mix test           # run tests
-```
-
----
-
 ## Card Data Attribution
 
 Card reference data is sourced from [17lands](https://17lands.com) public
@@ -91,3 +79,68 @@ datasets, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+---
+
+---
+
+# Developer Guide
+
+## Requirements
+
+- Elixir 1.18+ and Erlang/OTP 27+
+- [mise](https://mise.jdx.dev/) (recommended for toolchain management)
+
+## Setup
+
+```bash
+mix setup          # install deps, create DB, build assets
+mix phx.server     # start dev server at http://localhost:4002
+mix test           # run tests
+mix precommit      # compile --warnings-as-errors, format, test — run before committing
+```
+
+## Dev Service
+
+Install a persistent systemd user service so the dev server survives terminal sessions:
+
+```bash
+scripts/install-dev                               # install and start the service
+systemctl --user start scry-2-dev                 # start
+systemctl --user stop scry-2-dev                  # stop
+journalctl --user -u scry-2-dev -f                # logs
+iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1   # remote REPL
+```
+
+Disconnect the REPL with `Ctrl+\` (leaves the server running).
+
+## Releasing
+
+Releases are built automatically by GitHub Actions when a version tag is pushed.
+Use the `scripts/tag-release` script to bump the version and trigger a release:
+
+```bash
+scripts/tag-release 0.2.0
+```
+
+This will:
+1. Validate the version is semver
+2. Bump `version:` in `mix.exs`
+3. Describe the jj change as `chore: release v0.2.0`
+4. Create a `v0.2.0` git tag
+5. Push the bookmark and tag to the remote
+
+GitHub Actions then builds Linux, macOS, and Windows release archives and
+publishes them to the [Releases page](../../releases).
+
+To build a release locally (without publishing):
+
+```bash
+MIX_ENV=prod mix assets.deploy && MIX_ENV=prod mix release
+# output: _build/prod/rel/scry_2/
+```
+
+## Architecture
+
+See `CLAUDE.md` for bounded context layout, data model, and architectural
+decision records under `decisions/`.
