@@ -21,6 +21,14 @@ defmodule Scry2Web.Router do
   scope "/", Scry2Web do
     pipe_through :browser
 
+    # First-run setup tour. Lives in its own live_session so SetupGate (added
+    # later) can redirect into it from every other route without creating a
+    # redirect loop on /setup itself. No PlayerScope — a brand-new install
+    # may have no players at all.
+    live_session :setup do
+      live "/setup", SetupLive, :index
+    end
+
     live_session :default, on_mount: {Scry2Web.PlayerScope, :default} do
       live "/", DashboardLive, :index
       live "/stats", StatsLive, :index

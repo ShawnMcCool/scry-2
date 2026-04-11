@@ -1,0 +1,328 @@
+defmodule Scry2Web.SetupLive.Steps do
+  @moduledoc """
+  Step renderers for the first-run setup tour.
+
+  Each component is stateless — it renders based on its assigns and
+  emits `phx-click` events the parent `Scry2Web.SetupLive` handles.
+  All informational by default; fallback action controls (manual path
+  input, retry buttons) only render when a step has a live failure.
+
+  Tour shape (5 steps):
+    1. `welcome_step/1` — one paragraph explaining Scry2 and asking
+       the user to enable MTGA's "Detailed Logs (Plugin Support)".
+    2. `locate_log_step/1` — shows the auto-detected Player.log path,
+       or a manual text input if auto-resolution failed.
+    3. `card_status_step/1` — informational status of 17lands + Scryfall
+       imports, plus the cron schedule. No actions here — card data
+       auto-imports on boot.
+    4. `verify_events_step/1` — live-waits for the first raw event.
+       "Launch MTGA now" prompt; skippable.
+    5. `done_step/1` — summary + link to the dashboard.
+  """
+  use Phoenix.Component
+
+  import Scry2Web.CoreComponents
+
+  alias Scry2.SetupFlow.State
+
+  # ── Step 1: Welcome ──────────────────────────────────────────────────────
+
+  attr :state, State, required: true
+
+  def welcome_step(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <h2 class="card-title text-xl">Welcome to Scry 2</h2>
+
+      <p>
+        Scry 2 watches MTG Arena's log file in the background, records
+        every match, draft, and game you play, and lets you explore
+        your play history on this site.
+      </p>
+
+      <div class="alert alert-info">
+        <.icon name="hero-light-bulb" class="size-5" />
+        <div>
+          <p class="font-semibold">
+            Enable <em>Detailed Logs (Plugin Support)</em> in MTGA now
+          </p>
+          <p class="text-sm">
+            Without this setting, <code>Player.log</code>
+            only contains plain-text entries and Scry 2 can't parse any events.
+            In MTGA, go to <strong>Options → View Account</strong>
+            and enable <strong>Detailed Logs (Plugin Support)</strong>.
+            You only need to do this once.
+          </p>
+        </div>
+      </div>
+
+      <p class="text-sm text-base-content/70">
+        This walkthrough will take a minute. Everything Scry 2 needs is
+        already being set up automatically in the background — this tour
+        just shows you what's happening.
+      </p>
+    </div>
+    """
+  end
+
+  # ── Step 2: Locate Player.log ─────────────────────────────────────────────
+
+  attr :state, State, required: true
+
+  def locate_log_step(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <h2 class="card-title text-xl">Locate your Player.log</h2>
+
+      <p>
+        Scry 2 scans the common install locations for MTGA's <code>Player.log</code>
+        file. If yours is somewhere unusual, you can enter
+        the path manually.
+      </p>
+
+      <div :if={@state.detected_path}>
+        <div class="alert alert-success">
+          <.icon name="hero-check-circle" class="size-5" />
+          <div>
+            <p class="font-semibold">Found automatically</p>
+            <p class="text-sm break-all">
+              <code>{@state.detected_path}</code>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div :if={is_nil(@state.detected_path)} class="space-y-3">
+        <div class="alert alert-warning">
+          <.icon name="hero-exclamation-triangle" class="size-5" />
+          <div>
+            <p class="font-semibold">Couldn't find Player.log automatically</p>
+            <p class="text-sm">
+              This usually means MTGA isn't installed, or it lives in a
+              custom location. If you've already launched MTGA at least once
+              with Detailed Logs enabled, paste the path below.
+            </p>
+          </div>
+        </div>
+
+        <form phx-submit="save_manual_path" class="space-y-2">
+          <label class="label">
+            <span class="label-text">Path to Player.log</span>
+          </label>
+          <input
+            type="text"
+            name="path"
+            value={@state.manual_path || ""}
+            placeholder="/home/you/.wine/.../Player.log"
+            class="input input-bordered w-full font-mono text-sm"
+            phx-debounce="500"
+          />
+          <p :if={@state.manual_path_error} class="text-error text-sm">
+            {@state.manual_path_error}
+          </p>
+          <button type="submit" class="btn btn-primary btn-sm">
+            Try this path
+          </button>
+        </form>
+
+        <p class="text-xs text-base-content/60">
+          You can also skip this step and fix it later from the health screen.
+        </p>
+      </div>
+    </div>
+    """
+  end
+
+  # ── Step 3: Card data status ──────────────────────────────────────────────
+
+  attr :state, State, required: true
+  attr :lands17_count, :integer, required: true
+  attr :scryfall_count, :integer, required: true
+  attr :lands17_updated_at, :any, required: true
+  attr :scryfall_updated_at, :any, required: true
+
+  def card_status_step(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <h2 class="card-title text-xl">Card reference data</h2>
+
+      <p>
+        Scry 2 downloads card data from
+        <a href="https://www.17lands.com" target="_blank" class="link">17lands</a>
+        (names, rarity, types, colors)
+        and from <a href="https://scryfall.com" target="_blank" class="link">Scryfall</a>
+        (to match MTGA's internal IDs). This happens automatically on first launch and
+        refreshes on a schedule after that — you don't need to do anything.
+      </p>
+
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <.card_source_row
+          label="17lands"
+          count={@lands17_count}
+          updated_at={@lands17_updated_at}
+          schedule="Refreshes daily at 04:00 UTC"
+        />
+        <.card_source_row
+          label="Scryfall"
+          count={@scryfall_count}
+          updated_at={@scryfall_updated_at}
+          schedule="Refreshes weekly on Sundays at 05:00 UTC"
+        />
+      </div>
+
+      <p class="text-sm text-base-content/70">
+        Don't worry if the counts are still zero — the import may still be running
+        in the background. You can continue and come back to the health screen to
+        verify it completes.
+      </p>
+    </div>
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :count, :integer, required: true
+  attr :updated_at, :any, required: true
+  attr :schedule, :string, required: true
+
+  defp card_source_row(assigns) do
+    ~H"""
+    <div class="card bg-base-200">
+      <div class="card-body p-4">
+        <div class="flex items-center justify-between">
+          <h3 class="font-semibold">{@label}</h3>
+          <.status_badge count={@count} />
+        </div>
+        <p class="text-sm text-base-content/70">
+          <span :if={@count > 0}>{@count} rows</span>
+          <span :if={@count == 0}>Import in progress…</span>
+          <span :if={@updated_at}>
+            · updated {Calendar.strftime(@updated_at, "%Y-%m-%d %H:%M UTC")}
+          </span>
+        </p>
+        <p class="text-xs text-base-content/50">{@schedule}</p>
+      </div>
+    </div>
+    """
+  end
+
+  attr :count, :integer, required: true
+
+  defp status_badge(assigns) do
+    ~H"""
+    <span :if={@count > 0} class="badge badge-success badge-sm">Ready</span>
+    <span :if={@count == 0} class="badge badge-warning badge-sm">Importing</span>
+    """
+  end
+
+  # ── Step 4: Verify events flowing ─────────────────────────────────────────
+
+  attr :state, State, required: true
+  attr :raw_event_count, :integer, required: true
+
+  def verify_events_step(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <h2 class="card-title text-xl">Verify events are flowing</h2>
+
+      <p>
+        Launch MTGA (or bring it to the foreground if it's already open)
+        and navigate to any screen — the home page, deck builder, or an event
+        entry. As MTGA writes to <code>Player.log</code>, Scry 2 will read it
+        in real time.
+      </p>
+
+      <div :if={@raw_event_count > 0} class="alert alert-success">
+        <.icon name="hero-check-circle" class="size-5" />
+        <div>
+          <p class="font-semibold">Events are flowing</p>
+          <p class="text-sm">
+            {@raw_event_count} raw events recorded so far. You're all set.
+          </p>
+        </div>
+      </div>
+
+      <div :if={@raw_event_count == 0} class="alert alert-info">
+        <.icon name="hero-arrow-path" class="size-5 animate-spin" />
+        <div>
+          <p class="font-semibold">Waiting for your first event</p>
+          <p class="text-sm">
+            This will update automatically as soon as MTGA writes to the log.
+            If nothing appears after a couple of minutes, double-check that
+            <em>Detailed Logs (Plugin Support)</em>
+            is enabled in MTGA.
+          </p>
+        </div>
+      </div>
+
+      <p class="text-xs text-base-content/60">
+        You can continue even if events aren't flowing yet — the health screen
+        will keep you informed.
+      </p>
+    </div>
+    """
+  end
+
+  # ── Step 5: Done ──────────────────────────────────────────────────────────
+
+  attr :state, State, required: true
+  attr :raw_event_count, :integer, required: true
+  attr :lands17_count, :integer, required: true
+
+  def done_step(assigns) do
+    ~H"""
+    <div class="space-y-4">
+      <h2 class="card-title text-xl">You're set up</h2>
+
+      <p>
+        Scry 2 is now running. From here on, the dashboard at <code>/</code>
+        shows a live <strong>health screen</strong>
+        — green means everything is working, red or yellow means something
+        needs your attention.
+      </p>
+
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <.summary_row
+          label="Player.log located"
+          value={@state.detected_path || "(manual path pending)"}
+          ok={not is_nil(@state.detected_path)}
+        />
+        <.summary_row
+          label="Events seen"
+          value={"#{@raw_event_count} raw events"}
+          ok={@raw_event_count > 0}
+        />
+        <.summary_row
+          label="17lands cards"
+          value={"#{@lands17_count} rows"}
+          ok={@lands17_count > 0}
+        />
+      </div>
+
+      <p class="text-sm text-base-content/70">
+        Clicking the button below will mark this tour as complete. You can
+        always re-run it from the health screen if you want to revisit the
+        explanations.
+      </p>
+    </div>
+    """
+  end
+
+  attr :label, :string, required: true
+  attr :value, :string, required: true
+  attr :ok, :boolean, required: true
+
+  defp summary_row(assigns) do
+    ~H"""
+    <div class="flex items-center gap-2">
+      <.icon
+        name={if @ok, do: "hero-check-circle", else: "hero-clock"}
+        class={"size-5 #{if @ok, do: "text-success", else: "text-warning"}"}
+      />
+      <div class="flex-1">
+        <p class="text-sm font-medium">{@label}</p>
+        <p class="text-xs text-base-content/60 break-all">{@value}</p>
+      </div>
+    </div>
+    """
+  end
+end
