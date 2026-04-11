@@ -128,12 +128,12 @@ jobs:
 
       - name: Build tray binary (Linux/macOS)
         if: matrix.os != 'windows-latest'
-        run: cd tray && go build -o ../scry2-tray .
+        run: cd tray && go build -ldflags="-X 'scry2/tray/updater.CurrentVersion=${{ github.ref_name }}'" -o ../scry2-tray .
 
       - name: Build tray binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: cd tray && go build -ldflags="-H windowsgui" -o ../scry2-tray.exe .
+        run: cd tray && go build -ldflags="-H windowsgui -X 'scry2/tray/updater.CurrentVersion=${{ github.ref_name }}'" -o ../scry2-tray.exe .
 
       - name: Package release (Linux)
         if: matrix.os == 'ubuntu-latest'
