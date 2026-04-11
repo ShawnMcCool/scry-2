@@ -65,4 +65,19 @@ if config_env() == :prod do
       port: port
     ],
     secret_key_base: secret_key_base
+
+  # ── Oban cron gating ────────────────────────────────────────────────────
+  # Card refresh crons are disabled entirely when the user sets
+  # `[workers] start_importer = false` in config.toml. Scry2.Cards.Bootstrap
+  # reads the same flag at boot and skips its one-shot enqueue, so together
+  # these ensure no card import work runs when the flag is off.
+  #
+  # Unset in TOML defaults to enabled.
+  start_importer = get_in(toml, ["workers", "start_importer"]) != false
+
+  if not start_importer do
+    # Merge only the `plugins:` key — leave engine/repo/queues from
+    # config/config.exs untouched.
+    config :scry_2, Oban, plugins: []
+  end
 end
