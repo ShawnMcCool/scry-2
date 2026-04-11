@@ -27,6 +27,14 @@ defmodule Scry2.Application do
         # Card image cache — ensures cache directory exists on startup.
         Scry2.Cards.ImageCache,
         {Oban, Application.fetch_env!(:scry_2, Oban)},
+        # One-shot task: check for missing/stale card reference data and enqueue
+        # refresh jobs immediately rather than waiting for the daily cron window.
+        # Must run after Oban is up (so jobs can be inserted). Gated internally
+        # on `Scry2.Config.get(:start_importer)` — no-ops in test/disabled envs.
+        Supervisor.child_spec({Task, &Scry2.Cards.Bootstrap.run/0},
+          id: :cards_bootstrap,
+          restart: :temporary
+        ),
         {Task.Supervisor, name: Scry2.TaskSupervisor},
         Scry2Web.Endpoint
       ]
