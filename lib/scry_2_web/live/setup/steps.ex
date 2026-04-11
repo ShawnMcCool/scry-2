@@ -40,7 +40,7 @@ defmodule Scry2Web.SetupLive.Steps do
         your play history on this site.
       </p>
 
-      <div class="alert alert-info">
+      <div class="alert alert-soft alert-info">
         <.icon name="hero-light-bulb" class="size-5" />
         <div>
           <p class="font-semibold">
@@ -81,7 +81,7 @@ defmodule Scry2Web.SetupLive.Steps do
       </p>
 
       <div :if={@state.detected_path}>
-        <div class="alert alert-success">
+        <div class="alert alert-soft alert-success">
           <.icon name="hero-check-circle" class="size-5" />
           <div>
             <p class="font-semibold">Found automatically</p>
@@ -93,7 +93,7 @@ defmodule Scry2Web.SetupLive.Steps do
       </div>
 
       <div :if={is_nil(@state.detected_path)} class="space-y-3">
-        <div class="alert alert-warning">
+        <div class="alert alert-soft alert-warning">
           <.icon name="hero-exclamation-triangle" class="size-5" />
           <div>
             <p class="font-semibold">Couldn't find Player.log automatically</p>
@@ -209,8 +209,8 @@ defmodule Scry2Web.SetupLive.Steps do
 
   defp status_badge(assigns) do
     ~H"""
-    <span :if={@count > 0} class="badge badge-success badge-sm">Ready</span>
-    <span :if={@count == 0} class="badge badge-warning badge-sm">Importing</span>
+    <span :if={@count > 0} class="badge badge-soft badge-success badge-sm">Ready</span>
+    <span :if={@count == 0} class="badge badge-soft badge-warning badge-sm">Importing</span>
     """
   end
 
@@ -231,7 +231,7 @@ defmodule Scry2Web.SetupLive.Steps do
         in real time.
       </p>
 
-      <div :if={@raw_event_count > 0} class="alert alert-success">
+      <div :if={@raw_event_count > 0} class="alert alert-soft alert-success">
         <.icon name="hero-check-circle" class="size-5" />
         <div>
           <p class="font-semibold">Events are flowing</p>
@@ -241,7 +241,7 @@ defmodule Scry2Web.SetupLive.Steps do
         </div>
       </div>
 
-      <div :if={@raw_event_count == 0} class="alert alert-info">
+      <div :if={@raw_event_count == 0} class="alert alert-soft alert-info">
         <.icon name="hero-arrow-path" class="size-5 animate-spin" />
         <div>
           <p class="font-semibold">Waiting for your first event</p>

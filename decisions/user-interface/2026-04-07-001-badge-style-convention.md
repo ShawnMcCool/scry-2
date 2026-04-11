@@ -1,8 +1,14 @@
 ---
-status: accepted
+status: superseded
 date: 2026-04-07
+superseded-by: 2026-04-11-008-no-solid-fill-semantic-backgrounds.md
 ---
 # Badge style convention
+
+> **Superseded by [UIDR-008](2026-04-11-008-no-solid-fill-semantic-backgrounds.md) (2026-04-11).**
+> Solid-fill semantic badges proved too loud against the dark theme. The replacement
+> rule requires `badge-soft` on every semantic badge. Content below is preserved for
+> history.
 
 ## Context and Problem Statement
 

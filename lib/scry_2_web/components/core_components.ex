@@ -59,7 +59,7 @@ defmodule Scry2Web.CoreComponents do
       {@rest}
     >
       <div class={[
-        "alert w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
+        "alert alert-soft w-80 sm:w-96 max-w-80 sm:max-w-96 text-wrap",
         @kind == :info && "alert-info",
         @kind == :error && "alert-error"
       ]}>
@@ -504,7 +504,7 @@ defmodule Scry2Web.CoreComponents do
   end
 
   @doc """
-  Renders a win/loss result badge ([UIDR-001]).
+  Renders a win/loss result badge ([UIDR-008]).
 
   ## Examples
 
@@ -516,8 +516,8 @@ defmodule Scry2Web.CoreComponents do
   def result_badge(assigns) do
     {class, label} =
       case assigns.won do
-        true -> {"badge-success", "Won"}
-        false -> {"badge-error", "Lost"}
+        true -> {"badge-soft badge-success", "Won"}
+        false -> {"badge-soft badge-error", "Lost"}
         nil -> {"badge-ghost", "—"}
       end
 
@@ -529,7 +529,7 @@ defmodule Scry2Web.CoreComponents do
   end
 
   @doc """
-  Renders a card rarity badge ([UIDR-001]).
+  Renders a card rarity badge ([UIDR-008]).
 
   ## Examples
 
@@ -541,9 +541,9 @@ defmodule Scry2Web.CoreComponents do
   def rarity_badge(assigns) do
     class =
       case assigns.rarity do
-        "mythic" -> "badge-warning"
-        "rare" -> "badge-accent"
-        "uncommon" -> "badge-info"
+        "mythic" -> "badge-soft badge-warning"
+        "rare" -> "badge-soft badge-accent"
+        "uncommon" -> "badge-soft badge-info"
         _other -> "badge-ghost"
       end
 

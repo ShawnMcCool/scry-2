@@ -14,10 +14,10 @@ defmodule Scry2Web.HealthHelpers do
   Returns the daisyUI alert variant class for a check status.
   """
   @spec status_class(Check.status()) :: String.t()
-  def status_class(:ok), do: "alert-success"
-  def status_class(:warning), do: "alert-warning"
-  def status_class(:error), do: "alert-error"
-  def status_class(:pending), do: "alert-info"
+  def status_class(:ok), do: "alert-soft alert-success"
+  def status_class(:warning), do: "alert-soft alert-warning"
+  def status_class(:error), do: "alert-soft alert-error"
+  def status_class(:pending), do: "alert-soft alert-info"
 
   @doc """
   Returns the HeroIcon name for a check status.
@@ -32,9 +32,9 @@ defmodule Scry2Web.HealthHelpers do
   Returns the badge variant class for a status.
   """
   @spec status_badge_class(Check.status()) :: String.t()
-  def status_badge_class(:ok), do: "badge-success"
-  def status_badge_class(:warning), do: "badge-warning"
-  def status_badge_class(:error), do: "badge-error"
+  def status_badge_class(:ok), do: "badge-soft badge-success"
+  def status_badge_class(:warning), do: "badge-soft badge-warning"
+  def status_badge_class(:error), do: "badge-soft badge-error"
   def status_badge_class(:pending), do: "badge-ghost"
 
   @doc """
@@ -90,7 +90,7 @@ defmodule Scry2Web.HealthHelpers do
   Returns the alert class for the top-of-page overall banner.
   """
   @spec overall_class(:ok | :warning | :error) :: String.t()
-  def overall_class(:ok), do: "alert-success"
-  def overall_class(:warning), do: "alert-warning"
-  def overall_class(:error), do: "alert-error"
+  def overall_class(:ok), do: "alert-soft alert-success"
+  def overall_class(:warning), do: "alert-soft alert-warning"
+  def overall_class(:error), do: "alert-soft alert-error"
 end

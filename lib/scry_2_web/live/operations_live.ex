@@ -519,7 +519,7 @@ defmodule Scry2Web.OperationsLive do
       </section>
 
       <%!-- Unrecognized event types (moved from the old dashboard) --%>
-      <section :if={map_size(@unrecognized) > 0} class="alert alert-warning">
+      <section :if={map_size(@unrecognized) > 0} class="alert alert-soft alert-warning">
         <.icon name="hero-exclamation-triangle" class="size-5" />
         <div>
           <p class="font-semibold">Unrecognized event types</p>
@@ -547,7 +547,7 @@ defmodule Scry2Web.OperationsLive do
       </section>
 
       <%!-- Deferred event types with payloads --%>
-      <section :if={map_size(@deferred_with_payloads) > 0} class="alert alert-info">
+      <section :if={map_size(@deferred_with_payloads) > 0} class="alert alert-soft alert-info">
         <.icon name="hero-light-bulb" class="size-5" />
         <div>
           <p class="font-semibold">Deferred events now have payloads</p>
@@ -575,7 +575,7 @@ defmodule Scry2Web.OperationsLive do
       </section>
 
       <%!-- Processing errors --%>
-      <section :if={@errors != []} class="alert alert-error">
+      <section :if={@errors != []} class="alert alert-soft alert-error">
         <.icon name="hero-exclamation-circle" class="size-5" />
         <div>
           <p class="font-semibold">Processing errors ({@error_count})</p>

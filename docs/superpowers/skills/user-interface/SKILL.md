@@ -47,19 +47,34 @@ Two themes via daisyUI plugin in `assets/css/app.css`. Colors use oklch color sp
 
 **Never** use solid-fill semantic buttons without `btn-soft`. At most one `btn-primary` per view.
 
-### Badges ([UIDR-001])
+### Badges ([UIDR-008])
+
+All semantic badges **must** use `badge-soft` — solid fills are banned site-wide.
 
 | Context | Recipe |
 |---------|--------|
-| **Win** | `badge badge-sm badge-success` |
-| **Loss** | `badge badge-sm badge-error` |
+| **Win** | `badge badge-sm badge-soft badge-success` |
+| **Loss** | `badge badge-sm badge-soft badge-error` |
 | **Pending/unknown** | `badge badge-sm badge-ghost` |
-| **Mythic** | `badge badge-sm badge-warning` |
-| **Rare** | `badge badge-sm badge-accent` |
-| **Uncommon** | `badge badge-sm badge-info` |
+| **Mythic** | `badge badge-sm badge-soft badge-warning` |
+| **Rare** | `badge badge-sm badge-soft badge-accent` |
+| **Uncommon** | `badge badge-sm badge-soft badge-info` |
 | **Common** | `badge badge-sm badge-ghost` |
-| **Status healthy** | `badge badge-sm badge-success` |
-| **Status warning** | `badge badge-sm badge-warning` |
+| **Status healthy** | `badge badge-sm badge-soft badge-success` |
+| **Status warning** | `badge badge-sm badge-soft badge-warning` |
+
+### Alerts ([UIDR-008])
+
+Banners, inline status sections, and flash toasts all use the same pattern.
+
+| Context | Recipe |
+|---------|--------|
+| **Warning banner / section** | `alert alert-soft alert-warning` |
+| **Error banner / section** | `alert alert-soft alert-error` |
+| **Info banner / toast** | `alert alert-soft alert-info` |
+| **Success banner** | `alert alert-soft alert-success` |
+
+Never use a semantic `alert-*` class without `alert-soft`.
 
 ### Stat Cards ([UIDR-003])
 
@@ -125,6 +140,8 @@ Per CLAUDE.md — these are non-negotiable for LiveView performance:
 
 ## Anti-Patterns
 
+- Solid-fill semantic alerts or badges (`alert-warning`, `badge-success` without `-soft`) — see [UIDR-008]
+- Raw `bg-warning` / `bg-success` / `bg-error` / `bg-info` on text-bearing surfaces — use an opacity suffix (`/10`, `/20`) or a `-soft` component variant
 - Solid-fill semantic buttons (`btn-error` without `btn-soft`)
 - Hardcoded oklch color values for themeable colors
 - `:if={}` on elements with `backdrop-filter`
@@ -175,6 +192,7 @@ All UI decisions live in `decisions/user-interface/` using MADR 4.0 format.
 
 | UIDR | Decision |
 |------|----------|
-| 001 | Badges: solid-fill `badge-sm` with semantic color per category |
+| 001 | ~~Badges: solid-fill `badge-sm` with semantic color per category~~ — **superseded by 008** |
 | 002 | Buttons: `btn-soft` default, one `btn-primary` CTA per view, never solid semantic |
 | 003 | Stat card: shared `CoreComponents.stat_card/1` with title + value + optional class |
+| 008 | No solid-fill semantic backgrounds — alerts and badges require `-soft`, raw `bg-*` semantic classes require opacity suffix |

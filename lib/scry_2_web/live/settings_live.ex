@@ -50,11 +50,11 @@ defmodule Scry2Web.SettingsLive do
         <div class="card-body">
           <h2 class="card-title text-base">MTGA log file</h2>
           <p :if={@resolved_path} class="text-sm">
-            <span class="badge badge-success">Resolved</span>
+            <span class="badge badge-soft badge-success">Resolved</span>
             <code class="ml-2 break-all">{@resolved_path}</code>
           </p>
           <p :if={is_nil(@resolved_path)} class="text-sm">
-            <span class="badge badge-warning">Not found</span>
+            <span class="badge badge-soft badge-warning">Not found</span>
             Scry&nbsp;2 checked the following locations and found no matching file.
             Set <code>[mtga_logs] player_log_path</code>
             in <code>{@config_path}</code>
