@@ -88,14 +88,12 @@ defmodule Scry2Web.HealthLive do
 
   defp overall_banner(assigns) do
     ~H"""
-    <div class={["alert", HealthHelpers.overall_class(@report.overall)]}>
-      <.icon name={HealthHelpers.status_icon(@report.overall)} class="size-5" />
-      <div>
-        <p class="font-semibold">{HealthHelpers.overall_message(@report.overall)}</p>
-        <p class="text-xs text-base-content/70">
-          Last checked at {Calendar.strftime(@report.generated_at, "%H:%M:%S UTC")}
-        </p>
-      </div>
+    <div class={["alert alert-sm py-2", HealthHelpers.overall_class(@report.overall)]}>
+      <.icon name={HealthHelpers.status_icon(@report.overall)} class="size-4" />
+      <span class="font-semibold text-sm">{HealthHelpers.overall_message(@report.overall)}</span>
+      <span class="text-xs text-base-content/60">
+        Last checked at {Calendar.strftime(@report.generated_at, "%H:%M:%S UTC")}
+      </span>
     </div>
     """
   end
@@ -105,9 +103,11 @@ defmodule Scry2Web.HealthLive do
 
   defp category_section(assigns) do
     ~H"""
-    <section class="space-y-2">
-      <h2 class="text-lg font-semibold">{HealthHelpers.category_label(@category)}</h2>
-      <div class="grid grid-cols-1 gap-2">
+    <section>
+      <h2 class="text-xs font-semibold uppercase tracking-wide text-base-content/50 mb-1.5">
+        {HealthHelpers.category_label(@category)}
+      </h2>
+      <div class="divide-y divide-base-300 rounded-md bg-base-200">
         <.check_row :for={check <- @checks} check={check} />
       </div>
     </section>
@@ -118,30 +118,29 @@ defmodule Scry2Web.HealthLive do
 
   defp check_row(assigns) do
     ~H"""
-    <div class="card bg-base-200">
-      <div class="card-body p-4">
-        <div class="flex items-start gap-3">
-          <.icon
-            name={HealthHelpers.status_icon(@check.status)}
-            class={["size-5 mt-0.5", icon_color(@check.status)]}
-          />
-          <div class="flex-1 min-w-0">
-            <div class="flex items-center gap-2">
-              <p class="font-medium">{@check.name}</p>
-              <span class={["badge badge-xs", HealthHelpers.status_badge_class(@check.status)]}>
-                {HealthHelpers.status_label(@check.status)}
-              </span>
-            </div>
-            <p :if={@check.summary} class="text-sm text-base-content/70 break-all">
-              {@check.summary}
-            </p>
-            <p :if={@check.detail} class="text-xs text-base-content/60 mt-1">
-              {@check.detail}
-            </p>
-          </div>
-          <.fix_button :if={fixable?(@check)} check={@check} />
+    <div class="flex items-center gap-3 px-3 py-2">
+      <.icon
+        name={HealthHelpers.status_icon(@check.status)}
+        class={["size-4 shrink-0", icon_color(@check.status)]}
+      />
+      <div class="flex-1 min-w-0">
+        <div class="flex items-center gap-2 flex-wrap">
+          <p class="font-medium text-sm">{@check.name}</p>
+          <span
+            :if={@check.status != :ok}
+            class={["badge badge-xs", HealthHelpers.status_badge_class(@check.status)]}
+          >
+            {HealthHelpers.status_label(@check.status)}
+          </span>
+          <span :if={@check.summary} class="text-xs text-base-content/60 break-all">
+            {@check.summary}
+          </span>
         </div>
+        <p :if={@check.detail} class="text-xs text-base-content/50 mt-0.5">
+          {@check.detail}
+        </p>
       </div>
+      <.fix_button :if={fixable?(@check)} check={@check} />
     </div>
     """
   end
