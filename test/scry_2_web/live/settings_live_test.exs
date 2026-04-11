@@ -60,6 +60,40 @@ defmodule Scry2Web.SettingsLiveTest do
     end
   end
 
+  describe "poll_interval_ms form" do
+    test "saves a valid integer", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      view
+      |> form("form[phx-submit='save_poll_interval_ms']", value: "750")
+      |> render_submit()
+
+      assert Settings.get("mtga_logs_poll_interval_ms") == 750
+    end
+
+    test "shows an error for out-of-range values", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      html =
+        view
+        |> form("form[phx-submit='save_poll_interval_ms']", value: "50")
+        |> render_submit()
+
+      assert html =~ "at least 100"
+    end
+
+    test "shows an error for garbage input", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      html =
+        view
+        |> form("form[phx-submit='save_poll_interval_ms']", value: "lots")
+        |> render_submit()
+
+      assert html =~ "whole number"
+    end
+  end
+
   describe "refresh_cron form" do
     test "saves a valid cron expression", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings")

@@ -20,13 +20,13 @@ defmodule Scry2.Config do
           | :cache_dir
           | :mtga_logs_player_log_path
           | :mtga_logs_poll_interval_ms
+          | :mtga_data_dir
           | :cards_lands17_url
           | :cards_refresh_cron
           | :cards_scryfall_bulk_url
           | :image_cache_dir
           | :start_watcher
           | :start_importer
-          | :mtga_data_dir
 
   @doc """
   Loads configuration from TOML and stores it in `:persistent_term`.
