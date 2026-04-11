@@ -49,12 +49,22 @@ refresh_cron = "0 4 * * *"
 # this endpoint returns JSON with a `download_uri` field.
 scryfall_bulk_url = "https://api.scryfall.com/bulk-data/default-cards"
 
+# ── Cache ─────────────────────────────────────────────────────────────────
+[cache]
+# Parent directory for all cached application data. Sub-directories are
+# created automatically. Defaults to a platform-appropriate location:
+#   Linux:   ~/.local/share/scry_2/cache/
+#   macOS:   ~/Library/Application Support/scry_2/cache/
+#   Windows: %LOCALAPPDATA%\scry_2\cache\
+# dir = "~/.local/share/scry_2/cache/"
+
 # ── Card images ──────────────────────────────────────────────────────────
 [images]
-# Directory to cache downloaded card images locally. Scryfall card art is
-# fetched on first access and stored here permanently. The directory can
-# be deleted — images re-download on demand.
-cache_dir = "~/.local/share/scry_2/images/"
+# Directory to cache downloaded card images locally. Defaults to
+# <cache.dir>/images/ when unset. Scryfall card art is fetched on first
+# access and stored here permanently. The directory can be deleted —
+# images re-download on demand.
+# cache_dir = "~/.local/share/scry_2/images/"
 
 # ── Workers ──────────────────────────────────────────────────────────────
 # These toggles let a dev server and a production release coexist on one

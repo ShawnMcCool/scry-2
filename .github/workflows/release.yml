@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux-x86_64
+            ext: tar.gz
+          - os: macos-latest
+            platform: macos-aarch64
+            ext: tar.gz
+          - os: windows-latest
+            platform: windows-x86_64
+            ext: zip
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '27'
+
+      - name: Cache Mix deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ${{ runner.os }}-mix-
+
+      - name: Install dependencies
+        run: mix deps.get --only prod
+        env:
+          MIX_ENV: prod
+
+      - name: Deploy assets
+        run: mix assets.deploy
+        env:
+          MIX_ENV: prod
+
+      - name: Build release
+        run: mix release
+        env:
+          MIX_ENV: prod
+          MIX_OS_DEPS_COMPILE_PARTITION_COUNT: "8"
+
+      - name: Package release (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          ARCHIVE="scry_2-${{ github.ref_name }}-${{ matrix.platform }}"
+          mkdir "$ARCHIVE"
+          cp -r _build/prod/rel/scry_2/. "$ARCHIVE/"
+          # Remove Windows scripts from Linux archive
+          rm -f "$ARCHIVE/install.bat" "$ARCHIVE/uninstall.bat"
+          # Add Linux install scripts
+          cp scripts/install "$ARCHIVE/install"
+          cp scripts/uninstall "$ARCHIVE/uninstall"
+          printf "Run ./install to set up Scry2.\nSee https://github.com/${{ github.repository }} for full instructions.\n" > "$ARCHIVE/README.txt"
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+
+      - name: Package release (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          ARCHIVE="scry_2-${{ github.ref_name }}-${{ matrix.platform }}"
+          mkdir "$ARCHIVE"
+          cp -r _build/prod/rel/scry_2/. "$ARCHIVE/"
+          rm -f "$ARCHIVE/install.bat" "$ARCHIVE/uninstall.bat"
+          cp scripts/install-macos "$ARCHIVE/install"
+          cp scripts/uninstall-macos "$ARCHIVE/uninstall"
+          printf "Run ./install to set up Scry2.\nSee https://github.com/${{ github.repository }} for full instructions.\n" > "$ARCHIVE/README.txt"
+          tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
+
+      - name: Package release (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $ARCHIVE = "scry_2-${{ github.ref_name }}-${{ matrix.platform }}"
+          New-Item -ItemType Directory -Name $ARCHIVE
+          Copy-Item -Recurse "_build\prod\rel\scry_2\*" "$ARCHIVE\"
+          "Run install.bat to set up Scry2.`nSee https://github.com/${{ github.repository }} for full instructions." | Out-File "$ARCHIVE\README.txt" -Encoding UTF8
+          Compress-Archive -Path "$ARCHIVE" -DestinationPath "${ARCHIVE}.zip"
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }}
+          generate_release_notes: true

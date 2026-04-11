@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE_NAME="scry-2"
+INSTALL_DIR="$HOME/.local/lib/scry_2"
+SERVICE_FILE="$HOME/.config/systemd/user/${SERVICE_NAME}.service"
+
+echo "Uninstalling Scry2..."
+
+# Stop and disable service
+if systemctl --user is-active --quiet "$SERVICE_NAME" 2>/dev/null; then
+    systemctl --user stop "$SERVICE_NAME"
+fi
+
+if systemctl --user is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+    systemctl --user disable "$SERVICE_NAME"
+fi
+
+# Remove service file
+rm -f "$SERVICE_FILE"
+systemctl --user daemon-reload
+
+# Remove install directory
+if [[ -d "$INSTALL_DIR" ]]; then
+    rm -rf "$INSTALL_DIR"
+    echo "Removed $INSTALL_DIR"
+fi
+
+echo ""
+echo "Scry2 uninstalled. Your data has been preserved:"
+echo "  Config: ~/.config/scry_2/config.toml"
+echo "  Data:   ~/.local/share/scry_2/"
+echo ""
+echo "To also remove your data: rm -rf ~/.local/share/scry_2/ ~/.config/scry_2/"
