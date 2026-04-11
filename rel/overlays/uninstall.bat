@@ -17,10 +17,11 @@ if exist "%LOCALAPPDATA%\scry_2" (
 )
 
 echo.
-echo Your data and config have been preserved:
-echo   Config: %APPDATA%\scry_2\config.toml
-echo   Data:   %LOCALAPPDATA%\scry_2\  (removed with install files)
+echo Scry2 has been uninstalled.
 echo.
-echo To also remove your data, delete: %APPDATA%\scry_2\
+echo   Removed:   %LOCALAPPDATA%\scry_2\  (install files and database)
+echo   Preserved: %APPDATA%\scry_2\config.toml
+echo.
+echo To remove your config as well, delete: %APPDATA%\scry_2\
 echo.
 pause

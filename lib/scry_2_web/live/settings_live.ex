@@ -10,6 +10,7 @@ defmodule Scry2Web.SettingsLive do
      socket
      |> assign(:resolved_path, nil)
      |> assign(:candidates, [])
+     |> assign(:config_path, Config.config_path())
      |> assign(:config_snapshot, %{})}
   end
 
@@ -56,7 +57,7 @@ defmodule Scry2Web.SettingsLive do
             <span class="badge badge-warning">Not found</span>
             Scry&nbsp;2 checked the following locations and found no matching file.
             Set <code>[mtga_logs] player_log_path</code>
-            in <code>~/.config/scry_2/config.toml</code>
+            in <code>{@config_path}</code>
             to override.
           </p>
           <details class="mt-2">
@@ -74,7 +75,7 @@ defmodule Scry2Web.SettingsLive do
         <div class="card-body">
           <h2 class="card-title text-base">Effective configuration</h2>
           <p class="text-xs text-base-content/60">
-            Read from <code>~/.config/scry_2/config.toml</code> merged with built-in defaults.
+            Read from <code>{@config_path}</code> merged with built-in defaults.
           </p>
           <div class="overflow-x-auto mt-2">
             <table class="table table-xs">
