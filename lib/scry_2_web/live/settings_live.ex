@@ -39,6 +39,7 @@ defmodule Scry2Web.SettingsLive do
      |> assign(:config_snapshot, %{})
      |> assign(:field_values, %{})
      |> assign(:field_errors, %{})
+     |> assign(:editing, %{})
      |> assign(:diagnostics, empty_diagnostics())}
   end
 
@@ -83,6 +84,21 @@ defmodule Scry2Web.SettingsLive do
   end
 
   @impl true
+  def handle_event("start_edit", %{"field" => field}, socket) do
+    field_atom = String.to_existing_atom(field)
+    {:noreply, start_editing(socket, field_atom)}
+  end
+
+  def handle_event("cancel_edit", %{"field" => field}, socket) do
+    field_atom = String.to_existing_atom(field)
+
+    {:noreply,
+     socket
+     |> put_field_value(field_atom, stored_value(field_atom))
+     |> clear_field_error(field_atom)
+     |> stop_editing(field_atom)}
+  end
+
   def handle_event("save_player_log_path", %{"value" => value}, socket) do
     case Form.validate_player_log_path(value) do
       {:ok, expanded} ->
@@ -93,6 +109,7 @@ defmodule Scry2Web.SettingsLive do
          socket
          |> put_field_value(:player_log_path, expanded)
          |> clear_field_error(:player_log_path)
+         |> stop_editing(:player_log_path)
          |> assign(:resolved_path, expanded)
          |> put_flash(:info, "Player.log path saved — watcher reloaded.")}
 
@@ -111,11 +128,13 @@ defmodule Scry2Web.SettingsLive do
          socket
          |> put_field_value(:player_log_path, path)
          |> clear_field_error(:player_log_path)
+         |> start_editing(:player_log_path)
          |> put_flash(:info, "Auto-detected: #{path}. Click Save to apply.")}
 
       {:error, :not_found} ->
         {:noreply,
          socket
+         |> start_editing(:player_log_path)
          |> put_field_error(
            :player_log_path,
            "Could not auto-detect Player.log — none of the known candidate paths exist."
@@ -132,6 +151,7 @@ defmodule Scry2Web.SettingsLive do
          socket
          |> put_field_value(:data_dir, expanded)
          |> clear_field_error(:data_dir)
+         |> stop_editing(:data_dir)
          |> put_flash(:info, "MTGA data directory saved.")}
 
       {:error, reason} ->
@@ -170,6 +190,7 @@ defmodule Scry2Web.SettingsLive do
          socket
          |> put_field_value(:refresh_cron, trimmed)
          |> clear_field_error(:refresh_cron)
+         |> stop_editing(:refresh_cron)
          |> put_flash(
            :info,
            "Refresh cron saved — restart the app for the new schedule to take effect."
@@ -222,6 +243,23 @@ defmodule Scry2Web.SettingsLive do
     assign(socket, :field_errors, Map.delete(socket.assigns.field_errors, field))
   end
 
+  defp start_editing(socket, field) do
+    assign(socket, :editing, Map.put(socket.assigns.editing, field, true))
+  end
+
+  defp stop_editing(socket, field) do
+    assign(socket, :editing, Map.delete(socket.assigns.editing, field))
+  end
+
+  defp stored_value(:player_log_path),
+    do: current_value(@player_log_path_key, :mtga_logs_player_log_path)
+
+  defp stored_value(:data_dir), do: current_value(@data_dir_key, :mtga_data_dir)
+  defp stored_value(:refresh_cron), do: current_value(@refresh_cron_key, :cards_refresh_cron)
+
+  defp stored_value(:poll_interval_ms),
+    do: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms)
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -238,76 +276,163 @@ defmodule Scry2Web.SettingsLive do
           </p>
           <p :if={is_nil(@resolved_path)} class="text-sm">
             <span class="badge badge-soft badge-warning">Not found</span>
-            Scry&nbsp;2 could not locate <code>Player.log</code>. Enter the path
-            below or click <em>Auto-detect</em>.
+            Scry&nbsp;2 could not locate <code>Player.log</code>.
           </p>
 
-          <.setting_form
-            field={:player_log_path}
-            label="Path to Player.log"
-            value={@field_values.player_log_path}
-            error={@field_errors[:player_log_path]}
-            save_event="save_player_log_path"
-            help="Absolute path to MTGA's Player.log. Auto-detect scans the standard Steam/Proton/Lutris/Bottles locations."
+          <button
+            :if={!@editing[:player_log_path]}
+            type="button"
+            phx-click="start_edit"
+            phx-value-field="player_log_path"
+            class="link link-primary text-sm self-start mt-2"
           >
-            <:extra_buttons>
-              <button
-                type="button"
-                phx-click="auto_detect_player_log_path"
-                class="btn btn-ghost btn-sm"
-              >
-                Auto-detect
-              </button>
-            </:extra_buttons>
-          </.setting_form>
+            Change log path
+          </button>
 
-          <details class="mt-2">
-            <summary class="text-xs text-base-content/60 cursor-pointer">
-              Candidate paths scanned by auto-detect
-            </summary>
-            <ol class="text-xs mt-2 list-decimal list-inside space-y-1">
-              <li :for={path <- @candidates}><code class="break-all">{path}</code></li>
-            </ol>
-          </details>
+          <div :if={@editing[:player_log_path]} class="mt-2">
+            <p class="text-sm text-base-content/70">
+              Enter the absolute path below, or click <em>Auto-detect</em> to scan the
+              standard Steam/Proton/Lutris/Bottles locations.
+            </p>
+
+            <.setting_form
+              field={:player_log_path}
+              label="Path to Player.log"
+              value={@field_values.player_log_path}
+              error={@field_errors[:player_log_path]}
+              save_event="save_player_log_path"
+              help="Absolute path to MTGA's Player.log."
+            >
+              <:extra_buttons>
+                <button
+                  type="button"
+                  phx-click="auto_detect_player_log_path"
+                  class="btn btn-ghost btn-sm"
+                >
+                  Auto-detect
+                </button>
+                <button
+                  type="button"
+                  phx-click="cancel_edit"
+                  phx-value-field="player_log_path"
+                  class="btn btn-ghost btn-sm"
+                >
+                  Cancel
+                </button>
+              </:extra_buttons>
+            </.setting_form>
+
+            <details class="mt-2">
+              <summary class="text-xs text-base-content/60 cursor-pointer">
+                Candidate paths scanned by auto-detect
+              </summary>
+              <ol class="text-xs mt-2 list-decimal list-inside space-y-1">
+                <li :for={path <- @candidates}><code class="break-all">{path}</code></li>
+              </ol>
+            </details>
+          </div>
         </div>
       </section>
 
       <section class="card bg-base-200">
         <div class="card-body">
           <h2 class="card-title text-base">MTGA data directory</h2>
-          <p class="text-sm text-base-content/70">
-            Directory containing <code>Raw_CardDatabase_*.mtga</code>. Leave
-            blank to let Scry&nbsp;2 derive it from the MTGA installation path.
+          <p class="text-sm">
+            <span :if={@field_values.data_dir not in [nil, ""]}>
+              <code class="break-all">{@field_values.data_dir}</code>
+            </span>
+            <span :if={@field_values.data_dir in [nil, ""]} class="text-base-content/60">
+              Not set — auto-derived from the MTGA installation path.
+            </span>
           </p>
 
-          <.setting_form
-            field={:data_dir}
-            label="Raw/ directory"
-            value={@field_values.data_dir}
-            error={@field_errors[:data_dir]}
-            save_event="save_data_dir"
-            help="Example: ~/.local/share/Steam/steamapps/common/MTGA/MTGA_Data/Downloads/Raw"
-          />
+          <button
+            :if={!@editing[:data_dir]}
+            type="button"
+            phx-click="start_edit"
+            phx-value-field="data_dir"
+            class="link link-primary text-sm self-start mt-2"
+          >
+            Change data directory
+          </button>
+
+          <div :if={@editing[:data_dir]} class="mt-2">
+            <p class="text-sm text-base-content/70">
+              Directory containing <code>Raw_CardDatabase_*.mtga</code>.
+            </p>
+
+            <.setting_form
+              field={:data_dir}
+              label="Raw/ directory"
+              value={@field_values.data_dir}
+              error={@field_errors[:data_dir]}
+              save_event="save_data_dir"
+              help="Example: ~/.local/share/Steam/steamapps/common/MTGA/MTGA_Data/Downloads/Raw"
+            >
+              <:extra_buttons>
+                <button
+                  type="button"
+                  phx-click="cancel_edit"
+                  phx-value-field="data_dir"
+                  class="btn btn-ghost btn-sm"
+                >
+                  Cancel
+                </button>
+              </:extra_buttons>
+            </.setting_form>
+          </div>
         </div>
       </section>
 
       <section class="card bg-base-200">
         <div class="card-body">
           <h2 class="card-title text-base">17lands refresh schedule</h2>
-          <p class="text-sm text-base-content/70">
-            Cron expression for the daily <code>cards.csv</code>
-            refresh job. <span class="badge badge-soft badge-info">Restart required</span>
-            Changes take effect on next app boot.
+          <p class="text-sm">
+            <span :if={@field_values.refresh_cron not in [nil, ""]}>
+              <code>{@field_values.refresh_cron}</code>
+            </span>
+            <span :if={@field_values.refresh_cron in [nil, ""]} class="text-base-content/60">
+              Not set.
+            </span>
           </p>
 
-          <.setting_form
-            field={:refresh_cron}
-            label="Cron expression"
-            value={@field_values.refresh_cron}
-            error={@field_errors[:refresh_cron]}
-            save_event="save_refresh_cron"
-            help="Standard 5-field cron or shorthand like @daily."
-          />
+          <button
+            :if={!@editing[:refresh_cron]}
+            type="button"
+            phx-click="start_edit"
+            phx-value-field="refresh_cron"
+            class="link link-primary text-sm self-start mt-2"
+          >
+            Change refresh schedule
+          </button>
+
+          <div :if={@editing[:refresh_cron]} class="mt-2">
+            <p class="text-sm text-base-content/70">
+              Cron expression for the daily <code>cards.csv</code>
+              refresh job. <span class="badge badge-soft badge-info">Restart required</span>
+              Changes take effect on next app boot.
+            </p>
+
+            <.setting_form
+              field={:refresh_cron}
+              label="Cron expression"
+              value={@field_values.refresh_cron}
+              error={@field_errors[:refresh_cron]}
+              save_event="save_refresh_cron"
+              help="Standard 5-field cron or shorthand like @daily."
+            >
+              <:extra_buttons>
+                <button
+                  type="button"
+                  phx-click="cancel_edit"
+                  phx-value-field="refresh_cron"
+                  class="btn btn-ghost btn-sm"
+                >
+                  Cancel
+                </button>
+              </:extra_buttons>
+            </.setting_form>
+          </div>
         </div>
       </section>
 
