@@ -37,6 +37,6 @@ start "" /B "%INSTALL_DIR%\scry2-tray.exe"
 echo.
 echo Scry2 installed successfully!
 echo It will start automatically on each login.
-echo Open http://localhost:4002 in your browser to view your stats.
+echo Open http://localhost:6015 in your browser to view your stats.
 echo.
 pause

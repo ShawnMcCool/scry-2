@@ -2,7 +2,7 @@
 
 A self-hosted Magic: The Gathering Arena stats tracker. Scry2 watches your
 `Player.log` file, parses match and draft events, and serves a rich analytics
-dashboard at `http://localhost:4002`.
+dashboard at `http://localhost:6015`.
 
 Inspired by [17lands.com](https://17lands.com). Built with Elixir/Phoenix.
 
@@ -42,7 +42,7 @@ Without this, Scry2 cannot parse your game data.
    - **macOS / Linux:** `./install` in a terminal
 
 Scry2 will start automatically on each login and is accessible at
-`http://localhost:4002`.
+`http://localhost:6015`.
 
 ---
 
@@ -62,10 +62,26 @@ If Scry2 can't find your `Player.log` automatically, set the path in
 
 ## Uninstall
 
-Run `uninstall` (or `uninstall.bat` on Windows) from the extracted archive.
-Your data and config are preserved; delete `~/.local/share/scry_2/` (Linux),
-`~/Library/Application Support/scry_2/` (macOS), or `%APPDATA%\scry_2\`
-(Windows) to remove everything.
+Run the uninstall script from the extracted archive:
+
+- **Windows:** double-click `uninstall.bat`
+- **macOS / Linux:** `./uninstall` in a terminal
+
+**Your database is never deleted by the uninstall script.** The script removes
+only the application binaries and the autostart entry. It then prints the
+path and size of your database so you can decide what to do with it.
+
+Database locations:
+
+| Platform | Path |
+|---|---|
+| Linux   | `~/.local/share/scry_2/scry_2.db` |
+| macOS   | `~/Library/Application Support/scry_2/scry_2.db` |
+| Windows | `%APPDATA%\scry_2\scry_2.db` |
+
+To remove everything including your history, delete the directory containing
+your database after uninstalling. The uninstall script prints the exact
+command to run.
 
 ---
 

@@ -55,7 +55,7 @@ scryfall_bulk_url = "https://api.scryfall.com/bulk-data/default-cards"
 # created automatically. Defaults to a platform-appropriate location:
 #   Linux:   ~/.local/share/scry_2/cache/
 #   macOS:   ~/Library/Application Support/scry_2/cache/
-#   Windows: %LOCALAPPDATA%\scry_2\cache\
+#   Windows: %APPDATA%\scry_2\cache\
 # dir = "~/.local/share/scry_2/cache/"
 
 # ── Card images ──────────────────────────────────────────────────────────

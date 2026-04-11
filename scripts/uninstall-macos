@@ -4,6 +4,9 @@ set -euo pipefail
 PLIST_LABEL="com.scry2"
 PLIST_FILE="$HOME/Library/LaunchAgents/${PLIST_LABEL}.plist"
 INSTALL_DIR="$HOME/.local/lib/scry_2"
+DATA_DIR="$HOME/Library/Application Support/scry_2"
+CONFIG_DIR="$HOME/.config/scry_2"
+DB_FILE="$DATA_DIR/scry_2.db"
 
 echo "Uninstalling Scry2..."
 
@@ -18,7 +21,7 @@ if [[ -f "$INSTALL_DIR/bin/scry_2" ]]; then
     "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
 fi
 
-# Remove plist and install directory
+# Remove plist and install directory (binaries only — data dir is untouched)
 rm -f "$PLIST_FILE"
 if [[ -d "$INSTALL_DIR" ]]; then
     rm -rf "$INSTALL_DIR"
@@ -26,9 +29,21 @@ if [[ -d "$INSTALL_DIR" ]]; then
 fi
 
 echo ""
-echo "Scry2 uninstalled. Your data has been preserved:"
-echo "  Config: ~/.config/scry_2/config.toml"
-echo "  Data:   ~/Library/Application Support/scry_2/"
+echo "Scry2 has been uninstalled."
 echo ""
-echo "To also remove your data:"
-echo "  rm -rf ~/Library/Application\ Support/scry_2/ ~/.config/scry_2/"
+echo "Your database has NOT been deleted."
+echo ""
+
+if [[ -f "$DB_FILE" ]]; then
+    DB_SIZE=$(du -h "$DB_FILE" | cut -f1)
+    echo "  Database: $DB_FILE"
+    echo "  Size:     $DB_SIZE"
+else
+    echo "  Database: $DB_FILE (not found)"
+fi
+
+echo "  Config:   $CONFIG_DIR/config.toml"
+echo ""
+echo "If you want to delete your database and config, run:"
+echo "  rm -rf \"$DATA_DIR\" \"$CONFIG_DIR\""
+echo ""

@@ -40,13 +40,17 @@ defmodule Scry2.Platform do
   |---|---|
   | Linux | `~/.local/share/scry_2` |
   | macOS | `~/Library/Application Support/scry_2` |
-  | Windows | `%LOCALAPPDATA%\\scry_2` |
+  | Windows | `%APPDATA%\\scry_2` |
+
+  On Windows, this intentionally uses `%APPDATA%` (Roaming), not `%LOCALAPPDATA%`,
+  so the database lives alongside `config.toml` and survives uninstall/reinstall
+  of the install directory (`%LOCALAPPDATA%\\scry_2`).
   """
   @spec data_dir() :: String.t()
   def data_dir do
     case :os.type() do
       {:win32, _} ->
-        Path.join([System.get_env("LOCALAPPDATA") || System.user_home!(), "scry_2"])
+        Path.join([System.get_env("APPDATA") || System.user_home!(), "scry_2"])
 
       {:unix, :darwin} ->
         Path.join([System.user_home!(), "Library", "Application Support", "scry_2"])
