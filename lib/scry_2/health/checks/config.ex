@@ -2,7 +2,6 @@ defmodule Scry2.Health.Checks.Config do
   @moduledoc """
   Pure configuration-sanity checks.
 
-    * Is `mtga_self_user_id` set? (optional, but improves match accuracy)
     * Is the SQLite database writable?
     * Do the data and cache directories exist?
 
@@ -12,39 +11,6 @@ defmodule Scry2.Health.Checks.Config do
   """
 
   alias Scry2.Health.Check
-
-  @doc """
-  Reports whether `mtga_self_user_id` is configured.
-
-  It's optional — when `nil`, the pipeline falls back to assuming
-  `systemSeatId == 1` is the player. That's almost always correct,
-  but it can be wrong in replay tools or shared accounts. We report
-  `:warning`, not `:error`, because the fallback is robust.
-  """
-  @spec self_user_id_configured(String.t() | nil) :: Check.t()
-  def self_user_id_configured(nil) do
-    Check.new(
-      id: :self_user_id_configured,
-      category: :config,
-      name: "Self user ID set",
-      status: :warning,
-      summary: "mtga_self_user_id not set — using seat ID fallback",
-      detail:
-        "Scry2 will assume the player is always in seat 1. This is correct " <>
-          "for almost all MTGA matches but can be wrong in exotic cases. " <>
-          "Set [mtga_logs] self_user_id in config.toml to be explicit."
-    )
-  end
-
-  def self_user_id_configured(user_id) when is_binary(user_id) do
-    Check.new(
-      id: :self_user_id_configured,
-      category: :config,
-      name: "Self user ID set",
-      status: :ok,
-      summary: "Configured"
-    )
-  end
 
   @doc """
   Reports whether the database file is writable.

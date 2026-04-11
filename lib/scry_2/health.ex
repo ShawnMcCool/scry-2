@@ -101,7 +101,6 @@ defmodule Scry2.Health do
 
   def run_category(:config) do
     [
-      Config.self_user_id_configured(AppConfig.get(:mtga_self_user_id)),
       Config.database_writable(AppConfig.get(:database_path)),
       Config.data_dirs_exist(
         cache_dir: AppConfig.get(:cache_dir),

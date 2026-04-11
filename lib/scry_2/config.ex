@@ -20,7 +20,6 @@ defmodule Scry2.Config do
           | :cache_dir
           | :mtga_logs_player_log_path
           | :mtga_logs_poll_interval_ms
-          | :mtga_self_user_id
           | :cards_lands17_url
           | :cards_refresh_cron
           | :cards_scryfall_bulk_url
@@ -108,7 +107,6 @@ defmodule Scry2.Config do
       cache_dir: Path.join(data_dir, "cache"),
       mtga_logs_player_log_path: nil,
       mtga_logs_poll_interval_ms: 500,
-      mtga_self_user_id: nil,
       cards_lands17_url: "https://17lands-public.s3.amazonaws.com/analysis_data/cards/cards.csv",
       cards_refresh_cron: "0 4 * * *",
       cards_scryfall_bulk_url: "https://api.scryfall.com/bulk-data/default-cards",
@@ -154,8 +152,6 @@ defmodule Scry2.Config do
       mtga_logs_poll_interval_ms:
         get_in(toml, ["mtga_logs", "poll_interval_ms"]) ||
           defaults.mtga_logs_poll_interval_ms,
-      mtga_self_user_id:
-        get_in(toml, ["mtga_logs", "self_user_id"]) || defaults.mtga_self_user_id,
       cards_lands17_url: get_in(toml, ["cards", "lands17_url"]) || defaults.cards_lands17_url,
       cards_refresh_cron: get_in(toml, ["cards", "refresh_cron"]) || defaults.cards_refresh_cron,
       cards_scryfall_bulk_url:

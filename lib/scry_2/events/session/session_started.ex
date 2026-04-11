@@ -14,8 +14,8 @@ defmodule Scry2.Events.Session.SessionStarted do
   ## Fields
 
   - `player_id` — MTGA player identifier (populated from `client_id` after enrichment)
-  - `client_id` — Wizards user ID; matches `mtga_self_user_id` in config and enables
-    auto-detection without manual configuration
+  - `client_id` — Wizards user ID; stored into `IngestionState.session.self_user_id`
+    on receipt, which drives self/opponent identification for all subsequent events
   - `screen_name` — player's current MTGA display name
   - `session_id` — MTGA session token for this connection
 
