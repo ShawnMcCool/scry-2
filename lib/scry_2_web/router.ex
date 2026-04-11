@@ -29,7 +29,13 @@ defmodule Scry2Web.Router do
       live "/setup", SetupLive, :index
     end
 
-    live_session :default, on_mount: {Scry2Web.PlayerScope, :default} do
+    live_session :default,
+      on_mount: [
+        # Gate must run first — it halts first-run users before any other
+        # hook tries to load data that doesn't exist yet.
+        {Scry2Web.SetupGate, :default},
+        {Scry2Web.PlayerScope, :default}
+      ] do
       live "/", DashboardLive, :index
       live "/stats", StatsLive, :index
       live "/ranks", RanksLive, :index
