@@ -12,10 +12,13 @@ defmodule Scry2Web.SettingsLive do
   use Scry2Web, :live_view
 
   alias Scry2.Config
+  alias Scry2.Events
   alias Scry2.MtgaLogIngestion.LocateLogFile
   alias Scry2.MtgaLogIngestion.Watcher
   alias Scry2.Settings
   alias Scry2Web.SettingsLive.Form
+
+  @diagnostics_refresh_interval 2_000
 
   @player_log_path_key "mtga_logs_player_log_path"
   @data_dir_key "mtga_logs_data_dir"
@@ -24,6 +27,10 @@ defmodule Scry2Web.SettingsLive do
 
   @impl true
   def mount(_params, _session, socket) do
+    if connected?(socket) do
+      Process.send_after(self(), :refresh_diagnostics, @diagnostics_refresh_interval)
+    end
+
     {:ok,
      socket
      |> assign(:resolved_path, nil)
@@ -31,7 +38,8 @@ defmodule Scry2Web.SettingsLive do
      |> assign(:config_path, Config.config_path())
      |> assign(:config_snapshot, %{})
      |> assign(:field_values, %{})
-     |> assign(:field_errors, %{})}
+     |> assign(:field_errors, %{})
+     |> assign(:diagnostics, empty_diagnostics())}
   end
 
   @impl true
@@ -64,7 +72,14 @@ defmodule Scry2Web.SettingsLive do
      |> assign(:candidates, LocateLogFile.default_candidates())
      |> assign(:config_snapshot, snapshot)
      |> assign(:field_values, field_values)
-     |> assign(:field_errors, %{})}
+     |> assign(:field_errors, %{})
+     |> assign(:diagnostics, Events.inspect_ingestion_state())}
+  end
+
+  @impl true
+  def handle_info(:refresh_diagnostics, socket) do
+    Process.send_after(self(), :refresh_diagnostics, @diagnostics_refresh_interval)
+    {:noreply, assign(socket, :diagnostics, Events.inspect_ingestion_state())}
   end
 
   @impl true
@@ -166,6 +181,26 @@ defmodule Scry2Web.SettingsLive do
          |> put_field_value(:refresh_cron, value)
          |> put_field_error(:refresh_cron, Form.error_message(:refresh_cron, reason))}
     end
+  end
+
+  defp empty_diagnostics do
+    %{
+      last_raw_event_id: 0,
+      session: %{
+        self_user_id: nil,
+        player_id: nil,
+        current_session_id: nil,
+        constructed_rank: nil,
+        limited_rank: nil
+      },
+      match: %{
+        current_match_id: nil,
+        current_game_number: nil,
+        last_deck_name: nil,
+        on_play_for_current_game: nil,
+        pending_deck?: false
+      }
+    }
   end
 
   defp current_value(settings_key, config_key) do
@@ -300,6 +335,79 @@ defmodule Scry2Web.SettingsLive do
               />
             </div>
           </details>
+        </div>
+      </section>
+
+      <section class="card bg-base-200">
+        <div class="card-body">
+          <h2 class="card-title text-base">Ingestion diagnostics</h2>
+          <p class="text-xs text-base-content/60">
+            Live projection of <code>Scry2.Events.IngestionState</code>. Refreshes every 2&nbsp;seconds.
+          </p>
+          <div class="overflow-x-auto mt-2">
+            <table class="table table-xs">
+              <tbody>
+                <tr>
+                  <td class="font-mono text-xs">last_raw_event_id</td>
+                  <td class="font-mono text-xs">{@diagnostics.last_raw_event_id}</td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">session.self_user_id</td>
+                  <td class="font-mono text-xs break-all">
+                    {@diagnostics.session.self_user_id || "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">session.player_id</td>
+                  <td class="font-mono text-xs">{@diagnostics.session.player_id || "—"}</td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">session.current_session_id</td>
+                  <td class="font-mono text-xs break-all">
+                    {@diagnostics.session.current_session_id || "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">session.constructed_rank</td>
+                  <td class="font-mono text-xs">{@diagnostics.session.constructed_rank || "—"}</td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">session.limited_rank</td>
+                  <td class="font-mono text-xs">{@diagnostics.session.limited_rank || "—"}</td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">match.current_match_id</td>
+                  <td class="font-mono text-xs break-all">
+                    {@diagnostics.match.current_match_id || "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">match.current_game_number</td>
+                  <td class="font-mono text-xs">{@diagnostics.match.current_game_number || "—"}</td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">match.last_deck_name</td>
+                  <td class="font-mono text-xs break-all">
+                    {@diagnostics.match.last_deck_name || "—"}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">match.on_play_for_current_game</td>
+                  <td class="font-mono text-xs">
+                    {case @diagnostics.match.on_play_for_current_game do
+                      nil -> "—"
+                      true -> "true"
+                      false -> "false"
+                    end}
+                  </td>
+                </tr>
+                <tr>
+                  <td class="font-mono text-xs">match.pending_deck?</td>
+                  <td class="font-mono text-xs">{to_string(@diagnostics.match.pending_deck?)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
 

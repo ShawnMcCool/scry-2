@@ -129,6 +129,35 @@ defmodule Scry2.Events.IngestionState do
 
   def apply_event(%__MODULE__{} = state, _event), do: {state, []}
 
+  # -- Diagnostics -----------------------------------------------------------
+
+  @doc """
+  Pure projection of the state into a friendly map for display in the
+  diagnostics panel. Excludes verbose fields like
+  `last_hand_game_objects` and replaces `pending_deck` with a boolean
+  `pending_deck?` so the UI stays readable.
+  """
+  @spec project(t()) :: map()
+  def project(%__MODULE__{} = state) do
+    %{
+      last_raw_event_id: state.last_raw_event_id,
+      session: %{
+        self_user_id: state.session.self_user_id,
+        player_id: state.session.player_id,
+        current_session_id: state.session.current_session_id,
+        constructed_rank: state.session.constructed_rank,
+        limited_rank: state.session.limited_rank
+      },
+      match: %{
+        current_match_id: state.match.current_match_id,
+        current_game_number: state.match.current_game_number,
+        last_deck_name: state.match.last_deck_name,
+        on_play_for_current_game: state.match.on_play_for_current_game,
+        pending_deck?: not is_nil(state.match.pending_deck)
+      }
+    }
+  end
+
   # -- Persistence -----------------------------------------------------------
 
   @singleton_id 1
