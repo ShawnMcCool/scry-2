@@ -33,6 +33,14 @@ defmodule Scry2Web.ConnCase do
 
   setup tags do
     Scry2.DataCase.setup_sandbox(tags)
+
+    # The first-run setup tour redirects every gated route to /setup.
+    # Mark it completed by default so existing LiveView tests don't need
+    # to care about the gate. Tests that specifically exercise the gate
+    # (e.g. Scry2Web.SetupGateTest) call `SetupFlow.reset!/0` to clear
+    # this flag.
+    :ok = Scry2.SetupFlow.mark_completed!()
+
     {:ok, conn: Phoenix.ConnTest.build_conn()}
   end
 end
