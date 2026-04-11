@@ -29,11 +29,14 @@ defmodule Scry2.Events.IngestRawEvents do
 
   ## Self-user auto-detection
 
-  `self_user_id` is seeded from `Config.get(:mtga_self_user_id)` at init.
-  When a `%SessionStarted{}` domain event is produced, the `client_id` is
-  captured into GenServer state and used for all subsequent translations.
-  This eliminates the need for manual config — the first
-  `AuthenticateResponse` in the log auto-detects the player.
+  `self_user_id` is persisted as part of `IngestionState.session` and
+  reloaded on restart. When a `%SessionStarted{}` domain event is
+  produced, the `client_id` is captured into state and used for all
+  subsequent translations. On a truly fresh install (no persisted
+  `ingestion_state` row yet), `self_user_id` starts as `nil` and the
+  translator falls back to `systemSeatId: 1` until the first
+  `AuthenticateResponse` arrives — after which the pipeline is
+  self-configuring for the lifetime of the installation.
 
   Translation errors are caught and logged via `MtgaLogIngestion.mark_error!/2`.
   The GenServer never crashes on bad data — malformed events are a
@@ -57,7 +60,6 @@ defmodule Scry2.Events.IngestRawEvents do
 
   require Scry2.Log, as: Log
 
-  alias Scry2.Config
   alias Scry2.Events
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.IngestionState
@@ -113,7 +115,7 @@ defmodule Scry2.Events.IngestRawEvents do
   @impl true
   def init(_opts) do
     Topics.subscribe(Topics.mtga_logs_events())
-    ingestion = IngestionState.load(self_user_id: Config.get(:mtga_self_user_id))
+    ingestion = IngestionState.load()
     {:ok, %{ingestion: ingestion, checkpointing: true}, {:continue, :catch_up}}
   end
 
@@ -150,7 +152,7 @@ defmodule Scry2.Events.IngestRawEvents do
 
     # Fresh state — caller deleted the IngestionState.Snapshot beforehand so
     # load/1 returns defaults, ensuring events are replayed from event 1.
-    fresh_ingestion = IngestionState.load(self_user_id: Config.get(:mtga_self_user_id))
+    fresh_ingestion = IngestionState.load()
 
     new_ingestion = do_retranslate_chunk(0, fresh_ingestion, total, 0, on_progress)
 

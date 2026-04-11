@@ -6,19 +6,6 @@ defmodule Scry2.Health.Checks.ConfigTest do
   alias Scry2.Health.Check
   alias Scry2.Health.Checks.Config
 
-  describe "self_user_id_configured/1" do
-    test "warning when nil" do
-      check = Config.self_user_id_configured(nil)
-      assert %Check{status: :warning} = check
-      assert check.detail =~ "seat"
-    end
-
-    test "ok when a user id is set" do
-      check = Config.self_user_id_configured("user-abc-123")
-      assert %Check{status: :ok} = check
-    end
-  end
-
   describe "database_writable/1" do
     test "error when path is nil" do
       check = Config.database_writable(nil)

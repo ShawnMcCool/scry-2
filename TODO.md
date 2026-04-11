@@ -34,27 +34,23 @@ When picking up any item, invoke the relevant thinking skill first (see `CLAUDE.
 
 ## Next priorities
 
-### 1. Self-user-id auto-detection
-
-`SessionStarted` domain events carry `client_id` — the user's Wizards ID. Use this to eliminate the manual `mtga_self_user_id` config entry. On first `%SessionStarted{}`, store the `client_id` in Settings and use it for all subsequent translations. Currently falls back to `systemSeatId: 1`.
-
-### 2. Derived events — on_play determination
+### 1. Derived events — on_play determination
 
 `%DieRollCompleted{}` tells us who goes first in game 1 (higher roll). For games 2+, the loser of the previous game chooses. A domain-level mechanism (in the Matches context, watching domain events) should emit derived `on_play` state by correlating DieRoll + GameCompleted sequences. This would populate `matches_games.on_play`.
 
-### 3. Projections for new event types
+### 2. Projections for new event types
 
 DieRollCompleted, MulliganOffered, RankSnapshot, and SessionStarted have no projection tables yet. Decide which need dedicated tables vs which are consumed via the domain event log directly:
 - **RankSnapshot** → likely needs a `ranks_snapshots` table for trend display
-- **DieRollCompleted** → could enrich `matches_games.on_play` via derived event (see §2)
+- **DieRollCompleted** → could enrich `matches_games.on_play` via derived event (see §1)
 - **MulliganOffered** → could be counted per game in projection, or stored individually
-- **SessionStarted** → feeds Settings (self_user_id), no dedicated table needed
+- **SessionStarted** → consumed by `IngestionState` for self-user-id auto-detection; no dedicated table needed
 
-### 4. Scryfall `arena_id` backfill
+### 3. Scryfall `arena_id` backfill
 
 17lands `cards.csv` does not include MTGA's `arena_id`. A `Scry2.Cards.ScryfallBackfill` module needs to pull bulk data from Scryfall API, cross-reference by `(set_code, collector_number)`, and populate `cards_cards.arena_id`. This is the only way log events can be joined to card metadata. Verify first whether 17lands has added `arena_id` to their CSV since last check.
 
-### 5. LiveView helpers + tests
+### 4. LiveView helpers + tests
 
 ADR-013 requires extracted pure helpers with `async: true` tests for every LiveView. Status:
 
@@ -67,11 +63,11 @@ ADR-013 requires extracted pure helpers with `async: true` tests for every LiveV
 | DraftsLive | missing | missing |
 | SettingsLive | missing | missing |
 
-### 6. Worker test
+### 5. Worker test
 
 `Scry2.Workers.PeriodicallyUpdateCards` has no test. Required by project test policy. Use `Oban.Testing` + `Req.Test` stub.
 
-### 7. End-to-end verification
+### 6. End-to-end verification
 
 Run through the full verification checklist against real systems:
 1. `mix precommit` — zero warnings, all tests pass ✓

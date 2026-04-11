@@ -26,7 +26,6 @@ defmodule Scry2.HealthTest do
           :low_error_count,
           :projectors_caught_up,
           :no_unrecognized_backlog,
-          :self_user_id_configured,
           :database_writable,
           :data_dirs_exist
         ])

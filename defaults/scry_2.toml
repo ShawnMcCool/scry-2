@@ -28,13 +28,12 @@ path = "~/.local/share/scry_2/scry_2.db"
 # debounce/flush interval, not a polling loop.
 poll_interval_ms = 500
 
-# Your MTGA Wizards user id — the 16-character hex string that appears
-# in log headers like `Match to D0FECB2AF1E7FE24: ...`. Setting this
-# lets the matches ingester reliably distinguish you from your opponent
-# in `reservedPlayers[]`. If unset, Scry2 falls back to assuming
-# `systemSeatId: 1` is you (the local player), which is correct for
-# the overwhelming majority of matches but not guaranteed by MTGA.
-# self_user_id = "D0FECB2AF1E7FE24"
+# Note: there is no `self_user_id` config key. The pipeline auto-detects
+# your MTGA Wizards user id from the first `AuthenticateResponse` event
+# in Player.log and persists it in the `ingestion_state` table for all
+# future runs. On a fresh install, before the first authenticate event
+# arrives, the translator falls back to assuming `systemSeatId: 1` is
+# you — which is correct for the overwhelming majority of matches.
 
 # ── Card reference data (17lands) ────────────────────────────────────────
 [cards]
