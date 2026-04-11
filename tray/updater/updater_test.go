@@ -114,8 +114,9 @@ func TestUpdater_CheckerError_Silent(t *testing.T) {
 	u := updater.New("v0.2.0", checker, &mockDownloader{}, &mockExtractor{}, &mockInstaller{}, item)
 	u.CheckOnce()
 
-	if item.Title() != "Check for Updates" {
-		t.Errorf("on checker error title should be %q, got %q", "Check for Updates", item.Title())
+	// On checker error, title must NOT be changed (pendingRelease preserved).
+	if item.Title() != "" {
+		t.Errorf("on checker error title should remain unchanged (empty), got %q", item.Title())
 	}
 }
 
