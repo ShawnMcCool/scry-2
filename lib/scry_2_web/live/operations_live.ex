@@ -98,11 +98,6 @@ defmodule Scry2Web.OperationsLive do
     {:noreply, socket}
   end
 
-  def handle_event("catch_up_all", _params, socket) do
-    Operations.start_catch_up!()
-    {:noreply, socket}
-  end
-
   def handle_event("reingest", _params, socket) do
     Operations.start_reingest!()
     {:noreply, socket}
@@ -474,7 +469,7 @@ defmodule Scry2Web.OperationsLive do
       </section>
 
       <%!-- Action cards --%>
-      <section class="grid grid-cols-1 gap-4 md:grid-cols-3">
+      <section class="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div class="card bg-base-200">
           <div class="card-body p-5">
             <h3 class="card-title text-base">
@@ -491,23 +486,6 @@ defmodule Scry2Web.OperationsLive do
                 class="btn btn-soft btn-primary btn-sm"
               >
                 Rebuild All
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="card bg-base-200">
-          <div class="card-body p-5">
-            <h3 class="card-title text-base">
-              <.icon name="hero-forward" class="size-5" /> Catch Up All
-            </h3>
-            <p class="text-sm text-base-content/60">
-              Resumes each projector from its last watermark without truncating.
-              Use after a crash or restart to process missed events.
-            </p>
-            <div class="card-actions justify-end mt-2">
-              <button phx-click="catch_up_all" disabled={busy?(assigns)} class="btn btn-soft btn-sm">
-                Catch Up
               </button>
             </div>
           </div>
