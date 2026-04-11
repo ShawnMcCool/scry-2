@@ -4,10 +4,14 @@ defmodule Scry2.MtgaLogIngestion.LocateLogFile do
 
   Resolution order:
 
-  1. Explicit override from `Scry2.Config.get(:mtga_logs_player_log_path)`
-     (settable via TOML user config or the settings LiveView).
+  1. Runtime override from `Scry2.Settings.get("mtga_logs_player_log_path")`
+     — the setup tour writes the user's manually-entered path here so
+     it takes effect immediately without a restart or TOML edit.
 
-  2. Multi-path scan of well-known locations — returns the first that
+  2. Explicit override from `Scry2.Config.get(:mtga_logs_player_log_path)`
+     (settable via TOML user config).
+
+  3. Multi-path scan of well-known locations — returns the first that
      exists on disk.
 
   The default candidate list covers the common Linux/Proton/Wine/Bottles
@@ -53,8 +57,23 @@ defmodule Scry2.MtgaLogIngestion.LocateLogFile do
   @spec default_candidates() :: [String.t()]
   def default_candidates, do: Scry2.Platform.mtga_log_candidates()
 
+  # Runtime override (Settings table) wins over static override (TOML via
+  # Scry2.Config). The setup tour writes to Settings; users with a TOML
+  # override still work because Config fallback is consulted when Settings
+  # has nothing.
   defp override do
-    Scry2.Config.get(:mtga_logs_player_log_path)
+    case runtime_override() do
+      path when is_binary(path) and path != "" -> path
+      _ -> Scry2.Config.get(:mtga_logs_player_log_path)
+    end
+  end
+
+  defp runtime_override do
+    Scry2.Settings.get("mtga_logs_player_log_path")
+  rescue
+    # Settings table may not be available in very early boot or in unit
+    # tests that don't set up the sandbox. Fall back gracefully.
+    _ -> nil
   end
 
   defp scan_candidates(candidates) do
