@@ -97,7 +97,7 @@ Migrations in a release: `bin/scry_2 eval "Scry2.Release.migrate()"`.
 
 Run `mix precommit` before finishing any set of changes and fix all issues it reports.
 
-**Zero warnings policy.** Application code and tests must compile and run with zero warnings. This includes unused variables, unused aliases, unused imports, and any log output during tests that indicates misconfiguration (e.g., HTTP requests hitting real endpoints instead of stubs). Treat every warning as a bug — fix it before moving on.
+**Zero warnings policy.** Application code and tests must compile and run with zero warnings. This applies to our own code only — warnings from third-party dependencies are excluded. This includes unused variables, unused aliases, unused imports, and any log output during tests that indicates misconfiguration (e.g., HTTP requests hitting real endpoints instead of stubs). Treat every warning as a bug — fix it before moving on.
 
 ## Observability for Debugging
 

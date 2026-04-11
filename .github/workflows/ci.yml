@@ -29,6 +29,9 @@ jobs:
           key: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.18-27-${{ hashFiles('**/mix.lock') }}
           restore-keys: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.18-27-
 
+      - name: Install system dependencies
+        run: sudo apt-get install -y inotify-tools
+
       - name: Install dependencies
         run: mix deps.get
 
