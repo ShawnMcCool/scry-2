@@ -592,7 +592,7 @@ defmodule Scry2Web.OperationsLive do
                 <tr :for={error <- @errors}>
                   <td class="tabular-nums">{error.id}</td>
                   <td><code>{error.event_type}</code></td>
-                  <td class="text-sm truncate">{error.processing_error}</td>
+                  <td class="text-sm whitespace-pre-wrap break-all">{error.processing_error}</td>
                 </tr>
               </tbody>
             </table>
