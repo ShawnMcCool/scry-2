@@ -176,14 +176,11 @@ jobs:
           if ($val.Scry2 -notlike "*scry2-tray.exe*") { throw "Autostart registry value incorrect: $($val.Scry2)" }
           Write-Host "Registry autostart OK: $($val.Scry2)"
 
-      - name: Start backend
-        shell: cmd
-        run: |
-          cmd /c ""%LOCALAPPDATA%\scry_2\bin\scry_2.bat" start"
-
-      - name: Wait for web UI
+      - name: Start backend and verify web UI
         shell: pwsh
         run: |
+          $installDir = "$env:LOCALAPPDATA\scry_2"
+          Start-Process -FilePath "$installDir\bin\scry_2.bat" -ArgumentList "start" -WindowStyle Hidden
           $timeout = 60
           $start = Get-Date
           $success = $false
@@ -201,9 +198,9 @@ jobs:
           if (-not $success) { throw "Web UI did not respond within ${timeout}s" }
 
       - name: Stop backend
-        shell: cmd
+        shell: pwsh
         run: |
-          cmd /c ""%LOCALAPPDATA%\scry_2\bin\scry_2.bat" stop"
+          Start-Process -FilePath "$env:LOCALAPPDATA\scry_2\bin\scry_2.bat" -ArgumentList "stop" -Wait -WindowStyle Hidden
 
       - name: Run uninstall.bat
         shell: cmd
@@ -279,14 +276,11 @@ jobs:
           if ($val.Scry2 -notlike "*scry2-tray.exe*") { throw "Autostart registry value incorrect: $($val.Scry2)" }
           Write-Host "Registry autostart OK: $($val.Scry2)"
 
-      - name: Start backend
+      - name: Start backend and verify web UI
         shell: pwsh
         run: |
-          & "${env:ProgramFiles}\Scry2\bin\scry_2.bat" start
-
-      - name: Wait for web UI
-        shell: pwsh
-        run: |
+          $installDir = "${env:ProgramFiles}\Scry2"
+          Start-Process -FilePath "$installDir\bin\scry_2.bat" -ArgumentList "start" -WindowStyle Hidden
           $timeout = 60
           $start = Get-Date
           $success = $false
@@ -306,7 +300,7 @@ jobs:
       - name: Stop backend
         shell: pwsh
         run: |
-          & "${env:ProgramFiles}\Scry2\bin\scry_2.bat" stop
+          Start-Process -FilePath "${env:ProgramFiles}\Scry2\bin\scry_2.bat" -ArgumentList "stop" -Wait -WindowStyle Hidden
 
       - name: Uninstall via Burn bootstrapper
         shell: pwsh
