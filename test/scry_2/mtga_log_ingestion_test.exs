@@ -115,8 +115,7 @@ defmodule Scry2.MtgaLogIngestionTest do
 
       reloaded = MtgaLogIngestion.get_event!(record.id)
       assert reloaded.processed == false
-      assert reloaded.processing_error =~ "ArgumentError"
-      assert reloaded.processing_error =~ "bad payload"
+      assert reloaded.processing_error == "bad payload"
     end
   end
 
