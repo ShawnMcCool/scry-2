@@ -578,9 +578,81 @@ defmodule Scry2Web.RanksHelpersTest do
       assert RanksHelpers.filter_snapshots_to_range(snapshots, "week") == []
     end
 
+    test "returns only snapshots from today (UTC) when range is \"today\"" do
+      now = DateTime.utc_now()
+      today_early = DateTime.new!(Date.utc_today(), ~T[00:00:01])
+      yesterday = DateTime.add(now, -1, :day)
+
+      snapshots = [
+        %{occurred_at: yesterday},
+        %{occurred_at: today_early},
+        %{occurred_at: now}
+      ]
+
+      result = RanksHelpers.filter_snapshots_to_range(snapshots, "today")
+      assert length(result) == 2
+      assert Enum.map(result, & &1.occurred_at) == [today_early, now]
+    end
+
+    test "returns empty list when no snapshots fall within today" do
+      yesterday = DateTime.add(DateTime.utc_now(), -1, :day)
+      snapshots = [%{occurred_at: yesterday}]
+
+      assert RanksHelpers.filter_snapshots_to_range(snapshots, "today") == []
+    end
+
     test "returns empty list for empty input" do
+      assert RanksHelpers.filter_snapshots_to_range([], "today") == []
       assert RanksHelpers.filter_snapshots_to_range([], "week") == []
       assert RanksHelpers.filter_snapshots_to_range([], "season") == []
+    end
+  end
+
+  describe "net_rank_change/2" do
+    test "returns nil for empty snapshot list" do
+      assert RanksHelpers.net_rank_change([], :constructed) == nil
+      assert RanksHelpers.net_rank_change([], :limited) == nil
+    end
+
+    test "returns 0 for a single snapshot" do
+      snapshot = %{
+        constructed_class: "Gold",
+        constructed_level: 2,
+        constructed_step: 3,
+        limited_class: "Silver",
+        limited_level: 1,
+        limited_step: 5
+      }
+
+      assert RanksHelpers.net_rank_change([snapshot], :constructed) == 0
+      assert RanksHelpers.net_rank_change([snapshot], :limited) == 0
+    end
+
+    test "returns positive delta when rank climbed" do
+      snapshots = [
+        %{constructed_class: "Gold", constructed_level: 4, constructed_step: 0},
+        %{constructed_class: "Gold", constructed_level: 3, constructed_step: 2},
+        %{constructed_class: "Gold", constructed_level: 2, constructed_step: 5}
+      ]
+
+      # Gold 4/0 = 48, Gold 2/5 = 65 → delta = +17
+      assert RanksHelpers.net_rank_change(snapshots, :constructed) == 17
+    end
+
+    test "returns negative delta when rank dropped" do
+      snapshots = [
+        %{limited_class: "Platinum", limited_level: 1, limited_step: 3},
+        %{limited_class: "Gold", limited_level: 1, limited_step: 5}
+      ]
+
+      # Plat 1/3 = 93, Gold 1/5 = 71 → delta = -22
+      assert RanksHelpers.net_rank_change(snapshots, :limited) == -22
+    end
+
+    test "returns 0 when rank unchanged" do
+      snapshot = %{constructed_class: "Silver", constructed_level: 3, constructed_step: 2}
+
+      assert RanksHelpers.net_rank_change([snapshot, snapshot], :constructed) == 0
     end
   end
 end
