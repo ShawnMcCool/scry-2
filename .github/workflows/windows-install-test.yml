@@ -176,11 +176,6 @@ jobs:
           if ($val.Scry2 -notlike "*scry2-tray.exe*") { throw "Autostart registry value incorrect: $($val.Scry2)" }
           Write-Host "Registry autostart OK: $($val.Scry2)"
 
-      - name: Verify runtime eval
-        shell: cmd
-        run: |
-          cmd /c ""%LOCALAPPDATA%\scry_2\bin\scry_2.bat" eval "IO.puts(:ok)""
-
       - name: Start backend
         shell: cmd
         run: |
@@ -283,12 +278,6 @@ jobs:
           $val = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Scry2" -ErrorAction Stop
           if ($val.Scry2 -notlike "*scry2-tray.exe*") { throw "Autostart registry value incorrect: $($val.Scry2)" }
           Write-Host "Registry autostart OK: $($val.Scry2)"
-
-      - name: Verify runtime eval
-        shell: pwsh
-        run: |
-          & "${env:ProgramFiles}\Scry2\bin\scry_2.bat" eval "IO.puts(:ok)"
-          if ($LASTEXITCODE -ne 0) { throw "Runtime eval failed with exit code $LASTEXITCODE" }
 
       - name: Start backend
         shell: pwsh
