@@ -21,6 +21,7 @@ defmodule Scry2.MtgaLogIngestion.EventRecord do
     field :processed, :boolean, default: false
     field :processed_at, :utc_datetime
     field :processing_error, :string
+    field :dismissed_at, :utc_datetime
     field :inserted_at, :utc_datetime
   end
 
