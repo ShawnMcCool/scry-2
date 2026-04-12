@@ -39,18 +39,20 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM Verify the runtime is functional before proceeding
-echo Verifying runtime...
-cmd /c ""%INSTALL_DIR%\bin\scry_2.bat" eval "IO.puts(:ok)"" >nul 2>&1
-echo Runtime check returned errorlevel: %errorlevel%
-if errorlevel 1 (
-    echo.
-    echo ERROR: The Erlang runtime failed to start.
-    echo This usually means the Visual C++ Redistributable is missing.
-    echo Download it from: https://aka.ms/vs/17/release/vc_redist.x64.exe
-    echo.
-    if not "%SCRY2_QUIET%"=="1" pause
-    exit /b 1
+REM Verify the runtime is functional before proceeding (skip in quiet/CI mode
+REM because eval starts the full OTP app which may hang without Player.log)
+if not "%SCRY2_QUIET%"=="1" (
+    echo Verifying runtime...
+    cmd /c ""%INSTALL_DIR%\bin\scry_2.bat" eval "IO.puts(:ok)"" >nul 2>&1
+    if errorlevel 1 (
+        echo.
+        echo ERROR: The Erlang runtime failed to start.
+        echo This usually means the Visual C++ Redistributable is missing.
+        echo Download it from: https://aka.ms/vs/17/release/vc_redist.x64.exe
+        echo.
+        pause
+        exit /b 1
+    )
 )
 
 REM Register autostart on login — point to tray, not backend
