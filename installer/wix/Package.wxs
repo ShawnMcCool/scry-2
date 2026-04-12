@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!--
+    Main MSI package definition for Scry2.
+    UpgradeCode is permanent — never change it across versions.
+    Version is stamped by CI via -d Version=X.Y.Z.
+  -->
+  <Package Name="Scry2"
+           Manufacturer="Shawn McCool"
+           Version="$(var.Version)"
+           UpgradeCode="35ed2438-5d9c-41b9-a073-b8eafdc2fde6"
+           Scope="perMachine"
+           Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Scry2 is already installed."
+                  Schedule="afterInstallInitialize" />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Kill scry2-tray.exe before upgrading files.
+         The tray's shutdown handler stops the Erlang backend. -->
+    <util:CloseApplication Id="CloseTray"
+                           Target="scry2-tray.exe"
+                           CloseMessage="yes"
+                           RebootPrompt="no"
+                           TerminateProcess="1"
+                           Description="Scry2 system tray"
+                           Sequence="1" />
+
+  </Package>
+</Wix>

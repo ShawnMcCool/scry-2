@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+
+  <!--
+    Burn bootstrapper bundle.
+    Installs VC++ Redistributable (if missing) then the Scry2 MSI.
+    This produces the Scry2Setup-vX.Y.Z.exe that users download.
+  -->
+
+  <Bundle Name="Scry2 Setup"
+          Version="$(var.Version)"
+          Manufacturer="Shawn McCool"
+          UpgradeCode="29024c1e-5b9a-4b38-a098-f1d2eb096791">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+          LicenseUrl="https://github.com/shawnmccool/scry_2/blob/main/LICENSE"
+          Theme="hyperlinkLicense" />
+    </BootstrapperApplication>
+
+    <!-- Detect VC++ 2015-2022 Redistributable (x64) via registry.
+         The key exists when any version of the universal CRT is installed. -->
+    <util:RegistrySearch xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+                         Id="VCRedistSearch"
+                         Root="HKLM"
+                         Key="SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64"
+                         Value="Installed"
+                         Variable="VCRedistInstalled" />
+
+    <Chain>
+      <!-- VC++ Redistributable — skipped if already installed -->
+      <ExePackage Id="VCRedist"
+                  Name="VC++ Redistributable"
+                  SourceFile="$(var.VCRedistPath)"
+                  InstallCommand="/install /quiet /norestart"
+                  DetectCondition="VCRedistInstalled"
+                  Permanent="yes"
+                  Vital="yes" />
+
+      <!-- Scry2 MSI -->
+      <MsiPackage Id="Scry2Msi"
+                  SourceFile="$(var.MsiPath)"
+                  Vital="yes" />
+    </Chain>
+  </Bundle>
+</Wix>

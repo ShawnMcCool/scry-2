@@ -130,10 +130,15 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: cd tray && go build -ldflags="-X 'scry2/tray/updater.CurrentVersion=${{ github.ref_name }}'" -o ../scry2-tray .
 
-      - name: Build tray binary (Windows)
+      - name: Build tray binary (Windows — zip)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: cd tray && go build -ldflags="-H windowsgui -X 'scry2/tray/updater.CurrentVersion=${{ github.ref_name }}'" -o ../scry2-tray.exe .
+
+      - name: Build tray binary (Windows — MSI)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: cd tray && go build -ldflags="-H windowsgui -X 'scry2/tray/updater.CurrentVersion=${{ github.ref_name }}' -X 'scry2/tray/updater.InstallerType=msi'" -o ../scry2-tray-msi.exe .
 
       - name: Package release (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -172,8 +177,49 @@ jobs:
           "Run install.bat to set up Scry2.`nSee https://github.com/${{ github.repository }} for full instructions." | Out-File "$ARCHIVE\README.txt" -Encoding UTF8
           Compress-Archive -Path "$ARCHIVE" -DestinationPath "${ARCHIVE}.zip"
 
-      - name: Upload to GitHub Release
+      # --- MSI Installer (Windows only) ---
+
+      - name: Install .NET SDK
+        if: matrix.os == 'windows-latest'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install WiX v5
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.*
+          wix extension add WixToolset.UI.wixext
+          wix extension add WixToolset.Util.wixext
+          wix extension add WixToolset.Firewall.wixext
+          wix extension add WixToolset.Bal.wixext
+
+      - name: Download VC++ Redistributable
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" `
+            -OutFile "installer/vc_redist.x64.exe"
+
+      - name: Build MSI installer
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          installer/scripts/build-msi `
+            -Version $version `
+            -TrayExe scry2-tray-msi.exe `
+            -VCRedistPath installer/vc_redist.x64.exe
+
+      - name: Upload release archive
         uses: softprops/action-gh-release@v2
         with:
           files: scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }}
           generate_release_notes: true
+
+      - name: Upload MSI installer
+        if: matrix.os == 'windows-latest'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/output/Scry2Setup-${{ github.ref_name }}.exe

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:firewall="http://wixtoolset.org/schemas/v4/wxs/firewall">
+
+  <!-- Firewall exceptions for the BEAM runtime.
+       epmd (Erlang Port Mapper Daemon) and erl (the VM) need inbound TCP
+       on the local subnet for distributed Erlang. Scoped to localSubnet
+       to minimize exposure. Removed automatically on uninstall. -->
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="EpmdFirewall" Guid="*">
+        <File Id="EpmdExe"
+              Source="$(var.InstallSource)\$(var.ErtsVersion)\bin\epmd.exe"
+              KeyPath="yes" />
+        <firewall:FirewallException Id="EpmdRule"
+                                    Name="Scry2 EPMD"
+                                    Scope="localSubnet"
+                                    Protocol="tcp" />
+      </Component>
+
+      <Component Id="ErlFirewall" Guid="*">
+        <File Id="ErlExe"
+              Source="$(var.InstallSource)\$(var.ErtsVersion)\bin\erl.exe"
+              KeyPath="yes" />
+        <firewall:FirewallException Id="ErlRule"
+                                    Name="Scry2 Erlang VM"
+                                    Scope="localSubnet"
+                                    Protocol="tcp" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

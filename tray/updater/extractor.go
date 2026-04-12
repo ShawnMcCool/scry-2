@@ -27,6 +27,8 @@ func (e *ArchiveExtractor) Extract(archivePath, destDir string) error {
 		return extractTarGz(archivePath, destDir)
 	case strings.HasSuffix(archivePath, ".zip"):
 		return extractZip(archivePath, destDir)
+	case strings.HasSuffix(archivePath, ".exe"):
+		return copyFile(archivePath, destDir)
 	default:
 		return fmt.Errorf("unsupported archive format: %s", archivePath)
 	}
@@ -137,4 +139,25 @@ func extractZip(archivePath, destDir string) error {
 		}
 	}
 	return nil
+}
+
+// copyFile copies a single file (e.g. an .exe bootstrapper) into destDir,
+// preserving the original filename. Used for MSI update downloads that don't
+// need extraction.
+func copyFile(srcPath, destDir string) error {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+
+	destPath := filepath.Join(destDir, filepath.Base(srcPath))
+	dst, err := os.Create(destPath)
+	if err != nil {
+		return err
+	}
+	defer dst.Close()
+
+	_, err = io.Copy(dst, src)
+	return err
 }

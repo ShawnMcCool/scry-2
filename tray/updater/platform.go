@@ -5,9 +5,13 @@ import (
 	"runtime"
 )
 
-// ArchiveName returns the release archive filename for the given platform and version.
-// goos and goarch should be runtime.GOOS and runtime.GOARCH values.
-func ArchiveName(goos, goarch, version string) (string, error) {
+// ArchiveName returns the release asset filename for the given platform and version.
+// When installerType is "msi" and the platform is Windows, it returns the Burn
+// bootstrapper .exe name instead of the .zip archive.
+func ArchiveName(goos, goarch, version, installerType string) (string, error) {
+	if installerType == "msi" && goos == "windows" {
+		return fmt.Sprintf("Scry2Setup-%s.exe", version), nil
+	}
 	suffix, err := archiveSuffix(goos, goarch)
 	if err != nil {
 		return "", err
@@ -15,9 +19,10 @@ func ArchiveName(goos, goarch, version string) (string, error) {
 	return fmt.Sprintf("scry_2-%s-%s", version, suffix), nil
 }
 
-// CurrentArchiveName returns the archive name for the current runtime platform.
+// CurrentArchiveName returns the asset name for the current runtime platform,
+// using the build-time InstallerType to select zip vs MSI format.
 func CurrentArchiveName(version string) (string, error) {
-	return ArchiveName(runtime.GOOS, runtime.GOARCH, version)
+	return ArchiveName(runtime.GOOS, runtime.GOARCH, version, InstallerType)
 }
 
 func archiveSuffix(goos, goarch string) (string, error) {

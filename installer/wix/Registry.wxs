@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- Auto-start on login via HKCU registry.
+       Uses HKCU even in per-machine install — autostart is per-user. -->
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="AutoStartRegistry" Guid="*">
+        <RegistryValue Root="HKCU"
+                       Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                       Name="Scry2"
+                       Type="string"
+                       Value="&quot;[INSTALLFOLDER]scry2-tray.exe&quot;"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>
