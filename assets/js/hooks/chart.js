@@ -539,7 +539,7 @@ export const Chart = {
   },
 
   updated() {
-    this.chart.setOption(buildOption(this.el), {notMerge: false, lazyUpdate: false})
+    this.chart.setOption(buildOption(this.el), {notMerge: true})
   },
 
   destroyed() {
