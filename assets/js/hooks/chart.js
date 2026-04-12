@@ -540,7 +540,15 @@ export const Chart = {
   },
 
   updated() {
-    console.log("[Chart] updated", this.el.id, "disposed?", this.chart?.isDisposed?.(), "size:", this.el.offsetWidth, "x", this.el.offsetHeight)
+    const canvas = this.el.querySelector("canvas")
+    console.log("[Chart] updated", this.el.id, "canvas?", !!canvas, "children:", this.el.children.length)
+    // Morphdom may remove the ECharts canvas during DOM patching.
+    // Re-init the chart instance when the canvas is gone.
+    if (!canvas || this.el.children.length === 0) {
+      console.log("[Chart] re-init", this.el.id)
+      this.chart.dispose()
+      this.chart = echarts.init(this.el, null, {renderer: "canvas"})
+    }
     this.chart.setOption(buildOption(this.el), {notMerge: true})
   },
 

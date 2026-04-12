@@ -309,10 +309,22 @@ jobs:
       - name: Verify file layout
         shell: pwsh
         run: |
-          $installDir = "${env:ProgramFiles}\Scry2"
+          # Check both possible locations
+          $candidates = @("${env:ProgramFiles}\Scry2", "${env:ProgramFiles(x86)}\Scry2")
+          $installDir = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $installDir) {
+              Write-Host "Checked: $($candidates -join ', ')"
+              Write-Host "ProgramFiles=$env:ProgramFiles"
+              # Search for it
+              Get-ChildItem "C:\Program Files*" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Filter "Scry2" -Directory -ErrorAction SilentlyContinue } | ForEach-Object { Write-Host "Found: $($_.FullName)" }
+              throw "Scry2 install directory not found"
+          }
+          Write-Host "Install dir: $installDir"
           if (-not (Test-Path "$installDir\scry2-tray.exe")) { throw "scry2-tray.exe missing from $installDir" }
           if (-not (Test-Path "$installDir\bin\scry_2.bat")) { throw "bin\scry_2.bat missing from $installDir" }
           Write-Host "File layout OK: tray and release bin present"
+          # Export for later steps
+          "SCRY2_MSI_DIR=$installDir" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Verify registry autostart
         shell: pwsh
@@ -324,7 +336,7 @@ jobs:
       - name: Start backend and verify web UI
         shell: pwsh
         run: |
-          $installDir = "${env:ProgramFiles}\Scry2"
+          $installDir = $env:SCRY2_MSI_DIR
           Start-Process -FilePath "$installDir\bin\scry_2.bat" -ArgumentList "start" -WindowStyle Hidden
           $timeout = 60
           $start = Get-Date
@@ -345,7 +357,7 @@ jobs:
       - name: Stop backend
         shell: pwsh
         run: |
-          Start-Process -FilePath "${env:ProgramFiles}\Scry2\bin\scry_2.bat" -ArgumentList "stop" -Wait -WindowStyle Hidden
+          Start-Process -FilePath "$env:SCRY2_MSI_DIR\bin\scry_2.bat" -ArgumentList "stop" -Wait -WindowStyle Hidden
 
       - name: Uninstall MSI
         shell: pwsh
@@ -363,7 +375,7 @@ jobs:
       - name: Verify cleanup
         shell: pwsh
         run: |
-          if (Test-Path "${env:ProgramFiles}\Scry2") { throw "Install directory not removed" }
+          if ($env:SCRY2_MSI_DIR -and (Test-Path $env:SCRY2_MSI_DIR)) { throw "Install directory not removed" }
           $autostart = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Scry2" -ErrorAction SilentlyContinue
           if ($autostart) { throw "Autostart registry key not removed" }
           Write-Host "Cleanup OK: install dir gone, registry key removed"
