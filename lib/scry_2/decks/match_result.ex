@@ -12,6 +12,8 @@ defmodule Scry2.Decks.MatchResult do
     field :player_rank, :string
     field :num_games, :integer
     field :game_results, :map
+    field :opponent_screen_name, :string
+    field :opponent_rank, :string
     field :started_at, :utc_datetime
     field :completed_at, :utc_datetime
 
@@ -28,6 +30,8 @@ defmodule Scry2.Decks.MatchResult do
       :event_name,
       :on_play,
       :player_rank,
+      :opponent_screen_name,
+      :opponent_rank,
       :num_games,
       :game_results,
       :started_at,

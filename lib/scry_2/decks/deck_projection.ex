@@ -166,6 +166,8 @@ defmodule Scry2.Decks.DeckProjection do
       format_type: event.format_type,
       event_name: event.event_name,
       player_rank: event.player_rank,
+      opponent_screen_name: event.opponent_screen_name,
+      opponent_rank: compose_rank(event.opponent_rank_class, event.opponent_rank_tier),
       started_at: event.occurred_at
     })
 
@@ -335,6 +337,8 @@ defmodule Scry2.Decks.DeckProjection do
           format_type: event.format_type,
           event_name: event.event_name,
           player_rank: event.player_rank,
+          opponent_screen_name: event.opponent_screen_name,
+          opponent_rank: compose_rank(event.opponent_rank_class, event.opponent_rank_tier),
           started_at: event.occurred_at
         }
 
@@ -418,4 +422,8 @@ defmodule Scry2.Decks.DeckProjection do
       end
     end)
   end
+
+  defp compose_rank(nil, _tier), do: nil
+  defp compose_rank(class, nil), do: class
+  defp compose_rank(class, tier), do: "#{class} #{tier}"
 end

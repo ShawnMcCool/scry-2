@@ -1113,6 +1113,12 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       opponent = find_opponent(reserved, self_user_id)
       self_entry = find_self_entry(reserved, self_user_id)
       event_name = find_event_name(reserved, self_user_id)
+      # NOTE: As of 2026-04, MTGA does not include opponent rank in
+      # Player.log structured events. reservedPlayers only carries:
+      # playerName, userId, platformId, systemSeatId, teamId, sessionId,
+      # courseId, eventId. No other event type carries it either — the
+      # rank shown in the MTGA UI comes from a channel not logged here.
+      # These fields are wired up in case a future MTGA update adds it.
       opponent_rank = opponent["playerRankInfo"] || %{}
 
       [
