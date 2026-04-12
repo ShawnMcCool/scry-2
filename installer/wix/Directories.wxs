@@ -3,13 +3,16 @@
 
   <!-- Directory layout for Scry2 installation.
        Install to C:\Program Files\Scry2.
-       Subdirectories (bin, erts-*, lib, releases) are created automatically
-       by the Files element in Components.wxs.
        Data stays in %APPDATA%\scry_2 (not managed by MSI). -->
 
   <Fragment>
     <StandardDirectory Id="ProgramFiles6432Folder">
-      <Directory Id="INSTALLFOLDER" Name="Scry2" />
+      <Directory Id="INSTALLFOLDER" Name="Scry2">
+        <Directory Id="BinDir" Name="bin" />
+        <Directory Id="ErtsDir" Name="$(var.ErtsVersion)" />
+        <Directory Id="LibDir" Name="lib" />
+        <Directory Id="ReleasesDir" Name="releases" />
+      </Directory>
     </StandardDirectory>
 
     <StandardDirectory Id="ProgramMenuFolder">

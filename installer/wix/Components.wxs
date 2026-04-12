@@ -2,8 +2,7 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
 
   <!-- Top-level components authored manually.
-       Release files (ERTS, lib, releases, bin) use the Files element
-       for automatic inclusion of all files in the directory tree. -->
+       Release files (ERTS, lib, releases, bin) are in generated fragment files. -->
 
   <Fragment>
     <DirectoryRef Id="INSTALLFOLDER">
@@ -14,12 +13,6 @@
               Name="scry2-tray.exe"
               KeyPath="yes" />
       </Component>
-
-      <!-- All release files from the Elixir build -->
-      <Files Include="$(var.InstallSource)\bin\**" />
-      <Files Include="$(var.InstallSource)\$(var.ErtsVersion)\**" />
-      <Files Include="$(var.InstallSource)\lib\**" />
-      <Files Include="$(var.InstallSource)\releases\**" />
     </DirectoryRef>
 
     <!-- Start Menu shortcut -->
