@@ -21,11 +21,11 @@
     </DirectoryRef>
 
     <!-- Deferred custom action runs elevated, before InstallFiles -->
-    <Binary Id="LegacyCleanupScript"
+    <Binary Id="LegacyCleanSrc"
             SourceFile="LegacyCleanup.bat" />
 
     <CustomAction Id="CleanupLegacyInstall"
-                  BinaryRef="LegacyCleanupScript"
+                  BinaryRef="LegacyCleanSrc"
                   ExeCommand=""
                   Impersonate="no"
                   Execute="deferred"
