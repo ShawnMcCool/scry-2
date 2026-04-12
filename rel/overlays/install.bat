@@ -41,7 +41,7 @@ if errorlevel 1 (
 
 REM Verify the runtime is functional before proceeding
 echo Verifying runtime...
-cmd /c ""%INSTALL_DIR%\bin\scry_2.bat" eval "IO.puts(:ok)""
+cmd /c ""%INSTALL_DIR%\bin\scry_2.bat" eval "IO.puts(:ok)"" >nul 2>&1
 echo Runtime check returned errorlevel: %errorlevel%
 if errorlevel 1 (
     echo.
