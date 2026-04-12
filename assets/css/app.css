@@ -69,6 +69,13 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
+/* Fluid root font-size — scales all rem-based sizing proportionally
+   so the UI is comfortable on any resolution from laptop to 4K.
+   ~16px at 940px viewport, ~21px at 1536px (1440p), caps at 24px. */
+html {
+  font-size: clamp(16px, 0.85vw + 8px, 24px);
+}
+
 /* This file is for your main application CSS */
 
 /* ── Guake-style console drawer ────────────────────────────────────────
@@ -263,33 +270,3 @@
   min-height: 70vh;
 }
 
-/* First-run setup wizard — scales the whole container (width, fonts,
-   padding, icons) proportionally so it fills a reasonable portion of
-   any viewport. Uses step-wise `zoom` via media queries because the
-   `zoom` property does not universally accept `calc()`/`clamp()`.
-   Floor is 1× on normal laptops; above ~1440px CSS width it grows in
-   discrete steps and caps at 2× on very large HiDPI displays. */
-.setup-wizard-scale {
-  zoom: 1;
-}
-@media (min-width: 1280px) {
-  .setup-wizard-scale { zoom: 1.35; }
-}
-@media (min-width: 1440px) {
-  .setup-wizard-scale { zoom: 1.55; }
-}
-@media (min-width: 1680px) {
-  .setup-wizard-scale { zoom: 1.8; }
-}
-@media (min-width: 1920px) {
-  .setup-wizard-scale { zoom: 2.1; }
-}
-@media (min-width: 2200px) {
-  .setup-wizard-scale { zoom: 2.4; }
-}
-@media (min-width: 2560px) {
-  .setup-wizard-scale { zoom: 2.75; }
-}
-@media (min-width: 3000px) {
-  .setup-wizard-scale { zoom: 3.1; }
-}

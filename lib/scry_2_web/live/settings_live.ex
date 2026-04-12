@@ -265,295 +265,297 @@ defmodule Scry2Web.SettingsLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold">Settings</h1>
+      <div class="max-w-3xl space-y-6">
+        <h1 class="text-2xl font-semibold">Settings</h1>
 
-      <section class="card bg-base-200">
-        <div class="card-body">
-          <h2 class="card-title text-base">MTGA Player.log path</h2>
-          <p :if={@resolved_path} class="text-sm">
-            <span class="badge badge-soft badge-success">Resolved</span>
-            <code class="ml-2 break-all">{@resolved_path}</code>
-          </p>
-          <p :if={is_nil(@resolved_path)} class="text-sm">
-            <span class="badge badge-soft badge-warning">Not found</span>
-            Scry&nbsp;2 could not locate <code>Player.log</code>.
-          </p>
-
-          <button
-            :if={!@editing[:player_log_path]}
-            type="button"
-            phx-click="start_edit"
-            phx-value-field="player_log_path"
-            class="link link-primary text-sm self-start mt-2"
-          >
-            Change log path
-          </button>
-
-          <div :if={@editing[:player_log_path]} class="mt-2">
-            <p class="text-sm text-base-content/70">
-              Enter the absolute path below, or click <em>Auto-detect</em> to scan the
-              standard Steam/Proton/Lutris/Bottles locations.
+        <section class="card bg-base-200">
+          <div class="card-body">
+            <h2 class="card-title text-base">MTGA Player.log path</h2>
+            <p :if={@resolved_path} class="text-sm">
+              <span class="badge badge-soft badge-success">Resolved</span>
+              <code class="ml-2 break-all">{@resolved_path}</code>
+            </p>
+            <p :if={is_nil(@resolved_path)} class="text-sm">
+              <span class="badge badge-soft badge-warning">Not found</span>
+              Scry&nbsp;2 could not locate <code>Player.log</code>.
             </p>
 
-            <.setting_form
-              field={:player_log_path}
-              label="Path to Player.log"
-              value={@field_values.player_log_path}
-              error={@field_errors[:player_log_path]}
-              save_event="save_player_log_path"
-              help="Absolute path to MTGA's Player.log."
+            <button
+              :if={!@editing[:player_log_path]}
+              type="button"
+              phx-click="start_edit"
+              phx-value-field="player_log_path"
+              class="link link-primary text-sm self-start mt-2"
             >
-              <:extra_buttons>
-                <button
-                  type="button"
-                  phx-click="auto_detect_player_log_path"
-                  class="btn btn-ghost btn-sm"
-                >
-                  Auto-detect
-                </button>
-                <button
-                  type="button"
-                  phx-click="cancel_edit"
-                  phx-value-field="player_log_path"
-                  class="btn btn-ghost btn-sm"
-                >
-                  Cancel
-                </button>
-              </:extra_buttons>
-            </.setting_form>
+              Change log path
+            </button>
 
-            <details class="mt-2">
-              <summary class="text-xs text-base-content/60 cursor-pointer">
-                Candidate paths scanned by auto-detect
-              </summary>
-              <ol class="text-xs mt-2 list-decimal list-inside space-y-1">
-                <li :for={path <- @candidates}><code class="break-all">{path}</code></li>
-              </ol>
-            </details>
-          </div>
-        </div>
-      </section>
-
-      <section class="card bg-base-200">
-        <div class="card-body">
-          <h2 class="card-title text-base">MTGA data directory</h2>
-          <p class="text-sm">
-            <span :if={@field_values.data_dir not in [nil, ""]}>
-              <code class="break-all">{@field_values.data_dir}</code>
-            </span>
-            <span :if={@field_values.data_dir in [nil, ""]} class="text-base-content/60">
-              Not set — auto-derived from the MTGA installation path.
-            </span>
-          </p>
-
-          <button
-            :if={!@editing[:data_dir]}
-            type="button"
-            phx-click="start_edit"
-            phx-value-field="data_dir"
-            class="link link-primary text-sm self-start mt-2"
-          >
-            Change data directory
-          </button>
-
-          <div :if={@editing[:data_dir]} class="mt-2">
-            <p class="text-sm text-base-content/70">
-              Directory containing <code>Raw_CardDatabase_*.mtga</code>.
-            </p>
-
-            <.setting_form
-              field={:data_dir}
-              label="Raw/ directory"
-              value={@field_values.data_dir}
-              error={@field_errors[:data_dir]}
-              save_event="save_data_dir"
-              help="Example: ~/.local/share/Steam/steamapps/common/MTGA/MTGA_Data/Downloads/Raw"
-            >
-              <:extra_buttons>
-                <button
-                  type="button"
-                  phx-click="cancel_edit"
-                  phx-value-field="data_dir"
-                  class="btn btn-ghost btn-sm"
-                >
-                  Cancel
-                </button>
-              </:extra_buttons>
-            </.setting_form>
-          </div>
-        </div>
-      </section>
-
-      <section class="card bg-base-200">
-        <div class="card-body">
-          <h2 class="card-title text-base">17lands refresh schedule</h2>
-          <p class="text-sm">
-            <span :if={@field_values.refresh_cron not in [nil, ""]}>
-              <code>{@field_values.refresh_cron}</code>
-            </span>
-            <span :if={@field_values.refresh_cron in [nil, ""]} class="text-base-content/60">
-              Not set.
-            </span>
-          </p>
-
-          <button
-            :if={!@editing[:refresh_cron]}
-            type="button"
-            phx-click="start_edit"
-            phx-value-field="refresh_cron"
-            class="link link-primary text-sm self-start mt-2"
-          >
-            Change refresh schedule
-          </button>
-
-          <div :if={@editing[:refresh_cron]} class="mt-2">
-            <p class="text-sm text-base-content/70">
-              Cron expression for the daily <code>cards.csv</code>
-              refresh job. <span class="badge badge-soft badge-info">Restart required</span>
-              Changes take effect on next app boot.
-            </p>
-
-            <.setting_form
-              field={:refresh_cron}
-              label="Cron expression"
-              value={@field_values.refresh_cron}
-              error={@field_errors[:refresh_cron]}
-              save_event="save_refresh_cron"
-              help="Standard 5-field cron or shorthand like @daily."
-            >
-              <:extra_buttons>
-                <button
-                  type="button"
-                  phx-click="cancel_edit"
-                  phx-value-field="refresh_cron"
-                  class="btn btn-ghost btn-sm"
-                >
-                  Cancel
-                </button>
-              </:extra_buttons>
-            </.setting_form>
-          </div>
-        </div>
-      </section>
-
-      <section class="card bg-base-200">
-        <div class="card-body">
-          <details>
-            <summary class="card-title text-base cursor-pointer">
-              Advanced
-            </summary>
-            <div class="mt-3">
-              <h3 class="text-sm font-semibold">Watcher drain interval</h3>
-              <p class="text-xs text-base-content/70 mt-1">
-                Debounce window after a <code>Player.log</code> modification before
-                draining new bytes. Shorter = lower latency, longer = more burst
-                coalescing. Range: 100–10000 ms.
+            <div :if={@editing[:player_log_path]} class="mt-2">
+              <p class="text-sm text-base-content/70">
+                Enter the absolute path below, or click <em>Auto-detect</em> to scan the
+                standard Steam/Proton/Lutris/Bottles locations.
               </p>
 
               <.setting_form
-                field={:poll_interval_ms}
-                label="poll_interval_ms"
-                value={@field_values.poll_interval_ms}
-                error={@field_errors[:poll_interval_ms]}
-                save_event="save_poll_interval_ms"
-                help="Default: 500 ms"
-              />
+                field={:player_log_path}
+                label="Path to Player.log"
+                value={@field_values.player_log_path}
+                error={@field_errors[:player_log_path]}
+                save_event="save_player_log_path"
+                help="Absolute path to MTGA's Player.log."
+              >
+                <:extra_buttons>
+                  <button
+                    type="button"
+                    phx-click="auto_detect_player_log_path"
+                    class="btn btn-ghost btn-sm"
+                  >
+                    Auto-detect
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="cancel_edit"
+                    phx-value-field="player_log_path"
+                    class="btn btn-ghost btn-sm"
+                  >
+                    Cancel
+                  </button>
+                </:extra_buttons>
+              </.setting_form>
+
+              <details class="mt-2">
+                <summary class="text-xs text-base-content/60 cursor-pointer">
+                  Candidate paths scanned by auto-detect
+                </summary>
+                <ol class="text-xs mt-2 list-decimal list-inside space-y-1">
+                  <li :for={path <- @candidates}><code class="break-all">{path}</code></li>
+                </ol>
+              </details>
             </div>
-          </details>
-        </div>
-      </section>
-
-      <section class="card bg-base-200">
-        <div class="card-body">
-          <h2 class="card-title text-base">Ingestion diagnostics</h2>
-          <p class="text-xs text-base-content/60">
-            Live projection of <code>Scry2.Events.IngestionState</code>. Refreshes every 2&nbsp;seconds.
-          </p>
-          <div class="overflow-x-auto mt-2">
-            <table class="table table-xs">
-              <tbody>
-                <tr>
-                  <td class="font-mono text-xs">last_raw_event_id</td>
-                  <td class="font-mono text-xs">{@diagnostics.last_raw_event_id}</td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">session.self_user_id</td>
-                  <td class="font-mono text-xs break-all">
-                    {@diagnostics.session.self_user_id || "—"}
-                  </td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">session.player_id</td>
-                  <td class="font-mono text-xs">{@diagnostics.session.player_id || "—"}</td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">session.current_session_id</td>
-                  <td class="font-mono text-xs break-all">
-                    {@diagnostics.session.current_session_id || "—"}
-                  </td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">session.constructed_rank</td>
-                  <td class="font-mono text-xs">{@diagnostics.session.constructed_rank || "—"}</td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">session.limited_rank</td>
-                  <td class="font-mono text-xs">{@diagnostics.session.limited_rank || "—"}</td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">match.current_match_id</td>
-                  <td class="font-mono text-xs break-all">
-                    {@diagnostics.match.current_match_id || "—"}
-                  </td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">match.current_game_number</td>
-                  <td class="font-mono text-xs">{@diagnostics.match.current_game_number || "—"}</td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">match.last_deck_name</td>
-                  <td class="font-mono text-xs break-all">
-                    {@diagnostics.match.last_deck_name || "—"}
-                  </td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">match.on_play_for_current_game</td>
-                  <td class="font-mono text-xs">
-                    {case @diagnostics.match.on_play_for_current_game do
-                      nil -> "—"
-                      true -> "true"
-                      false -> "false"
-                    end}
-                  </td>
-                </tr>
-                <tr>
-                  <td class="font-mono text-xs">match.pending_deck?</td>
-                  <td class="font-mono text-xs">{to_string(@diagnostics.match.pending_deck?)}</td>
-                </tr>
-              </tbody>
-            </table>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section class="card bg-base-200">
-        <div class="card-body">
-          <h2 class="card-title text-base">Effective configuration (read-only)</h2>
-          <p class="text-xs text-base-content/60">
-            Infrastructure keys that live only in <code>{@config_path}</code>.
-          </p>
-          <div class="overflow-x-auto mt-2">
-            <table class="table table-xs">
-              <tbody>
-                <tr :for={{key, value} <- @config_snapshot}>
-                  <td class="font-mono text-xs">{key}</td>
-                  <td class="font-mono text-xs break-all">{inspect(value)}</td>
-                </tr>
-              </tbody>
-            </table>
+        <section class="card bg-base-200">
+          <div class="card-body">
+            <h2 class="card-title text-base">MTGA data directory</h2>
+            <p class="text-sm">
+              <span :if={@field_values.data_dir not in [nil, ""]}>
+                <code class="break-all">{@field_values.data_dir}</code>
+              </span>
+              <span :if={@field_values.data_dir in [nil, ""]} class="text-base-content/60">
+                Not set — auto-derived from the MTGA installation path.
+              </span>
+            </p>
+
+            <button
+              :if={!@editing[:data_dir]}
+              type="button"
+              phx-click="start_edit"
+              phx-value-field="data_dir"
+              class="link link-primary text-sm self-start mt-2"
+            >
+              Change data directory
+            </button>
+
+            <div :if={@editing[:data_dir]} class="mt-2">
+              <p class="text-sm text-base-content/70">
+                Directory containing <code>Raw_CardDatabase_*.mtga</code>.
+              </p>
+
+              <.setting_form
+                field={:data_dir}
+                label="Raw/ directory"
+                value={@field_values.data_dir}
+                error={@field_errors[:data_dir]}
+                save_event="save_data_dir"
+                help="Example: ~/.local/share/Steam/steamapps/common/MTGA/MTGA_Data/Downloads/Raw"
+              >
+                <:extra_buttons>
+                  <button
+                    type="button"
+                    phx-click="cancel_edit"
+                    phx-value-field="data_dir"
+                    class="btn btn-ghost btn-sm"
+                  >
+                    Cancel
+                  </button>
+                </:extra_buttons>
+              </.setting_form>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+
+        <section class="card bg-base-200">
+          <div class="card-body">
+            <h2 class="card-title text-base">17lands refresh schedule</h2>
+            <p class="text-sm">
+              <span :if={@field_values.refresh_cron not in [nil, ""]}>
+                <code>{@field_values.refresh_cron}</code>
+              </span>
+              <span :if={@field_values.refresh_cron in [nil, ""]} class="text-base-content/60">
+                Not set.
+              </span>
+            </p>
+
+            <button
+              :if={!@editing[:refresh_cron]}
+              type="button"
+              phx-click="start_edit"
+              phx-value-field="refresh_cron"
+              class="link link-primary text-sm self-start mt-2"
+            >
+              Change refresh schedule
+            </button>
+
+            <div :if={@editing[:refresh_cron]} class="mt-2">
+              <p class="text-sm text-base-content/70">
+                Cron expression for the daily <code>cards.csv</code>
+                refresh job. <span class="badge badge-soft badge-info">Restart required</span>
+                Changes take effect on next app boot.
+              </p>
+
+              <.setting_form
+                field={:refresh_cron}
+                label="Cron expression"
+                value={@field_values.refresh_cron}
+                error={@field_errors[:refresh_cron]}
+                save_event="save_refresh_cron"
+                help="Standard 5-field cron or shorthand like @daily."
+              >
+                <:extra_buttons>
+                  <button
+                    type="button"
+                    phx-click="cancel_edit"
+                    phx-value-field="refresh_cron"
+                    class="btn btn-ghost btn-sm"
+                  >
+                    Cancel
+                  </button>
+                </:extra_buttons>
+              </.setting_form>
+            </div>
+          </div>
+        </section>
+
+        <section class="card bg-base-200">
+          <div class="card-body">
+            <details>
+              <summary class="card-title text-base cursor-pointer">
+                Advanced
+              </summary>
+              <div class="mt-3">
+                <h3 class="text-sm font-semibold">Watcher drain interval</h3>
+                <p class="text-xs text-base-content/70 mt-1">
+                  Debounce window after a <code>Player.log</code> modification before
+                  draining new bytes. Shorter = lower latency, longer = more burst
+                  coalescing. Range: 100–10000 ms.
+                </p>
+
+                <.setting_form
+                  field={:poll_interval_ms}
+                  label="poll_interval_ms"
+                  value={@field_values.poll_interval_ms}
+                  error={@field_errors[:poll_interval_ms]}
+                  save_event="save_poll_interval_ms"
+                  help="Default: 500 ms"
+                />
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <section class="card bg-base-200">
+          <div class="card-body">
+            <h2 class="card-title text-base">Ingestion diagnostics</h2>
+            <p class="text-xs text-base-content/60">
+              Live projection of <code>Scry2.Events.IngestionState</code>. Refreshes every 2&nbsp;seconds.
+            </p>
+            <div class="overflow-x-auto mt-2">
+              <table class="table table-xs">
+                <tbody>
+                  <tr>
+                    <td class="font-mono text-xs">last_raw_event_id</td>
+                    <td class="font-mono text-xs">{@diagnostics.last_raw_event_id}</td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">session.self_user_id</td>
+                    <td class="font-mono text-xs break-all">
+                      {@diagnostics.session.self_user_id || "—"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">session.player_id</td>
+                    <td class="font-mono text-xs">{@diagnostics.session.player_id || "—"}</td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">session.current_session_id</td>
+                    <td class="font-mono text-xs break-all">
+                      {@diagnostics.session.current_session_id || "—"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">session.constructed_rank</td>
+                    <td class="font-mono text-xs">{@diagnostics.session.constructed_rank || "—"}</td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">session.limited_rank</td>
+                    <td class="font-mono text-xs">{@diagnostics.session.limited_rank || "—"}</td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">match.current_match_id</td>
+                    <td class="font-mono text-xs break-all">
+                      {@diagnostics.match.current_match_id || "—"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">match.current_game_number</td>
+                    <td class="font-mono text-xs">{@diagnostics.match.current_game_number || "—"}</td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">match.last_deck_name</td>
+                    <td class="font-mono text-xs break-all">
+                      {@diagnostics.match.last_deck_name || "—"}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">match.on_play_for_current_game</td>
+                    <td class="font-mono text-xs">
+                      {case @diagnostics.match.on_play_for_current_game do
+                        nil -> "—"
+                        true -> "true"
+                        false -> "false"
+                      end}
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="font-mono text-xs">match.pending_deck?</td>
+                    <td class="font-mono text-xs">{to_string(@diagnostics.match.pending_deck?)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="card bg-base-200">
+          <div class="card-body">
+            <h2 class="card-title text-base">Effective configuration (read-only)</h2>
+            <p class="text-xs text-base-content/60">
+              Infrastructure keys that live only in <code>{@config_path}</code>.
+            </p>
+            <div class="overflow-x-auto mt-2">
+              <table class="table table-xs">
+                <tbody>
+                  <tr :for={{key, value} <- @config_snapshot}>
+                    <td class="font-mono text-xs">{key}</td>
+                    <td class="font-mono text-xs break-all">{inspect(value)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
     </Layouts.app>
     """
   end

@@ -138,7 +138,7 @@ defmodule Scry2Web.SetupLive do
   def render(assigns) do
     ~H"""
     <main class="min-h-screen flex items-center justify-center px-4 py-8">
-      <div class="setup-wizard-scale w-full max-w-2xl space-y-5">
+      <div class="w-full max-w-2xl space-y-5">
         <header class="text-center">
           <h1 class="text-2xl font-semibold flex items-center justify-center gap-2">
             <.icon name="hero-eye" class="size-6 text-primary" /> Scry 2
