@@ -460,7 +460,7 @@ defmodule Scry2Web.CoreComponents do
   def stat_card(assigns) do
     ~H"""
     <div class="card bg-base-200">
-      <div class="card-body p-4">
+      <div class="card-body p-4 items-center text-center">
         <p class="text-xs uppercase text-base-content/60 flex items-center gap-1">
           {render_slot(@icon)}
           {@title}
