@@ -203,20 +203,18 @@ defmodule Scry2Web.DecksHelpers do
     end
   end
 
-  @doc "Returns JSON-encoded BO1-only win rate series for the ECharts winrate chart."
-  @spec bo1_winrate_series(list()) :: String.t()
-  def bo1_winrate_series(win_rate_by_week) do
-    weeks = Enum.map(win_rate_by_week, & &1.week)
-    bo1 = Enum.map(win_rate_by_week, & &1.bo1_win_rate)
-    Jason.encode!(%{weeks: weeks, bo1: bo1, bo3: []})
-  end
+  @doc """
+  Returns JSON-encoded cumulative win rate series for the ECharts chart.
+  Each data point is `[iso8601_timestamp, win_rate, "NW–ML"]`.
+  """
+  @spec cumulative_winrate_series(list()) :: String.t()
+  def cumulative_winrate_series(points) do
+    series =
+      Enum.map(points, fn point ->
+        [point.timestamp, point.win_rate, "#{point.wins}W–#{point.total - point.wins}L"]
+      end)
 
-  @doc "Returns JSON-encoded BO3-only win rate series for the ECharts winrate chart."
-  @spec bo3_winrate_series(list()) :: String.t()
-  def bo3_winrate_series(win_rate_by_week) do
-    weeks = Enum.map(win_rate_by_week, & &1.week)
-    bo3 = Enum.map(win_rate_by_week, & &1.bo3_win_rate)
-    Jason.encode!(%{weeks: weeks, bo1: [], bo3: bo3})
+    Jason.encode!(series)
   end
 
   # ── Version timeline helpers ────────────────────────────────────────

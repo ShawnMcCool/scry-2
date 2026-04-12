@@ -75,33 +75,25 @@ defmodule Scry2Web.DecksHelpersTest do
     end
   end
 
-  describe "bo1_winrate_series/1" do
-    test "encodes weeks and bo1 rates; bo3 is empty" do
-      data = [
-        %{week: "2026-01-01", bo1_win_rate: 50.0, bo3_win_rate: 60.0},
-        %{week: "2026-01-08", bo1_win_rate: nil, bo3_win_rate: 55.0}
+  describe "cumulative_winrate_series/1" do
+    test "encodes cumulative data points as [timestamp, rate, record]" do
+      points = [
+        %{timestamp: "2026-04-09T20:38:35Z", win_rate: 100.0, wins: 1, total: 1},
+        %{timestamp: "2026-04-12T11:17:46Z", win_rate: 100.0, wins: 2, total: 2},
+        %{timestamp: "2026-04-12T12:02:16Z", win_rate: 66.7, wins: 2, total: 3}
       ]
 
-      decoded = DecksHelpers.bo1_winrate_series(data) |> Jason.decode!()
+      decoded = DecksHelpers.cumulative_winrate_series(points) |> Jason.decode!()
 
-      assert decoded["weeks"] == ["2026-01-01", "2026-01-08"]
-      assert decoded["bo1"] == [50.0, nil]
-      assert decoded["bo3"] == []
+      assert decoded == [
+               ["2026-04-09T20:38:35Z", 100.0, "1W–0L"],
+               ["2026-04-12T11:17:46Z", 100.0, "2W–0L"],
+               ["2026-04-12T12:02:16Z", 66.7, "2W–1L"]
+             ]
     end
-  end
 
-  describe "bo3_winrate_series/1" do
-    test "encodes weeks and bo3 rates; bo1 is empty" do
-      data = [
-        %{week: "2026-01-01", bo1_win_rate: 50.0, bo3_win_rate: 60.0},
-        %{week: "2026-01-08", bo1_win_rate: nil, bo3_win_rate: 55.0}
-      ]
-
-      decoded = DecksHelpers.bo3_winrate_series(data) |> Jason.decode!()
-
-      assert decoded["weeks"] == ["2026-01-01", "2026-01-08"]
-      assert decoded["bo1"] == []
-      assert decoded["bo3"] == [60.0, 55.0]
+    test "returns empty array for no data" do
+      assert DecksHelpers.cumulative_winrate_series([]) |> Jason.decode!() == []
     end
   end
 
