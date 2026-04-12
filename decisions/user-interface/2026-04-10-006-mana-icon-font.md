@@ -25,7 +25,7 @@ Adopt the Mana icon font and establish a **universal component** (`mana_symbol/1
   src: url("/fonts/mana.woff2") format("woff2"),
        url("/fonts/mana.woff") format("woff");
   ```
-- **MPlantin secondary font** — not vendored. The `mana.css` rules that reference it fall back to Garamond/Palatino, which is acceptable. The `@font-face` declaration for MPlantin is omitted.
+- **MPlantin** — now vendored separately (see UIDR-009). The `mana.css` rules that reference it will resolve to the vendored MPlantin font files.
 - **To update:** `curl -sLO https://raw.githubusercontent.com/andrewgioia/Mana/master/css/mana.css`, replace `@font-face` src, replace font files.
 
 ## Symbol Taxonomy

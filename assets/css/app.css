@@ -41,6 +41,29 @@
   font-family: "Beleren SmallCaps", serif;
 }
 
+/* MPlantin — the official MTG rules/body text font family.
+   Regular for rules text, Italic for flavor text.
+   Used via .font-mplantin utility class for card-authentic body text. */
+@font-face {
+  font-family: "MPlantin";
+  src: url("/fonts/MPlantin.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "MPlantin";
+  src: url("/fonts/MPlantin-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+
+.font-mplantin {
+  font-family: "MPlantin", "Palatino Linotype", Palatino, Georgia, serif;
+}
+
 /* A Tailwind plugin that makes "hero-#{ICON}" classes available.
    The heroicons installation itself is managed by your mix.exs */
 @plugin "../vendor/heroicons";
