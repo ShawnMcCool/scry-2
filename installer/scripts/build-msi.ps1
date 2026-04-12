@@ -58,67 +58,86 @@ function New-WixFragment {
     $fileCount = $files.Count
     Write-Host "  $ComponentGroupId`: $fileCount files"
 
-    # Use a single Fragment so the WiX v5 linker can't exclude the components.
-    # Components are nested under DirectoryRef, and the ComponentGroup references
-    # them — all in one fragment to guarantee they're linked together.
-    $xml = @"
-<?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
-  <Fragment>
-    <DirectoryRef Id="$DirectoryId">
+    # Two-pass approach: build directory tree first, then emit components.
+    # Everything in one Fragment so the WiX v5 linker includes it.
 
-"@
+    # Pass 1: Collect all unique directory paths and build a tree
+    $allDirs = @{}  # path -> dirId
+    $allDirs[""] = $DirectoryId  # root maps to the parent DirectoryRef
+    $fileEntries = @()
 
-    # Track directories we've opened
-    $openDirs = @{}
-    $componentRefs = @()
     $fileIndex = 0
-
-    foreach ($file in ($files | Sort-Object { $_.DirectoryName })) {
+    foreach ($file in $files) {
         $fileIndex++
         $relPath = $file.FullName.Substring($SourceDir.Length).TrimStart('\', '/')
-        $relDir = Split-Path $relPath -Parent
+        $relDir = (Split-Path $relPath -Parent) -replace '/', '\'
 
-        # Build directory nesting
-        if ($relDir -and -not $openDirs.ContainsKey($relDir)) {
-            $parts = $relDir -split '[/\\]'
+        # Register all directory segments
+        if ($relDir) {
+            $parts = $relDir -split '\\'
             $accumulated = ""
             foreach ($part in $parts) {
-                $parent = $accumulated
                 $accumulated = if ($accumulated) { "$accumulated\$part" } else { $part }
-                if (-not $openDirs.ContainsKey($accumulated)) {
+                if (-not $allDirs.ContainsKey($accumulated)) {
                     $dirId = "${ComponentGroupId}_d_" + ($accumulated -replace '[^a-zA-Z0-9]', '_')
-                    $xml += "      <Directory Id=`"$dirId`" Name=`"$part`">`n"
-                    $openDirs[$accumulated] = $dirId
+                    $allDirs[$accumulated] = $dirId
                 }
             }
         }
 
         $compId = "${ComponentGroupId}_$fileIndex"
         $fileId = "${ComponentGroupId}_f_$fileIndex"
+        $dirId = if ($relDir) { $allDirs[$relDir] } else { $DirectoryId }
         $sourcePath = $file.FullName -replace '/', '\'
 
-        $xml += @"
-      <Component Id="$compId" Guid="*">
-        <File Id="$fileId" Source="$sourcePath" KeyPath="yes" />
-      </Component>
+        $fileEntries += @{ CompId = $compId; FileId = $fileId; DirId = $dirId; Source = $sourcePath }
+    }
+
+    # Emit directory tree recursively
+    function Write-DirTree {
+        param([string]$ParentPath, [string]$Indent)
+        # Find direct children of this parent
+        $children = $allDirs.Keys | Where-Object {
+            $_ -ne "" -and $_ -ne $ParentPath -and
+            $(if ($ParentPath) { $_.StartsWith("$ParentPath\") -and ($_ -replace "^$([regex]::Escape($ParentPath))\\", "") -notmatch '\\' } else { $_ -notmatch '\\' })
+        } | Sort-Object
+
+        $result = ""
+        foreach ($child in $children) {
+            $name = if ($ParentPath) { $child.Substring($ParentPath.Length + 1) } else { $child }
+            $id = $allDirs[$child]
+            $result += "$Indent<Directory Id=`"$id`" Name=`"$name`">`n"
+            $result += (Write-DirTree -ParentPath $child -Indent "$Indent  ")
+            $result += "$Indent</Directory>`n"
+        }
+        return $result
+    }
+
+    $xml = @"
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <DirectoryRef Id="$DirectoryId">
+$(Write-DirTree -ParentPath "" -Indent "      ")    </DirectoryRef>
 
 "@
-        $componentRefs += $compId
+
+    # Pass 2: Emit components grouped by directory, using DirectoryRef
+    $byDir = $fileEntries | Group-Object { $_.DirId }
+    foreach ($group in $byDir) {
+        $xml += "    <DirectoryRef Id=`"$($group.Name)`">`n"
+        foreach ($entry in $group.Group) {
+            $xml += "      <Component Id=`"$($entry.CompId)`" Guid=`"*`">`n"
+            $xml += "        <File Id=`"$($entry.FileId)`" Source=`"$($entry.Source)`" KeyPath=`"yes`" />`n"
+            $xml += "      </Component>`n"
+        }
+        $xml += "    </DirectoryRef>`n"
     }
 
-    # Close all opened directories (in reverse order)
-    $sortedDirs = $openDirs.Keys | Sort-Object { ($_ -split '[/\\]').Count } -Descending
-    foreach ($dir in $sortedDirs) {
-        $xml += "      </Directory>`n"
-    }
-
-    $xml += "    </DirectoryRef>`n`n"
-
-    # ComponentGroup in the SAME fragment as the components
-    $xml += "    <ComponentGroup Id=`"$ComponentGroupId`">`n"
-    foreach ($ref in $componentRefs) {
-        $xml += "      <ComponentRef Id=`"$ref`" />`n"
+    # ComponentGroup in the same fragment
+    $xml += "`n    <ComponentGroup Id=`"$ComponentGroupId`">`n"
+    foreach ($entry in $fileEntries) {
+        $xml += "      <ComponentRef Id=`"$($entry.CompId)`" />`n"
     }
 
     $xml += @"
