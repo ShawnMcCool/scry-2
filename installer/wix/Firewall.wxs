@@ -5,26 +5,37 @@
   <!-- Firewall exceptions for the BEAM runtime.
        epmd (Erlang Port Mapper Daemon) and erl (the VM) need inbound TCP
        on the local subnet for distributed Erlang. Scoped to localSubnet
-       to minimize exposure. Removed automatically on uninstall. -->
+       to minimize exposure. Removed automatically on uninstall.
+
+       These reference installed file paths rather than File elements since
+       the ERTS files are auto-included via the Files element. -->
 
   <Fragment>
     <DirectoryRef Id="INSTALLFOLDER">
       <Component Id="EpmdFirewall" Guid="*">
-        <File Id="EpmdExe"
-              Source="$(var.InstallSource)\$(var.ErtsVersion)\bin\epmd.exe"
-              KeyPath="yes" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Scry2"
+                       Name="EpmdFirewall"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
         <firewall:FirewallException Id="EpmdRule"
                                     Name="Scry2 EPMD"
+                                    Program="[INSTALLFOLDER]$(var.ErtsVersion)\bin\epmd.exe"
                                     Scope="localSubnet"
                                     Protocol="tcp" />
       </Component>
 
       <Component Id="ErlFirewall" Guid="*">
-        <File Id="ErlExe"
-              Source="$(var.InstallSource)\$(var.ErtsVersion)\bin\erl.exe"
-              KeyPath="yes" />
+        <RegistryValue Root="HKLM"
+                       Key="Software\Scry2"
+                       Name="ErlFirewall"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
         <firewall:FirewallException Id="ErlRule"
                                     Name="Scry2 Erlang VM"
+                                    Program="[INSTALLFOLDER]$(var.ErtsVersion)\bin\erl.exe"
                                     Scope="localSubnet"
                                     Protocol="tcp" />
       </Component>
