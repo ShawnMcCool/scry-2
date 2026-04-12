@@ -114,7 +114,9 @@ defmodule Scry2Web.EconomyLive do
           <.stat_card
             title="Vault"
             value={"#{Float.round((@inventory.vault_progress || 0) / 1, 1)}%"}
-          />
+          >
+            <:icon><.icon name="hero-archive-box-solid" class="size-5 text-warning" /></:icon>
+          </.stat_card>
         </div>
 
         <%!-- Charts --%>
