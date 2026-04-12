@@ -66,7 +66,10 @@ jobs:
         run: mix assets.deploy
 
       - name: Build release
-        run: mix release
+        shell: pwsh
+        run: |
+          if (Test-Path "_build/prod/rel") { Remove-Item -Recurse -Force "_build/prod/rel" }
+          mix release
         env:
           MIX_OS_DEPS_COMPILE_PARTITION_COUNT: "8"
 
