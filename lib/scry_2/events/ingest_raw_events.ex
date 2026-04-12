@@ -215,12 +215,20 @@ defmodule Scry2.Events.IngestRawEvents do
         process_raw_event(record, state.ingestion, state.checkpointing)
       rescue
         error ->
-          Log.error(
-            :ingester,
-            "failed to process id=#{record.id} type=#{record.event_type}: #{inspect(error)}"
-          )
+          if transient_error?(error) do
+            Log.warning(
+              :ingester,
+              "transient error on id=#{record.id} type=#{record.event_type}, will retry on next catch-up: #{inspect(error)}"
+            )
+          else
+            Log.error(
+              :ingester,
+              "failed to process id=#{record.id} type=#{record.event_type}: #{inspect(error)}"
+            )
 
-          MtgaLogIngestion.mark_error!(record.id, error)
+            MtgaLogIngestion.mark_error!(record.id, error)
+          end
+
           state.ingestion
       end
 
@@ -249,8 +257,16 @@ defmodule Scry2.Events.IngestRawEvents do
             process_raw_event(record, acc, true)
           rescue
             error ->
-              Log.error(:ingester, "catch-up failed on id=#{record.id}: #{inspect(error)}")
-              MtgaLogIngestion.mark_error!(record.id, error)
+              if transient_error?(error) do
+                Log.warning(
+                  :ingester,
+                  "transient error on catch-up id=#{record.id}, will retry on next catch-up: #{inspect(error)}"
+                )
+              else
+                Log.error(:ingester, "catch-up failed on id=#{record.id}: #{inspect(error)}")
+                MtgaLogIngestion.mark_error!(record.id, error)
+              end
+
               acc
           end
         end)
@@ -598,4 +614,14 @@ defmodule Scry2.Events.IngestRawEvents do
         end
     end
   end
+
+  # SQLite "Database busy" is a transient infrastructure error — the write lock
+  # was held by another operation. These should not be recorded as permanent
+  # processing errors. The event stays unprocessed and will be retried on the
+  # next catch-up or reingest.
+  defp transient_error?(%Exqlite.Error{message: message}) do
+    String.contains?(message, "Database busy") or String.contains?(message, "database is locked")
+  end
+
+  defp transient_error?(_), do: false
 end
