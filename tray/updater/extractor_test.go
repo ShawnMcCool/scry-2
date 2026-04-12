@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"scry2/tray/updater"
@@ -75,12 +76,14 @@ func TestArchiveExtractor_TarGz(t *testing.T) {
 		t.Errorf("unexpected install content: %q", content)
 	}
 
-	info, err := os.Stat(filepath.Join(dest, "install"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Mode()&0100 == 0 {
-		t.Error("install file should be executable")
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(dest, "install"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Mode()&0100 == 0 {
+			t.Error("install file should be executable")
+		}
 	}
 }
 
