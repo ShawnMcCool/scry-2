@@ -116,6 +116,14 @@ command to run.
 
 Scry2 is built on the work of a lot of generous people.
 
+- **[Beleren](https://www.delvefonts.com)** by Delve Fonts — the official
+  MTG card title typeface, commissioned by Wizards of the Coast. Used for
+  headings and display text. Proprietary; used here under Wizards'
+  [Fan Content Policy](https://company.wizards.com/en/legal/fancontentpolicy).
+- **MPlantin** — the MTG rules and flavor text typeface, derived from the
+  Plantin family. Used for card text rendering. Proprietary to Wizards of
+  the Coast; community-distributed for fan tools under the same Fan Content
+  Policy.
 - **[Mana font](https://github.com/andrewgioia/mana)** by Andrew Gioia —
   the mana symbols, set icons, and loyalty badges that make MTG content
   recognizable on the web. Licensed under SIL OFL 1.1 (font) and MIT (CSS).
