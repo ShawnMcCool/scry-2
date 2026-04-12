@@ -500,4 +500,87 @@ defmodule Scry2Web.RanksHelpersTest do
       assert RanksHelpers.percentile_series([], :constructed) == []
     end
   end
+
+  describe "chart_y_bounds/2" do
+    test "returns full range when data spans most of the scale" do
+      assert RanksHelpers.chart_y_bounds(0, 120) == {0, 120}
+    end
+
+    test "pads one tier below min and snaps max up to tier boundary" do
+      # Gold 2 step 3 = 48 + 12 + 3 = 63, Platinum 3 step 0 = 72 + 6 = 78
+      {y_min, y_max} = RanksHelpers.chart_y_bounds(63, 78)
+      # min tier = Gold (48), pad down one = Silver (24)
+      assert y_min == 24
+      # max tier boundary above 78 = Diamond (96)
+      assert y_max == 96
+    end
+
+    test "clamps y_min to 0 when data starts in Bronze" do
+      {y_min, y_max} = RanksHelpers.chart_y_bounds(5, 30)
+      assert y_min == 0
+      # 30 is in Silver (24-47), tier above = Gold (48)
+      assert y_max == 48
+    end
+
+    test "clamps y_max to 120 when data reaches Mythic" do
+      {y_min, y_max} = RanksHelpers.chart_y_bounds(96, 120)
+      # min tier = Diamond (96), pad down one = Platinum (72)
+      assert y_min == 72
+      assert y_max == 120
+    end
+
+    test "handles single-tier data by showing surrounding tiers" do
+      # All data within Gold (48-71)
+      {y_min, y_max} = RanksHelpers.chart_y_bounds(50, 65)
+      # min tier = Gold (48), pad down = Silver (24)
+      assert y_min == 24
+      # max tier above 65 = Platinum (72)
+      assert y_max == 72
+    end
+
+    test "returns {0, 120} for nil inputs" do
+      assert RanksHelpers.chart_y_bounds(nil, nil) == {0, 120}
+    end
+  end
+
+  describe "filter_snapshots_to_range/2" do
+    test "returns all snapshots when range is \"season\"" do
+      snapshots = [
+        %{occurred_at: ~U[2026-01-01 00:00:00Z]},
+        %{occurred_at: ~U[2026-03-15 00:00:00Z]},
+        %{occurred_at: ~U[2026-04-10 00:00:00Z]}
+      ]
+
+      assert RanksHelpers.filter_snapshots_to_range(snapshots, "season") == snapshots
+    end
+
+    test "returns only snapshots from the last 7 days when range is \"week\"" do
+      now = DateTime.utc_now()
+      eight_days_ago = DateTime.add(now, -8, :day)
+      three_days_ago = DateTime.add(now, -3, :day)
+      one_day_ago = DateTime.add(now, -1, :day)
+
+      snapshots = [
+        %{occurred_at: eight_days_ago},
+        %{occurred_at: three_days_ago},
+        %{occurred_at: one_day_ago}
+      ]
+
+      result = RanksHelpers.filter_snapshots_to_range(snapshots, "week")
+      assert length(result) == 2
+      assert Enum.map(result, & &1.occurred_at) == [three_days_ago, one_day_ago]
+    end
+
+    test "returns empty list when no snapshots fall within the week" do
+      old = DateTime.add(DateTime.utc_now(), -30, :day)
+      snapshots = [%{occurred_at: old}]
+
+      assert RanksHelpers.filter_snapshots_to_range(snapshots, "week") == []
+    end
+
+    test "returns empty list for empty input" do
+      assert RanksHelpers.filter_snapshots_to_range([], "week") == []
+      assert RanksHelpers.filter_snapshots_to_range([], "season") == []
+    end
+  end
 end

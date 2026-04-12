@@ -200,6 +200,25 @@ defmodule Scry2Web.RanksHelpers do
   end
 
   @doc """
+  Returns the minimum rank score across all snapshots for the given format.
+  Returns nil for empty snapshot lists.
+  """
+  @spec min_rank_score([map()], :constructed | :limited) :: integer() | nil
+  def min_rank_score([], _format), do: nil
+
+  def min_rank_score(snapshots, :constructed) do
+    snapshots
+    |> Enum.map(&rank_score(&1.constructed_class, &1.constructed_level, &1.constructed_step))
+    |> Enum.min()
+  end
+
+  def min_rank_score(snapshots, :limited) do
+    snapshots
+    |> Enum.map(&rank_score(&1.limited_class, &1.limited_level, &1.limited_step))
+    |> Enum.min()
+  end
+
+  @doc """
   Builds a per-match results series for the given format.
 
   Returns a list of `[iso8601_timestamp, value]` pairs where value is
@@ -246,6 +265,48 @@ defmodule Scry2Web.RanksHelpers do
     snapshots
     |> Enum.filter(&(&1.limited_percentile != nil))
     |> Enum.map(&[DateTime.to_iso8601(&1.occurred_at), &1.limited_percentile])
+  end
+
+  @doc """
+  Computes Y-axis bounds for the climb chart, snapped to tier boundaries.
+
+  Pads one tier below the minimum score and snaps the maximum up to the next
+  tier boundary. Clamps to 0–120. Returns `{0, 120}` for nil inputs.
+  """
+  @spec chart_y_bounds(integer() | nil, integer() | nil) :: {integer(), integer()}
+  def chart_y_bounds(nil, nil), do: {0, 120}
+
+  def chart_y_bounds(min_score, max_score) do
+    min_tier = div(min_score, 24) * 24
+    y_min = max(min_tier - 24, 0)
+
+    max_tier_base = div(max_score, 24) * 24
+
+    y_max =
+      if max_score > max_tier_base,
+        do: min(max_tier_base + 24, 120),
+        else: min(max_tier_base, 120)
+
+    y_max = max(y_max, y_min + 24)
+
+    {y_min, y_max}
+  end
+
+  @doc """
+  Filters snapshots to a time range for chart display.
+
+  - `"season"` — returns all snapshots (no filtering)
+  - `"week"` — returns only snapshots from the last 7 days
+  """
+  @spec filter_snapshots_to_range([map()], String.t()) :: [map()]
+  def filter_snapshots_to_range(snapshots, "season"), do: snapshots
+
+  def filter_snapshots_to_range(snapshots, "week") do
+    cutoff = DateTime.add(DateTime.utc_now(), -7, :day)
+
+    Enum.filter(snapshots, fn snapshot ->
+      DateTime.compare(snapshot.occurred_at, cutoff) != :lt
+    end)
   end
 
   # ── Private ──────────────────────────────────────────────────────────

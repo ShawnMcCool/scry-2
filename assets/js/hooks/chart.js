@@ -18,13 +18,13 @@ const RANK_AXIS_TICKS = [
   [120, "Mythic"],
 ]
 
-function climbOption(climbSeries, resultsSeries, xMin, xMax) {
+function climbOption(climbSeries, resultsSeries, xMin, xMax, yMin, yMax) {
   const hasResults = resultsSeries && resultsSeries.length > 0
 
   const grids = hasResults
     ? [
-        {left: 80, right: 20, top: 16, bottom: 100},
-        {left: 80, right: 20, top: 222, bottom: 36},
+        {left: 80, right: 20, top: 16, bottom: 56},
+        {left: 80, right: 20, height: 12, bottom: 28},
       ]
     : [{left: 80, right: 20, top: 16, bottom: 40}]
 
@@ -45,8 +45,8 @@ function climbOption(climbSeries, resultsSeries, xMin, xMax) {
     {
       gridIndex: 0,
       type: "value",
-      min: 0,
-      max: 120,
+      min: yMin,
+      max: yMax,
       interval: 24,
       minorTick: {show: true, splitNumber: 4},
       axisLabel: {
@@ -91,31 +91,23 @@ function climbOption(climbSeries, resultsSeries, xMin, xMax) {
     yAxes.push({
       gridIndex: 1,
       type: "value",
-      min: -1,
+      min: 0,
       max: 1,
-      interval: 1,
-      axisLabel: {
-        color: "#9ca3af",
-        fontSize: 11,
-        formatter(value) {
-          if (value === 1) return "Win"
-          if (value === -1) return "Loss"
-          return ""
-        },
-      },
-      axisLine: {lineStyle: {color: "#374151"}},
+      axisLabel: {show: false},
+      axisTick: {show: false},
+      axisLine: {show: false},
       splitLine: {show: false},
     })
     series.push({
       xAxisIndex: 1,
       yAxisIndex: 1,
       type: "bar",
-      barMaxWidth: 8,
+      barMaxWidth: 3,
+      barGap: "0%",
       data: resultsSeries.map(([ts, value]) => ({
-        value: [ts, value],
+        value: [ts, 1, value],
         itemStyle: {
           color: value > 0 ? "#22c55e" : "#f97316",
-          borderRadius: value > 0 ? [3, 3, 0, 0] : [0, 0, 3, 3],
         },
       })),
     })
@@ -134,8 +126,9 @@ function climbOption(climbSeries, resultsSeries, xMin, xMax) {
         const climbParam = params.find(p => p.yAxisIndex === 0)
         const resultParam = params.find(p => p.yAxisIndex === 1)
         const rank = climbParam ? rankLabel(climbParam.value[1]) : ""
-        const result = resultParam
-          ? `<br/>${resultParam.value[1] > 0 ? "<span style='color:#22c55e'>Win</span>" : "<span style='color:#f97316'>Loss</span>"}`
+        const resultValue = resultParam ? resultParam.value[2] : null
+        const result = resultValue != null
+          ? `<br/>${resultValue > 0 ? "<span style='color:#22c55e'>Win</span>" : "<span style='color:#f97316'>Loss</span>"}`
           : ""
         return `${date}<br/><b>${rank}</b>${result}`
       },
@@ -395,7 +388,9 @@ function buildOption(el) {
 
   if (type === "climb") {
     const results = JSON.parse(el.dataset.results || "[]")
-    return climbOption(parsed, results, el.dataset.xMin, el.dataset.xMax)
+    const yMin = parseInt(el.dataset.yMin, 10) || 0
+    const yMax = parseInt(el.dataset.yMax, 10) || 120
+    return climbOption(parsed, results, el.dataset.xMin, el.dataset.xMax, yMin, yMax)
   } else if (type === "winrate") {
     return winrateOption(parsed)
   } else if (type === "curve") {

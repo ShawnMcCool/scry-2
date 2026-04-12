@@ -24,6 +24,7 @@ defmodule Scry2Web.RanksLive do
      assign(socket,
        seasons: [],
        selected_season: nil,
+       time_range: "week",
        snapshots: [],
        latest_snapshot: nil,
        climb_constructed: "[]",
@@ -38,6 +39,10 @@ defmodule Scry2Web.RanksLive do
        peak_score_limited: nil,
        chart_x_min: nil,
        chart_x_max: nil,
+       chart_y_min_constructed: 0,
+       chart_y_max_constructed: 120,
+       chart_y_min_limited: 0,
+       chart_y_max_limited: 120,
        reload_timer: nil
      )}
   end
@@ -56,9 +61,11 @@ defmodule Scry2Web.RanksLive do
           List.first(seasons)
       end
 
+    time_range = if params["range"] in ["week", "season"], do: params["range"], else: "week"
+
     socket =
       socket
-      |> assign(seasons: seasons, selected_season: selected_season)
+      |> assign(seasons: seasons, selected_season: selected_season, time_range: time_range)
       |> load_season_data(player_id, selected_season)
 
     {:noreply, socket}
@@ -68,7 +75,8 @@ defmodule Scry2Web.RanksLive do
   def handle_event("select_season", %{"season" => season_str}, socket) do
     case Integer.parse(season_str) do
       {season, ""} ->
-        {:noreply, push_patch(socket, to: ~p"/ranks?season=#{season}")}
+        range = socket.assigns.time_range
+        {:noreply, push_patch(socket, to: ~p"/ranks?#{%{season: season, range: range}}")}
 
       _ ->
         {:noreply, socket}
@@ -106,10 +114,14 @@ defmodule Scry2Web.RanksLive do
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-semibold">Rank Progression</h1>
+      </div>
+
+      <div :if={@seasons != []} class="flex items-center gap-3 mb-6">
+        <.range_toggle selected={@time_range} season={@selected_season} />
         <.season_picker
-          :if={@seasons != []}
           seasons={@seasons}
           selected={@selected_season}
+          time_range={@time_range}
         />
       </div>
 
@@ -129,6 +141,8 @@ defmodule Scry2Web.RanksLive do
           peak_score={@peak_score_constructed}
           x_min={@chart_x_min}
           x_max={@chart_x_max}
+          y_min={@chart_y_min_constructed}
+          y_max={@chart_y_max_constructed}
         />
         <.format_section
           title="Limited"
@@ -141,6 +155,8 @@ defmodule Scry2Web.RanksLive do
           peak_score={@peak_score_limited}
           x_min={@chart_x_min}
           x_max={@chart_x_max}
+          y_min={@chart_y_min_limited}
+          y_max={@chart_y_max_limited}
         />
       </div>
     </Layouts.app>
@@ -151,6 +167,7 @@ defmodule Scry2Web.RanksLive do
 
   attr :seasons, :list, required: true
   attr :selected, :integer, default: nil
+  attr :time_range, :string, required: true
 
   defp season_picker(assigns) do
     prev = prev_season(assigns.seasons, assigns.selected)
@@ -158,17 +175,20 @@ defmodule Scry2Web.RanksLive do
     assigns = assign(assigns, prev: prev, next: next)
 
     ~H"""
-    <div class="flex items-center gap-2">
+    <div class="join">
       <.link
-        patch={if @prev, do: ~p"/ranks?season=#{@prev}", else: "#"}
-        class={["btn btn-sm btn-ghost px-2", if(is_nil(@prev), do: "btn-disabled opacity-30")]}
+        patch={if @prev, do: ~p"/ranks?#{%{season: @prev, range: @time_range}}", else: "#"}
+        class={[
+          "join-item btn btn-sm px-2",
+          if(is_nil(@prev), do: "btn-disabled opacity-30")
+        ]}
         aria-label="Previous season"
       >
         ‹
       </.link>
 
-      <form phx-change="select_season">
-        <select name="season" class="select select-sm select-bordered text-sm">
+      <form phx-change="select_season" class="join-item">
+        <select name="season" class="select select-sm select-bordered rounded-none text-sm h-full">
           <option :for={season <- @seasons} value={season} selected={season == @selected}>
             Season {season}
           </option>
@@ -176,11 +196,39 @@ defmodule Scry2Web.RanksLive do
       </form>
 
       <.link
-        patch={if @next, do: ~p"/ranks?season=#{@next}", else: "#"}
-        class={["btn btn-sm btn-ghost px-2", if(is_nil(@next), do: "btn-disabled opacity-30")]}
+        patch={if @next, do: ~p"/ranks?#{%{season: @next, range: @time_range}}", else: "#"}
+        class={[
+          "join-item btn btn-sm px-2",
+          if(is_nil(@next), do: "btn-disabled opacity-30")
+        ]}
         aria-label="Next season"
       >
         ›
+      </.link>
+    </div>
+    """
+  end
+
+  attr :selected, :string, required: true
+  attr :season, :integer, default: nil
+
+  defp range_toggle(assigns) do
+    ~H"""
+    <div class="join">
+      <.link
+        patch={~p"/ranks?#{%{season: @season, range: "week"}}"}
+        class={["join-item btn btn-sm", if(@selected == "week", do: "btn-primary", else: "btn-ghost")]}
+      >
+        Past Week
+      </.link>
+      <.link
+        patch={~p"/ranks?#{%{season: @season, range: "season"}}"}
+        class={[
+          "join-item btn btn-sm",
+          if(@selected == "season", do: "btn-primary", else: "btn-ghost")
+        ]}
+      >
+        Season
       </.link>
     </div>
     """
@@ -196,6 +244,8 @@ defmodule Scry2Web.RanksLive do
   attr :peak_score, :integer, default: nil
   attr :x_min, :string, default: nil
   attr :x_max, :string, default: nil
+  attr :y_min, :integer, default: 0
+  attr :y_max, :integer, default: 120
 
   defp format_section(assigns) do
     {class, level, step, won, lost} =
@@ -274,8 +324,10 @@ defmodule Scry2Web.RanksLive do
             data-results={@results_series}
             data-x-min={@x_min}
             data-x-max={@x_max}
+            data-y-min={@y_min}
+            data-y-max={@y_max}
             class="w-full rounded-lg bg-base-200"
-            style="height: 18.75rem"
+            style="height: 15rem"
           />
         </div>
         <div :if={@has_percentile}>
@@ -288,7 +340,7 @@ defmodule Scry2Web.RanksLive do
             data-chart-type="percentile"
             data-series={@percentile_series}
             class="w-full rounded-lg bg-base-200"
-            style="height: 11.25rem"
+            style="height: 9rem"
           />
         </div>
       </div>
@@ -353,21 +405,39 @@ defmodule Scry2Web.RanksLive do
     snapshots = Ranks.list_snapshots_for_season(player_id: player_id, season: season)
     latest_snapshot = List.last(snapshots)
 
-    {x_min, x_max} = RanksHelpers.chart_time_bounds(snapshots)
+    # Chart series use time-filtered snapshots; rank card stats use full season
+    chart_snapshots =
+      RanksHelpers.filter_snapshots_to_range(snapshots, socket.assigns.time_range)
+
+    {x_min, x_max} = RanksHelpers.chart_time_bounds(chart_snapshots)
+
+    peak_constructed = RanksHelpers.peak_rank_score(chart_snapshots, :constructed)
+    min_constructed = RanksHelpers.min_rank_score(chart_snapshots, :constructed)
+    peak_limited = RanksHelpers.peak_rank_score(chart_snapshots, :limited)
+    min_limited = RanksHelpers.min_rank_score(chart_snapshots, :limited)
+
+    {y_min_c, y_max_c} = RanksHelpers.chart_y_bounds(min_constructed, peak_constructed)
+    {y_min_l, y_max_l} = RanksHelpers.chart_y_bounds(min_limited, peak_limited)
 
     assign(socket,
       snapshots: snapshots,
       latest_snapshot: latest_snapshot,
       chart_x_min: x_min,
       chart_x_max: x_max,
-      climb_constructed: Jason.encode!(RanksHelpers.climb_series(snapshots, :constructed)),
-      climb_limited: Jason.encode!(RanksHelpers.climb_series(snapshots, :limited)),
+      chart_y_min_constructed: y_min_c,
+      chart_y_max_constructed: y_max_c,
+      chart_y_min_limited: y_min_l,
+      chart_y_max_limited: y_max_l,
+      climb_constructed: Jason.encode!(RanksHelpers.climb_series(chart_snapshots, :constructed)),
+      climb_limited: Jason.encode!(RanksHelpers.climb_series(chart_snapshots, :limited)),
       results_constructed:
-        Jason.encode!(RanksHelpers.match_results_series(snapshots, :constructed)),
-      results_limited: Jason.encode!(RanksHelpers.match_results_series(snapshots, :limited)),
+        Jason.encode!(RanksHelpers.match_results_series(chart_snapshots, :constructed)),
+      results_limited:
+        Jason.encode!(RanksHelpers.match_results_series(chart_snapshots, :limited)),
       percentile_constructed:
-        Jason.encode!(RanksHelpers.percentile_series(snapshots, :constructed)),
-      percentile_limited: Jason.encode!(RanksHelpers.percentile_series(snapshots, :limited)),
+        Jason.encode!(RanksHelpers.percentile_series(chart_snapshots, :constructed)),
+      percentile_limited:
+        Jason.encode!(RanksHelpers.percentile_series(chart_snapshots, :limited)),
       win_rate_constructed:
         RanksHelpers.win_rate(
           latest_snapshot && latest_snapshot.constructed_matches_won,
