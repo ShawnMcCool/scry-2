@@ -1,7 +1,7 @@
 defmodule Scry2Web.EconomyLive do
   @moduledoc """
   LiveView for economy tracking — event ROI, inventory balances,
-  and resource transactions.
+  resource transactions, and time-series charts for currency and wildcards.
   """
   use Scry2Web, :live_view
 
@@ -9,16 +9,36 @@ defmodule Scry2Web.EconomyLive do
   alias Scry2.Topics
   alias Scry2Web.EconomyHelpers
 
+  @valid_ranges ~w(today week season)
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.economy_updates())
 
-    {:ok, assign(socket, entries: [], inventory: nil, transactions: [], reload_timer: nil)}
+    {:ok,
+     assign(socket,
+       entries: [],
+       inventory: nil,
+       transactions: [],
+       snapshots: [],
+       time_range: "week",
+       currency_series: "{}",
+       wildcards_series: "{}",
+       reload_timer: nil
+     )}
   end
 
   @impl true
   def handle_params(_params, _uri, socket) do
     {:noreply, load_data(socket)}
+  end
+
+  @impl true
+  def handle_event("change_range", %{"range" => range}, socket) when range in @valid_ranges do
+    {:noreply,
+     socket
+     |> assign(:time_range, range)
+     |> build_chart_assigns()}
   end
 
   @impl true
@@ -35,10 +55,26 @@ defmodule Scry2Web.EconomyLive do
   defp load_data(socket) do
     player_id = socket.assigns[:active_player_id]
 
-    assign(socket,
+    socket
+    |> assign(
       entries: Economy.list_event_entries(player_id: player_id),
       inventory: Economy.latest_inventory(player_id: player_id),
-      transactions: Economy.list_transactions(player_id: player_id, limit: 50)
+      transactions: Economy.list_transactions(player_id: player_id, limit: 50),
+      snapshots: Economy.list_inventory_snapshots(player_id: player_id)
+    )
+    |> build_chart_assigns()
+  end
+
+  defp build_chart_assigns(socket) do
+    filtered =
+      EconomyHelpers.filter_snapshots_to_range(
+        socket.assigns.snapshots,
+        socket.assigns.time_range
+      )
+
+    assign(socket,
+      currency_series: Jason.encode!(EconomyHelpers.currency_series(filtered)),
+      wildcards_series: Jason.encode!(EconomyHelpers.wildcards_series(filtered))
     )
   end
 
@@ -61,15 +97,70 @@ defmodule Scry2Web.EconomyLive do
         <div :if={@inventory} class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           <.stat_card title="Gold" value={EconomyHelpers.format_number(@inventory.gold || 0)} />
           <.stat_card title="Gems" value={EconomyHelpers.format_number(@inventory.gems || 0)} />
-          <.stat_card title="Common WC" value={@inventory.wildcards_common || 0} />
-          <.stat_card title="Uncommon WC" value={@inventory.wildcards_uncommon || 0} />
-          <.stat_card title="Rare WC" value={@inventory.wildcards_rare || 0} />
-          <.stat_card title="Mythic WC" value={@inventory.wildcards_mythic || 0} />
+          <.stat_card title="Common" value={@inventory.wildcards_common || 0}>
+            <:icon><.wildcard_icon rarity="common" /></:icon>
+          </.stat_card>
+          <.stat_card title="Uncommon" value={@inventory.wildcards_uncommon || 0}>
+            <:icon><.wildcard_icon rarity="uncommon" /></:icon>
+          </.stat_card>
+          <.stat_card title="Rare" value={@inventory.wildcards_rare || 0}>
+            <:icon><.wildcard_icon rarity="rare" /></:icon>
+          </.stat_card>
+          <.stat_card title="Mythic" value={@inventory.wildcards_mythic || 0}>
+            <:icon><.wildcard_icon rarity="mythic" /></:icon>
+          </.stat_card>
           <.stat_card
             title="Vault"
             value={"#{Float.round((@inventory.vault_progress || 0) / 1, 1)}%"}
           />
         </div>
+
+        <%!-- Charts --%>
+        <section :if={length(@snapshots) >= 2} class="space-y-4">
+          <div class="flex items-center gap-2">
+            <div class="join">
+              <button
+                :for={range <- ~w(today week season)}
+                phx-click="change_range"
+                phx-value-range={range}
+                class={[
+                  "join-item btn btn-sm",
+                  if(@time_range == range, do: "btn-active", else: "btn-ghost")
+                ]}
+              >
+                {String.capitalize(range)}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <p class="text-xs text-base-content/40 mb-1 uppercase tracking-wide">
+              Currency Over Time
+            </p>
+            <div
+              id="chart-economy-currency"
+              phx-hook="Chart"
+              data-chart-type="economy_currency"
+              data-series={@currency_series}
+              class="w-full rounded-lg bg-base-200"
+              style="height: 15rem"
+            />
+          </div>
+
+          <div>
+            <p class="text-xs text-base-content/40 mb-1 uppercase tracking-wide">
+              Wildcards Over Time
+            </p>
+            <div
+              id="chart-economy-wildcards"
+              phx-hook="Chart"
+              data-chart-type="economy_wildcards"
+              data-series={@wildcards_series}
+              class="w-full rounded-lg bg-base-200"
+              style="height: 15rem"
+            />
+          </div>
+        </section>
 
         <%!-- Event entries / ROI --%>
         <section :if={@entries != []}>

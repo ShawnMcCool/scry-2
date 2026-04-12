@@ -55,4 +55,62 @@ defmodule Scry2Web.EconomyHelpers do
     |> Enum.join(",")
     |> String.reverse()
   end
+
+  # ── Chart series builders ─────────────────────────────────────────
+
+  @doc """
+  Builds gold and gems time series from inventory snapshots.
+
+  Returns `%{gold: [[iso8601, int], ...], gems: [[iso8601, int], ...]}`.
+  """
+  @spec currency_series([map()]) :: %{gold: list(), gems: list()}
+  def currency_series(snapshots) do
+    %{
+      gold: Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.gold || 0]),
+      gems: Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.gems || 0])
+    }
+  end
+
+  @doc """
+  Builds wildcard time series from inventory snapshots.
+
+  Returns `%{common: [...], uncommon: [...], rare: [...], mythic: [...]}`.
+  """
+  @spec wildcards_series([map()]) :: %{
+          common: list(),
+          uncommon: list(),
+          rare: list(),
+          mythic: list()
+        }
+  def wildcards_series(snapshots) do
+    %{
+      common:
+        Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.wildcards_common || 0]),
+      uncommon:
+        Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.wildcards_uncommon || 0]),
+      rare: Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.wildcards_rare || 0]),
+      mythic:
+        Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.wildcards_mythic || 0])
+    }
+  end
+
+  @doc """
+  Filters snapshots to a time range for chart display.
+
+  - `"season"` — returns all snapshots (no filtering)
+  - `"week"` — returns only snapshots from the last 7 days
+  - `"today"` — returns only snapshots from the current calendar day (UTC)
+  """
+  @spec filter_snapshots_to_range([map()], String.t()) :: [map()]
+  def filter_snapshots_to_range(snapshots, "season"), do: snapshots
+
+  def filter_snapshots_to_range(snapshots, "today") do
+    today = Date.utc_today()
+    Enum.filter(snapshots, &(DateTime.to_date(&1.occurred_at) == today))
+  end
+
+  def filter_snapshots_to_range(snapshots, "week") do
+    cutoff = DateTime.add(DateTime.utc_now(), -7, :day)
+    Enum.filter(snapshots, &(DateTime.compare(&1.occurred_at, cutoff) != :lt))
+  end
 end

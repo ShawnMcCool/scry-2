@@ -365,6 +365,142 @@ function formatColors(colorStr) {
     .join("")
 }
 
+function economyCurrencyOption(data) {
+  const {gold = [], gems = []} = data
+
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 80, right: 80, top: 16, bottom: 40},
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        if (!params.length) return ""
+        const date = new Date(params[0].value[0]).toLocaleString()
+        const lines = params.map(p => {
+          const val = p.value[1].toLocaleString()
+          return `${p.marker} ${p.seriesName}: <b>${val}</b>`
+        })
+        return `${date}<br/>${lines.join("<br/>")}`
+      },
+    },
+    xAxis: {
+      type: "time",
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: [
+      {
+        type: "value",
+        name: "Gold",
+        nameTextStyle: {color: "#f59e0b", fontSize: 11},
+        axisLabel: {color: "#f59e0b", fontSize: 11, formatter: v => v.toLocaleString()},
+        axisLine: {lineStyle: {color: "#374151"}},
+        splitLine: {lineStyle: {color: "#1f2937"}},
+      },
+      {
+        type: "value",
+        name: "Gems",
+        nameTextStyle: {color: "#06b6d4", fontSize: 11},
+        axisLabel: {color: "#06b6d4", fontSize: 11, formatter: v => v.toLocaleString()},
+        axisLine: {lineStyle: {color: "#374151"}},
+        splitLine: {show: false},
+      },
+    ],
+    series: [
+      {
+        name: "Gold",
+        type: "line",
+        step: "end",
+        yAxisIndex: 0,
+        data: gold,
+        symbol: "circle",
+        symbolSize: 6,
+        lineStyle: {color: "#f59e0b", width: 2},
+        itemStyle: {color: "#f59e0b"},
+        areaStyle: {color: "rgba(245,158,11,0.08)"},
+      },
+      {
+        name: "Gems",
+        type: "line",
+        step: "end",
+        yAxisIndex: 1,
+        data: gems,
+        symbol: "circle",
+        symbolSize: 6,
+        lineStyle: {color: "#06b6d4", width: 2},
+        itemStyle: {color: "#06b6d4"},
+        areaStyle: {color: "rgba(6,182,212,0.08)"},
+      },
+    ],
+  }
+}
+
+function economyWildcardsOption(data) {
+  const {common = [], uncommon = [], rare = [], mythic = []} = data
+
+  const RARITY_COLORS = {
+    Common: "#9ca3af",
+    Uncommon: "#3b82f6",
+    Rare: "#f59e0b",
+    Mythic: "#dc2626",
+  }
+
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 50, right: 20, top: 36, bottom: 40},
+    legend: {
+      top: 0,
+      textStyle: {color: "#9ca3af", fontSize: 11},
+      itemWidth: 12,
+      itemHeight: 8,
+    },
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        if (!params.length) return ""
+        const date = new Date(params[0].value[0]).toLocaleString()
+        const lines = params.map(p => `${p.marker} ${p.seriesName}: <b>${p.value[1]}</b>`)
+        return `${date}<br/>${lines.join("<br/>")}`
+      },
+    },
+    xAxis: {
+      type: "time",
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: {
+      type: "value",
+      minInterval: 1,
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {lineStyle: {color: "#1f2937"}},
+    },
+    series: Object.entries({Common: common, Uncommon: uncommon, Rare: rare, Mythic: mythic}).map(
+      ([name, seriesData]) => ({
+        name,
+        type: "line",
+        step: "end",
+        data: seriesData,
+        symbol: "circle",
+        symbolSize: 6,
+        lineStyle: {color: RARITY_COLORS[name], width: 2},
+        itemStyle: {color: RARITY_COLORS[name]},
+        areaStyle: {color: RARITY_COLORS[name].replace(")", ",0.06)").replace("rgb", "rgba").replace("#", "")},
+      })
+    ).map(s => {
+      // Convert hex color to rgba for areaStyle
+      const hex = s.lineStyle.color
+      const r = parseInt(hex.slice(1, 3), 16)
+      const g = parseInt(hex.slice(3, 5), 16)
+      const b = parseInt(hex.slice(5, 7), 16)
+      s.areaStyle = {color: `rgba(${r},${g},${b},0.06)`}
+      return s
+    }),
+  }
+}
+
 function buildOption(el) {
   const type = el.dataset.chartType
   const parsed = JSON.parse(el.dataset.series || "[]")
@@ -383,6 +519,10 @@ function buildOption(el) {
     return matchResultsOption(parsed)
   } else if (type === "percentile") {
     return percentileOption(parsed)
+  } else if (type === "economy_currency") {
+    return economyCurrencyOption(parsed)
+  } else if (type === "economy_wildcards") {
+    return economyWildcardsOption(parsed)
   } else {
     const [wins, losses] = parsed
     return momentumOption(wins || [], losses || [])

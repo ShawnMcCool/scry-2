@@ -261,16 +261,28 @@ jobs:
         with:
           name: scry2-msi
 
-      - name: Diagnose installer environment
+      - name: Validate MSI before install
         shell: pwsh
         run: |
-          Write-Host "User: $env:USERNAME"
-          Write-Host "Admin: $([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
-          Write-Host "MSI service: $((Get-Service msiserver).Status)"
-          Write-Host "Rollback key exists: $(Test-Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Installer\Rollback\Scripts')"
-          # Check if we can write to Program Files
-          $testFile = "${env:ProgramFiles}\Scry2_test_write"
-          try { New-Item -ItemType Directory -Path $testFile -Force | Out-Null; Remove-Item $testFile; Write-Host "ProgramFiles writable: True" } catch { Write-Host "ProgramFiles writable: False - $_" }
+          $msi = Get-ChildItem -Filter "Scry2-*.msi" | Select-Object -First 1
+          Write-Host "MSI file: $($msi.Name), Size: $($msi.Length) bytes"
+          # Query MSI tables using COM
+          $installer = New-Object -ComObject WindowsInstaller.Installer
+          $db = $installer.OpenDatabase($msi.FullName, 0)
+          $view = $db.OpenView("SELECT Name FROM _Tables")
+          $view.Execute()
+          $tables = @()
+          while ($record = $view.Fetch()) { $tables += $record.StringData(1) }
+          Write-Host "MSI tables ($($tables.Count)): $($tables -join ', ')"
+          if ($tables -notcontains "Component") { Write-Host "WARNING: Component table missing!" }
+          if ($tables -notcontains "Feature") { Write-Host "WARNING: Feature table missing!" }
+          # Count components
+          try {
+              $view2 = $db.OpenView("SELECT COUNT(*) FROM Component")
+              $view2.Execute()
+              $r = $view2.Fetch()
+              Write-Host "Component count: $($r.IntegerData(1))"
+          } catch { Write-Host "Could not query Component table: $_" }
 
       - name: Install MSI directly
         shell: pwsh
@@ -279,19 +291,17 @@ jobs:
           $logFile = "$env:TEMP\scry2-msi-install.log"
           Write-Host "Installing: $($msi.Name)"
           $proc = Start-Process msiexec -ArgumentList "/i `"$($msi.FullName)`" /quiet /norestart /l*v `"$logFile`"" -Wait -PassThru
-          if (Test-Path $logFile) {
-              Write-Host "=== Lines around InstallInitialize ==="
+          Write-Host "msiexec exit code: $($proc.ExitCode)"
+          if ($proc.ExitCode -ne 0 -and (Test-Path $logFile)) {
+              Write-Host "=== First action with return value 3 ==="
               $lines = Get-Content $logFile
               for ($i = 0; $i -lt $lines.Count; $i++) {
-                  if ($lines[$i] -match "InstallInitialize") {
-                      $start = [Math]::Max(0, $i - 10)
-                      $end = [Math]::Min($lines.Count - 1, $i + 5)
-                      for ($j = $start; $j -le $end; $j++) { Write-Host $lines[$j] }
-                      Write-Host "---"
+                  if ($lines[$i] -match "return value 3") {
+                      $start = [Math]::Max(0, $i - 20)
+                      for ($j = $start; $j -le $i; $j++) { Write-Host $lines[$j] }
+                      break
                   }
               }
-              Write-Host "=== Actions with errors ==="
-              Select-String -Path $logFile -Pattern "return value 3|1603" | ForEach-Object { $_.Line }
           }
           if ($proc.ExitCode -ne 0) { throw "msiexec exited with code $($proc.ExitCode)" }
           Write-Host "Installation completed"
