@@ -14,7 +14,8 @@ config :scry_2, Scry2.Repo,
   pool_size: 1,
   pool: Ecto.Adapters.SQL.Sandbox,
   journal_mode: :wal,
-  busy_timeout: 15_000
+  busy_timeout: 15_000,
+  default_transaction_mode: :immediate
 
 # Don't start the MTGA log watcher or the 17lands importer during tests.
 # Tests that need these exercise them directly via the module API.

@@ -6,6 +6,17 @@ config :scry_2, Scry2.Repo,
   pool_size: 5,
   journal_mode: :wal,
   busy_timeout: 30_000,
+  default_transaction_mode: :immediate,
+  custom_pragmas: [
+    # Safe with WAL mode — fsync only on checkpoint, not every commit. 2-3x faster writes.
+    synchronous: :normal,
+    # 128MB memory-mapped I/O — major read speedup, reduces time spent holding locks.
+    mmap_size: 134_217_728,
+    # Cap WAL file at 64MB — prevents unbounded growth during heavy ingestion.
+    journal_size_limit: 67_108_864,
+    # Keep temp tables in RAM.
+    temp_store: 2
+  ],
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
