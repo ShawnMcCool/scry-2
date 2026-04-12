@@ -11,7 +11,7 @@ set SCRIPT_DIR_NORM=%SCRIPT_DIR:~0,-1%
 if /i "%SCRIPT_DIR_NORM%"=="%INSTALL_DIR%" (
     echo ERROR: Cannot install from the install directory itself.
     echo Please run install.bat from the downloaded release folder.
-    pause
+    if not "%SCRY2_QUIET%"=="1" pause
     exit /b 1
 )
 
@@ -29,13 +29,13 @@ echo Copying files to %INSTALL_DIR%...
 mkdir "%INSTALL_DIR%"
 if errorlevel 1 (
     echo ERROR: Could not create directory %INSTALL_DIR%
-    pause
+    if not "%SCRY2_QUIET%"=="1" pause
     exit /b 1
 )
 xcopy /e /i /q /h "%SCRIPT_DIR%." "%INSTALL_DIR%" >nul
 if errorlevel 1 (
     echo ERROR: Failed to copy release files to %INSTALL_DIR%
-    pause
+    if not "%SCRY2_QUIET%"=="1" pause
     exit /b 1
 )
 
@@ -48,7 +48,7 @@ if errorlevel 1 (
     echo This usually means the Visual C++ Redistributable is missing.
     echo Download it from: https://aka.ms/vs/17/release/vc_redist.x64.exe
     echo.
-    pause
+    if not "%SCRY2_QUIET%"=="1" pause
     exit /b 1
 )
 
@@ -74,7 +74,7 @@ echo NOTE: Windows may ask you to allow "epmd" and "erlang" through the
 echo firewall. These are part of the bundled runtime — allow both for
 echo Scry2 to function.
 echo.
-pause
+if not "%SCRY2_QUIET%"=="1" pause
 exit /b 0
 
 REM === Subroutines ===
@@ -109,7 +109,7 @@ set /a WAIT_COUNT+=1
 if %WAIT_COUNT% geq 15 (
     echo ERROR: Could not stop all Scry2 processes after 15 seconds.
     echo Please close Scry2 manually and try again.
-    pause
+    if not "%SCRY2_QUIET%"=="1" pause
     exit /b 1
 )
 timeout /t 1 /nobreak >nul
@@ -126,7 +126,7 @@ if %DEL_ATTEMPTS% geq 5 (
     echo ERROR: Could not remove %INSTALL_DIR%
     echo Some files may still be locked. Please close any programs
     echo using files in that directory and try again.
-    pause
+    if not "%SCRY2_QUIET%"=="1" pause
     exit /b 1
 )
 echo Waiting for file locks to release...
