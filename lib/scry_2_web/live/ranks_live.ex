@@ -12,6 +12,7 @@ defmodule Scry2Web.RanksLive do
   """
   use Scry2Web, :live_view
 
+  alias Scry2.Matches
   alias Scry2.Ranks
   alias Scry2.Topics
   alias Scry2Web.RanksHelpers
@@ -152,6 +153,7 @@ defmodule Scry2Web.RanksLive do
           latest={@latest_snapshot}
           climb_series={@climb_constructed}
           results_series={@results_constructed}
+          match_details={@match_details_constructed}
           percentile_series={@percentile_constructed}
           win_rate={@win_rate_constructed}
           peak_score={@peak_score_constructed}
@@ -167,6 +169,7 @@ defmodule Scry2Web.RanksLive do
           latest={@latest_snapshot}
           climb_series={@climb_limited}
           results_series={@results_limited}
+          match_details={@match_details_limited}
           percentile_series={@percentile_limited}
           win_rate={@win_rate_limited}
           peak_score={@peak_score_limited}
@@ -252,6 +255,7 @@ defmodule Scry2Web.RanksLive do
   attr :latest, :any, default: nil
   attr :climb_series, :string, required: true
   attr :results_series, :string, required: true
+  attr :match_details, :string, required: true
   attr :percentile_series, :string, required: true
   attr :win_rate, :float, default: nil
   attr :peak_score, :integer, default: nil
@@ -337,6 +341,7 @@ defmodule Scry2Web.RanksLive do
             data-chart-type="climb"
             data-series={@climb_series}
             data-results={@results_series}
+            data-match-details={@match_details}
             data-x-min={@x_min}
             data-x-max={@x_max}
             data-y-min={@y_min}
@@ -459,6 +464,9 @@ defmodule Scry2Web.RanksLive do
         Jason.encode!(RanksHelpers.match_results_series(chart_snapshots, :constructed)),
       results_limited:
         Jason.encode!(RanksHelpers.match_results_series(chart_snapshots, :limited)),
+      match_details_constructed:
+        Jason.encode!(match_details_for_chart(chart_snapshots, :constructed)),
+      match_details_limited: Jason.encode!(match_details_for_chart(chart_snapshots, :limited)),
       percentile_constructed:
         Jason.encode!(RanksHelpers.percentile_series(chart_snapshots, :constructed)),
       percentile_limited:
@@ -478,6 +486,18 @@ defmodule Scry2Web.RanksLive do
       net_change_constructed: RanksHelpers.net_rank_change(chart_snapshots, :constructed),
       net_change_limited: RanksHelpers.net_rank_change(chart_snapshots, :limited)
     )
+  end
+
+  defp match_details_for_chart([], _format), do: %{}
+
+  defp match_details_for_chart(snapshots, format) do
+    first_at = List.first(snapshots).occurred_at
+    last_at = List.last(snapshots).occurred_at
+    # Pad window to catch matches slightly outside snapshot range
+    started_after = DateTime.add(first_at, -300, :second)
+    ended_before = DateTime.add(last_at, 300, :second)
+    matches = Matches.list_matches_in_range(started_after, ended_before)
+    RanksHelpers.match_details_by_timestamp(snapshots, matches, format)
   end
 
   defp prev_season(seasons, current) do

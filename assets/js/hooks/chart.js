@@ -18,32 +18,66 @@ const RANK_AXIS_TICKS = [
   [120, "Mythic"],
 ]
 
-function climbOption(climbSeries, resultsSeries, xMin, xMax, yMin, yMax) {
-  const hasResults = resultsSeries && resultsSeries.length > 0
+function climbOption(climbSeries, resultsSeries, xMin, xMax, yMin, yMax, matchDetails) {
+  // Build timestamp → result lookup for coloring dots
+  const resultByTimestamp = new Map()
+  if (resultsSeries) {
+    for (const [ts, value] of resultsSeries) {
+      resultByTimestamp.set(ts, value)
+    }
+  }
 
-  const grids = hasResults
-    ? [
-        {left: 80, right: 20, top: 16, bottom: 56},
-        {left: 80, right: 20, height: 12, bottom: 28},
-      ]
-    : [{left: 80, right: 20, top: 16, bottom: 40}]
+  // Color each data point: green for win, orange for loss, grey for no result
+  const coloredData = climbSeries.map(([ts, score]) => {
+    const result = resultByTimestamp.get(ts)
+    const color =
+      result > 0 ? "#22c55e" : result < 0 ? "#f97316" : "#9ca3af"
+    return {value: [ts, score, result ?? null], itemStyle: {color}}
+  })
 
   const xBounds = xMin && xMax ? {min: xMin, max: xMax} : {}
 
-  const xAxes = [
-    {
-      gridIndex: 0,
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 80, right: 20, top: 16, bottom: 40},
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        if (!params.length) return ""
+        const ts = params[0].value[0]
+        const date = new Date(ts).toLocaleString()
+        const rank = rankLabel(params[0].value[1])
+        const resultValue = params[0].value[2]
+        const result = resultValue != null
+          ? `<br/>${resultValue > 0 ? "<span style='color:#22c55e'>Win</span>" : "<span style='color:#f97316'>Loss</span>"}`
+          : ""
+
+        // Match details from server-side correlation
+        const detail = matchDetails[ts]
+        let detailHtml = ""
+        if (detail) {
+          const lines = []
+          if (detail.deck_name) lines.push(`Deck: ${detail.deck_name}`)
+          if (detail.deck_colors) lines.push(`Colors: ${formatColors(detail.deck_colors)}`)
+          if (detail.opponent) lines.push(`vs ${detail.opponent}`)
+          if (detail.num_games) lines.push(detail.num_games === 1 ? "BO1" : `BO3 (${detail.num_games} games)`)
+          if (detail.on_play != null) lines.push(detail.on_play ? "On the play" : "On the draw")
+          if (detail.duration != null) lines.push(`${Math.round(detail.duration / 60)} min`)
+          if (detail.event_name) lines.push(`<span style="color:#6b7280">${detail.event_name}</span>`)
+          if (lines.length) detailHtml = "<br/>" + lines.join("<br/>")
+        }
+
+        return `${date}<br/><b>${rank}</b>${result}${detailHtml}`
+      },
+    },
+    xAxis: {
       type: "time",
       ...xBounds,
-      axisLabel: hasResults ? {show: false} : {color: "#9ca3af", fontSize: 11},
+      axisLabel: {color: "#9ca3af", fontSize: 11},
       axisLine: {lineStyle: {color: "#374151"}},
       splitLine: {show: false},
     },
-  ]
-
-  const yAxes = [
-    {
-      gridIndex: 0,
+    yAxis: {
       type: "value",
       min: yMin,
       max: yMax,
@@ -61,81 +95,19 @@ function climbOption(climbSeries, resultsSeries, xMin, xMax, yMin, yMax) {
       splitLine: {lineStyle: {color: "#1f2937"}},
       minorSplitLine: {show: true, lineStyle: {color: "#111827"}},
     },
-  ]
-
-  const series = [
-    {
-      xAxisIndex: 0,
-      yAxisIndex: 0,
-      type: "line",
-      step: "end",
-      data: climbSeries,
-      smooth: false,
-      symbol: "circle",
-      symbolSize: 4,
-      lineStyle: {color: "#6366f1", width: 2},
-      itemStyle: {color: "#6366f1"},
-      areaStyle: {color: "rgba(99,102,241,0.08)"},
-    },
-  ]
-
-  if (hasResults) {
-    xAxes.push({
-      gridIndex: 1,
-      type: "time",
-      ...xBounds,
-      axisLabel: {color: "#9ca3af", fontSize: 11},
-      axisLine: {lineStyle: {color: "#374151"}},
-      splitLine: {show: false},
-    })
-    yAxes.push({
-      gridIndex: 1,
-      type: "value",
-      min: 0,
-      max: 1,
-      axisLabel: {show: false},
-      axisTick: {show: false},
-      axisLine: {show: false},
-      splitLine: {show: false},
-    })
-    series.push({
-      xAxisIndex: 1,
-      yAxisIndex: 1,
-      type: "bar",
-      barMaxWidth: 3,
-      barGap: "0%",
-      data: resultsSeries.map(([ts, value]) => ({
-        value: [ts, 1, value],
-        itemStyle: {
-          color: value > 0 ? "#22c55e" : "#f97316",
-        },
-      })),
-    })
-  }
-
-  return {
-    backgroundColor: "transparent",
-    axisPointer: hasResults ? {link: [{xAxisIndex: "all"}]} : {},
-    grid: grids,
-    tooltip: {
-      trigger: "axis",
-      formatter(params) {
-        if (!params.length) return ""
-        const ts = params[0].value[0]
-        const date = new Date(ts).toLocaleString()
-        const climbParam = params.find(p => p.yAxisIndex === 0)
-        const resultParam = params.find(p => p.yAxisIndex === 1)
-        const rank = climbParam ? rankLabel(climbParam.value[1]) : ""
-        const resultValue = resultParam ? resultParam.value[2] : null
-        const result = resultValue != null
-          ? `<br/>${resultValue > 0 ? "<span style='color:#22c55e'>Win</span>" : "<span style='color:#f97316'>Loss</span>"}`
-          : ""
-        return `${date}<br/><b>${rank}</b>${result}`
+    series: [
+      {
+        type: "line",
+        step: "end",
+        data: coloredData,
+        smooth: false,
+        symbol: "circle",
+        symbolSize: 7,
+        lineStyle: {color: "#6366f1", width: 2},
+        itemStyle: {color: "#6366f1"},
+        areaStyle: {color: "rgba(99,102,241,0.08)"},
       },
-    },
-    xAxis: xAxes,
-    yAxis: yAxes,
-    series,
+    ],
   }
 }
 
@@ -382,15 +354,27 @@ function percentileOption(series) {
   }
 }
 
+const COLOR_SYMBOLS = {
+  W: "⚪", U: "🔵", B: "⚫", R: "🔴", G: "🟢",
+}
+
+function formatColors(colorStr) {
+  return colorStr
+    .split("")
+    .map(c => COLOR_SYMBOLS[c] || c)
+    .join("")
+}
+
 function buildOption(el) {
   const type = el.dataset.chartType
   const parsed = JSON.parse(el.dataset.series || "[]")
 
   if (type === "climb") {
     const results = JSON.parse(el.dataset.results || "[]")
+    const matchDetails = JSON.parse(el.dataset.matchDetails || "{}")
     const yMin = parseInt(el.dataset.yMin, 10) || 0
     const yMax = parseInt(el.dataset.yMax, 10) || 120
-    return climbOption(parsed, results, el.dataset.xMin, el.dataset.xMax, yMin, yMax)
+    return climbOption(parsed, results, el.dataset.xMin, el.dataset.xMax, yMin, yMax, matchDetails)
   } else if (type === "winrate") {
     return winrateOption(parsed)
   } else if (type === "curve") {

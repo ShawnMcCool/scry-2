@@ -30,6 +30,14 @@ defmodule Scry2.Matches do
     |> Repo.all()
   end
 
+  @doc "Returns matches that ended within the given time range, ordered by ended_at ascending."
+  def list_matches_in_range(started_after, ended_before) do
+    Match
+    |> where([m], m.ended_at >= ^started_after and m.ended_at <= ^ended_before)
+    |> order_by([m], asc: m.ended_at)
+    |> Repo.all()
+  end
+
   @doc "Returns the match with its games and deck submissions preloaded."
   def get_match_with_associations(id) do
     Match
