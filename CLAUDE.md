@@ -117,6 +117,45 @@ Dev runs on port 4444 and prod runs on port 6015 — they do not conflict by def
 
 Each instance has its own independent database (`scry_2_dev.db` in the project root for dev; `~/.local/share/scry_2/scry_2.db` for prod). Both watch `Player.log` and ingest events independently — there is no shared state between the two environments.
 
+### Windows Installation
+
+Windows has two distribution paths, both built in CI (no local Windows build):
+
+| Path | Install location | Artifact | Installer |
+|------|-----------------|----------|-----------|
+| **Zip** | `%LOCALAPPDATA%\scry_2` | `.zip` archive | `install.bat` / `uninstall.bat` |
+| **MSI** | `C:\Program Files\Scry2` | `Scry2Setup-*.exe` (Burn bootstrapper) | WiX v5 MSI + bundled VC++ Redist |
+
+The MSI path uses WiX v5 (config in `installer/wix/`, build script `installer/scripts/build-msi.ps1`). The Burn bootstrapper wraps the MSI and auto-installs the Visual C++ Redistributable if missing. It also creates Windows Firewall rules for EPMD and the Erlang VM, and handles legacy cleanup from older zip-based installs.
+
+Both paths register autostart via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` and start the tray binary, which launches the Elixir backend.
+
+**`SCRY2_QUIET=1`** — suppresses `pause` prompts in `install.bat` and `uninstall.bat` for non-interactive use (CI). Set this env var when running batch scripts in automation.
+
+### Tray Binary
+
+The system tray binary (`tray/`, Go) is the user-facing entry point on all platforms. It:
+
+- Starts and stops the Elixir backend (`bin/scry_2 start/stop`)
+- Provides a system tray icon with menu (open browser, quit)
+- Opens the browser to `http://localhost:6015` on first launch
+- Handles self-update: downloads new releases and runs the appropriate installer
+
+Two Windows variants are built with different `-ldflags`:
+- **Zip variant** (`scry2-tray.exe`): updater downloads `.zip` and runs `install.bat`
+- **MSI variant** (`scry2-tray-msi.exe`): updater downloads and runs the Burn bootstrapper `.exe`
+
+The version and installer type are stamped at build time via `-X 'scry2/tray/updater.CurrentVersion=...'` and `-X 'scry2/tray/updater.InstallerType=msi'`.
+
+### CI Workflows
+
+| Workflow | Trigger | What it does |
+|----------|---------|-------------|
+| `ci.yml` | Push to `main`, PRs | Format check, compile (warnings-as-errors), test suite (Ubuntu) |
+| `tray-ci.yml` | Push to `main`, PRs | Go tray unit tests on Ubuntu, macOS, and Windows |
+| `release.yml` | Version tags (`v*`) | Test gate → build release archives + MSI for all 3 platforms → publish to GitHub Releases |
+| `windows-install-test.yml` | Changes to `installer/`, `rel/overlays/`, `tray/`, `mix.exs`; manual dispatch | Builds Windows artifacts, then tests both zip and MSI install/uninstall on a real Windows runner (file layout, registry, runtime eval, HTTP health check, cleanup) |
+
 Run `mix precommit` before finishing any set of changes and fix all issues it reports.
 
 **Zero warnings policy.** Application code and tests must compile and run with zero warnings. This applies to our own code only — warnings from third-party dependencies are excluded. This includes unused variables, unused aliases, unused imports, and any log output during tests that indicates misconfiguration (e.g., HTTP requests hitting real endpoints instead of stubs). Treat every warning as a bug — fix it before moving on.

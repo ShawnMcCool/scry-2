@@ -17,7 +17,7 @@ set -euo pipefail
 # Usage:
 #   scripts/install
 #
-# For CI-built multi-platform releases see docs/development.md.
+# For CI-built multi-platform releases see CLAUDE.md.
 
 cd "$(dirname "$0")/.."
 
