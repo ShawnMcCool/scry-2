@@ -130,7 +130,14 @@ The MSI path uses WiX v5 (config in `installer/wix/`, build script `installer/sc
 
 Both paths register autostart via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` and start the tray binary, which launches the Elixir backend.
 
-**`SCRY2_QUIET=1`** — suppresses `pause` prompts in `install.bat` and `uninstall.bat` for non-interactive use (CI). Set this env var when running batch scripts in automation.
+**`SCRY2_QUIET=1`** — suppresses `pause` prompts and skips the runtime eval check in `install.bat` and `uninstall.bat` for non-interactive use (CI). The eval check starts the full OTP app which hangs without `Player.log`.
+
+**WiX v5 pitfalls** (learned the hard way):
+- **Fragments must be explicitly referenced.** WiX v5's linker only includes fragments reachable from `<Package>`. Add `<FeatureRef>` in Package.wxs to pull in Features from other files.
+- **`SourceFile` paths resolve from CWD**, not the .wxs file location. Use repo-relative paths (e.g. `installer/wix/LegacyCleanup.bat`).
+- **Use `ProgramFiles64Folder`** not `ProgramFiles6432Folder` for 64-bit installs. The latter resolves to `Program Files (x86)`.
+- **Directory nesting in generated fragments** must properly close sibling directories. Build the directory tree in a first pass, then emit components in a second pass using `<DirectoryRef>`.
+- **`build-msi.ps1` generates fragments programmatically** because WiX v5's `<Files>` element doesn't work reliably with the CLI tool. The fragments enumerate every file in the Elixir release and create Component/File/Directory entries.
 
 ### Tray Binary
 
