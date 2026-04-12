@@ -193,7 +193,7 @@ jobs:
           wix extension add WixToolset.UI.wixext/5.0.2
           wix extension add WixToolset.Util.wixext/5.0.2
           wix extension add WixToolset.Firewall.wixext/5.0.2
-          wix extension add WixToolset.Bal.wixext/5.0.2
+          wix extension add WixToolset.BootstrapperApplications.wixext/5.0.2
 
       - name: Download VC++ Redistributable
         if: matrix.os == 'windows-latest'

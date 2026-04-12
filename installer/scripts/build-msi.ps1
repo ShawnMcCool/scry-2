@@ -7,7 +7,7 @@
 #   installer/scripts/build-msi.ps1 -Version 0.5.0 -TrayExe scry2-tray.exe -VCRedistPath installer/vc_redist.x64.exe
 #
 # Requires: wix CLI (dotnet tool install --global wix)
-# Extensions: WixToolset.UI.wixext, WixToolset.Util.wixext, WixToolset.Firewall.wixext, WixToolset.Bal.wixext
+# Extensions: WixToolset.UI.wixext, WixToolset.Util.wixext, WixToolset.Firewall.wixext, WixToolset.BootstrapperApplications.wixext
 
 param(
     [Parameter(Mandatory=$true)]
@@ -25,6 +25,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 $WixDir = "$PSScriptRoot/../wix"
+
+# Resolve paths to absolute (WiX resolves relative paths from .wxs file location)
+$ReleaseDir = (Resolve-Path $ReleaseDir).Path
+$TrayExe = (Resolve-Path $TrayExe).Path
+$VCRedistPath = (Resolve-Path $VCRedistPath).Path
 
 # Detect ERTS version from the release directory
 $ertsDir = Get-ChildItem "$ReleaseDir/erts-*" -Directory | Select-Object -First 1
@@ -79,7 +84,7 @@ wix build "$WixDir/Bundle.wxs" `
     -d "Version=$Version" `
     -d "MsiPath=$msiPath" `
     -d "VCRedistPath=$VCRedistPath" `
-    -ext WixToolset.Bal.wixext `
+    -ext WixToolset.BootstrapperApplications.wixext `
     -ext WixToolset.Util.wixext `
     -o $bundlePath
 
