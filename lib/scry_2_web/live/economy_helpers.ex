@@ -42,6 +42,49 @@ defmodule Scry2Web.EconomyHelpers do
 
   def format_roi(_), do: "—"
 
+  @month_names ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
+
+  @doc "Delegates to `Scry2.Economy.parse_event_name/1`."
+  defdelegate format_event_name(name), to: Scry2.Economy, as: :parse_event_name
+
+  @doc """
+  Returns a text color class based on ROI outcome.
+
+  - `"text-emerald-400"` — positive ROI (profit)
+  - `"text-red-400"` — negative ROI (loss)
+  - `"text-amber-400"` — in progress (not yet claimed)
+  """
+  @spec roi_color_class(map()) :: String.t()
+  def roi_color_class(%{claimed_at: nil}), do: "text-amber-400"
+
+  def roi_color_class(%{
+        entry_fee: fee,
+        entry_currency_type: type,
+        gold_awarded: gold,
+        gems_awarded: gems
+      })
+      when is_integer(fee) do
+    net =
+      case type do
+        t when t in ["Gold", "gold"] -> (gold || 0) - fee
+        t when t in ["Gem", "Gems", "gem", "gems"] -> (gems || 0) - fee
+        _ -> 0
+      end
+
+    if net >= 0, do: "text-emerald-400", else: "text-red-400"
+  end
+
+  def roi_color_class(_), do: "text-amber-400"
+
+  @doc "Formats a datetime as a short date (e.g. 'Apr 11')."
+  @spec format_short_date(DateTime.t() | nil) :: String.t()
+  def format_short_date(nil), do: "—"
+
+  def format_short_date(%DateTime{} = datetime) do
+    month = Enum.at(@month_names, datetime.month - 1)
+    "#{month} #{datetime.day}"
+  end
+
   @doc "Formats an integer with comma separators."
   @spec format_number(integer()) :: String.t()
   def format_number(n) when is_integer(n) and n < 0, do: "-" <> format_number(-n)

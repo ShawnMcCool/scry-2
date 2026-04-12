@@ -119,6 +119,42 @@ defmodule Scry2.Economy do
 
   # ── Helpers ────────────────────────────────────────────────────────
 
+  # ── Event name parsing ─────────────────────────────────────────────
+
+  @event_type_map %{
+    "Quickdraft" => "Quick Draft",
+    "QuickDraft" => "Quick Draft",
+    "PremierDraft" => "Premier Draft",
+    "Premierdraft" => "Premier Draft",
+    "TradDraft" => "Traditional Draft",
+    "BotDraft" => "Bot Draft",
+    "Sealed" => "Sealed",
+    "CompDraft" => "Competitive Draft"
+  }
+
+  @doc """
+  Splits a raw MTGA event name into `{event_type, set_code}`.
+
+      iex> Scry2.Economy.parse_event_name("Quickdraft Tmt 20260407")
+      {"Quick Draft", "Tmt 20260407"}
+  """
+  @spec parse_event_name(String.t() | nil) :: {String.t(), String.t() | nil}
+  def parse_event_name(nil), do: {"—", nil}
+
+  def parse_event_name(name) do
+    case String.split(name, " ", parts: 2) do
+      [type] -> {Map.get(@event_type_map, type, humanize_type(type)), nil}
+      [type, rest] -> {Map.get(@event_type_map, type, humanize_type(type)), rest}
+    end
+  end
+
+  defp humanize_type(type) do
+    type
+    |> String.replace(~r/([a-z])([A-Z])/, "\\1 \\2")
+    |> String.split("_")
+    |> Enum.map_join(" ", &String.capitalize/1)
+  end
+
   defp maybe_filter_by_player(query, nil), do: query
   defp maybe_filter_by_player(query, player_id), do: where(query, [r], r.player_id == ^player_id)
 end
