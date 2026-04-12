@@ -333,4 +333,169 @@ defmodule Scry2Web.DecksHelpersTest do
       assert DecksHelpers.format_date(nil) == "—"
     end
   end
+
+  describe "group_matches_by_date/1" do
+    test "returns empty list for empty input" do
+      assert DecksHelpers.group_matches_by_date([]) == []
+    end
+
+    test "groups today's matches under Today" do
+      today_dt = DateTime.utc_now()
+      match = %{started_at: today_dt, id: 1}
+
+      groups = DecksHelpers.group_matches_by_date([match])
+
+      assert [{"Today", [^match]}] = groups
+    end
+
+    test "groups yesterday's matches under Yesterday" do
+      yesterday_dt = DateTime.add(DateTime.utc_now(), -86_400, :second)
+      match = %{started_at: yesterday_dt, id: 1}
+
+      groups = DecksHelpers.group_matches_by_date([match])
+
+      assert [{"Yesterday", [^match]}] = groups
+    end
+
+    test "groups older matches under formatted date label" do
+      dt = ~U[2026-04-10 15:00:00Z]
+      match = %{started_at: dt, id: 1}
+
+      groups = DecksHelpers.group_matches_by_date([match])
+
+      assert [{"April 10", [^match]}] = groups
+    end
+
+    test "groups match with nil started_at under Unknown" do
+      match = %{started_at: nil, id: 1}
+
+      groups = DecksHelpers.group_matches_by_date([match])
+
+      assert [{"Unknown", [^match]}] = groups
+    end
+
+    test "groups multiple matches by date, newest group first" do
+      dt_older = ~U[2026-04-08 10:00:00Z]
+      dt_newer = ~U[2026-04-10 10:00:00Z]
+      match_older = %{started_at: dt_older, id: 1}
+      match_newer = %{started_at: dt_newer, id: 2}
+
+      groups = DecksHelpers.group_matches_by_date([match_newer, match_older])
+
+      labels = Enum.map(groups, fn {label, _} -> label end)
+      assert "April 10" in labels
+      assert "April 8" in labels
+
+      assert Enum.find_index(labels, &(&1 == "April 10")) <
+               Enum.find_index(labels, &(&1 == "April 8"))
+    end
+  end
+
+  describe "humanize_event/2" do
+    test "returns em dash for nil event name" do
+      assert DecksHelpers.humanize_event(nil, "Standard") == "—"
+    end
+
+    test "Traditional_Ladder with Standard deck format -> Ranked Standard" do
+      assert DecksHelpers.humanize_event("Traditional_Ladder_Standard", "Standard") ==
+               "Ranked Standard"
+    end
+
+    test "Ladder with Standard deck format -> Ranked Standard" do
+      assert DecksHelpers.humanize_event("Ladder_Standard_2026", "Standard") == "Ranked Standard"
+    end
+
+    test "DirectGame -> Direct Challenge regardless of deck format" do
+      assert DecksHelpers.humanize_event("DirectGame", "Standard") == "Direct Challenge"
+      assert DecksHelpers.humanize_event("DirectGame", nil) == "Direct Challenge"
+    end
+
+    test "QuickDraft -> Quick Draft (limited, ignores deck format)" do
+      assert DecksHelpers.humanize_event("QuickDraft_WOE", nil) == "Quick Draft"
+    end
+
+    test "PremierDraft -> Premier Draft" do
+      assert DecksHelpers.humanize_event("PremierDraft_WOE", nil) == "Premier Draft"
+    end
+
+    test "Play with Standard deck format -> Play Standard" do
+      assert DecksHelpers.humanize_event("Play_Standard", "Standard") == "Play Standard"
+    end
+
+    test "Traditional_Play with Standard deck format -> Play BO3 Standard" do
+      assert DecksHelpers.humanize_event("Traditional_Play_Standard", "Standard") ==
+               "Play BO3 Standard"
+    end
+
+    test "uses fallback when deck_format is nil for constructed events" do
+      assert DecksHelpers.humanize_event("Ladder_Standard", nil) == "Ranked Constructed"
+    end
+  end
+
+  describe "format_game_results/1" do
+    test "returns empty list for nil" do
+      assert DecksHelpers.format_game_results(nil) == []
+    end
+
+    test "returns empty list for unrecognized shape" do
+      assert DecksHelpers.format_game_results(%{}) == []
+    end
+
+    test "extracts per-game details sorted by game number" do
+      game_results = %{
+        "results" => [
+          %{"game" => 2, "won" => false, "on_play" => false, "num_mulligans" => 1},
+          %{"game" => 1, "won" => true, "on_play" => true, "num_mulligans" => 0}
+        ]
+      }
+
+      result = DecksHelpers.format_game_results(game_results)
+
+      assert result == [
+               %{won: true, on_play: true, num_mulligans: 0},
+               %{won: false, on_play: false, num_mulligans: 1}
+             ]
+    end
+
+    test "defaults num_mulligans to 0 when missing" do
+      game_results = %{
+        "results" => [
+          %{"game" => 1, "won" => true, "on_play" => true}
+        ]
+      }
+
+      [game] = DecksHelpers.format_game_results(game_results)
+      assert game.num_mulligans == 0
+    end
+  end
+
+  describe "match_score/1" do
+    test "returns nil for nil input" do
+      assert DecksHelpers.match_score(nil) == nil
+    end
+
+    test "returns nil for single-game match (BO1)" do
+      assert DecksHelpers.match_score(%{won: true, num_games: 1}) == nil
+    end
+
+    test "returns 2-1 for a 3-game win" do
+      assert DecksHelpers.match_score(%{won: true, num_games: 3}) == "2–1"
+    end
+
+    test "returns 2-0 for a 2-game win" do
+      assert DecksHelpers.match_score(%{won: true, num_games: 2}) == "2–0"
+    end
+
+    test "returns 1-2 for a 3-game loss" do
+      assert DecksHelpers.match_score(%{won: false, num_games: 3}) == "1–2"
+    end
+
+    test "returns 0-2 for a 2-game loss" do
+      assert DecksHelpers.match_score(%{won: false, num_games: 2}) == "0–2"
+    end
+
+    test "returns nil for missing data" do
+      assert DecksHelpers.match_score(%{}) == nil
+    end
+  end
 end

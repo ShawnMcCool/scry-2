@@ -118,9 +118,19 @@ defmodule Scry2.Events.IngestionState do
     {put_in(state.match.pending_deck, event), []}
   end
 
-  def apply_event(%__MODULE__{} = state, %Scry2.Events.Deck.DeckSubmitted{}) do
+  def apply_event(%__MODULE__{} = state, %Scry2.Events.Deck.DeckSubmitted{} = event) do
     current_game = (state.match.current_game_number || 0) + 1
-    {put_in(state.match.current_game_number, current_game), []}
+
+    match =
+      %{state.match | current_game_number: current_game}
+      |> then(fn m ->
+        # Capture the player's seat from the ConnectResp that produced this
+        # DeckSubmitted. Persists across games so GameCompleted uses the
+        # correct perspective even when ConnectResp was in a prior GRE batch.
+        if event.self_seat_id, do: %{m | self_seat_id: event.self_seat_id}, else: m
+      end)
+
+    {%{state | match: match}, []}
   end
 
   def apply_event(%__MODULE__{} = state, %Scry2.Events.Match.MatchCompleted{}) do

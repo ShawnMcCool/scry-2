@@ -6,6 +6,7 @@ defmodule Scry2.Events.IngestionState.Match do
   @derive Jason.Encoder
   defstruct current_match_id: nil,
             current_game_number: nil,
+            self_seat_id: nil,
             last_deck_name: nil,
             on_play_for_current_game: nil,
             pending_deck: nil,
@@ -14,6 +15,7 @@ defmodule Scry2.Events.IngestionState.Match do
   @type t :: %__MODULE__{
           current_match_id: String.t() | nil,
           current_game_number: non_neg_integer() | nil,
+          self_seat_id: non_neg_integer() | nil,
           last_deck_name: String.t() | nil,
           on_play_for_current_game: boolean() | nil,
           pending_deck: map() | nil,

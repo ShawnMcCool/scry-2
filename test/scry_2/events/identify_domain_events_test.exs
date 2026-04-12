@@ -87,21 +87,25 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       # Per-game results breakdown from MatchScope_Game rows.
       assert length(event.game_results) == 3
 
+      # self_team is 1 (seat 1, falling back since self_user_id is nil)
       assert Enum.at(event.game_results, 0) == %{
                game_number: 1,
                winning_team_id: 2,
+               won: false,
                reason: "ResultReason_Concede"
              }
 
       assert Enum.at(event.game_results, 1) == %{
                game_number: 2,
                winning_team_id: 1,
+               won: true,
                reason: "ResultReason_Concede"
              }
 
       assert Enum.at(event.game_results, 2) == %{
                game_number: 3,
                winning_team_id: 1,
+               won: true,
                reason: "ResultReason_Concede"
              }
     end
@@ -662,7 +666,9 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert {[%DeckUpdated{} = event], []} = IdentifyDomainEvents.translate(record, nil)
       assert event.deck_id == "c827dfd7-deck-uuid"
       assert event.deck_name == "WB TMT Draft (2)"
-      assert event.format == "DirectGameLimited"
+      # "DirectGameLimited" is an event-type string, not a real format —
+      # normalize_deck_format/1 filters it to nil
+      assert event.format == nil
       assert event.action_type == "Cloned"
       assert length(event.main_deck) == 2
       assert event.sideboard == [%{arena_id: 100_525, count: 1}]
