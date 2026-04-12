@@ -35,7 +35,8 @@ case "$(uname -s)" in
     uninstall_script="scripts/uninstall-macos"
     ;;
   *)
-    echo "Error: unsupported platform $(uname -s)"
+    echo "Error: local builds not supported on $(uname -s)."
+    echo "Windows builds are CI-only — see .github/workflows/release.yml"
     exit 1
     ;;
 esac

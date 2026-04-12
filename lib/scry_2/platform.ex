@@ -123,11 +123,27 @@ defmodule Scry2.Platform do
   def mtga_raw_dir_candidates do
     case :os.type() do
       {:win32, _} ->
+        steam_root =
+          System.get_env("PROGRAMFILES(X86)") ||
+            Path.join(["C:\\", "Program Files (x86)"])
+
         [
+          # Standalone installer (Wizards launcher)
           Path.join([
             "C:\\",
             "Program Files",
             "Wizards of the Coast",
+            "MTGA",
+            "MTGA_Data",
+            "Downloads",
+            "Raw"
+          ]),
+          # Steam install
+          Path.join([
+            steam_root,
+            "Steam",
+            "steamapps",
+            "common",
             "MTGA",
             "MTGA_Data",
             "Downloads",
