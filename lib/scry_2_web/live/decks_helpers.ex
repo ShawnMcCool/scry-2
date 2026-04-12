@@ -219,7 +219,137 @@ defmodule Scry2Web.DecksHelpers do
     Jason.encode!(%{weeks: weeks, bo1: [], bo3: bo3})
   end
 
+  # ── Version timeline helpers ────────────────────────────────────────
+
+  @doc """
+  Returns a human-readable datetime string like "April 10, 2026 — 1:01 PM".
+  """
+  @spec format_version_date(DateTime.t() | nil) :: String.t()
+  def format_version_date(nil), do: "—"
+
+  def format_version_date(dt) do
+    date = DateTime.to_date(dt)
+    month = month_name(date.month)
+    hour = rem(if(dt.hour == 0, do: 12, else: dt.hour), 12)
+    hour = if hour == 0, do: 12, else: hour
+    ampm = if dt.hour < 12, do: "AM", else: "PM"
+    "#{month} #{date.day}, #{date.year} — #{hour}:#{pad(dt.minute)} #{ampm}"
+  end
+
+  @doc """
+  Computes mana curve data for a version's before/after comparison.
+  Returns `[{cmc_label, before_count, after_count}]` for CMC 1–7+.
+
+  `previous_version` is the preceding version (or nil for the initial version).
+  `cards_by_arena_id` is needed to look up mana values.
+  """
+  @spec version_mana_curve_data(map(), map() | nil, map()) :: [{String.t(), integer(), integer()}]
+  def version_mana_curve_data(version, previous_version, cards_by_arena_id) do
+    after_curve = deck_mana_curve(version.main_deck, cards_by_arena_id)
+
+    before_curve =
+      if previous_version,
+        do: deck_mana_curve(previous_version.main_deck, cards_by_arena_id),
+        else: after_curve
+
+    1..7
+    |> Enum.map(fn mv ->
+      label = if mv >= 7, do: "7+", else: "#{mv}"
+      {label, Map.get(before_curve, mv, 0), Map.get(after_curve, mv, 0)}
+    end)
+  end
+
+  @doc "Extracts arena_ids from a deck version's diff card lists."
+  @spec diff_arena_ids(map()) :: [integer()]
+  def diff_arena_ids(version) do
+    [
+      version.main_deck_added,
+      version.main_deck_removed,
+      version.sideboard_added,
+      version.sideboard_removed
+    ]
+    |> Enum.flat_map(fn
+      %{"cards" => cards} -> Enum.map(cards, &((&1["arena_id"] || &1[:arena_id]) |> to_int()))
+      _ -> []
+    end)
+  end
+
+  @doc "Extracts arena_ids from a version's full deck snapshot."
+  @spec version_arena_ids(map()) :: [integer()]
+  def version_arena_ids(version) do
+    [version.main_deck, version.sideboard]
+    |> Enum.flat_map(fn
+      %{"cards" => cards} -> Enum.map(cards, &((&1["arena_id"] || &1[:arena_id]) |> to_int()))
+      _ -> []
+    end)
+  end
+
+  @doc "Parses a version's diff field into a list of `%{arena_id, count}` maps."
+  @spec parse_diff_cards(map() | nil) :: [%{arena_id: integer(), count: integer()}]
+  def parse_diff_cards(nil), do: []
+  def parse_diff_cards(%{"cards" => []}), do: []
+
+  def parse_diff_cards(%{"cards" => cards}) do
+    Enum.map(cards, fn card ->
+      %{
+        arena_id: (card["arena_id"] || card[:arena_id]) |> to_int(),
+        count: (card["count"] || card[:count]) |> to_int()
+      }
+    end)
+    |> Enum.sort_by(& &1.arena_id)
+  end
+
+  def parse_diff_cards(_), do: []
+
+  @doc "Returns total card count from a deck snapshot map."
+  @spec deck_card_count(map() | nil) :: integer()
+  def deck_card_count(nil), do: 0
+
+  def deck_card_count(%{"cards" => cards}),
+    do: Enum.sum(Enum.map(cards, &((&1["count"] || &1[:count] || 1) |> to_int())))
+
+  def deck_card_count(_), do: 0
+
   # ── Private ─────────────────────────────────────────────────────────
+
+  defp to_int(n) when is_integer(n), do: n
+  defp to_int(n) when is_binary(n), do: String.to_integer(n)
+  defp to_int(_), do: 0
+
+  defp month_name(1), do: "January"
+  defp month_name(2), do: "February"
+  defp month_name(3), do: "March"
+  defp month_name(4), do: "April"
+  defp month_name(5), do: "May"
+  defp month_name(6), do: "June"
+  defp month_name(7), do: "July"
+  defp month_name(8), do: "August"
+  defp month_name(9), do: "September"
+  defp month_name(10), do: "October"
+  defp month_name(11), do: "November"
+  defp month_name(12), do: "December"
+
+  # Returns mana curve as %{cmc => total_count} excluding lands.
+  defp deck_mana_curve(deck_map, cards_by_arena_id) do
+    cards =
+      case deck_map do
+        %{"cards" => card_list} -> card_list
+        _ -> []
+      end
+
+    Enum.reduce(cards, %{}, fn card, acc ->
+      arena_id = (card["arena_id"] || card[:arena_id]) |> to_int()
+      count = (card["count"] || card[:count] || 1) |> to_int()
+      card_data = Map.get(cards_by_arena_id, arena_id)
+
+      if land?(card_data) do
+        acc
+      else
+        mv = min((card_data && card_data.mana_value) || 0, 7)
+        Map.update(acc, mv, count, &(&1 + count))
+      end
+    end)
+  end
 
   defp pad(n) when n < 10, do: "0#{n}"
   defp pad(n), do: "#{n}"

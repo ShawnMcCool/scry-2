@@ -30,7 +30,8 @@ defmodule Scry2Web.DecksLive do
        deck: nil,
        deck_filter: :played,
        performance: nil,
-       evolution: [],
+       versions: [],
+       version_matches: %{},
        matches: [],
        cards_by_arena_id: %{},
        active_tab: :overview,
@@ -214,7 +215,11 @@ defmodule Scry2Web.DecksLive do
         <% :matches -> %>
           <.matches_tab matches={@matches} />
         <% :changes -> %>
-          <.changes_tab evolution={@evolution} />
+          <.changes_tab
+            versions={@versions}
+            version_matches={@version_matches}
+            cards_by_arena_id={@cards_by_arena_id}
+          />
       <% end %>
     </Layouts.app>
     """
@@ -573,28 +578,273 @@ defmodule Scry2Web.DecksLive do
     """
   end
 
-  attr :evolution, :list, required: true
+  attr :versions, :list, required: true
+  attr :version_matches, :map, required: true
+  attr :cards_by_arena_id, :map, required: true
 
-  defp changes_tab(%{evolution: []} = assigns) do
+  defp changes_tab(%{versions: []} = assigns) do
     ~H"""
-    <.empty_state>No deck update history found.</.empty_state>
+    <.empty_state>No deck version history found.</.empty_state>
     """
   end
 
   defp changes_tab(assigns) do
+    versions_with_prev =
+      assigns.versions
+      |> Enum.with_index()
+      |> Enum.map(fn {version, index} ->
+        # versions are newest-first, so "previous" is the next element
+        previous = Enum.at(assigns.versions, index + 1)
+        {version, previous}
+      end)
+
+    assigns = assign(assigns, :versions_with_prev, versions_with_prev)
+
     ~H"""
-    <div class="space-y-4">
-      <div :for={event <- @evolution} class="bg-base-200 rounded-xl p-4">
-        <div class="flex items-center justify-between mb-2">
-          <span class="font-medium text-sm">{event.deck_name || "Deck updated"}</span>
-          <span class="text-xs text-base-content/50">
-            {DecksHelpers.format_date(event.occurred_at)}
-          </span>
+    <div class="relative pl-5">
+      <%!-- Vertical timeline line --%>
+      <div class="absolute left-[7px] top-2 bottom-2 w-0.5 bg-primary/30"></div>
+
+      <%= for {{version, previous}, index} <- Enum.with_index(@versions_with_prev) do %>
+        <%!-- Version entry --%>
+        <div class="relative mb-6">
+          <%!-- Timeline dot --%>
+          <div class="absolute -left-5 top-1 w-3 h-3 rounded-full bg-primary"></div>
+
+          <%!-- Version header --%>
+          <div class="flex items-baseline justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="font-semibold text-sm">Version {version.version_number}</span>
+              <span
+                :if={version.version_number == 1}
+                class="text-xs bg-base-300 px-1.5 py-0.5 rounded"
+              >
+                initial
+              </span>
+            </div>
+            <span class="text-xs text-base-content/50">
+              {DecksHelpers.format_version_date(version.occurred_at)}
+            </span>
+          </div>
+
+          <%!-- Card diffs (only for versions after the first) --%>
+          <.version_card_diffs
+            :if={version.version_number > 1}
+            version={version}
+            cards_by_arena_id={@cards_by_arena_id}
+          />
+
+          <%!-- Initial version summary --%>
+          <div :if={version.version_number == 1} class="text-xs text-base-content/50 mb-2">
+            {DecksHelpers.deck_card_count(version.main_deck)} cards · First version of this deck
+          </div>
+
+          <%!-- Mana curve comparison (skip for version 1 without previous) --%>
+          <.version_mana_curve
+            :if={previous != nil}
+            version={version}
+            previous={previous}
+            cards_by_arena_id={@cards_by_arena_id}
+          />
+
+          <%!-- Per-version stats --%>
+          <.version_stats version={version} />
         </div>
-        <div class="text-xs text-base-content/50">
-          {event.action_type} — {length(event.main_deck)} unique cards in main deck
+
+        <%!-- Interleaved match summary between versions --%>
+        <.version_match_summary
+          :if={Map.has_key?(@version_matches, version.version_number)}
+          matches={Map.get(@version_matches, version.version_number, [])}
+          version_number={version.version_number}
+          index={index}
+        />
+      <% end %>
+    </div>
+    """
+  end
+
+  attr :version, :map, required: true
+  attr :cards_by_arena_id, :map, required: true
+
+  defp version_card_diffs(assigns) do
+    main_added = DecksHelpers.parse_diff_cards(assigns.version.main_deck_added)
+    main_removed = DecksHelpers.parse_diff_cards(assigns.version.main_deck_removed)
+    side_added = DecksHelpers.parse_diff_cards(assigns.version.sideboard_added)
+    side_removed = DecksHelpers.parse_diff_cards(assigns.version.sideboard_removed)
+
+    assigns =
+      assign(assigns,
+        main_added: main_added,
+        main_removed: main_removed,
+        side_added: side_added,
+        side_removed: side_removed
+      )
+
+    ~H"""
+    <div :if={@main_added != [] or @main_removed != []} class="flex gap-6 mb-2">
+      <div :if={@main_added != []}>
+        <div class="text-xs uppercase text-success tracking-wide mb-1 font-semibold">
+          +{total_diff_count(@main_added)} Added
+        </div>
+        <div class="flex gap-1">
+          <.card_diff_image
+            :for={card <- @main_added}
+            arena_id={card.arena_id}
+            name={DecksHelpers.card_name(card.arena_id, @cards_by_arena_id)}
+            count={card.count}
+            kind={:added}
+          />
         </div>
       </div>
+
+      <div :if={@main_removed != []}>
+        <div class="text-xs uppercase text-error tracking-wide mb-1 font-semibold">
+          −{total_diff_count(@main_removed)} Removed
+        </div>
+        <div class="flex gap-1">
+          <.card_diff_image
+            :for={card <- @main_removed}
+            arena_id={card.arena_id}
+            name={DecksHelpers.card_name(card.arena_id, @cards_by_arena_id)}
+            count={card.count}
+            kind={:removed}
+          />
+        </div>
+      </div>
+    </div>
+
+    <div :if={@side_added != [] or @side_removed != []} class="flex gap-4 mb-2 text-xs">
+      <span class="text-base-content/40 uppercase tracking-wide">Sideboard</span>
+      <span :if={@side_added != []} class="text-success">
+        +{total_diff_count(@side_added)} card{if total_diff_count(@side_added) != 1, do: "s"}
+      </span>
+      <span :if={@side_removed != []} class="text-error">
+        −{total_diff_count(@side_removed)} card{if total_diff_count(@side_removed) != 1, do: "s"}
+      </span>
+    </div>
+    """
+  end
+
+  attr :version, :map, required: true
+
+  defp version_stats(assigns) do
+    total = assigns.version.match_wins + assigns.version.match_losses
+    win_rate = if total > 0, do: Float.round(assigns.version.match_wins / total * 100, 1)
+
+    on_play_total = assigns.version.on_play_wins + assigns.version.on_play_losses
+
+    on_play_rate =
+      if on_play_total > 0, do: Float.round(assigns.version.on_play_wins / on_play_total * 100, 1)
+
+    on_draw_total = assigns.version.on_draw_wins + assigns.version.on_draw_losses
+
+    on_draw_rate =
+      if on_draw_total > 0, do: Float.round(assigns.version.on_draw_wins / on_draw_total * 100, 1)
+
+    assigns =
+      assign(assigns,
+        total: total,
+        win_rate: win_rate,
+        on_play_rate: on_play_rate,
+        on_draw_rate: on_draw_rate
+      )
+
+    ~H"""
+    <div :if={@total > 0} class="flex gap-4 text-xs text-base-content/60">
+      <span>
+        {@version.match_wins}W–{@version.match_losses}L ·
+        <span class={DecksHelpers.win_rate_class(@win_rate)}>
+          {DecksHelpers.format_win_rate(@win_rate)}
+        </span>
+      </span>
+      <span :if={@on_play_rate}>
+        On play:
+        <span class={DecksHelpers.win_rate_class(@on_play_rate)}>
+          {DecksHelpers.format_win_rate(@on_play_rate)}
+        </span>
+      </span>
+      <span :if={@on_draw_rate}>
+        On draw:
+        <span class={DecksHelpers.win_rate_class(@on_draw_rate)}>
+          {DecksHelpers.format_win_rate(@on_draw_rate)}
+        </span>
+      </span>
+    </div>
+    <div :if={@total == 0} class="text-xs text-base-content/30">No matches</div>
+    """
+  end
+
+  attr :version, :map, required: true
+  attr :previous, :map, required: true
+  attr :cards_by_arena_id, :map, required: true
+
+  defp version_mana_curve(assigns) do
+    curve_data =
+      DecksHelpers.version_mana_curve_data(
+        assigns.version,
+        assigns.previous,
+        assigns.cards_by_arena_id
+      )
+
+    max_val = curve_data |> Enum.flat_map(fn {_, b, a} -> [b, a] end) |> Enum.max(fn -> 1 end)
+    assigns = assign(assigns, curve_data: curve_data, max_val: max_val)
+
+    ~H"""
+    <div class="inline-flex gap-1 items-end h-8 mb-2">
+      <div :for={{label, prev_count, curr_count} <- @curve_data} class="flex flex-col items-center">
+        <div class="flex gap-px items-end h-6">
+          <div
+            class="w-1.5 bg-error/50 rounded-t-sm"
+            style={"height: #{bar_height(prev_count, @max_val)}px"}
+          />
+          <div
+            class="w-1.5 bg-success rounded-t-sm"
+            style={"height: #{bar_height(curr_count, @max_val)}px"}
+          />
+        </div>
+        <span class="text-[0.55rem] text-base-content/30">{label}</span>
+      </div>
+    </div>
+    """
+  end
+
+  attr :matches, :list, required: true
+  attr :version_number, :integer, required: true
+  attr :index, :integer, required: true
+
+  defp version_match_summary(%{matches: []} = assigns) do
+    ~H""
+  end
+
+  defp version_match_summary(assigns) do
+    total = length(assigns.matches)
+    wins = Enum.count(assigns.matches, & &1.won)
+    losses = total - wins
+    assigns = assign(assigns, total: total, wins: wins, losses: losses)
+
+    ~H"""
+    <div class="relative mb-6 pl-0">
+      <details class="group">
+        <summary class="text-xs text-base-content/35 cursor-pointer list-none flex items-center gap-1 hover:text-base-content/50">
+          <span class="group-open:rotate-90 transition-transform">▸</span>
+          <span>{@total} match{if @total != 1, do: "es"} played ({@wins}W–{@losses}L)</span>
+        </summary>
+        <div class="mt-2 space-y-1 ml-3">
+          <div
+            :for={match <- @matches}
+            class="flex items-center gap-3 text-xs text-base-content/50"
+          >
+            <span class={if match.won, do: "text-success", else: "text-error"}>
+              {if match.won, do: "W", else: "L"}
+            </span>
+            <span :if={match.event_name} class="truncate max-w-48">{match.event_name}</span>
+            <span :if={match.player_rank}>{match.player_rank}</span>
+            <span class="text-base-content/30">
+              {DecksHelpers.format_date(match.started_at)}
+            </span>
+          </div>
+        </div>
+      </details>
     </div>
     """
   end
@@ -603,9 +853,17 @@ defmodule Scry2Web.DecksLive do
 
   defp load_deck_detail(socket, deck, tab) do
     performance = Decks.get_deck_performance(deck.mtga_deck_id)
-    evolution = if tab == :changes, do: Decks.get_deck_evolution(deck.mtga_deck_id), else: []
     matches = if tab == :matches, do: Decks.list_matches_for_deck(deck.mtga_deck_id), else: []
-    arena_ids = collect_arena_ids(deck)
+
+    {versions, version_matches} =
+      if tab == :changes do
+        {Decks.get_deck_versions(deck.mtga_deck_id),
+         Decks.get_matches_by_version(deck.mtga_deck_id)}
+      else
+        {[], %{}}
+      end
+
+    arena_ids = collect_arena_ids(deck, versions)
     cards_by_arena_id = Cards.list_by_arena_ids(arena_ids)
 
     if connected?(socket) do
@@ -615,15 +873,29 @@ defmodule Scry2Web.DecksLive do
     assign(socket,
       deck: deck,
       performance: performance,
-      evolution: evolution,
+      versions: versions,
+      version_matches: version_matches,
       matches: matches,
       cards_by_arena_id: cards_by_arena_id,
       active_tab: tab
     )
   end
 
-  defp collect_arena_ids(deck) do
-    (extract_card_ids(deck.current_main_deck) ++ extract_card_ids(deck.current_sideboard))
+  defp total_diff_count(cards), do: Enum.sum(Enum.map(cards, & &1.count))
+
+  defp bar_height(_count, 0), do: 2
+  defp bar_height(count, max_val), do: max(2, round(count / max_val * 24))
+
+  defp collect_arena_ids(deck, versions) do
+    deck_ids =
+      extract_card_ids(deck.current_main_deck) ++ extract_card_ids(deck.current_sideboard)
+
+    version_ids =
+      Enum.flat_map(versions, fn version ->
+        DecksHelpers.diff_arena_ids(version) ++ DecksHelpers.version_arena_ids(version)
+      end)
+
+    (deck_ids ++ version_ids)
     |> Enum.uniq()
     |> Enum.filter(&is_integer/1)
   end

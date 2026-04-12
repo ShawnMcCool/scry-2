@@ -18,7 +18,171 @@ defmodule Scry2.Events.SnapshotConvertTest do
     WeeklyWinEarned
   }
 
+  alias Scry2.Events.Deck.DeckUpdated
   alias Scry2.Events.SnapshotConvert
+
+  # ── DeckUpdated ──────────────────────────────────────────────────────────
+
+  describe "convert/2 DeckUpdated" do
+    test "first sight (nil previous) passes through with empty diffs" do
+      event = build_deck_updated(deck_id: "deck-1")
+      assert {:converted, _key, [result]} = SnapshotConvert.convert(event, nil)
+      assert %DeckUpdated{} = result
+      assert result.main_deck_added == []
+      assert result.main_deck_removed == []
+      assert result.sideboard_added == []
+      assert result.sideboard_removed == []
+    end
+
+    test "returns :unchanged when card lists are identical" do
+      event = build_deck_updated(deck_id: "deck-1")
+      {:converted, key, _} = SnapshotConvert.convert(event, nil)
+      assert SnapshotConvert.convert(event, key) == :unchanged
+    end
+
+    test "detects main deck card addition" do
+      event =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{arena_id: 100, count: 4}],
+          sideboard: []
+        )
+
+      {:converted, key, _} = SnapshotConvert.convert(event, nil)
+
+      updated =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{arena_id: 100, count: 4}, %{arena_id: 200, count: 2}],
+          sideboard: []
+        )
+
+      {:converted, _key, [result]} = SnapshotConvert.convert(updated, key)
+      assert result.main_deck_added == [%{arena_id: 200, count: 2}]
+      assert result.main_deck_removed == []
+    end
+
+    test "detects main deck card removal" do
+      event =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{arena_id: 100, count: 4}, %{arena_id: 200, count: 2}],
+          sideboard: []
+        )
+
+      {:converted, key, _} = SnapshotConvert.convert(event, nil)
+
+      updated =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{arena_id: 100, count: 4}],
+          sideboard: []
+        )
+
+      {:converted, _key, [result]} = SnapshotConvert.convert(updated, key)
+      assert result.main_deck_added == []
+      assert result.main_deck_removed == [%{arena_id: 200, count: 2}]
+    end
+
+    test "detects count increase as addition and count decrease as removal" do
+      event =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{arena_id: 100, count: 2}, %{arena_id: 200, count: 3}],
+          sideboard: []
+        )
+
+      {:converted, key, _} = SnapshotConvert.convert(event, nil)
+
+      updated =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{arena_id: 100, count: 4}, %{arena_id: 200, count: 1}],
+          sideboard: []
+        )
+
+      {:converted, _key, [result]} = SnapshotConvert.convert(updated, key)
+      assert result.main_deck_added == [%{arena_id: 100, count: 2}]
+      assert result.main_deck_removed == [%{arena_id: 200, count: 2}]
+    end
+
+    test "detects sideboard changes" do
+      event =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{arena_id: 100, count: 4}],
+          sideboard: [%{arena_id: 300, count: 2}]
+        )
+
+      {:converted, key, _} = SnapshotConvert.convert(event, nil)
+
+      updated =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{arena_id: 100, count: 4}],
+          sideboard: [%{arena_id: 300, count: 1}, %{arena_id: 400, count: 1}]
+        )
+
+      {:converted, _key, [result]} = SnapshotConvert.convert(updated, key)
+      assert result.main_deck_added == []
+      assert result.main_deck_removed == []
+      assert result.sideboard_added == [%{arena_id: 400, count: 1}]
+      assert result.sideboard_removed == [%{arena_id: 300, count: 1}]
+    end
+
+    test "tracks multiple decks independently" do
+      event_a =
+        build_deck_updated(
+          deck_id: "deck-a",
+          main_deck: [%{arena_id: 100, count: 4}],
+          sideboard: []
+        )
+
+      event_b =
+        build_deck_updated(
+          deck_id: "deck-b",
+          main_deck: [%{arena_id: 200, count: 3}],
+          sideboard: []
+        )
+
+      {:converted, key, _} = SnapshotConvert.convert(event_a, nil)
+      {:converted, key, _} = SnapshotConvert.convert(event_b, key)
+
+      # deck-a unchanged, deck-b changed
+      assert SnapshotConvert.convert(event_a, key) == :unchanged
+
+      updated_b =
+        build_deck_updated(
+          deck_id: "deck-b",
+          main_deck: [%{arena_id: 200, count: 4}],
+          sideboard: []
+        )
+
+      {:converted, _key, [result]} = SnapshotConvert.convert(updated_b, key)
+      assert result.main_deck_added == [%{arena_id: 200, count: 1}]
+    end
+
+    test "handles string-keyed card entries from deserialized payloads" do
+      event =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{"arena_id" => 100, "count" => 4}],
+          sideboard: []
+        )
+
+      {:converted, key, _} = SnapshotConvert.convert(event, nil)
+
+      updated =
+        build_deck_updated(
+          deck_id: "deck-1",
+          main_deck: [%{"arena_id" => 100, "count" => 4}, %{"arena_id" => 200, "count" => 2}],
+          sideboard: []
+        )
+
+      {:converted, _key, [result]} = SnapshotConvert.convert(updated, key)
+      assert result.main_deck_added == [%{arena_id: 200, count: 2}]
+    end
+  end
 
   # ── RankSnapshot ─────────────────────────────────────────────────────────
 

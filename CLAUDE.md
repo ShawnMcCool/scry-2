@@ -64,6 +64,22 @@ All repositories use **JJ (Jujutsu)** — never use raw `git` commands.
 - Start unrelated features with `jj new`.
 - Adjust the description as scope becomes clearer.
 
+### Releasing
+
+**Always use `scripts/tag-release <version>` to release.** Never manually bump versions, create tags, or push.
+
+Prerequisites before running the script:
+1. All changes must be described (`jj desc -m "..."`)
+2. Working copy must be empty (`jj new` after last described change)
+3. `mix precommit` must pass cleanly
+
+```bash
+jj new                          # ensure clean working copy
+scripts/tag-release 0.5.3      # bumps mix.exs, tags, pushes — triggers CI release
+```
+
+The script handles: precommit check, version bump in `mix.exs`, jj tag, bookmark update, and push. CI then builds all platform archives and publishes to GitHub Releases.
+
 ## Build & Run
 
 ```bash

@@ -2,7 +2,8 @@ defmodule Scry2.Decks do
   @moduledoc """
   Context module for constructed deck tracking.
 
-  Owns tables: `decks_decks`, `decks_match_results`, `decks_game_submissions`.
+  Owns tables: `decks_decks`, `decks_deck_versions`, `decks_match_results`,
+  `decks_game_submissions`.
 
   PubSub role:
     * subscribes to `"domain:events"` (via `Scry2.Decks.DeckProjection`)
@@ -14,7 +15,7 @@ defmodule Scry2.Decks do
 
   import Ecto.Query
 
-  alias Scry2.Decks.{Deck, GameSubmission, MatchResult}
+  alias Scry2.Decks.{Deck, DeckVersion, GameSubmission, MatchResult}
   alias Scry2.Repo
   alias Scry2.Topics
 
@@ -137,21 +138,63 @@ defmodule Scry2.Decks do
   end
 
   @doc """
-  Returns `DeckUpdated` domain events for the given deck, newest first.
-  Used to render the evolution timeline.
+  Returns all deck versions for a deck, newest first.
+  Each version includes pre-computed diffs and match stats.
   """
-  def get_deck_evolution(mtga_deck_id) when is_binary(mtga_deck_id) do
-    alias Scry2.Events
-    alias Scry2.Events.Deck.DeckUpdated
+  def get_deck_versions(mtga_deck_id) when is_binary(mtga_deck_id) do
+    DeckVersion
+    |> where([dv], dv.mtga_deck_id == ^mtga_deck_id)
+    |> order_by([dv], desc: dv.version_number)
+    |> Repo.all()
+  end
 
-    # Fetch recent deck_updated events globally and filter to this deck.
-    # Limit of 500 is sufficient for a single-player app — a user is unlikely
-    # to have more deck_updated events than this across all decks.
-    {events, _total} = Events.list_events(event_types: ["deck_updated"], limit: 500)
+  @doc """
+  Returns the next version number for a deck (max + 1, or 1 if no versions).
+  """
+  def next_version_number(mtga_deck_id) when is_binary(mtga_deck_id) do
+    DeckVersion
+    |> where([dv], dv.mtga_deck_id == ^mtga_deck_id)
+    |> select([dv], max(dv.version_number))
+    |> Repo.one()
+    |> then(fn
+      nil -> 1
+      max -> max + 1
+    end)
+  end
 
-    events
-    |> Enum.filter(&(is_struct(&1, DeckUpdated) and &1.deck_id == mtga_deck_id))
-    |> Enum.sort_by(& &1.occurred_at, {:desc, DateTime})
+  @doc """
+  Returns the version that was active for a deck at a given timestamp,
+  i.e. the latest version with `occurred_at <= timestamp`. Returns nil
+  if no version exists before that time.
+  """
+  def get_active_version_at(mtga_deck_id, %DateTime{} = timestamp) do
+    DeckVersion
+    |> where([dv], dv.mtga_deck_id == ^mtga_deck_id and dv.occurred_at <= ^timestamp)
+    |> order_by([dv], desc: dv.occurred_at)
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  @doc """
+  Returns match results grouped by deck version number.
+  Matches are bucketed by the version active at match start time.
+  Returns `%{version_number => [%MatchResult{}]}`.
+  """
+  def get_matches_by_version(mtga_deck_id) when is_binary(mtga_deck_id) do
+    versions =
+      DeckVersion
+      |> where([dv], dv.mtga_deck_id == ^mtga_deck_id)
+      |> order_by([dv], asc: dv.version_number)
+      |> select([dv], {dv.version_number, dv.occurred_at})
+      |> Repo.all()
+
+    matches =
+      MatchResult
+      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> order_by([mr], desc: mr.started_at)
+      |> Repo.all()
+
+    bucket_matches_by_version(versions, matches)
   end
 
   @doc """
@@ -203,6 +246,56 @@ defmodule Scry2.Decks do
 
     broadcast_update(result.mtga_deck_id)
     result
+  end
+
+  @doc """
+  Upserts a deck version by `(mtga_deck_id, version_number)`. Idempotent for replay.
+  """
+  def upsert_deck_version!(attrs) do
+    attrs = Map.new(attrs)
+    mtga_deck_id = attrs[:mtga_deck_id]
+    version_number = attrs[:version_number]
+
+    case Repo.get_by(DeckVersion, mtga_deck_id: mtga_deck_id, version_number: version_number) do
+      nil -> %DeckVersion{}
+      existing -> existing
+    end
+    |> DeckVersion.changeset(attrs)
+    |> Repo.insert_or_update!()
+  end
+
+  @doc """
+  Increments win/loss stats on the version that was active when a match started.
+  No-op if no version exists for the deck at that time.
+  """
+  def increment_version_stats!(mtga_deck_id, %DateTime{} = started_at, match_result) do
+    case get_active_version_at(mtga_deck_id, started_at) do
+      nil ->
+        :ok
+
+      version ->
+        won = match_result.won
+        on_play = match_result.on_play
+
+        updates =
+          if won do
+            [match_wins: version.match_wins + 1] ++
+              if(on_play,
+                do: [on_play_wins: version.on_play_wins + 1],
+                else: [on_draw_wins: version.on_draw_wins + 1]
+              )
+          else
+            [match_losses: version.match_losses + 1] ++
+              if(on_play,
+                do: [on_play_losses: version.on_play_losses + 1],
+                else: [on_draw_losses: version.on_draw_losses + 1]
+              )
+          end
+
+        version
+        |> DeckVersion.changeset(Map.new(updates))
+        |> Repo.update!()
+    end
   end
 
   @doc """
@@ -430,6 +523,47 @@ defmodule Scry2.Decks do
       end)
 
     changes
+  end
+
+  # Assigns each match to the version that was active at match start time.
+  # Versions are sorted ascending by version_number. A match belongs to version N
+  # if started_at >= version_N.occurred_at and (started_at < version_N+1.occurred_at or N is last).
+  defp bucket_matches_by_version([], _matches), do: %{}
+
+  defp bucket_matches_by_version(versions, matches) do
+    # Build time boundaries: [{version_number, start, end}]
+    boundaries =
+      versions
+      |> Enum.with_index()
+      |> Enum.map(fn {{version_number, occurred_at}, index} ->
+        next_occurred_at =
+          case Enum.at(versions, index + 1) do
+            {_next_num, next_at} -> next_at
+            nil -> nil
+          end
+
+        {version_number, occurred_at, next_occurred_at}
+      end)
+
+    Enum.reduce(matches, %{}, fn match, acc ->
+      case find_version_for_match(boundaries, match.started_at) do
+        nil -> acc
+        version_number -> Map.update(acc, version_number, [match], &[match | &1])
+      end
+    end)
+  end
+
+  defp find_version_for_match(_boundaries, nil), do: nil
+
+  defp find_version_for_match(boundaries, started_at) do
+    Enum.find_value(boundaries, fn {version_number, occurred_at, next_occurred_at} ->
+      after_start = DateTime.compare(started_at, occurred_at) in [:gt, :eq]
+
+      before_end =
+        is_nil(next_occurred_at) or DateTime.compare(started_at, next_occurred_at) == :lt
+
+      if after_start and before_end, do: version_number
+    end)
   end
 
   defp broadcast_update(mtga_deck_id) do
