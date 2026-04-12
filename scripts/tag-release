@@ -16,6 +16,10 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
+# Sync with remote to avoid tagging on stale local state
+echo "Fetching from remote..."
+jj git fetch
+
 # Run precommit checks — catches broken builds and format drift before tagging
 echo "Running precommit checks..."
 mix precommit
@@ -49,10 +53,13 @@ jj describe -m "chore: release ${TAG}"
 echo "Creating tag ${TAG}..."
 jj tag set "${TAG}"
 
-# Push the current bookmark and the tag
-# Note: jj git push handles bookmarks; git push is needed to push the tag ref
-echo "Pushing bookmark to remote..."
-jj git push --allow-new
+# Move main bookmark to the release commit so CI workflows trigger on main
+echo "Setting main bookmark..."
+jj bookmark set main -r @
+
+# Push main bookmark and the tag
+echo "Pushing main to remote..."
+jj git push -b main
 
 echo "Pushing tag to remote..."
 git push origin "refs/tags/${TAG}"

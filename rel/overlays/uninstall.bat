@@ -60,7 +60,7 @@ echo Stopping Scry2...
 REM Phase 1: Kill tray first to stop watchdog from respawning backend
 powershell -NoProfile -Command ^
     "$d='%INSTALL_DIR%'; Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($d,[System.StringComparison]::OrdinalIgnoreCase) -and $_.Name -eq 'scry2-tray' } | Stop-Process -Force" 2>nul
-timeout /t 1 /nobreak >nul
+powershell -NoProfile -Command "Start-Sleep -Seconds 1" >nul 2>&1
 REM Phase 2: Kill everything else under the install dir (erl, epmd, werl, etc.)
 powershell -NoProfile -Command ^
     "$d='%INSTALL_DIR%'; Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($d,[System.StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force" 2>nul
@@ -88,7 +88,7 @@ if %WAIT_COUNT% geq 15 (
     if not "%SCRY2_QUIET%"=="1" pause
     exit /b 1
 )
-timeout /t 1 /nobreak >nul
+powershell -NoProfile -Command "Start-Sleep -Seconds 1" >nul 2>&1
 goto :wait_loop
 
 :remove_install_dir
@@ -106,5 +106,5 @@ if %DEL_ATTEMPTS% geq 5 (
     exit /b 1
 )
 echo Waiting for file locks to release...
-timeout /t 2 /nobreak >nul
+powershell -NoProfile -Command "Start-Sleep -Seconds 2" >nul 2>&1
 goto :remove_retry

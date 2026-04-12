@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Show CI workflow status for a release tag.
+#
+# Usage:
+#   scripts/release-status          # latest tag
+#   scripts/release-status v0.5.1   # specific tag
+
+TAG="${1:-$(git describe --tags --abbrev=0 2>/dev/null || true)}"
+
+if [[ -z "$TAG" ]]; then
+    echo "Error: no tag found. Pass a tag explicitly: scripts/release-status v0.5.1"
+    exit 1
+fi
+
+REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null)
+
+echo "Release: ${TAG}"
+echo "Repo:    ${REPO}"
+echo ""
+
+# Show runs triggered by the tag push (release.yml) and by the main push (ci, install test)
+echo "=== Tag-triggered workflows (${TAG}) ==="
+gh run list --repo "$REPO" --limit 10 \
+    --json name,status,conclusion,headBranch,createdAt \
+    --jq ".[] | select(.headBranch == \"${TAG}\") | \"\(.status | if . == \"completed\" then .[:1] | ascii_upcase else . end)\t\(.conclusion // \"—\")\t\(.name)\t\(.createdAt)\"" \
+    | column -t -s $'\t' || echo "  (none)"
+
+echo ""
+echo "=== Main-branch workflows ==="
+gh run list --repo "$REPO" --branch main --limit 5 \
+    --json name,status,conclusion,createdAt \
+    --jq ".[] | \"\(.status | if . == \"completed\" then .[:1] | ascii_upcase else . end)\t\(.conclusion // \"—\")\t\(.name)\t\(.createdAt)\"" \
+    | column -t -s $'\t' || echo "  (none)"
