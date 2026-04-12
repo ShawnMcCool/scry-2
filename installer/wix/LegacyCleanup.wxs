@@ -22,7 +22,7 @@
 
     <!-- Deferred custom action runs elevated, before InstallFiles -->
     <Binary Id="LegacyCleanSrc"
-            SourceFile="LegacyCleanup.bat" />
+            SourceFile="installer/wix/LegacyCleanup.bat" />
 
     <CustomAction Id="CleanupLegacyInstall"
                   BinaryRef="LegacyCleanSrc"
