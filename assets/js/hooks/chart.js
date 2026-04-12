@@ -27,12 +27,13 @@ function climbOption(climbSeries, resultsSeries, xMin, xMax, yMin, yMax, matchDe
     }
   }
 
-  // Color each data point: green for win, orange for loss, grey for no result
+  // Color each data point: green for win, orange for loss, hidden for no result
   const coloredData = climbSeries.map(([ts, score]) => {
     const result = resultByTimestamp.get(ts)
     const color =
-      result > 0 ? "#22c55e" : result < 0 ? "#f97316" : "#9ca3af"
-    return {value: [ts, score, result ?? null], itemStyle: {color}}
+      result > 0 ? "#22c55e" : result < 0 ? "#f97316" : "transparent"
+    const size = result != null ? 7 : 0
+    return {value: [ts, score, result ?? null], itemStyle: {color}, symbolSize: size}
   })
 
   const xBounds = xMin && xMax ? {min: xMin, max: xMax} : {}

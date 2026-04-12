@@ -58,6 +58,9 @@ function New-WixFragment {
     $fileCount = $files.Count
     Write-Host "  $ComponentGroupId`: $fileCount files"
 
+    # Use a single Fragment so the WiX v5 linker can't exclude the components.
+    # Components are nested under DirectoryRef, and the ComponentGroup references
+    # them — all in one fragment to guarantee they're linked together.
     $xml = @"
 <?xml version="1.0" encoding="UTF-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
@@ -110,13 +113,10 @@ function New-WixFragment {
         $xml += "      </Directory>`n"
     }
 
-    $xml += @"
-    </DirectoryRef>
-  </Fragment>
-  <Fragment>
-    <ComponentGroup Id="$ComponentGroupId">
+    $xml += "    </DirectoryRef>`n`n"
 
-"@
+    # ComponentGroup in the SAME fragment as the components
+    $xml += "    <ComponentGroup Id=`"$ComponentGroupId`">`n"
     foreach ($ref in $componentRefs) {
         $xml += "      <ComponentRef Id=`"$ref`" />`n"
     }
