@@ -532,6 +532,7 @@ function buildOption(el) {
 
 export const Chart = {
   mounted() {
+    console.log("[Chart] mounted", this.el.id, "size:", this.el.offsetWidth, "x", this.el.offsetHeight)
     this.chart = echarts.init(this.el, null, {renderer: "canvas"})
     this.chart.setOption(buildOption(this.el))
     this.resizeObserver = new ResizeObserver(() => this.chart.resize())
@@ -539,10 +540,12 @@ export const Chart = {
   },
 
   updated() {
+    console.log("[Chart] updated", this.el.id, "disposed?", this.chart?.isDisposed?.(), "size:", this.el.offsetWidth, "x", this.el.offsetHeight)
     this.chart.setOption(buildOption(this.el), {notMerge: true})
   },
 
   destroyed() {
+    console.log("[Chart] destroyed", this.el.id)
     this.resizeObserver?.disconnect()
     this.chart?.dispose()
   },
