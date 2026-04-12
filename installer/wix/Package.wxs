@@ -19,6 +19,9 @@
 
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Pull in the feature tree from Features.wxs -->
+    <FeatureRef Id="Complete" />
+
     <!-- Kill scry2-tray.exe before upgrading files.
          The tray's shutdown handler stops the Erlang backend. -->
     <util:CloseApplication Id="CloseTray"
