@@ -48,14 +48,16 @@ defmodule Scry2.Application do
   # Scry2.Console.RecentEntries. Safe to call on reboot — re-adds cleanly if the
   # previous handler was left behind (e.g. after a LiveReload crash).
   defp install_console_handler do
-    _ = :logger.remove_handler(:scry2_console)
+    if Application.get_env(:scry_2, :install_console_handler, true) do
+      _ = :logger.remove_handler(:scry2_console)
 
-    :ok =
-      :logger.add_handler(
-        :scry2_console,
-        Scry2.Console.CaptureLogOutput,
-        %{level: :all, config: %{}}
-      )
+      :ok =
+        :logger.add_handler(
+          :scry2_console,
+          Scry2.Console.CaptureLogOutput,
+          %{level: :all, config: %{}}
+        )
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

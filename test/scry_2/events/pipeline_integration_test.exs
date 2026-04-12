@@ -104,6 +104,7 @@ defmodule Scry2.Events.PipelineIntegrationTest do
       assert match.ended_at != nil
     end
 
+    @tag capture_log: true
     test "error in raw event doesn't crash any process",
          %{worker: worker, worker_pid: worker_pid, projectors: projectors} do
       MtgaLogIngestion.insert_event!(%{
