@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!--
+    Detects and removes legacy batch-file installations from %LOCALAPPDATA%\scry_2.
+    The registry autostart key (same name "Scry2") is overwritten by Registry.wxs.
+    Runs before InstallFiles so file locks are released.
+  -->
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="LegacyCleanup" Guid="*" Permanent="yes">
+        <RegistryValue Root="HKCU"
+                       Key="Software\Scry2"
+                       Name="LegacyCleanupDone"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Deferred custom action runs elevated, before InstallFiles -->
+    <Binary Id="LegacyCleanupScript"
+            SourceFile="LegacyCleanup.bat" />
+
+    <CustomAction Id="CleanupLegacyInstall"
+                  BinaryRef="LegacyCleanupScript"
+                  ExeCommand=""
+                  Impersonate="no"
+                  Execute="deferred"
+                  Return="ignore" />
+
+    <!-- Property to detect legacy install -->
+    <Property Id="LEGACYINSTALLEXISTS">
+      <DirectorySearch Id="LegacyDirSearch"
+                       Path="[LocalAppDataFolder]scry_2"
+                       Depth="0">
+        <FileSearch Id="LegacyTraySearch" Name="scry2-tray.exe" />
+      </DirectorySearch>
+    </Property>
+
+    <InstallExecuteSequence>
+      <Custom Action="CleanupLegacyInstall"
+              Before="InstallFiles"
+              Condition="LEGACYINSTALLEXISTS" />
+    </InstallExecuteSequence>
+  </Fragment>
+</Wix>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <!-- Standard install directory dialog set:
+       Welcome → License → Directory → Progress → Finish -->
+
+  <Fragment>
+    <ui:WixUI Id="WixUI_InstallDir"
+              InstallDirectory="INSTALLFOLDER" />
+  </Fragment>
+</Wix>

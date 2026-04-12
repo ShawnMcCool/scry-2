@@ -10,6 +10,11 @@ import (
 // It defaults to "dev" when not set, which disables update checks.
 var CurrentVersion = "dev"
 
+// InstallerType is stamped at build time via -ldflags.
+// "zip" (default) downloads platform archives and runs install scripts.
+// "msi" downloads the Burn bootstrapper .exe and launches it directly.
+var InstallerType = "zip"
+
 // MenuItem is the interface the orchestrator uses to control the tray menu item.
 // The real systray item satisfies this via a thin adapter in main.go.
 type MenuItem interface {

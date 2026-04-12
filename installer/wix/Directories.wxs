@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- Directory layout for Scry2 installation.
+       Install to C:\Program Files\Scry2.
+       Data stays in %APPDATA%\scry_2 (not managed by MSI). -->
+
+  <Fragment>
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Scry2">
+        <Directory Id="BinDir" Name="bin" />
+        <Directory Id="ErtsDir" Name="$(var.ErtsVersion)" />
+        <Directory Id="LibDir" Name="lib" />
+        <Directory Id="ReleasesDir" Name="releases" />
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ScryMenuFolder" Name="Scry2" />
+    </StandardDirectory>
+  </Fragment>
+</Wix>

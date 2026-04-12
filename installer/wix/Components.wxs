@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- Top-level components authored manually.
+       Bulk files (ERTS, lib, releases) come from harvested fragments. -->
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <!-- The system tray binary — main entry point for users -->
+      <Component Id="TrayExecutable" Guid="*">
+        <File Id="ScryTrayExe"
+              Source="$(var.TrayExe)"
+              Name="scry2-tray.exe"
+              KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <!-- Start Menu shortcut -->
+    <DirectoryRef Id="ScryMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="ScryShortcut"
+                  Name="Scry2"
+                  Description="MTGA Stats Tracker"
+                  Target="[INSTALLFOLDER]scry2-tray.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveScryMenuFolder" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\Scry2"
+                       Name="ShortcutInstalled"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

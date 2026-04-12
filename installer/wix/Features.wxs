@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- Single feature containing all components.
+       ComponentGroupRef entries for harvested fragments are included here. -->
+
+  <Fragment>
+    <Feature Id="Complete" Title="Scry2" Level="1">
+      <!-- Manually authored -->
+      <ComponentRef Id="TrayExecutable" />
+      <ComponentRef Id="StartMenuShortcut" />
+      <ComponentRef Id="AutoStartRegistry" />
+      <ComponentRef Id="EpmdFirewall" />
+      <ComponentRef Id="ErlFirewall" />
+      <ComponentRef Id="LegacyCleanup" />
+
+      <!-- Harvested from Elixir release -->
+      <ComponentGroupRef Id="BinComponents" />
+      <ComponentGroupRef Id="ErtsComponents" />
+      <ComponentGroupRef Id="LibComponents" />
+      <ComponentGroupRef Id="ReleasesComponents" />
+    </Feature>
+  </Fragment>
+</Wix>
