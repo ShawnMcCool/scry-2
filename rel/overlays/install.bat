@@ -41,4 +41,8 @@ echo Open http://localhost:6015 in your browser to view your stats.
 echo.
 echo To uninstall later, run: %INSTALL_DIR%\uninstall.bat
 echo.
+echo NOTE: Windows may ask you to allow "epmd" and "erlang" through the
+echo firewall. These are part of the bundled runtime — allow both for
+echo Scry2 to function.
+echo.
 pause

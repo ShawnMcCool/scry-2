@@ -62,6 +62,10 @@ Without this, Scry2 cannot parse your game data.
 Scry2 will start automatically on each login and is accessible at
 `http://localhost:6015`.
 
+> **Windows firewall note:** On first launch, Windows may ask you to allow
+> **epmd** and **erlang** through the firewall. These are components of the
+> bundled runtime — allow both for Scry2 to function.
+
 ---
 
 ## Configuration

@@ -68,10 +68,10 @@ defmodule Scry2.Config do
       secret_key_base = "#{secret_key_base}"
 
       [database]
-      path = "#{Path.join(data_dir, "scry_2.db")}"
+      path = '#{Path.join(data_dir, "scry_2.db")}'
 
       [cache]
-      dir = "#{Path.join(data_dir, "cache")}"
+      dir = '#{Path.join(data_dir, "cache")}'
       """
 
       File.write!(path, contents)
