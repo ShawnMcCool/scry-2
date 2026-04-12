@@ -16,15 +16,24 @@ defmodule Scry2Web.RanksLive do
   alias Scry2.Topics
   alias Scry2Web.RanksHelpers
 
+  @valid_ranges ~w(today week season)
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.ranks_updates())
+
+    range_preference =
+      case get_connect_params(socket) do
+        %{"range_preference" => range} when range in @valid_ranges -> range
+        _ -> nil
+      end
 
     {:ok,
      assign(socket,
        seasons: [],
        selected_season: nil,
-       time_range: "week",
+       range_preference: range_preference,
+       time_range: "today",
        snapshots: [],
        latest_snapshot: nil,
        climb_constructed: "[]",
@@ -37,6 +46,8 @@ defmodule Scry2Web.RanksLive do
        win_rate_limited: nil,
        peak_score_constructed: nil,
        peak_score_limited: nil,
+       net_change_constructed: nil,
+       net_change_limited: nil,
        chart_x_min: nil,
        chart_x_max: nil,
        chart_y_min_constructed: 0,
@@ -61,7 +72,12 @@ defmodule Scry2Web.RanksLive do
           List.first(seasons)
       end
 
-    time_range = if params["range"] in ["week", "season"], do: params["range"], else: "week"
+    time_range =
+      cond do
+        params["range"] in @valid_ranges -> params["range"]
+        socket.assigns[:range_preference] -> socket.assigns.range_preference
+        true -> "today"
+      end
 
     socket =
       socket
@@ -139,6 +155,7 @@ defmodule Scry2Web.RanksLive do
           percentile_series={@percentile_constructed}
           win_rate={@win_rate_constructed}
           peak_score={@peak_score_constructed}
+          net_change={@net_change_constructed}
           x_min={@chart_x_min}
           x_max={@chart_x_max}
           y_min={@chart_y_min_constructed}
@@ -153,6 +170,7 @@ defmodule Scry2Web.RanksLive do
           percentile_series={@percentile_limited}
           win_rate={@win_rate_limited}
           peak_score={@peak_score_limited}
+          net_change={@net_change_limited}
           x_min={@chart_x_min}
           x_max={@chart_x_max}
           y_min={@chart_y_min_limited}
@@ -214,21 +232,16 @@ defmodule Scry2Web.RanksLive do
 
   defp range_toggle(assigns) do
     ~H"""
-    <div class="join">
+    <div class="join" id="range-toggle" phx-hook="RangePreference" data-range={@selected}>
       <.link
-        patch={~p"/ranks?#{%{season: @season, range: "week"}}"}
-        class={["join-item btn btn-sm", if(@selected == "week", do: "btn-primary", else: "btn-ghost")]}
-      >
-        Past Week
-      </.link>
-      <.link
-        patch={~p"/ranks?#{%{season: @season, range: "season"}}"}
+        :for={{value, label} <- [{"today", "Today"}, {"week", "Past Week"}, {"season", "Season"}]}
+        patch={~p"/ranks?#{%{season: @season, range: value}}"}
         class={[
           "join-item btn btn-sm",
-          if(@selected == "season", do: "btn-primary", else: "btn-ghost")
+          if(@selected == value, do: "btn-primary", else: "btn-ghost")
         ]}
       >
-        Season
+        {label}
       </.link>
     </div>
     """
@@ -242,6 +255,7 @@ defmodule Scry2Web.RanksLive do
   attr :percentile_series, :string, required: true
   attr :win_rate, :float, default: nil
   attr :peak_score, :integer, default: nil
+  attr :net_change, :integer, default: nil
   attr :x_min, :string, default: nil
   attr :x_max, :string, default: nil
   attr :y_min, :integer, default: 0
@@ -310,6 +324,7 @@ defmodule Scry2Web.RanksLive do
         lost={@lost}
         win_rate={@win_rate}
         peak_label={@peak_label}
+        net_change={@net_change}
         format_type={@title}
       />
 
@@ -355,6 +370,7 @@ defmodule Scry2Web.RanksLive do
   attr :lost, :integer, default: nil
   attr :win_rate, :float, default: nil
   attr :peak_label, :string, default: nil
+  attr :net_change, :integer, default: nil
   attr :format_type, :string, required: true
 
   defp rank_card(assigns) do
@@ -389,6 +405,15 @@ defmodule Scry2Web.RanksLive do
             </p>
             <p :if={@peak_label} class="text-xs text-base-content/40">
               Peak: {@peak_label}
+            </p>
+            <p
+              :if={@net_change && @net_change != 0}
+              class={[
+                "text-xs tabular-nums",
+                if(@net_change > 0, do: "text-success", else: "text-error")
+              ]}
+            >
+              {if(@net_change > 0, do: "+#{@net_change}", else: "#{@net_change}")}
             </p>
           </div>
         </div>
@@ -449,7 +474,9 @@ defmodule Scry2Web.RanksLive do
           latest_snapshot && latest_snapshot.limited_matches_lost
         ),
       peak_score_constructed: RanksHelpers.peak_rank_score(snapshots, :constructed),
-      peak_score_limited: RanksHelpers.peak_rank_score(snapshots, :limited)
+      peak_score_limited: RanksHelpers.peak_rank_score(snapshots, :limited),
+      net_change_constructed: RanksHelpers.net_rank_change(chart_snapshots, :constructed),
+      net_change_limited: RanksHelpers.net_rank_change(chart_snapshots, :limited)
     )
   end
 

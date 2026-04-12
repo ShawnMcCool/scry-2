@@ -297,9 +297,18 @@ defmodule Scry2Web.RanksHelpers do
 
   - `"season"` — returns all snapshots (no filtering)
   - `"week"` — returns only snapshots from the last 7 days
+  - `"today"` — returns only snapshots from the current calendar day (UTC)
   """
   @spec filter_snapshots_to_range([map()], String.t()) :: [map()]
   def filter_snapshots_to_range(snapshots, "season"), do: snapshots
+
+  def filter_snapshots_to_range(snapshots, "today") do
+    today = Date.utc_today()
+
+    Enum.filter(snapshots, fn snapshot ->
+      DateTime.to_date(snapshot.occurred_at) == today
+    end)
+  end
 
   def filter_snapshots_to_range(snapshots, "week") do
     cutoff = DateTime.add(DateTime.utc_now(), -7, :day)
@@ -309,7 +318,31 @@ defmodule Scry2Web.RanksHelpers do
     end)
   end
 
+  @doc """
+  Computes the net rank score change across a list of snapshots for the given format.
+
+  Returns the difference between the last and first snapshot's rank score.
+  Returns nil for empty lists, 0 for a single snapshot.
+  """
+  @spec net_rank_change([map()], :constructed | :limited) :: integer() | nil
+  def net_rank_change([], _format), do: nil
+  def net_rank_change([_single], _format), do: 0
+
+  def net_rank_change(snapshots, format) do
+    first = List.first(snapshots)
+    last = List.last(snapshots)
+    snapshot_score(last, format) - snapshot_score(first, format)
+  end
+
   # ── Private ──────────────────────────────────────────────────────────
+
+  defp snapshot_score(snapshot, :constructed) do
+    rank_score(snapshot.constructed_class, snapshot.constructed_level, snapshot.constructed_step)
+  end
+
+  defp snapshot_score(snapshot, :limited) do
+    rank_score(snapshot.limited_class, snapshot.limited_level, snapshot.limited_step)
+  end
 
   defp class_to_index(class) do
     Enum.find_index(@class_order, &(&1 == class)) || 0
