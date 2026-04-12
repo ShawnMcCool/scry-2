@@ -46,6 +46,7 @@ When two designs both work, pick the one that scales better, not the one that sh
 | UI work — templates, components, CSS, styling, layout | `user-interface` |
 | Events, domain events, MTGA event types, anti-corruption layer | `events` |
 | Production debugging, service health, runtime logs | `troubleshoot` |
+| Platform paths, config, install scripts, tray binary, CI | `platform-compatibility` |
 
 Invoke the skill **first**, then explore the codebase, then write code.
 
