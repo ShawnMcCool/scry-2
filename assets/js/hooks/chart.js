@@ -235,6 +235,53 @@ function winrateOption(data) {
   }
 }
 
+function cumulativeWinrateOption(data) {
+  // data: [[timestamp, win_rate, "NW–ML"], ...]
+  if (!data.length) {
+    return {backgroundColor: "transparent", series: []}
+  }
+
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 52, right: 20, top: 16, bottom: 40},
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        const p = params[0]
+        if (!p) return ""
+        const [, rate, record] = p.data
+        const date = new Date(p.data[0])
+        const label = date.toLocaleDateString(undefined, {month: "short", day: "numeric"})
+        return `${label}<br/><b>${rate}%</b> ${record}`
+      },
+    },
+    xAxis: {
+      type: "time",
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: {
+      type: "value",
+      min: 0,
+      max: 100,
+      axisLabel: {color: "#9ca3af", fontSize: 11, formatter: v => `${v}%`},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {lineStyle: {color: "#1f2937"}},
+    },
+    series: [{
+      type: "line",
+      data: data,
+      smooth: false,
+      symbol: "circle",
+      symbolSize: 4,
+      lineStyle: {color: "#6366f1", width: 2},
+      itemStyle: {color: "#6366f1"},
+      areaStyle: {color: "rgba(99, 102, 241, 0.08)"},
+    }],
+  }
+}
+
 function curveOption(data) {
   const labels = data.map(([label]) => label)
   const counts = data.map(([, count]) => count)
@@ -514,6 +561,8 @@ function buildOption(el) {
     return climbOption(parsed, results, el.dataset.xMin, el.dataset.xMax, yMin, yMax, matchDetails)
   } else if (type === "winrate") {
     return winrateOption(parsed)
+  } else if (type === "cumulative_winrate") {
+    return cumulativeWinrateOption(parsed)
   } else if (type === "curve") {
     return curveOption(parsed)
   } else if (type === "match_results") {

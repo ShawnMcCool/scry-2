@@ -200,8 +200,20 @@ defmodule Scry2Web.DecksLive do
       <%!-- Tabs --%>
       <div role="tablist" class="tabs tabs-border mb-6">
         <.tab_link label="Overview" tab={:overview} active={@active_tab} deck={@deck} />
-        <.tab_link label="Matches" tab={:matches} active={@active_tab} deck={@deck} />
-        <.tab_link label="Changes" tab={:changes} active={@active_tab} deck={@deck} />
+        <.tab_link
+          label="Matches"
+          tab={:matches}
+          active={@active_tab}
+          deck={@deck}
+          count={@match_count}
+        />
+        <.tab_link
+          label="Versions"
+          tab={:changes}
+          active={@active_tab}
+          deck={@deck}
+          count={if(@version_count > 1, do: @version_count)}
+        />
       </div>
 
       <%!-- Tab content --%>
@@ -250,6 +262,7 @@ defmodule Scry2Web.DecksLive do
   attr :tab, :atom, required: true
   attr :active, :atom, required: true
   attr :deck, :map, required: true
+  attr :count, :integer, default: nil
 
   defp tab_link(assigns) do
     ~H"""
@@ -260,6 +273,9 @@ defmodule Scry2Web.DecksLive do
       phx-value-tab={@tab}
     >
       {@label}
+      <span :if={@count && @count > 0} class="badge badge-sm badge-ghost ml-1.5">
+        {@count}
+      </span>
     </a>
     """
   end
@@ -371,13 +387,13 @@ defmodule Scry2Web.DecksLive do
         title="Best-of-1"
         stats={@performance.bo1}
         format={:bo1}
-        win_rate_by_week={@performance.win_rate_by_week}
+        cumulative_series={@performance.cumulative_win_rate.bo1}
       />
       <.stats_panel
         title="Best-of-3"
         stats={@performance.bo3}
         format={:bo3}
-        win_rate_by_week={@performance.win_rate_by_week}
+        cumulative_series={@performance.cumulative_win_rate.bo3}
       />
     </div>
     """
@@ -414,15 +430,10 @@ defmodule Scry2Web.DecksLive do
   attr :title, :string, required: true
   attr :stats, :map, required: true
   attr :format, :atom, required: true
-  attr :win_rate_by_week, :list, default: []
+  attr :cumulative_series, :list, default: []
 
   defp stats_panel(assigns) do
-    chart_series =
-      case assigns.format do
-        :bo1 -> DecksHelpers.bo1_winrate_series(assigns.win_rate_by_week)
-        :bo3 -> DecksHelpers.bo3_winrate_series(assigns.win_rate_by_week)
-      end
-
+    chart_series = DecksHelpers.cumulative_winrate_series(assigns.cumulative_series)
     assigns = assign(assigns, :chart_series, chart_series)
 
     ~H"""
@@ -436,9 +447,10 @@ defmodule Scry2Web.DecksLive do
       <div
         id={"deck-winrate-#{@format}"}
         phx-hook="Chart"
-        data-chart-type="winrate"
+        data-chart-type="cumulative_winrate"
         data-series={@chart_series}
         class="flex-1 min-w-0 rounded-lg bg-base-300/40"
+        style="height: 10rem"
       />
     </div>
     """
@@ -853,6 +865,8 @@ defmodule Scry2Web.DecksLive do
 
   defp load_deck_detail(socket, deck, tab) do
     performance = Decks.get_deck_performance(deck.mtga_deck_id)
+    match_count = performance.bo1.total + performance.bo3.total
+    version_count = Decks.count_versions(deck.mtga_deck_id)
     matches = if tab == :matches, do: Decks.list_matches_for_deck(deck.mtga_deck_id), else: []
 
     {versions, version_matches} =
@@ -873,6 +887,8 @@ defmodule Scry2Web.DecksLive do
     assign(socket,
       deck: deck,
       performance: performance,
+      match_count: match_count,
+      version_count: version_count,
       versions: versions,
       version_matches: version_matches,
       matches: matches,

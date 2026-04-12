@@ -62,13 +62,22 @@ defmodule Scry2.Decks do
     Repo.get_by(Deck, mtga_deck_id: mtga_deck_id)
   end
 
+  @doc "Returns the number of deck versions for a deck."
+  def count_versions(mtga_deck_id) when is_binary(mtga_deck_id) do
+    DeckVersion
+    |> where([dv], dv.mtga_deck_id == ^mtga_deck_id)
+    |> select([dv], count(dv.id))
+    |> Repo.one()
+  end
+
   @doc """
   Returns aggregated performance stats for a single deck.
 
   Returns a map with:
     * `:bo1` — `%{total, wins, losses, win_rate, on_play_win_rate, on_draw_win_rate}`
     * `:bo3` — same plus `%{game1_win_rate, games_2_3_win_rate}`
-    * `:win_rate_by_week` — `[%{week, bo1_win_rate, bo3_win_rate}]` for chart
+    * `:cumulative_win_rate` — `%{bo1: [...], bo3: [...]}` where each entry is
+      `%{timestamp, win_rate, wins, total}` for a running win rate line chart
   """
   def get_deck_performance(mtga_deck_id) when is_binary(mtga_deck_id) do
     results =
@@ -82,7 +91,10 @@ defmodule Scry2.Decks do
     %{
       bo1: compute_detailed_stats(bo1_results, :bo1),
       bo3: compute_detailed_stats(bo3_results, :bo3),
-      win_rate_by_week: win_rate_by_week(results)
+      cumulative_win_rate: %{
+        bo1: cumulative_win_rate(bo1_results),
+        bo3: cumulative_win_rate(bo3_results)
+      }
     }
   end
 
@@ -446,30 +458,24 @@ defmodule Scry2.Decks do
     end)
   end
 
-  defp win_rate_by_week(results) do
+  defp cumulative_win_rate(results) do
     results
     |> Enum.filter(& &1.started_at)
-    |> Enum.group_by(fn mr ->
-      date = DateTime.to_date(mr.started_at)
-      Date.beginning_of_week(date)
-    end)
-    |> Enum.map(fn {week, group} ->
-      bo1 = Enum.reject(group, &bo3?/1)
-      bo3 = Enum.filter(group, &bo3?/1)
-      bo1_wins = Enum.count(bo1, & &1.won)
-      bo3_wins = Enum.count(bo3, & &1.won)
+    |> Enum.sort_by(& &1.started_at, DateTime)
+    |> Enum.map_reduce({0, 0}, fn match_result, {wins, total} ->
+      new_wins = if match_result.won, do: wins + 1, else: wins
+      new_total = total + 1
 
-      %{
-        week: Date.to_iso8601(week),
-        bo1_total: length(bo1),
-        bo1_wins: bo1_wins,
-        bo1_win_rate: win_rate(bo1_wins, length(bo1)),
-        bo3_total: length(bo3),
-        bo3_wins: bo3_wins,
-        bo3_win_rate: win_rate(bo3_wins, length(bo3))
+      point = %{
+        timestamp: DateTime.to_iso8601(match_result.started_at),
+        win_rate: win_rate(new_wins, new_total),
+        wins: new_wins,
+        total: new_total
       }
+
+      {point, {new_wins, new_total}}
     end)
-    |> Enum.sort_by(& &1.week)
+    |> elem(0)
   end
 
   # A match is BO3 if format_type is "Traditional" (ranked queues) OR

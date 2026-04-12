@@ -138,7 +138,7 @@ defmodule Scry2.DecksTest do
 
       assert perf.bo1.total == 0
       assert perf.bo3.total == 0
-      assert perf.win_rate_by_week == []
+      assert perf.cumulative_win_rate == %{bo1: [], bo3: []}
     end
 
     test "separates BO1 and BO3 results" do
