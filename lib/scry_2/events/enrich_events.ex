@@ -139,9 +139,18 @@ defmodule Scry2.Events.EnrichEvents do
 
   # ── Format inference ────────────────────────────────────────────────
 
-  defp infer_format(nil), do: {nil, nil}
+  @doc """
+  Infers `{format, format_type}` from an MTGA event_name string.
 
-  defp infer_format(event_name) when is_binary(event_name) do
+  Returns a human-readable format name and a category:
+  - `"Limited"` — drafts, sealed
+  - `"Constructed"` — ranked ladder, play queue
+  - `"Traditional"` — BO3 variants
+  - `nil` — direct challenges, unknown events
+  """
+  def infer_format(nil), do: {nil, nil}
+
+  def infer_format(event_name) when is_binary(event_name) do
     cond do
       String.starts_with?(event_name, "QuickDraft") -> {"Quick Draft", "Limited"}
       String.starts_with?(event_name, "PremierDraft") -> {"Premier Draft", "Limited"}

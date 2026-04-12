@@ -42,6 +42,7 @@ defmodule Scry2.Decks.DeckProjection do
 
   alias Scry2.Decks
   alias Scry2.Events.Deck.{DeckSubmitted, DeckUpdated}
+  alias Scry2.Events.EnrichEvents
   alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
 
   # ── Projection handlers ─────────────────────────────────────────────
@@ -86,13 +87,16 @@ defmodule Scry2.Decks.DeckProjection do
 
   defp project(%DeckSubmitted{} = event) do
     if event.mtga_deck_id && event.mtga_match_id do
-      # Resolve the stable MTGA deck UUID by matching the submitted main deck
-      # composition against decks already populated from DeckUpdated events.
-      # DeckUpdated always fires before DeckSubmitted for the same deck.
-      # For BO3 games 2/3 only the sideboard changes, so main deck matching works.
-      # Falls back to the match-derived ID if no known deck matches.
+      # Resolve a stable deck identity. For constructed decks, composition
+      # matching links to the DeckUpdated-sourced row. For draft/limited
+      # matches, all games in the same draft run share one deck row keyed
+      # by event_name. Falls back to the per-match synthetic ID.
+      match_created_attrs = find_match_created_attrs(event.mtga_match_id)
+
       mtga_deck_id =
-        resolve_deck_id_by_composition(event.main_deck) || event.mtga_deck_id
+        resolve_deck_id_by_composition(event.main_deck) ||
+          resolve_deck_id_for_draft(match_created_attrs) ||
+          event.mtga_deck_id
 
       # Upsert game submission row for sideboard diff analysis
       Decks.upsert_game_submission!(%{
@@ -105,6 +109,7 @@ defmodule Scry2.Decks.DeckProjection do
       })
 
       # Update first_seen_at / last_played_at / deck_colors on the deck row.
+      # For draft decks, also seed the display name and format.
       existing = Decks.get_deck(mtga_deck_id)
 
       deck_attrs =
@@ -122,12 +127,14 @@ defmodule Scry2.Decks.DeckProjection do
             updates
           end
         else
-          %{
+          base = %{
             mtga_deck_id: mtga_deck_id,
             first_seen_at: event.occurred_at,
             last_played_at: event.occurred_at,
             deck_colors: event.deck_colors || ""
           }
+
+          maybe_add_draft_name(base, match_created_attrs)
         end
 
       Decks.upsert_deck!(deck_attrs)
@@ -135,8 +142,6 @@ defmodule Scry2.Decks.DeckProjection do
       # Seed match result row. MatchCreated fires before DeckSubmitted in the
       # MTGA event stream, so retroactively apply any already-persisted
       # MatchCreated data to avoid leaving format_type nil.
-      match_created_attrs = find_match_created_attrs(event.mtga_match_id)
-
       Decks.upsert_match_result!(
         Map.merge(match_created_attrs, %{
           mtga_deck_id: mtga_deck_id,
@@ -231,6 +236,54 @@ defmodule Scry2.Decks.DeckProjection do
   end
 
   # ── Private helpers ─────────────────────────────────────────────────
+
+  # For Limited-format matches (drafts, sealed), returns a stable deck ID
+  # derived from the event_name so all matches from the same draft run
+  # consolidate under one deck row. Returns nil for non-Limited matches.
+  defp resolve_deck_id_for_draft(%{event_name: event_name}) when is_binary(event_name) do
+    case EnrichEvents.infer_format(event_name) do
+      {_format, "Limited"} -> "draft:#{event_name}"
+      _ -> nil
+    end
+  end
+
+  defp resolve_deck_id_for_draft(_), do: nil
+
+  # Seeds current_name and format on a new draft deck row from the
+  # MatchCreated event_name (e.g. "Quick Draft — TMT").
+  defp maybe_add_draft_name(attrs, %{event_name: event_name}) when is_binary(event_name) do
+    case EnrichEvents.infer_format(event_name) do
+      {format, "Limited"} ->
+        set_code = extract_set_code(event_name)
+        display_name = if set_code, do: "#{format} — #{set_code}", else: format
+
+        Map.merge(attrs, %{current_name: display_name, format: format})
+
+      _ ->
+        attrs
+    end
+  end
+
+  defp maybe_add_draft_name(attrs, _), do: attrs
+
+  # Extracts a 3-letter set code from event_name strings like
+  # "QuickDraft_TMT_20260407" or "MWM_TMT_BotDraft_20260407".
+  # Skips the leading queue-type segment (e.g. "MWM") by dropping the first
+  # part when multiple 3-letter candidates exist.
+  defp extract_set_code(event_name) do
+    candidates =
+      event_name
+      |> String.split("_")
+      |> Enum.filter(fn part ->
+        String.length(part) == 3 and part =~ ~r/^[A-Z]+$/
+      end)
+
+    case candidates do
+      [_prefix, set_code | _] -> set_code
+      [set_code] -> set_code
+      _ -> nil
+    end
+  end
 
   # Finds the stable MTGA deck UUID for a submitted composition by comparing
   # the main deck card list against all known decks in decks_decks.
