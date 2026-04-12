@@ -170,6 +170,34 @@ defmodule Scry2.Events.EnrichEvents do
     end
   end
 
+  @doc """
+  Infers a deck's constructed format from an MTGA event_name string.
+
+  Returns a `@valid_deck_formats` value ("Standard", "Historic", etc.)
+  or nil when the format can't be determined (drafts, sealed, unknown).
+  Used by DeckProjection to backfill nil format when DeckUpdated carried
+  an event-type string that was filtered by `normalize_deck_format/1`.
+  """
+  def infer_deck_format(nil), do: nil
+
+  def infer_deck_format(event_name) when is_binary(event_name) do
+    cond do
+      String.contains?(event_name, "Historic") -> "Historic"
+      String.contains?(event_name, "Alchemy") -> "Alchemy"
+      String.contains?(event_name, "Explorer") -> "Explorer"
+      String.contains?(event_name, "Timeless") -> "Timeless"
+      String.contains?(event_name, "Brawl") -> "Brawl"
+      String.contains?(event_name, "Pauper") -> "Pauper"
+      # Ladder and Play default to Standard (the current standard format)
+      String.starts_with?(event_name, "Ladder") -> "Standard"
+      String.starts_with?(event_name, "Traditional_Ladder") -> "Standard"
+      String.starts_with?(event_name, "Play") -> "Standard"
+      String.starts_with?(event_name, "Traditional_Play") -> "Standard"
+      # Limited formats don't have a constructed deck format
+      true -> nil
+    end
+  end
+
   # MTGA color enum: 1=W, 2=U, 3=B, 4=R, 5=G
   defp color_name("1"), do: "W"
   defp color_name("2"), do: "U"

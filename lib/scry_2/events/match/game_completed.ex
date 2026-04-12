@@ -27,6 +27,19 @@ defmodule Scry2.Events.Match.GameCompleted do
   - `win_reason` — raw MTGA win reason string (e.g. `"ResultReason_LifeLoss"`)
   - `super_format` — format category (e.g. `"Constructed"`, `"Limited"`)
 
+  ## GRE concession bug — `won` is unreliable
+
+  The `won` field comes from the GRE's `GameStateMessage`, which reports the
+  last game state before a concession — NOT the actual outcome. When a player
+  concedes while ahead on board, the GRE incorrectly reports the conceding
+  player as "winning" that game. The authoritative per-game win/loss source
+  is `MatchCompleted.game_results` from the matchmaking layer.
+
+  **Projections that store per-game `won` must correct on `MatchCompleted`.**
+  Both `MatchProjection` and `DeckProjection` implement this correction.
+  See `MatchCompleted` @moduledoc and "GRE game results" in
+  `IdentifyDomainEvents` @moduledoc for the full protocol explanation.
+
   ## Slug
 
   `"game_completed"` — stable, do not rename.

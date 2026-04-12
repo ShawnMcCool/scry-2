@@ -7,6 +7,82 @@ defmodule Scry2.Decks.DeckProjectionTest do
   alias Scry2.Decks.{DeckProjection, MatchResult}
   alias Scry2.Repo
 
+  alias Scry2.Decks.Deck
+
+  describe "deck format inference from event_name" do
+    test "backfills nil format from match event_name on DeckSubmitted" do
+      player = create_player()
+      deck_id = "test-deck-#{System.unique_integer([:positive])}"
+      match_id = "test-match-#{System.unique_integer([:positive])}"
+
+      events = [
+        # DeckUpdated with nil format (simulates filtered event-type format)
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          deck_name: "Test Deck",
+          format: nil,
+          main_deck: [%{arena_id: 91_234, count: 4}],
+          sideboard: []
+        }),
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          event_name: "Ladder",
+          format: "ranked",
+          format_type: "Constructed"
+        }),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          mtga_deck_id: deck_id,
+          main_deck: [%{"arena_id" => 91_234, "count" => 4}]
+        })
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: deck_id)
+      assert deck.format == "Standard"
+    end
+
+    test "does not overwrite existing format" do
+      player = create_player()
+      deck_id = "test-deck-#{System.unique_integer([:positive])}"
+      match_id = "test-match-#{System.unique_integer([:positive])}"
+
+      events = [
+        # DeckUpdated establishes format as "Historic"
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          deck_name: "Test Deck",
+          format: "Historic",
+          main_deck: [%{arena_id: 91_234, count: 4}],
+          sideboard: []
+        }),
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          event_name: "Ladder",
+          format: "ranked",
+          format_type: "Constructed"
+        }),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          mtga_deck_id: deck_id,
+          main_deck: [%{"arena_id" => 91_234, "count" => 4}]
+        })
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: deck_id)
+      assert deck.format == "Historic"
+    end
+  end
+
   describe "game_completed projection" do
     test "stores num_mulligans in game_results" do
       player = create_player()
