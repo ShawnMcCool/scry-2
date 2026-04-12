@@ -36,7 +36,7 @@ defmodule Scry2.Events.SnapshotConvert do
   - `:passthrough` — not a convertible type; use `SnapshotDiff` instead.
   """
 
-  alias Scry2.Events.Deck.DeckInventory
+  alias Scry2.Events.Deck.{DeckInventory, DeckUpdated}
 
   alias Scry2.Events.Economy.{
     CardsAcquired,
@@ -162,6 +162,28 @@ defmodule Scry2.Events.SnapshotConvert do
       :unchanged
     else
       {:converted, key, mastery_events(event, previous_key)}
+    end
+  end
+
+  # ── DeckUpdated ───────────────────────────────────────────────────────────
+
+  # previous_key is a map of %{deck_id => {normalized_main, normalized_side}}
+  # tracking per-deck card composition. No-op updates (deck editor opened,
+  # game sync) are filtered here — only real card changes pass through.
+
+  def convert(%DeckUpdated{} = event, previous_key) do
+    deck_map = previous_key || %{}
+    main_key = normalize_card_list(event.main_deck || [])
+    side_key = normalize_card_list(event.sideboard || [])
+    card_key = {main_key, side_key}
+    prev_card_key = Map.get(deck_map, event.deck_id)
+
+    if card_key == prev_card_key do
+      :unchanged
+    else
+      enriched = enrich_deck_updated_with_diff(event, prev_card_key)
+      new_map = Map.put(deck_map, event.deck_id, card_key)
+      {:converted, new_map, [enriched]}
     end
   end
 
@@ -379,6 +401,70 @@ defmodule Scry2.Events.SnapshotConvert do
       end)
 
     completed_events ++ assigned_events ++ progressed_events
+  end
+
+  # ── Private: deck updated diff ────────────────────────────────────────────
+
+  # First sight of a deck — no previous to diff against, all diffs empty.
+  defp enrich_deck_updated_with_diff(event, nil), do: event
+
+  defp enrich_deck_updated_with_diff(event, {prev_main_key, prev_side_key}) do
+    prev_main = Map.new(prev_main_key)
+    prev_side = Map.new(prev_side_key)
+    curr_main = card_list_to_map(event.main_deck || [])
+    curr_side = card_list_to_map(event.sideboard || [])
+
+    %{
+      event
+      | main_deck_added: compute_added(prev_main, curr_main),
+        main_deck_removed: compute_removed(prev_main, curr_main),
+        sideboard_added: compute_added(prev_side, curr_side),
+        sideboard_removed: compute_removed(prev_side, curr_side)
+    }
+  end
+
+  defp normalize_card_list(cards) do
+    cards
+    |> Enum.map(fn card ->
+      arena_id = card[:arena_id] || card["arena_id"]
+      count = card[:count] || card["count"]
+      {arena_id, count}
+    end)
+    |> Enum.sort_by(fn {arena_id, _count} -> arena_id end)
+  end
+
+  defp card_list_to_map(cards) do
+    Map.new(cards, fn card ->
+      arena_id = card[:arena_id] || card["arena_id"]
+      count = card[:count] || card["count"]
+      {arena_id, count}
+    end)
+  end
+
+  defp compute_added(prev_map, curr_map) do
+    Enum.reduce(curr_map, [], fn {arena_id, new_count}, acc ->
+      old_count = Map.get(prev_map, arena_id, 0)
+
+      if new_count > old_count do
+        [%{arena_id: arena_id, count: new_count - old_count} | acc]
+      else
+        acc
+      end
+    end)
+    |> Enum.sort_by(& &1.arena_id)
+  end
+
+  defp compute_removed(prev_map, curr_map) do
+    Enum.reduce(prev_map, [], fn {arena_id, old_count}, acc ->
+      new_count = Map.get(curr_map, arena_id, 0)
+
+      if old_count > new_count do
+        [%{arena_id: arena_id, count: old_count - new_count} | acc]
+      else
+        acc
+      end
+    end)
+    |> Enum.sort_by(& &1.arena_id)
   end
 
   # ── Private: mastery conversion ───────────────────────────────────────────

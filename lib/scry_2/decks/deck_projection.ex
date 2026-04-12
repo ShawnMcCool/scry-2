@@ -7,18 +7,20 @@ defmodule Scry2.Decks.DeckProjection do
   | | |
   |---|---|
   | **Input**  | `{:domain_event, id, type_slug}` messages on `domain:events` |
-  | **Output** | Rows in `decks_decks`, `decks_match_results`, `decks_game_submissions` |
+  | **Output** | Rows in `decks_decks`, `decks_deck_versions`, `decks_match_results`, `decks_game_submissions` |
   | **Nature** | GenServer (subscribes at init) |
   | **Called from** | Broadcast from `Scry2.Events.append!/2` |
 
   ## Claimed domain events
 
-    * `"deck_updated"` → upsert `decks_decks` with current name, composition, format
+    * `"deck_updated"` → upsert `decks_decks` with current name, composition, format;
+      create version row in `decks_deck_versions` with pre-computed diffs
     * `"deck_submitted"` → upsert `decks_game_submissions`; update `first_seen_at` /
       `last_played_at` on `decks_decks`; seed `decks_match_results` row
     * `"match_created"` → enrich `decks_match_results` with format_type, event_name,
       player_rank, started_at (if a deck submission exists for this match)
-    * `"match_completed"` → enrich `decks_match_results` with won, num_games, completed_at
+    * `"match_completed"` → enrich `decks_match_results` with won, num_games, completed_at;
+      increment version stats on the active `decks_deck_versions` row
     * `"game_completed"` → accumulate game_results on `decks_match_results` for BO3
       game 1 vs games 2/3 analysis; captures on_play from game 1
 
@@ -34,6 +36,7 @@ defmodule Scry2.Decks.DeckProjection do
     projection_tables: [
       Scry2.Decks.GameSubmission,
       Scry2.Decks.MatchResult,
+      Scry2.Decks.DeckVersion,
       Scry2.Decks.Deck
     ]
 
@@ -56,9 +59,25 @@ defmodule Scry2.Decks.DeckProjection do
 
       Decks.upsert_deck!(attrs)
 
+      version_number = Decks.next_version_number(event.deck_id)
+
+      Decks.upsert_deck_version!(%{
+        mtga_deck_id: event.deck_id,
+        version_number: version_number,
+        deck_name: event.deck_name,
+        action_type: event.action_type,
+        main_deck: %{"cards" => event.main_deck || []},
+        sideboard: %{"cards" => event.sideboard || []},
+        main_deck_added: %{"cards" => event.main_deck_added || []},
+        main_deck_removed: %{"cards" => event.main_deck_removed || []},
+        sideboard_added: %{"cards" => event.sideboard_added || []},
+        sideboard_removed: %{"cards" => event.sideboard_removed || []},
+        occurred_at: event.occurred_at
+      })
+
       Log.info(
         :ingester,
-        "projected DeckUpdated deck_id=#{event.deck_id} name=#{inspect(event.deck_name)}"
+        "projected DeckUpdated deck_id=#{event.deck_id} name=#{inspect(event.deck_name)} version=#{version_number}"
       )
     end
 
@@ -154,6 +173,9 @@ defmodule Scry2.Decks.DeckProjection do
       num_games: event.num_games,
       completed_at: event.occurred_at
     })
+
+    # Update version stats for each deck that played this match
+    update_version_stats_for_match(event.mtga_match_id)
 
     Log.info(
       :ingester,
@@ -275,6 +297,25 @@ defmodule Scry2.Decks.DeckProjection do
       Decks.upsert_match_result!(
         Map.merge(attrs, %{mtga_deck_id: mtga_deck_id, mtga_match_id: mtga_match_id})
       )
+    end)
+  end
+
+  defp update_version_stats_for_match(mtga_match_id) do
+    import Ecto.Query
+    alias Scry2.Decks.MatchResult
+    alias Scry2.Repo
+
+    MatchResult
+    |> where([mr], mr.mtga_match_id == ^mtga_match_id and not is_nil(mr.won))
+    |> Repo.all()
+    |> Enum.each(fn match_result ->
+      if match_result.started_at do
+        Decks.increment_version_stats!(
+          match_result.mtga_deck_id,
+          match_result.started_at,
+          match_result
+        )
+      end
     end)
   end
 end

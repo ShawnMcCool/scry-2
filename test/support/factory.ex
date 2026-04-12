@@ -18,7 +18,7 @@ defmodule Scry2.TestFactory do
   alias Scry2.Drafts
   alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Events
-  alias Scry2.Events.Deck.{DeckSelected, DeckSubmitted}
+  alias Scry2.Events.Deck.{DeckSelected, DeckSubmitted, DeckUpdated}
 
   alias Scry2.Events.Draft.{
     DraftCompleted,
@@ -313,6 +313,25 @@ defmodule Scry2.TestFactory do
     }
 
     struct(DeckSubmitted, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_deck_updated(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      deck_id: "test-deck-" <> random_suffix(),
+      deck_name: "Test Deck",
+      format: "Standard",
+      action_type: "Updated",
+      main_deck: [%{arena_id: 91_234, count: 4}, %{arena_id: 91_235, count: 2}],
+      sideboard: [%{arena_id: 91_300, count: 1}],
+      occurred_at: DateTime.utc_now(:second),
+      main_deck_added: [],
+      main_deck_removed: [],
+      sideboard_added: [],
+      sideboard_removed: []
+    }
+
+    struct(DeckUpdated, Map.merge(defaults, Map.new(attrs)))
   end
 
   def build_mulligan_offered(attrs \\ %{}) do

@@ -124,6 +124,7 @@ defmodule Scry2Web.CardComponents do
       <.card_hand arena_ids={[91001, 91002, 91003]} />
       <.card_hand arena_ids={hand} card_names={%{91001 => "Bolt"}} class="w-16" />
   """
+
   attr :arena_ids, :list, required: true
   attr :card_names, :map, default: %{}
   attr :class, :string, default: "w-[4.5rem]"
@@ -137,6 +138,58 @@ defmodule Scry2Web.CardComponents do
         name={Map.get(@card_names, arena_id, "Card image")}
         class={@class}
       />
+    </div>
+    """
+  end
+
+  @doc """
+  Renders a card image with a colored border and count badge for deck diffs.
+
+  `kind` is `:added` (green border, + badge) or `:removed` (red border, − badge).
+
+  ## Examples
+
+      <.card_diff_image arena_id={91001} name="Bolt" count={2} kind={:added} />
+      <.card_diff_image arena_id={91001} name="Bolt" count={1} kind={:removed} />
+  """
+  attr :arena_id, :integer, required: true
+  attr :name, :string, default: "Card image"
+  attr :count, :integer, required: true
+  attr :kind, :atom, values: [:added, :removed], required: true
+  attr :class, :string, default: "w-20"
+
+  def card_diff_image(assigns) do
+    assigns =
+      assign(assigns,
+        border_class:
+          if(assigns.kind == :added,
+            do: "ring-2 ring-success",
+            else: "ring-2 ring-error opacity-70"
+          ),
+        badge_class:
+          if(assigns.kind == :added,
+            do: "bg-success text-success-content",
+            else: "bg-error text-error-content"
+          ),
+        badge_text: if(assigns.kind == :added, do: "+#{assigns.count}", else: "−#{assigns.count}")
+      )
+
+    ~H"""
+    <div class="relative">
+      <div class={[@border_class, "rounded-md"]}>
+        <.card_image
+          arena_id={@arena_id}
+          name={@name}
+          class={@class}
+          id={"diff-#{@kind}-#{@arena_id}"}
+        />
+      </div>
+      <span class={[
+        "absolute top-1 right-1 rounded px-1 text-xs font-bold pointer-events-none",
+        @badge_class
+      ]}>
+        {@badge_text}
+      </span>
     </div>
     """
   end

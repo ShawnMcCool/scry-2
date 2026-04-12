@@ -21,6 +21,10 @@ defmodule Scry2.Events.Deck.DeckUpdated do
   - `action_type` — kind of change: `"Cloned"`, `"Update"`, etc.
   - `main_deck` — list of `%{arena_id, count}` entries for the main deck
   - `sideboard` — list of `%{arena_id, count}` entries for the sideboard, or nil
+  - `main_deck_added` — cards added or increased since previous version (enriched at ingest)
+  - `main_deck_removed` — cards removed or decreased since previous version (enriched at ingest)
+  - `sideboard_added` — sideboard cards added or increased (enriched at ingest)
+  - `sideboard_removed` — sideboard cards removed or decreased (enriched at ingest)
 
   ## Slug
 
@@ -40,7 +44,11 @@ defmodule Scry2.Events.Deck.DeckUpdated do
     :action_type,
     :main_deck,
     :sideboard,
-    :occurred_at
+    :occurred_at,
+    main_deck_added: [],
+    main_deck_removed: [],
+    sideboard_added: [],
+    sideboard_removed: []
   ]
 
   @type card_entry :: %{arena_id: integer(), count: pos_integer()}
@@ -53,7 +61,11 @@ defmodule Scry2.Events.Deck.DeckUpdated do
           action_type: String.t() | nil,
           main_deck: [card_entry()],
           sideboard: [card_entry()] | nil,
-          occurred_at: DateTime.t()
+          occurred_at: DateTime.t(),
+          main_deck_added: [card_entry()],
+          main_deck_removed: [card_entry()],
+          sideboard_added: [card_entry()],
+          sideboard_removed: [card_entry()]
         }
 
   def from_payload(payload) do
@@ -65,7 +77,11 @@ defmodule Scry2.Events.Deck.DeckUpdated do
       action_type: payload["action_type"],
       main_deck: payload["main_deck"] || [],
       sideboard: payload["sideboard"] || [],
-      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+      occurred_at: Payload.parse_datetime(payload["occurred_at"]),
+      main_deck_added: payload["main_deck_added"] || [],
+      main_deck_removed: payload["main_deck_removed"] || [],
+      sideboard_added: payload["sideboard_added"] || [],
+      sideboard_removed: payload["sideboard_removed"] || []
     }
   end
 

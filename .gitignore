@@ -40,3 +40,4 @@ npm-debug.log
 *.db-*
 
 scry2-tray
+.superpowers/
