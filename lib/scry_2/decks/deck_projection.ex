@@ -179,6 +179,13 @@ defmodule Scry2.Decks.DeckProjection do
       completed_at: event.occurred_at
     })
 
+    # MatchCompleted.game_results carries authoritative per-game win/loss
+    # from the matchmaking layer. The GRE's GameCompleted events are
+    # unreliable for conceded games. Correct the game_results map here.
+    if event.game_results do
+      correct_game_results(event.mtga_match_id, event.game_results)
+    end
+
     # Update version stats for each deck that played this match
     update_version_stats_for_match(event.mtga_match_id)
 
@@ -214,7 +221,8 @@ defmodule Scry2.Decks.DeckProjection do
         new_result = %{
           "game" => event.game_number,
           "won" => event.won,
-          "on_play" => event.on_play
+          "on_play" => event.on_play,
+          "num_mulligans" => event.num_mulligans || 0
         }
 
         all_results = Enum.sort_by(other_results ++ [new_result], & &1["game"])
@@ -333,6 +341,45 @@ defmodule Scry2.Decks.DeckProjection do
       _ ->
         %{}
     end
+  end
+
+  # Corrects per-game `won` values in game_results using MatchCompleted's
+  # authoritative data. The GRE's GameCompleted reports the last game state,
+  # which is wrong for conceded games (opponent concedes while ahead).
+  defp correct_game_results(mtga_match_id, authoritative_games) do
+    import Ecto.Query
+    alias Scry2.Decks.MatchResult
+    alias Scry2.Repo
+
+    won_by_game =
+      Map.new(authoritative_games, fn g ->
+        game_num = g["game_number"] || g[:game_number]
+        won = if is_nil(g["won"]), do: g[:won], else: g["won"]
+        {game_num, won}
+      end)
+
+    MatchResult
+    |> where([mr], mr.mtga_match_id == ^mtga_match_id)
+    |> Repo.all()
+    |> Enum.each(fn match_result ->
+      prev = (match_result.game_results && match_result.game_results["results"]) || []
+
+      if prev != [] do
+        corrected =
+          Enum.map(prev, fn game ->
+            case Map.get(won_by_game, game["game"]) do
+              nil -> game
+              won -> Map.put(game, "won", won)
+            end
+          end)
+
+        Decks.upsert_match_result!(%{
+          mtga_deck_id: match_result.mtga_deck_id,
+          mtga_match_id: mtga_match_id,
+          game_results: %{"results" => corrected}
+        })
+      end
+    end)
   end
 
   defp enrich_match_results(mtga_match_id, attrs) do

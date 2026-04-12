@@ -33,6 +33,11 @@ defmodule Scry2Web.DecksLive do
        versions: [],
        version_matches: %{},
        matches: [],
+       matches_total: 0,
+       matches_page: 1,
+       matches_total_pages: 1,
+       format_counts: %{bo1: 0, bo3: 0},
+       active_format: nil,
        cards_by_arena_id: %{},
        active_tab: :overview,
        reload_timer: nil
@@ -47,7 +52,9 @@ defmodule Scry2Web.DecksLive do
       {:noreply, push_navigate(socket, to: ~p"/decks")}
     else
       tab = parse_tab(params["tab"])
-      socket = load_deck_detail(socket, deck, tab)
+      format = parse_format(params["format"])
+      page = parse_page(params["page"])
+      socket = load_deck_detail(socket, deck, tab, format, page)
       {:noreply, socket}
     end
   end
@@ -84,7 +91,12 @@ defmodule Scry2Web.DecksLive do
           fresh_deck = Decks.get_deck(deck.mtga_deck_id)
 
           socket
-          |> load_deck_detail(fresh_deck, socket.assigns.active_tab)
+          |> load_deck_detail(
+            fresh_deck,
+            socket.assigns.active_tab,
+            socket.assigns.active_format,
+            socket.assigns.matches_page
+          )
           |> assign(reload_timer: nil)
       end
 
@@ -225,7 +237,15 @@ defmodule Scry2Web.DecksLive do
             cards_by_arena_id={@cards_by_arena_id}
           />
         <% :matches -> %>
-          <.matches_tab matches={@matches} />
+          <.matches_tab
+            matches={@matches}
+            matches_total={@matches_total}
+            matches_page={@matches_page}
+            matches_total_pages={@matches_total_pages}
+            format_counts={@format_counts}
+            active_format={@active_format}
+            deck={@deck}
+          />
         <% :changes -> %>
           <.changes_tab
             versions={@versions}
@@ -536,56 +556,283 @@ defmodule Scry2Web.DecksLive do
   end
 
   attr :matches, :list, required: true
-
-  defp matches_tab(%{matches: []} = assigns) do
-    ~H"""
-    <.empty_state>No matches recorded for this deck yet.</.empty_state>
-    """
-  end
+  attr :matches_total, :integer, required: true
+  attr :matches_page, :integer, required: true
+  attr :matches_total_pages, :integer, required: true
+  attr :format_counts, :map, required: true
+  attr :active_format, :atom, required: true
+  attr :deck, :map, required: true
 
   defp matches_tab(assigns) do
+    grouped = DecksHelpers.group_matches_by_date(assigns.matches)
+    assigns = assign(assigns, :grouped_matches, grouped)
+
     ~H"""
-    <div class="overflow-x-auto">
-      <table class="table table-zebra w-full">
+    <%!-- Format switcher --%>
+    <div class="flex items-center gap-2 mb-4">
+      <div class="inline-flex bg-base-300 rounded-lg p-0.5 gap-0.5">
+        <.format_switch_btn
+          label="BO3"
+          format={:bo3}
+          active={@active_format}
+          count={@format_counts.bo3}
+          deck={@deck}
+        />
+        <.format_switch_btn
+          label="BO1"
+          format={:bo1}
+          active={@active_format}
+          count={@format_counts.bo1}
+          deck={@deck}
+        />
+      </div>
+    </div>
+
+    <%!-- Empty state --%>
+    <.empty_state :if={@matches == []}>
+      No {bo_label(@active_format)} matches recorded for this deck yet.
+    </.empty_state>
+
+    <%!-- Match table --%>
+    <div :if={@matches != []} class="overflow-x-auto">
+      <table class="table w-full">
         <thead>
           <tr class="text-xs text-base-content/60 uppercase">
-            <th>Date</th>
             <th>Result</th>
-            <th>Format</th>
+            <th>{if @active_format == :bo3, do: "Games", else: "Play / Draw"}</th>
             <th>Event</th>
             <th>Rank</th>
-            <th class="text-center">Games</th>
-            <th class="text-center">On Play</th>
           </tr>
         </thead>
         <tbody>
-          <tr :for={match <- @matches}>
-            <td class="text-sm text-base-content/60 tabular-nums">
-              {DecksHelpers.format_date(match.started_at)}
-            </td>
-            <td>
-              <span class={
-                if match.won, do: "text-success font-semibold", else: "text-error font-semibold"
-              }>
-                {if match.won, do: "Win", else: "Loss"}
-              </span>
-            </td>
-            <td class="text-sm text-base-content/70">
-              {if match.format_type == "Traditional", do: "BO3", else: "BO1"}
-            </td>
-            <td class="text-sm text-base-content/70">{match.event_name || "—"}</td>
-            <td class="text-sm text-base-content/70">{match.player_rank || "—"}</td>
-            <td class="text-center text-sm">{match.num_games || "—"}</td>
-            <td class="text-center text-sm">
-              {case match.on_play do
-                true -> "Play"
-                false -> "Draw"
-                nil -> "—"
-              end}
-            </td>
-          </tr>
+          <%= for {date_label, date_matches} <- @grouped_matches do %>
+            <tr>
+              <td
+                colspan="4"
+                class="text-sm text-base-content/50 font-medium pt-4 pb-1 border-b-0"
+              >
+                {date_label}
+              </td>
+            </tr>
+            <.match_row
+              :for={match <- date_matches}
+              match={match}
+              format={@active_format}
+              deck={@deck}
+            />
+          <% end %>
         </tbody>
       </table>
+
+      <%!-- Pagination --%>
+      <.matches_pagination
+        :if={@matches_total_pages > 1}
+        page={@matches_page}
+        total_pages={@matches_total_pages}
+        total={@matches_total}
+        format={@active_format}
+        deck={@deck}
+      />
+    </div>
+    """
+  end
+
+  defp bo_label(:bo1), do: "BO1"
+  defp bo_label(:bo3), do: "BO3"
+  defp bo_label(_), do: ""
+
+  attr :label, :string, required: true
+  attr :format, :atom, required: true
+  attr :active, :atom, required: true
+  attr :count, :integer, required: true
+  attr :deck, :map, required: true
+
+  defp format_switch_btn(%{count: 0, format: format, active: active} = assigns)
+       when format != active do
+    ~H"""
+    <span class="px-4 py-1.5 rounded-md text-sm font-medium text-base-content/30 cursor-not-allowed">
+      {@label}
+    </span>
+    """
+  end
+
+  defp format_switch_btn(assigns) do
+    ~H"""
+    <.link
+      patch={~p"/decks/#{@deck.mtga_deck_id}?tab=matches&format=#{@format}"}
+      class={[
+        "px-4 py-1.5 rounded-md text-sm font-medium transition-colors",
+        if(@active == @format,
+          do: "bg-base-100 text-base-content shadow-sm",
+          else: "text-base-content/60 hover:text-base-content"
+        )
+      ]}
+    >
+      {@label}
+    </.link>
+    """
+  end
+
+  attr :match, :map, required: true
+  attr :format, :atom, required: true
+  attr :deck, :map, required: true
+
+  defp match_row(%{format: :bo3} = assigns) do
+    game_results = DecksHelpers.format_game_results(assigns.match.game_results)
+    score = DecksHelpers.match_score(assigns.match)
+    assigns = assign(assigns, game_results: game_results, score: score)
+
+    ~H"""
+    <tr class="hover:bg-base-content/5">
+      <td class="align-top">
+        <span class={
+          if @match.won, do: "text-success font-semibold", else: "text-error font-semibold"
+        }>
+          {if @match.won, do: "Win", else: "Loss"}
+        </span>
+        <span :if={@score} class="text-sm text-base-content/50 ml-1">{@score}</span>
+      </td>
+      <td class="align-top">
+        <div class="flex flex-col gap-0.5">
+          <div :for={game <- @game_results} class="text-sm flex items-center gap-1.5">
+            <span class={
+              if game.won, do: "text-success font-semibold", else: "text-error font-semibold"
+            }>
+              {if game.won, do: "W", else: "L"}
+            </span>
+            <span class={if game.on_play, do: "text-info", else: "text-base-content/70"}>
+              {if game.on_play, do: "play", else: "draw"}
+            </span>
+            <span :if={game.num_mulligans > 0} class="text-base-content/40 text-xs">
+              · mull ×{game.num_mulligans}
+            </span>
+          </div>
+        </div>
+      </td>
+      <td class="text-sm text-base-content/70 align-top">
+        {DecksHelpers.humanize_event(@match.event_name, @deck.format)}
+      </td>
+      <td class="align-top">
+        <span
+          :if={@match.player_rank}
+          class="inline-flex items-center gap-1.5 text-sm text-base-content/70"
+        >
+          <.rank_icon
+            rank={@match.player_rank}
+            format_type={@match.format_type || "Constructed"}
+            class="h-4"
+          />
+          {@match.player_rank}
+        </span>
+        <span :if={is_nil(@match.player_rank)} class="text-sm text-base-content/40">—</span>
+      </td>
+    </tr>
+    """
+  end
+
+  defp match_row(%{format: :bo1} = assigns) do
+    game_results = DecksHelpers.format_game_results(assigns.match.game_results)
+    game = List.first(game_results)
+    assigns = assign(assigns, :game, game)
+
+    ~H"""
+    <tr class="hover:bg-base-content/5">
+      <td>
+        <span class={
+          if @match.won, do: "text-success font-semibold", else: "text-error font-semibold"
+        }>
+          {if @match.won, do: "Win", else: "Loss"}
+        </span>
+      </td>
+      <td class="text-sm">
+        <%= if @game do %>
+          <span class={if @game.on_play, do: "text-info", else: "text-base-content/70"}>
+            {if @game.on_play, do: "play", else: "draw"}
+          </span>
+          <span :if={@game.num_mulligans > 0} class="text-base-content/40 text-xs">
+            · mull ×{@game.num_mulligans}
+          </span>
+        <% else %>
+          <span class={if @match.on_play, do: "text-info", else: "text-base-content/70"}>
+            {case @match.on_play do
+              true -> "play"
+              false -> "draw"
+              nil -> "—"
+            end}
+          </span>
+        <% end %>
+      </td>
+      <td class="text-sm text-base-content/70">
+        {DecksHelpers.humanize_event(@match.event_name, @deck.format)}
+      </td>
+      <td>
+        <span
+          :if={@match.player_rank}
+          class="inline-flex items-center gap-1.5 text-sm text-base-content/70"
+        >
+          <.rank_icon
+            rank={@match.player_rank}
+            format_type={@match.format_type || "Constructed"}
+            class="h-4"
+          />
+          {@match.player_rank}
+        </span>
+        <span :if={is_nil(@match.player_rank)} class="text-sm text-base-content/40">—</span>
+      </td>
+    </tr>
+    """
+  end
+
+  defp match_row(assigns) do
+    ~H"""
+    <tr class="hover:bg-base-content/5">
+      <td>
+        <span class={
+          if @match.won, do: "text-success font-semibold", else: "text-error font-semibold"
+        }>
+          {if @match.won, do: "Win", else: "Loss"}
+        </span>
+      </td>
+      <td class="text-sm text-base-content/70">—</td>
+      <td class="text-sm text-base-content/70">
+        {DecksHelpers.humanize_event(@match.event_name, @deck.format)}
+      </td>
+      <td class="text-sm text-base-content/40">—</td>
+    </tr>
+    """
+  end
+
+  attr :page, :integer, required: true
+  attr :total_pages, :integer, required: true
+  attr :total, :integer, required: true
+  attr :format, :atom, required: true
+  attr :deck, :map, required: true
+
+  defp matches_pagination(assigns) do
+    start_item = (assigns.page - 1) * 20 + 1
+    end_item = min(assigns.page * 20, assigns.total)
+    assigns = assign(assigns, start_item: start_item, end_item: end_item)
+
+    ~H"""
+    <div class="flex items-center justify-between px-2 py-3 text-sm">
+      <span class="text-base-content/50 text-xs">
+        Showing {@start_item}–{@end_item} of {@total} matches
+      </span>
+      <div class="flex gap-1">
+        <.link
+          :for={p <- 1..@total_pages}
+          patch={~p"/decks/#{@deck.mtga_deck_id}?tab=matches&format=#{@format}&page=#{p}"}
+          class={[
+            "px-2.5 py-1 rounded text-xs border",
+            if(p == @page,
+              do: "bg-base-300 text-base-content border-base-content/20",
+              else: "border-base-300 text-base-content/50 hover:border-base-content/30"
+            )
+          ]}
+        >
+          {p}
+        </.link>
+      </div>
     </div>
     """
   end
@@ -863,11 +1110,28 @@ defmodule Scry2Web.DecksLive do
 
   # ── Private helpers ───────────────────────────────────────────────────────
 
-  defp load_deck_detail(socket, deck, tab) do
+  defp load_deck_detail(socket, deck, tab, format, page) do
     performance = Decks.get_deck_performance(deck.mtga_deck_id)
     match_count = performance.bo1.total + performance.bo3.total
     version_count = Decks.count_versions(deck.mtga_deck_id)
-    matches = if tab == :matches, do: Decks.list_matches_for_deck(deck.mtga_deck_id), else: []
+
+    {matches, matches_total, format_counts, active_format} =
+      if tab == :matches do
+        counts = Decks.match_counts_by_format(deck.mtga_deck_id)
+        active_format = format || Decks.most_recent_format(deck.mtga_deck_id)
+        offset = (page - 1) * 20
+
+        {matches, total} =
+          Decks.list_matches_for_deck(deck.mtga_deck_id,
+            format: active_format,
+            limit: 20,
+            offset: offset
+          )
+
+        {matches, total, counts, active_format}
+      else
+        {[], 0, %{bo1: 0, bo3: 0}, nil}
+      end
 
     {versions, version_matches} =
       if tab == :changes do
@@ -884,6 +1148,8 @@ defmodule Scry2Web.DecksLive do
       ImageCache.ensure_cached(arena_ids)
     end
 
+    total_pages = max(1, ceil(matches_total / 20))
+
     assign(socket,
       deck: deck,
       performance: performance,
@@ -892,6 +1158,11 @@ defmodule Scry2Web.DecksLive do
       versions: versions,
       version_matches: version_matches,
       matches: matches,
+      matches_total: matches_total,
+      matches_page: page,
+      matches_total_pages: total_pages,
+      format_counts: format_counts,
+      active_format: active_format,
       cards_by_arena_id: cards_by_arena_id,
       active_tab: tab
     )
@@ -926,6 +1197,19 @@ defmodule Scry2Web.DecksLive do
   defp parse_tab("matches"), do: :matches
   defp parse_tab("changes"), do: :changes
   defp parse_tab(_), do: :overview
+
+  defp parse_format("bo1"), do: :bo1
+  defp parse_format("bo3"), do: :bo3
+  defp parse_format(_), do: nil
+
+  defp parse_page(nil), do: 1
+
+  defp parse_page(p) when is_binary(p) do
+    case Integer.parse(p) do
+      {n, _} when n > 0 -> n
+      _ -> 1
+    end
+  end
 
   defp parse_deck_filter("all"), do: :all
   defp parse_deck_filter(_), do: :played

@@ -41,7 +41,10 @@ defmodule Scry2.Events.Deck.DeckSubmitted do
     :sideboard,
     :occurred_at,
     # Enriched at ingestion (ADR-030)
-    :deck_colors
+    :deck_colors,
+    # The player's seat number from ConnectResp systemSeatIds.
+    # Used by ingestion state to track perspective for GameCompleted.
+    :self_seat_id
   ]
 
   @type card_count :: %{arena_id: integer(), count: pos_integer()}

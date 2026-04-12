@@ -210,14 +210,83 @@ defmodule Scry2.Decks do
   end
 
   @doc """
-  Returns all completed match results for a deck, newest first.
+  Returns completed match results for a deck, newest first, with pagination
+  and optional format filter.
+
+  Options:
+    * `:limit` — max results per page (default 20)
+    * `:offset` — pagination offset (default 0)
+    * `:format` — `:bo1` or `:bo3` (default: all)
+
+  Returns `{matches, total_count}`.
   """
-  def list_matches_for_deck(mtga_deck_id) when is_binary(mtga_deck_id) do
-    MatchResult
-    |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
-    |> order_by([mr], desc: mr.started_at)
-    |> Repo.all()
+  def list_matches_for_deck(mtga_deck_id, opts \\ []) when is_binary(mtga_deck_id) do
+    limit = Keyword.get(opts, :limit, 20)
+    offset = Keyword.get(opts, :offset, 0)
+    format = Keyword.get(opts, :format)
+
+    base =
+      MatchResult
+      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> apply_format_filter(format)
+
+    total = Repo.aggregate(base, :count)
+
+    matches =
+      base
+      |> order_by([mr], desc: mr.started_at)
+      |> limit(^limit)
+      |> offset(^offset)
+      |> Repo.all()
+
+    {matches, total}
   end
+
+  @doc """
+  Returns the format (`:bo1` or `:bo3`) that was most recently played for a deck.
+  Returns `:bo3` if no matches exist.
+  """
+  def most_recent_format(mtga_deck_id) when is_binary(mtga_deck_id) do
+    latest =
+      MatchResult
+      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> order_by([mr], desc: mr.started_at)
+      |> limit(1)
+      |> Repo.one()
+
+    case latest do
+      nil -> :bo3
+      match -> if bo3?(match), do: :bo3, else: :bo1
+    end
+  end
+
+  @doc """
+  Returns `%{bo1: count, bo3: count}` for a deck — used to determine
+  which format tabs should be enabled.
+  """
+  def match_counts_by_format(mtga_deck_id) when is_binary(mtga_deck_id) do
+    base = where(MatchResult, [mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+
+    bo3_count = base |> apply_format_filter(:bo3) |> Repo.aggregate(:count)
+    bo1_count = base |> apply_format_filter(:bo1) |> Repo.aggregate(:count)
+
+    %{bo1: bo1_count, bo3: bo3_count}
+  end
+
+  defp apply_format_filter(query, :bo3) do
+    where(query, [mr], mr.format_type == "Traditional" or mr.num_games > 1)
+  end
+
+  defp apply_format_filter(query, :bo1) do
+    where(
+      query,
+      [mr],
+      (is_nil(mr.format_type) or mr.format_type != "Traditional") and
+        (is_nil(mr.num_games) or mr.num_games <= 1)
+    )
+  end
+
+  defp apply_format_filter(query, _), do: query
 
   # ── Writes ────────────────────────────────────────────────────────────────
 

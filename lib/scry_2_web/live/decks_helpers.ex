@@ -308,6 +308,90 @@ defmodule Scry2Web.DecksHelpers do
 
   def deck_card_count(_), do: 0
 
+  # ── Match display helpers ────────────────────────────────────────────
+
+  @doc """
+  Groups a chronologically-sorted list of matches under date labels.
+  Returns `[{label, [match, ...]}]` where label is "Today", "Yesterday",
+  or a formatted date like "April 10".
+  """
+  @spec group_matches_by_date(list()) :: [{String.t(), list()}]
+  def group_matches_by_date([]), do: []
+
+  def group_matches_by_date(matches) do
+    today = Date.utc_today()
+    yesterday = Date.add(today, -1)
+
+    matches
+    |> Enum.group_by(fn match ->
+      case match.started_at do
+        nil -> "Unknown"
+        dt -> date_label(DateTime.to_date(dt), today, yesterday)
+      end
+    end)
+    |> Enum.sort_by(fn {_label, [first | _]} -> first.started_at end, {:desc, DateTime})
+  end
+
+  @doc """
+  Converts an MTGA event name to a human-readable label.
+  Combines the inferred event format with the deck's format when applicable.
+  """
+  @spec humanize_event(String.t() | nil, String.t() | nil) :: String.t()
+  def humanize_event(nil, _deck_format), do: "—"
+
+  def humanize_event(event_name, deck_format) do
+    case Scry2.Events.EnrichEvents.infer_format(event_name) do
+      {"Ranked", _} -> "Ranked #{deck_format || "Constructed"}"
+      {"Ranked BO3", _} -> "Ranked #{deck_format || "Constructed"}"
+      {"Play", _} -> "Play #{deck_format || "Constructed"}"
+      {"Play BO3", _} -> "Play BO3 #{deck_format || "Constructed"}"
+      {"Direct Challenge", _} -> "Direct Challenge"
+      {format, "Limited"} -> format
+      {format, _} -> format
+    end
+  end
+
+  @doc """
+  Extracts per-game details from a match's game_results map.
+  Returns a list of `%{won, on_play, num_mulligans}` sorted by game number.
+  """
+  @spec format_game_results(map() | nil) :: list()
+  def format_game_results(nil), do: []
+
+  def format_game_results(%{"results" => results}) when is_list(results) do
+    results
+    |> Enum.sort_by(& &1["game"])
+    |> Enum.map(fn game ->
+      %{
+        won: game["won"],
+        on_play: game["on_play"],
+        num_mulligans: game["num_mulligans"] || 0
+      }
+    end)
+  end
+
+  def format_game_results(_), do: []
+
+  @doc """
+  Returns a match score string like '2–1' for BO3 matches.
+  Uses the match-level `won` and `num_games` fields since per-game
+  `won` values in game_results may reflect the opponent's perspective.
+  Returns nil for BO1 (single game) or missing data.
+  """
+  @spec match_score(map()) :: String.t() | nil
+  def match_score(%{won: won, num_games: num_games})
+      when is_boolean(won) and is_integer(num_games) and num_games > 1 do
+    if won do
+      losses = num_games - 2
+      "2–#{losses}"
+    else
+      wins = num_games - 2
+      "#{wins}–2"
+    end
+  end
+
+  def match_score(_), do: nil
+
   # ── Private ─────────────────────────────────────────────────────────
 
   defp to_int(n) when is_integer(n), do: n
@@ -326,6 +410,10 @@ defmodule Scry2Web.DecksHelpers do
   defp month_name(10), do: "October"
   defp month_name(11), do: "November"
   defp month_name(12), do: "December"
+
+  defp date_label(date, today, _yesterday) when date == today, do: "Today"
+  defp date_label(date, _today, yesterday) when date == yesterday, do: "Yesterday"
+  defp date_label(date, _today, _yesterday), do: "#{month_name(date.month)} #{date.day}"
 
   # Returns mana curve as %{cmc => total_count} excluding lands.
   defp deck_mana_curve(deck_map, cards_by_arena_id) do

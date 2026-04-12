@@ -47,6 +47,47 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   See `TODO.md` > "Match ingestion follow-ups" for the backlog of
   event types waiting to be added.
+
+  ## MTGA protocol pitfalls (learned the hard way)
+
+  These are non-obvious behaviors in MTGA's wire format that caused
+  data corruption before being understood and handled:
+
+  ### Player seat is NOT always 1
+
+  The player alternates between seat 1 and seat 2 across matches.
+  `MatchGameRoomStateChangedEvent` carries `reservedPlayers[]` with
+  `userId` → `systemSeatId` mapping, so we can find the player
+  correctly. But `GreToClientEvent` (GRE messages) has no
+  `reservedPlayers`. Instead, each GRE message's `systemSeatIds`
+  field tells us which seat the message is addressed to. Since
+  `GreToClientEvent` is the player's client feed, `systemSeatIds[0]`
+  IS the player's seat number.
+
+  ### GRE game results are wrong for conceded games
+
+  When a player concedes, the GRE's `GameStateMessage` with
+  `MatchState_GameComplete` reports the last game state before the
+  concession — showing the conceding player as "winning" that game.
+  The matchmaking layer's `finalMatchResult.resultList[]` (in
+  `MatchGameRoomStateChangedEvent`) is authoritative. The
+  `DeckProjection` corrects per-game `won` values using
+  `MatchCompleted.game_results` after the GRE values are written.
+
+  ### Deck format gets overwritten by event type
+
+  MTGA's `DeckUpsertDeckV2` sets the `Format` attribute to event-type
+  strings like `"DirectGame"` or `"DirectGameLimited"` when a deck is
+  used in direct challenges. This overwrites the actual format
+  (`"Standard"`, `"Historic"`). We filter these via
+  `normalize_deck_format/1` against a whitelist of known formats.
+
+  ### Team IDs differ between GRE and matchmaking
+
+  The `teamId` values in `GameStateMessage.players[]` may use
+  different numbering than `reservedPlayers[].teamId`. Don't compare
+  team IDs across these two message types. Within each message type,
+  team IDs are internally consistent.
   """
 
   alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
@@ -758,7 +799,11 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          {:ok, request} <- decode_request_field(payload) do
       summary = request["Summary"] || %{}
       deck = request["Deck"] || %{}
-      format = extract_attribute(summary["Attributes"], "Format")
+
+      format =
+        summary["Attributes"]
+        |> extract_attribute("Format")
+        |> normalize_deck_format()
 
       main_deck = build_card_list(deck["MainDeck"] || [])
       sideboard = build_card_list(deck["Sideboard"] || [])
@@ -792,7 +837,10 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          %{"Summaries" => summaries} when is_list(summaries) <- payload do
       decks =
         Enum.map(summaries, fn summary ->
-          format = extract_attribute(summary["Attributes"], "Format")
+          format =
+            summary["Attributes"]
+            |> extract_attribute("Format")
+            |> normalize_deck_format()
 
           %{
             deck_id: summary["DeckId"],
@@ -1101,7 +1149,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          match_scope when is_map(match_scope) <- find_match_scope_result(result_list) do
       num_games = count_game_scope_results(result_list)
       winning_team = match_scope["winningTeamId"]
-      game_results = build_game_results(result_list)
+      game_results = build_game_results(result_list, self_team)
 
       [
         %MatchCompleted{
@@ -1174,12 +1222,21 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     Enum.count(result_list, fn row -> row["scope"] == "MatchScope_Game" end)
   end
 
-  defp build_game_results(result_list) do
+  # Per-game results from the matchmaking layer's finalMatchResult.
+  # This is authoritative for win/loss — the GRE's GameCompleted event
+  # is unreliable for conceded games (reports last game state, not the
+  # concession outcome). `self_team` comes from reservedPlayers[].
+  defp build_game_results(result_list, self_team) do
     result_list
     |> Enum.filter(fn row -> row["scope"] == "MatchScope_Game" end)
     |> Enum.with_index(1)
     |> Enum.map(fn {row, index} ->
-      %{game_number: index, winning_team_id: row["winningTeamId"], reason: row["reason"]}
+      %{
+        game_number: index,
+        winning_team_id: row["winningTeamId"],
+        won: row["winningTeamId"] == self_team,
+        reason: row["reason"]
+      }
     end)
   end
 
@@ -1215,6 +1272,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           mtga_deck_id: deck_id,
           main_deck: main_deck,
           sideboard: sideboard,
+          self_seat_id: seat_id,
           occurred_at: occurred_at
         }
 
@@ -1225,7 +1283,13 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   # GameStateMessage with matchState "MatchState_GameComplete" carries
   # per-game results including winner, game number, and player stats.
-  # Self is assumed to be systemSeatNumber 1 (same as match events).
+  #
+  # MTGA GRE protocol: GreToClientEvent is sent TO the player. Each GRE
+  # message's `systemSeatIds` indicates which seat(s) it's addressed to.
+  # Since this is the player's client feed, `systemSeatIds[0]` IS the
+  # player's seat number. We use it to determine which `players[]` entry
+  # is "self" vs "opponent". Without this, hardcoding seat 1 inverts
+  # won/lost and swaps mulligan counts when the player is seat 2.
   defp maybe_build_game_completed(messages, match_id, occurred_at)
        when is_binary(match_id) do
     Enum.find_value(messages, fn msg ->
@@ -1233,11 +1297,13 @@ defmodule Scry2.Events.IdentifyDomainEvents do
            gsm when is_map(gsm) <- extract_game_state(msg),
            game_info when is_map(game_info) <- gsm["gameInfo"],
            "MatchState_GameComplete" <- game_info["matchState"] do
+        # The message's systemSeatIds tells us the player's seat
+        player_seat = msg_seat(msg)
         results = game_info["results"] || []
         game_result = Enum.find(results, &(&1["scope"] == "MatchScope_Game"))
         players = gsm["players"] || []
-        self_player = Enum.find(players, &(&1["systemSeatNumber"] == 1))
-        opponent_player = Enum.find(players, &(&1["systemSeatNumber"] != 1))
+        self_player = Enum.find(players, &(&1["systemSeatNumber"] == player_seat))
+        opponent_player = Enum.find(players, &(&1["systemSeatNumber"] != player_seat))
         self_team = self_player && self_player["teamId"]
 
         %GameCompleted{
@@ -1674,6 +1740,12 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   defp game_state_message?(%{"type" => "GREMessageType_QueuedGameStateMessage"}), do: true
   defp game_state_message?(_), do: false
 
+  # Extracts the seat number from a GRE message's systemSeatIds.
+  # Since GreToClientEvent is the player's client feed, the seat
+  # in systemSeatIds IS the player's seat. Defaults to 1.
+  defp msg_seat(%{"systemSeatIds" => [seat_id | _]}), do: seat_id
+  defp msg_seat(_), do: 1
+
   defp extract_game_state(msg) when is_map(msg), do: msg["gameStateMessage"]
 
   # Transforms a flat array of arena_ids [67810, 67810, 67810, 67810, ...]
@@ -1762,6 +1834,20 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       _ -> nil
     end)
   end
+
+  # MTGA's DeckUpsertDeckV2 sometimes sets the "Format" attribute to an
+  # event-type string (e.g. "DirectGame", "DirectGameLimited") instead of
+  # the actual constructed format ("Standard", "Historic", etc.). This
+  # happens when a deck is submitted for a direct challenge — MTGA
+  # overwrites the format with the queue type. Filter these out so the
+  # deck's format field reflects the true constructed format.
+  @valid_deck_formats ~w(Standard Historic Alchemy Explorer Timeless Brawl StandardBrawl Pauper)
+
+  defp normalize_deck_format(nil), do: nil
+
+  defp normalize_deck_format(format) when format in @valid_deck_formats, do: format
+
+  defp normalize_deck_format(_unrecognized), do: nil
 
   # ── Timestamp parsing ──────────────────────────────────────────────────
 
