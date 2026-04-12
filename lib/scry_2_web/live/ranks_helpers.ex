@@ -66,8 +66,9 @@ defmodule Scry2Web.RanksHelpers do
 
   @doc """
   Returns the ISO8601 timestamps for the first and last snapshot in the season,
-  to use as explicit X-axis bounds on the climb chart so both grids span the
-  full data range rather than fitting independently to their own series.
+  padded by 3% of the data range on each side, to use as explicit X-axis bounds
+  on the climb chart so both grids span the full data range rather than fitting
+  independently to their own series.
 
   Returns `{nil, nil}` for an empty list.
   """
@@ -75,8 +76,13 @@ defmodule Scry2Web.RanksHelpers do
   def chart_time_bounds([]), do: {nil, nil}
 
   def chart_time_bounds(snapshots) do
-    x_min = snapshots |> List.first() |> Map.get(:occurred_at) |> DateTime.to_iso8601()
-    x_max = snapshots |> List.last() |> Map.get(:occurred_at) |> DateTime.to_iso8601()
+    first = snapshots |> List.first() |> Map.get(:occurred_at)
+    last = snapshots |> List.last() |> Map.get(:occurred_at)
+    range_seconds = max(DateTime.diff(last, first, :second), 60)
+    padding = div(range_seconds * 3, 100)
+
+    x_min = first |> DateTime.add(-padding, :second) |> DateTime.to_iso8601()
+    x_max = last |> DateTime.add(padding, :second) |> DateTime.to_iso8601()
     {x_min, x_max}
   end
 
