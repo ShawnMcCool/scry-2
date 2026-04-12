@@ -558,15 +558,26 @@ defmodule Scry2.Events.IngestRawEvents do
 
   # Inject player_id into each domain event struct. SessionStarted events
   # set the player_id (they discover the player), so they stamp themselves.
+  # When the session hasn't seen a SessionStarted yet, falls back to the
+  # known player from prior sessions (single-player app).
   defp stamp_player_id(events, player_id, record) do
-    if is_nil(player_id) do
+    resolved_id = player_id || fallback_player_id()
+
+    if is_nil(resolved_id) do
       Log.warning(
         :ingester,
-        "no player context for raw id=#{record.id} type=#{record.event_type} — events before first SessionStarted"
+        "no player context for raw id=#{record.id} type=#{record.event_type} — no SessionStarted and no prior player"
       )
     end
 
-    Enum.map(events, fn event -> %{event | player_id: player_id} end)
+    Enum.map(events, fn event -> %{event | player_id: resolved_id} end)
+  end
+
+  defp fallback_player_id do
+    case Players.list_players() do
+      [player | _] -> player.id
+      [] -> nil
+    end
   end
 
   # ── Snapshot deduplication and conversion ────────────────────────────
