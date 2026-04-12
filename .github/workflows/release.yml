@@ -207,7 +207,7 @@ jobs:
         shell: pwsh
         run: |
           $version = "${{ github.ref_name }}".TrimStart("v")
-          installer/scripts/build-msi `
+          installer/scripts/build-msi.ps1 `
             -Version $version `
             -TrayExe scry2-tray-msi.exe `
             -VCRedistPath installer/vc_redist.x64.exe
