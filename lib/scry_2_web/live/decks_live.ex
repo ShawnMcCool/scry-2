@@ -599,6 +599,7 @@ defmodule Scry2Web.DecksLive do
         <thead>
           <tr class="text-xs text-base-content/60 uppercase">
             <th>Result</th>
+            <th>Opponent</th>
             <th>{if @active_format == :bo3, do: "Games", else: "Play / Draw"}</th>
             <th>Event</th>
             <th>Rank</th>
@@ -608,7 +609,7 @@ defmodule Scry2Web.DecksLive do
           <%= for {date_label, date_matches} <- @grouped_matches do %>
             <tr>
               <td
-                colspan="4"
+                colspan="5"
                 class="text-sm text-base-content/50 font-medium pt-4 pb-1 border-b-0"
               >
                 {date_label}
@@ -693,6 +694,19 @@ defmodule Scry2Web.DecksLive do
         <span :if={@score} class="text-sm text-base-content/50 ml-1">{@score}</span>
       </td>
       <td class="align-top">
+        <div class="flex items-center gap-1.5">
+          <span class="text-sm truncate max-w-[10rem]">
+            {@match.opponent_screen_name || "Unknown"}
+          </span>
+          <.rank_icon
+            :if={@match.opponent_rank}
+            rank={@match.opponent_rank}
+            format_type={@match.format_type || "Constructed"}
+            class="h-4"
+          />
+        </div>
+      </td>
+      <td class="align-top">
         <div class="flex flex-col gap-0.5">
           <div :for={game <- @game_results} class="text-sm flex items-center gap-1.5">
             <span class={
@@ -743,6 +757,19 @@ defmodule Scry2Web.DecksLive do
         }>
           {if @match.won, do: "Win", else: "Loss"}
         </span>
+      </td>
+      <td>
+        <div class="flex items-center gap-1.5">
+          <span class="text-sm truncate max-w-[10rem]">
+            {@match.opponent_screen_name || "Unknown"}
+          </span>
+          <.rank_icon
+            :if={@match.opponent_rank}
+            rank={@match.opponent_rank}
+            format_type={@match.format_type || "Constructed"}
+            class="h-4"
+          />
+        </div>
       </td>
       <td class="text-sm">
         <%= if @game do %>
