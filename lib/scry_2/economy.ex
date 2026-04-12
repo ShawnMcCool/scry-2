@@ -135,24 +135,29 @@ defmodule Scry2.Economy do
   @doc """
   Splits a raw MTGA event name into `{event_type, set_code}`.
 
-      iex> Scry2.Economy.parse_event_name("Quickdraft Tmt 20260407")
-      {"Quick Draft", "Tmt 20260407"}
+  Handles both underscore and space-separated formats:
+
+      iex> Scry2.Economy.parse_event_name("QuickDraft_TMT_20260407")
+      {"Quick Draft", "TMT"}
+
+      iex> Scry2.Economy.parse_event_name("Sealed")
+      {"Sealed", nil}
   """
   @spec parse_event_name(String.t() | nil) :: {String.t(), String.t() | nil}
   def parse_event_name(nil), do: {"—", nil}
 
   def parse_event_name(name) do
-    case String.split(name, " ", parts: 2) do
-      [type] -> {Map.get(@event_type_map, type, humanize_type(type)), nil}
-      [type, rest] -> {Map.get(@event_type_map, type, humanize_type(type)), rest}
-    end
-  end
+    parts = String.split(name, ~r/[_ ]/)
 
-  defp humanize_type(type) do
-    type
-    |> String.replace(~r/([a-z])([A-Z])/, "\\1 \\2")
-    |> String.split("_")
-    |> Enum.map_join(" ", &String.capitalize/1)
+    event_type =
+      Map.get(@event_type_map, hd(parts)) ||
+        hd(parts)
+        |> String.replace(~r/([a-z])([A-Z])/, "\\1 \\2")
+
+    set_code = Enum.find(tl(parts), &Regex.match?(~r/^[A-Za-z]{2,5}$/, &1))
+    set_code = if set_code, do: String.upcase(set_code)
+
+    {event_type, set_code}
   end
 
   defp maybe_filter_by_player(query, nil), do: query

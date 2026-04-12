@@ -23,13 +23,15 @@ defmodule Scry2Web.EconomyHelpers do
   def delta_class(_), do: "text-base-content/50"
 
   @doc """
-  Returns the net result for an event entry as a list of `{text, color_class}` parts.
+  Returns the net result for an event entry as a list of `{amount_text, currency_type, color_class}` parts.
 
   The entry fee is subtracted from the matching currency, and any reward
   in the other currency is shown as pure gain. Each part is independently colored.
+
+  `currency_type` is `"Gold"`, `"Gems"`, or `nil` (for status text like "In progress").
   """
-  @spec roi_parts(map()) :: [{String.t(), String.t()}]
-  def roi_parts(%{claimed_at: nil}), do: [{"In progress", "text-amber-400"}]
+  @spec roi_parts(map()) :: [{String.t(), String.t() | nil, String.t()}]
+  def roi_parts(%{claimed_at: nil}), do: [{"In progress", nil, "text-amber-400"}]
 
   def roi_parts(%{
         entry_fee: fee,
@@ -48,21 +50,21 @@ defmodule Scry2Web.EconomyHelpers do
     {primary, secondary} =
       case type do
         t when t in ["Gold", "gold"] ->
-          {if(gold_net != 0, do: {format_delta(gold_net) <> " Gold", delta_class(gold_net)}),
-           if(gems_net != 0, do: {format_delta(gems_net) <> " Gems", delta_class(gems_net)})}
+          {if(gold_net != 0, do: {format_delta(gold_net), "Gold", delta_class(gold_net)}),
+           if(gems_net != 0, do: {format_delta(gems_net), "Gems", delta_class(gems_net)})}
 
         _ ->
-          {if(gems_net != 0, do: {format_delta(gems_net) <> " Gems", delta_class(gems_net)}),
-           if(gold_net != 0, do: {format_delta(gold_net) <> " Gold", delta_class(gold_net)})}
+          {if(gems_net != 0, do: {format_delta(gems_net), "Gems", delta_class(gems_net)}),
+           if(gold_net != 0, do: {format_delta(gold_net), "Gold", delta_class(gold_net)})}
       end
 
     case Enum.reject([primary, secondary], &is_nil/1) do
-      [] -> [{"0", "text-base-content/50"}]
+      [] -> [{"0", nil, "text-base-content/50"}]
       parts -> parts
     end
   end
 
-  def roi_parts(_), do: [{"—", "text-base-content/50"}]
+  def roi_parts(_), do: [{"—", nil, "text-base-content/50"}]
 
   @month_names ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
 

@@ -704,6 +704,80 @@ defmodule Scry2Web.CoreComponents do
   def mana_color_class("G"), do: "text-emerald-400"
   def mana_color_class(_), do: "text-base-content/40"
 
+  @doc """
+  Renders an MTG set/expansion symbol using the Keyrune icon font.
+
+  Accepts a set code (e.g. `"TMT"`, `"FDN"`, `"MKM"`) and renders the
+  corresponding expansion symbol. Codes are case-insensitive.
+
+  ## Attributes
+
+  - `:code` — required. The 3-letter set code (e.g. `"TMT"`, `"fdn"`).
+  - `:rarity` — optional. `"common"` | `"uncommon"` | `"rare"` | `"mythic"`.
+    Adds Keyrune's built-in rarity gradient coloring.
+  - `:size` — optional. `"2x"` | `"3x"` | `"4x"` | `"5x"` | `"6x"`.
+  - `:class` — optional extra CSS classes.
+  - `:label` — optional aria-label override. Defaults to the set code.
+
+  ## Examples
+
+      <.set_icon code="TMT" />
+      <.set_icon code="FDN" rarity="rare" />
+      <.set_icon code="MKM" size="2x" class="text-base-content/60" />
+  """
+  attr :code, :string, required: true
+  attr :rarity, :string, default: nil
+  attr :size, :string, default: nil
+  attr :class, :string, default: nil
+  attr :label, :string, default: nil
+
+  def set_icon(assigns) do
+    assigns = assign(assigns, :lower_code, String.downcase(assigns.code))
+
+    ~H"""
+    <i
+      class={[
+        "ss",
+        "ss-#{@lower_code}",
+        @rarity && "ss-#{@rarity}",
+        @size && "ss-#{@size}",
+        @class
+      ]}
+      role="img"
+      aria-label={@label || @code}
+    />
+    """
+  end
+
+  @doc """
+  Renders an inline MTGA currency icon (gold coin or gem).
+
+  ## Attributes
+
+  - `:type` — required. `"Gold"` or `"Gems"` (case-insensitive).
+  - `:class` — optional extra CSS classes.
+
+  ## Examples
+
+      <.currency_icon type="Gold" />
+      <.currency_icon type="Gems" class="size-4" />
+  """
+  attr :type, :string, required: true
+  attr :class, :string, default: "size-3.5"
+
+  def currency_icon(%{type: type} = assigns) do
+    assigns =
+      assign(assigns,
+        src:
+          if(String.downcase(type) in ["gold"], do: "/images/coin.png", else: "/images/gem.png"),
+        alt: if(String.downcase(type) in ["gold"], do: "Gold", else: "Gems")
+      )
+
+    ~H"""
+    <img src={@src} alt={@alt} class={["inline-block align-middle", @class]} />
+    """
+  end
+
   defp mana_color_label("W"), do: "White mana"
   defp mana_color_label("U"), do: "Blue mana"
   defp mana_color_label("B"), do: "Black mana"

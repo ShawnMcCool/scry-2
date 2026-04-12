@@ -113,7 +113,7 @@ defmodule Scry2Web.EconomyLive do
           </.stat_card>
           <.stat_card
             title="Vault"
-            value={"#{Float.round((@inventory.vault_progress || 0) / 1, 1)}%"}
+            value={"#{Float.round((@inventory.vault_progress || 0.0), 1)}%"}
           >
             <:icon><.icon name="hero-archive-box-solid" class="size-5 text-warning" /></:icon>
           </.stat_card>
@@ -184,29 +184,47 @@ defmodule Scry2Web.EconomyLive do
               <tbody>
                 <tr :for={entry <- @entries} class="hover">
                   <td>
-                    <div class="font-medium">{entry.event_type || entry.event_name}</div>
-                    <div :if={entry.set_code} class="text-xs text-base-content/40">
-                      {entry.set_code}
+                    <div class="flex items-center gap-2 font-medium">
+                      <.set_icon
+                        :if={entry.set_code}
+                        code={entry.set_code}
+                        class="text-base-content/60"
+                      />
+                      {entry.event_type || entry.event_name}
                     </div>
                   </td>
                   <td class="text-right tabular-nums">
-                    {EconomyHelpers.format_currency(entry.entry_fee, entry.entry_currency_type || "")}
+                    <span :if={entry.entry_fee} class="inline-flex items-center gap-1">
+                      {EconomyHelpers.format_number(entry.entry_fee)}
+                      <.currency_icon
+                        :if={entry.entry_currency_type}
+                        type={entry.entry_currency_type}
+                      />
+                    </span>
+                    <span :if={!entry.entry_fee}>—</span>
                   </td>
                   <td class="text-right tabular-nums">
                     {if entry.final_wins, do: "#{entry.final_wins}–#{entry.final_losses}", else: "—"}
                   </td>
                   <td class="text-right tabular-nums">
-                    {format_prizes(entry)}
+                    <%= case prize_parts(entry) do %>
+                      <% [] -> %>
+                        —
+                      <% parts -> %>
+                        <%= for {{amount, currency_type}, index} <- Enum.with_index(parts) do %>
+                          <span :if={index > 0} class="text-base-content/30">, </span><span class="inline-flex items-center gap-1">{amount} <.currency_icon type={
+                            currency_type
+                          } /></span>
+                        <% end %>
+                    <% end %>
                   </td>
                   <td class="text-right tabular-nums font-medium">
-                    <span
-                      :for={
-                        {{text, color}, index} <- Enum.with_index(EconomyHelpers.roi_parts(entry))
-                      }
-                      class={color}
-                    >
-                      <span :if={index > 0} class="text-base-content/30">, </span>{text}
-                    </span>
+                    <%= for {{text, currency_type, color}, index} <- Enum.with_index(EconomyHelpers.roi_parts(entry)) do %>
+                      <span :if={index > 0} class="text-base-content/30">, </span><span class={[
+                        "inline-flex items-center gap-1",
+                        color
+                      ]}>{text} <.currency_icon :if={currency_type} type={currency_type} /></span>
+                    <% end %>
                   </td>
                   <td class="text-right tabular-nums text-base-content/50">
                     {EconomyHelpers.format_short_date(entry.joined_at)}
@@ -221,16 +239,13 @@ defmodule Scry2Web.EconomyLive do
     """
   end
 
-  defp format_prizes(%{gems_awarded: gems, gold_awarded: gold}) do
-    parts =
-      [
-        if(gems && gems > 0, do: EconomyHelpers.format_number(gems) <> " Gems"),
-        if(gold && gold > 0, do: EconomyHelpers.format_number(gold) <> " Gold")
-      ]
-      |> Enum.reject(&is_nil/1)
-
-    if parts == [], do: "—", else: Enum.join(parts, ", ")
+  defp prize_parts(%{gems_awarded: gems, gold_awarded: gold}) do
+    [
+      if(gems && gems > 0, do: {EconomyHelpers.format_number(gems), "Gems"}),
+      if(gold && gold > 0, do: {EconomyHelpers.format_number(gold), "Gold"})
+    ]
+    |> Enum.reject(&is_nil/1)
   end
 
-  defp format_prizes(_), do: "—"
+  defp prize_parts(_), do: []
 end
