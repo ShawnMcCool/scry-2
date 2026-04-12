@@ -58,7 +58,7 @@ defmodule Scry2Web.MatchesLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold mb-6">Matches</h1>
+      <h1 class="text-2xl font-semibold mb-6 font-beleren">Matches</h1>
 
       <.empty_state :if={@matches == []}>
         No matches recorded yet. Play a game with MTGA detailed logs enabled to see entries here.
@@ -143,13 +143,13 @@ defmodule Scry2Web.MatchesLive do
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <.back_link navigate={~p"/matches"} label="All matches" />
 
-      <h1 class="text-2xl font-semibold">{@match.event_name}</h1>
+      <h1 class="text-2xl font-semibold font-beleren">{@match.event_name}</h1>
       <p class="text-sm text-base-content/60">
         {format_label(@match.format)} · {format_datetime(@match.started_at)}
       </p>
 
       <section :if={@match.games != []}>
-        <h2 class="text-lg font-semibold mb-2">Games</h2>
+        <h2 class="text-lg font-semibold mb-2 font-beleren">Games</h2>
         <table class="table table-sm">
           <thead>
             <tr>

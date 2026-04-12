@@ -266,7 +266,7 @@ defmodule Scry2Web.SettingsLive do
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <div class="max-w-3xl space-y-6">
-        <h1 class="text-2xl font-semibold">Settings</h1>
+        <h1 class="text-2xl font-semibold font-beleren">Settings</h1>
 
         <section class="card bg-base-200">
           <div class="card-body">

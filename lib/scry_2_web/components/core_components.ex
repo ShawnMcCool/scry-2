@@ -465,7 +465,7 @@ defmodule Scry2Web.CoreComponents do
           {render_slot(@icon)}
           {@title}
         </p>
-        <p class={["text-2xl font-semibold", @class]}>{@value}</p>
+        <p class={["text-2xl font-semibold font-beleren", @class]}>{@value}</p>
       </div>
     </div>
     """

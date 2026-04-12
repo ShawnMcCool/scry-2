@@ -64,7 +64,7 @@ defmodule Scry2Web.HealthLive do
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-semibold">Health</h1>
+        <h1 class="text-2xl font-semibold font-beleren">Health</h1>
         <button phx-click="reset_setup" class="btn btn-ghost btn-xs">
           Run setup tour again
         </button>

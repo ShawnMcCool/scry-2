@@ -140,7 +140,7 @@ defmodule Scry2Web.SetupLive do
     <main class="min-h-screen flex items-center justify-center px-4 py-8">
       <div class="w-full max-w-2xl space-y-5">
         <header class="text-center">
-          <h1 class="text-2xl font-semibold flex items-center justify-center gap-2">
+          <h1 class="text-2xl font-semibold font-beleren flex items-center justify-center gap-2">
             <.icon name="hero-eye" class="size-6 text-primary" /> Scry 2
           </h1>
           <p class="text-xs text-base-content/60 mt-1">First-run setup</p>

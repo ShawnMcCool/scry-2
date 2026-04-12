@@ -81,7 +81,7 @@ defmodule Scry2Web.EconomyLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold mb-6">Economy</h1>
+      <h1 class="text-2xl font-semibold mb-6 font-beleren">Economy</h1>
 
       <.empty_state :if={is_nil(@inventory) and @entries == []}>
         No economy data yet. Join an event or play a match to start tracking.
@@ -93,8 +93,12 @@ defmodule Scry2Web.EconomyLive do
       >
         <%!-- Current balance cards --%>
         <div :if={@inventory} class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
-          <.stat_card title="Gold" value={EconomyHelpers.format_number(@inventory.gold || 0)} />
-          <.stat_card title="Gems" value={EconomyHelpers.format_number(@inventory.gems || 0)} />
+          <.stat_card title="Gold" value={EconomyHelpers.format_number(@inventory.gold || 0)}>
+            <:icon><img src={~p"/images/coin.png"} class="size-5" alt="Gold" /></:icon>
+          </.stat_card>
+          <.stat_card title="Gems" value={EconomyHelpers.format_number(@inventory.gems || 0)}>
+            <:icon><img src={~p"/images/gem.png"} class="size-5" alt="Gems" /></:icon>
+          </.stat_card>
           <.stat_card title="Common" value={@inventory.wildcards_common || 0}>
             <:icon><.wildcard_icon rarity="common" /></:icon>
           </.stat_card>
@@ -162,7 +166,7 @@ defmodule Scry2Web.EconomyLive do
 
         <%!-- Event history --%>
         <section :if={@entries != []}>
-          <h2 class="text-lg font-semibold mb-3">Event History</h2>
+          <h2 class="text-lg font-semibold mb-3 font-beleren">Event History</h2>
           <div class="overflow-x-auto rounded-lg border border-base-content/5">
             <table class="table table-sm">
               <thead>
