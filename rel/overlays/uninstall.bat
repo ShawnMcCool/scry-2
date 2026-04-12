@@ -50,7 +50,7 @@ echo.
 echo If you want to delete your database and config, run:
 echo   rmdir /s /q "%DATA_DIR%"
 echo.
-pause
+if not "%SCRY2_QUIET%"=="1" pause
 exit /b 0
 
 REM === Subroutines ===
@@ -85,7 +85,7 @@ set /a WAIT_COUNT+=1
 if %WAIT_COUNT% geq 15 (
     echo ERROR: Could not stop all Scry2 processes after 15 seconds.
     echo Please close Scry2 manually and try again.
-    pause
+    if not "%SCRY2_QUIET%"=="1" pause
     exit /b 1
 )
 timeout /t 1 /nobreak >nul
@@ -102,7 +102,7 @@ if %DEL_ATTEMPTS% geq 5 (
     echo ERROR: Could not remove %INSTALL_DIR%
     echo Some files may still be locked. Please close any programs
     echo using files in that directory and try again.
-    pause
+    if not "%SCRY2_QUIET%"=="1" pause
     exit /b 1
 )
 echo Waiting for file locks to release...

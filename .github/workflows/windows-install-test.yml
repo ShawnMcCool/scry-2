@@ -1,0 +1,340 @@
+name: Windows Install Test
+
+on:
+  pull_request:
+    paths:
+      - 'installer/**'
+      - 'rel/overlays/**'
+      - 'tray/**'
+      - 'config/runtime.exs'
+      - 'mix.exs'
+      - '.github/workflows/windows-install-test.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'installer/**'
+      - 'rel/overlays/**'
+      - 'tray/**'
+      - 'config/runtime.exs'
+      - 'mix.exs'
+      - '.github/workflows/windows-install-test.yml'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows artifacts
+    runs-on: windows-latest
+    env:
+      MIX_ENV: prod
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set synthetic CI version
+        shell: python
+        run: |
+          import re
+          with open('mix.exs') as f:
+              content = f.read()
+          updated = re.sub(r'version: "[^"]+"', 'version: "0.0.0"', content)
+          with open('mix.exs', 'w') as f:
+              f.write(updated)
+
+      - uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.19'
+          otp-version: '28'
+
+      - name: Cache Mix deps and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: windows-mix-prod-1.19-28-${{ hashFiles('**/mix.lock') }}
+          restore-keys: windows-mix-prod-1.19-28-
+
+      - name: Install dependencies
+        run: mix deps.get --only prod
+
+      - name: Compile
+        run: mix compile
+        env:
+          MIX_OS_DEPS_COMPILE_PARTITION_COUNT: "8"
+
+      - name: Deploy assets
+        run: mix assets.deploy
+
+      - name: Build release
+        run: mix release
+        env:
+          MIX_OS_DEPS_COMPILE_PARTITION_COUNT: "8"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache-dependency-path: tray/go.sum
+
+      - name: Build tray binary (zip variant)
+        shell: pwsh
+        run: |
+          cd tray
+          go build -ldflags="-H windowsgui -X 'scry2/tray/updater.CurrentVersion=v0.0.0'" -o ../scry2-tray.exe .
+
+      - name: Build tray binary (MSI variant)
+        shell: pwsh
+        run: |
+          cd tray
+          go build -ldflags="-H windowsgui -X 'scry2/tray/updater.CurrentVersion=v0.0.0' -X 'scry2/tray/updater.InstallerType=msi'" -o ../scry2-tray-msi.exe .
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          $ARCHIVE = "scry_2-v0.0.0-windows-x86_64"
+          New-Item -ItemType Directory -Name $ARCHIVE
+          Copy-Item -Recurse "_build\prod\rel\scry_2\*" "$ARCHIVE\"
+          Copy-Item "scry2-tray.exe" "$ARCHIVE\scry2-tray.exe"
+          Compress-Archive -Path "$ARCHIVE" -DestinationPath "${ARCHIVE}.zip"
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Install WiX v5
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add WixToolset.UI.wixext/5.0.2
+          wix extension add WixToolset.Util.wixext/5.0.2
+          wix extension add WixToolset.Firewall.wixext/5.0.2
+          wix extension add WixToolset.BootstrapperApplications.wixext/5.0.2
+
+      - name: Download VC++ Redistributable
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" `
+            -OutFile "installer/vc_redist.x64.exe"
+
+      - name: Build MSI installer
+        shell: pwsh
+        run: |
+          installer/scripts/build-msi.ps1 `
+            -Version "0.0.0" `
+            -TrayExe scry2-tray-msi.exe `
+            -VCRedistPath installer/vc_redist.x64.exe
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scry2-zip
+          path: scry_2-v0.0.0-windows-x86_64.zip
+
+      - name: Upload MSI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: scry2-msi
+          path: installer/output/Scry2Setup-v0.0.0.exe
+
+  test-zip-install:
+    name: Test zip installation
+    runs-on: windows-latest
+    needs: build-windows
+    env:
+      SCRY2_QUIET: "1"
+
+    steps:
+      - name: Download zip artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: scry2-zip
+
+      - name: Extract zip
+        shell: pwsh
+        run: Expand-Archive -Path "scry_2-v0.0.0-windows-x86_64.zip" -DestinationPath .
+
+      - name: Run install.bat
+        shell: cmd
+        run: scry_2-v0.0.0-windows-x86_64\install.bat
+
+      - name: Verify file layout
+        shell: pwsh
+        run: |
+          $installDir = "$env:LOCALAPPDATA\scry_2"
+          if (-not (Test-Path "$installDir\scry2-tray.exe")) { throw "scry2-tray.exe missing from $installDir" }
+          if (-not (Test-Path "$installDir\bin\scry_2.bat")) { throw "bin\scry_2.bat missing from $installDir" }
+          Write-Host "File layout OK: tray and release bin present"
+
+      - name: Verify registry autostart
+        shell: pwsh
+        run: |
+          $val = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Scry2" -ErrorAction Stop
+          if ($val.Scry2 -notlike "*scry2-tray.exe*") { throw "Autostart registry value incorrect: $($val.Scry2)" }
+          Write-Host "Registry autostart OK: $($val.Scry2)"
+
+      - name: Verify runtime eval
+        shell: cmd
+        run: |
+          "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" eval "IO.puts(:ok)"
+
+      - name: Start backend
+        shell: cmd
+        run: |
+          "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" start
+
+      - name: Wait for web UI
+        shell: pwsh
+        run: |
+          $timeout = 60
+          $start = Get-Date
+          $success = $false
+          while ((Get-Date) -lt $start.AddSeconds($timeout)) {
+              try {
+                  $response = Invoke-WebRequest -Uri "http://localhost:6015" -UseBasicParsing -TimeoutSec 3
+                  if ($response.StatusCode -eq 200) {
+                      Write-Host "Web UI responded with HTTP 200"
+                      $success = $true
+                      break
+                  }
+              } catch { }
+              Start-Sleep -Seconds 2
+          }
+          if (-not $success) { throw "Web UI did not respond within ${timeout}s" }
+
+      - name: Stop backend
+        shell: cmd
+        run: |
+          "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" stop
+
+      - name: Run uninstall.bat
+        shell: cmd
+        run: |
+          "%LOCALAPPDATA%\scry_2\uninstall.bat"
+
+      - name: Wait for uninstall to complete
+        shell: pwsh
+        run: |
+          $timeout = 30
+          $start = Get-Date
+          while ((Get-Date) -lt $start.AddSeconds($timeout)) {
+              if (-not (Test-Path "$env:LOCALAPPDATA\scry_2")) {
+                  Write-Host "Install directory removed"
+                  return
+              }
+              Start-Sleep -Seconds 2
+          }
+          throw "Install directory still present after ${timeout}s"
+
+      - name: Verify cleanup
+        shell: pwsh
+        run: |
+          if (Test-Path "$env:LOCALAPPDATA\scry_2") { throw "Install directory not removed" }
+          $autostart = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Scry2" -ErrorAction SilentlyContinue
+          if ($autostart) { throw "Autostart registry key not removed" }
+          Write-Host "Cleanup OK: install dir gone, registry key removed"
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scry2-logs-zip
+          path: |
+            ${{ env.APPDATA }}\scry_2\log\
+          if-no-files-found: ignore
+
+  test-msi-install:
+    name: Test MSI installation
+    runs-on: windows-latest
+    needs: build-windows
+
+    steps:
+      - name: Download MSI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: scry2-msi
+
+      - name: Install via Burn bootstrapper
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Filter "Scry2Setup-*.exe" | Select-Object -First 1
+          Write-Host "Installing: $($exe.Name)"
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "/quiet /norestart" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Bootstrapper exited with code $($proc.ExitCode)" }
+          Write-Host "Installation completed"
+
+      - name: Verify file layout
+        shell: pwsh
+        run: |
+          $installDir = "${env:ProgramFiles}\Scry2"
+          if (-not (Test-Path "$installDir\scry2-tray.exe")) { throw "scry2-tray.exe missing from $installDir" }
+          if (-not (Test-Path "$installDir\bin\scry_2.bat")) { throw "bin\scry_2.bat missing from $installDir" }
+          Write-Host "File layout OK: tray and release bin present"
+
+      - name: Verify registry autostart
+        shell: pwsh
+        run: |
+          $val = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Scry2" -ErrorAction Stop
+          if ($val.Scry2 -notlike "*scry2-tray.exe*") { throw "Autostart registry value incorrect: $($val.Scry2)" }
+          Write-Host "Registry autostart OK: $($val.Scry2)"
+
+      - name: Verify runtime eval
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles}\Scry2\bin\scry_2.bat" eval "IO.puts(:ok)"
+          if ($LASTEXITCODE -ne 0) { throw "Runtime eval failed with exit code $LASTEXITCODE" }
+
+      - name: Start backend
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles}\Scry2\bin\scry_2.bat" start
+
+      - name: Wait for web UI
+        shell: pwsh
+        run: |
+          $timeout = 60
+          $start = Get-Date
+          $success = $false
+          while ((Get-Date) -lt $start.AddSeconds($timeout)) {
+              try {
+                  $response = Invoke-WebRequest -Uri "http://localhost:6015" -UseBasicParsing -TimeoutSec 3
+                  if ($response.StatusCode -eq 200) {
+                      Write-Host "Web UI responded with HTTP 200"
+                      $success = $true
+                      break
+                  }
+              } catch { }
+              Start-Sleep -Seconds 2
+          }
+          if (-not $success) { throw "Web UI did not respond within ${timeout}s" }
+
+      - name: Stop backend
+        shell: pwsh
+        run: |
+          & "${env:ProgramFiles}\Scry2\bin\scry_2.bat" stop
+
+      - name: Uninstall via Burn bootstrapper
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Filter "Scry2Setup-*.exe" | Select-Object -First 1
+          Write-Host "Uninstalling: $($exe.Name)"
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "/uninstall /quiet /norestart" -Wait -PassThru
+          if ($proc.ExitCode -ne 0) { throw "Uninstall exited with code $($proc.ExitCode)" }
+          Write-Host "Uninstall completed"
+
+      - name: Verify cleanup
+        shell: pwsh
+        run: |
+          if (Test-Path "${env:ProgramFiles}\Scry2") { throw "Install directory not removed" }
+          $autostart = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Scry2" -ErrorAction SilentlyContinue
+          if ($autostart) { throw "Autostart registry key not removed" }
+          Write-Host "Cleanup OK: install dir gone, registry key removed"
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scry2-logs-msi
+          path: |
+            ${{ env.APPDATA }}\scry_2\log\
+          if-no-files-found: ignore
