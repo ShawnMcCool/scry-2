@@ -196,11 +196,15 @@ defmodule Scry2Web.EconomyLive do
                   <td class="text-right tabular-nums">
                     {format_prizes(entry)}
                   </td>
-                  <td class={[
-                    "text-right tabular-nums font-medium",
-                    EconomyHelpers.roi_color_class(entry)
-                  ]}>
-                    {EconomyHelpers.format_roi(entry)}
+                  <td class="text-right tabular-nums font-medium">
+                    <span
+                      :for={
+                        {{text, color}, index} <- Enum.with_index(EconomyHelpers.roi_parts(entry))
+                      }
+                      class={color}
+                    >
+                      <span :if={index > 0} class="text-base-content/30">, </span>{text}
+                    </span>
                   </td>
                   <td class="text-right tabular-nums text-base-content/50">
                     {EconomyHelpers.format_short_date(entry.joined_at)}

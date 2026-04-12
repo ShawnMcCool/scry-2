@@ -41,12 +41,12 @@ defmodule Scry2Web.EconomyHelpersTest do
     end
   end
 
-  describe "format_roi/1" do
+  describe "roi_parts/1" do
     test "in-progress entry" do
-      assert EconomyHelpers.format_roi(%{claimed_at: nil}) == "In progress"
+      assert EconomyHelpers.roi_parts(%{claimed_at: nil}) == [{"In progress", "text-amber-400"}]
     end
 
-    test "gem entry with profit" do
+    test "gem entry with profit includes gold reward, each independently colored" do
       entry = %{
         entry_fee: 1500,
         entry_currency_type: "Gems",
@@ -55,10 +55,40 @@ defmodule Scry2Web.EconomyHelpersTest do
         claimed_at: ~U[2026-04-08 12:00:00Z]
       }
 
-      assert EconomyHelpers.format_roi(entry) == "+500 Gems"
+      assert EconomyHelpers.roi_parts(entry) == [
+               {"+500 Gems", "text-emerald-400"},
+               {"+1,000 Gold", "text-emerald-400"}
+             ]
     end
 
-    test "gold entry with loss" do
+    test "gem entry with only gem profit" do
+      entry = %{
+        entry_fee: 750,
+        entry_currency_type: "Gems",
+        gems_awarded: 950,
+        gold_awarded: 0,
+        claimed_at: ~U[2026-04-08 12:00:00Z]
+      }
+
+      assert EconomyHelpers.roi_parts(entry) == [{"+200 Gems", "text-emerald-400"}]
+    end
+
+    test "gold entry with loss but gem gain — each colored independently" do
+      entry = %{
+        entry_fee: 10_000,
+        entry_currency_type: "Gold",
+        gems_awarded: 200,
+        gold_awarded: 1000,
+        claimed_at: ~U[2026-04-08 12:00:00Z]
+      }
+
+      assert EconomyHelpers.roi_parts(entry) == [
+               {"-9,000 Gold", "text-red-400"},
+               {"+200 Gems", "text-emerald-400"}
+             ]
+    end
+
+    test "gold entry with loss and no gems" do
       entry = %{
         entry_fee: 500,
         entry_currency_type: "Gold",
@@ -67,7 +97,7 @@ defmodule Scry2Web.EconomyHelpersTest do
         claimed_at: ~U[2026-04-08 12:00:00Z]
       }
 
-      assert EconomyHelpers.format_roi(entry) == "-400 Gold"
+      assert EconomyHelpers.roi_parts(entry) == [{"-400 Gold", "text-red-400"}]
     end
   end
 
@@ -206,36 +236,6 @@ defmodule Scry2Web.EconomyHelpersTest do
 
     test "handles nil" do
       assert EconomyHelpers.format_event_name(nil) == {"—", nil}
-    end
-  end
-
-  describe "roi_color_class/1" do
-    test "in-progress entry" do
-      assert EconomyHelpers.roi_color_class(%{claimed_at: nil}) == "text-amber-400"
-    end
-
-    test "profitable gem entry" do
-      entry = %{
-        entry_fee: 750,
-        entry_currency_type: "Gems",
-        gems_awarded: 2000,
-        gold_awarded: 0,
-        claimed_at: ~U[2026-04-08 12:00:00Z]
-      }
-
-      assert EconomyHelpers.roi_color_class(entry) == "text-emerald-400"
-    end
-
-    test "losing gem entry" do
-      entry = %{
-        entry_fee: 750,
-        entry_currency_type: "Gems",
-        gems_awarded: 300,
-        gold_awarded: 0,
-        claimed_at: ~U[2026-04-08 12:00:00Z]
-      }
-
-      assert EconomyHelpers.roi_color_class(entry) == "text-red-400"
     end
   end
 
