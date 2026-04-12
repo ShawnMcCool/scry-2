@@ -176,12 +176,12 @@ jobs:
       - name: Verify runtime eval
         shell: cmd
         run: |
-          "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" eval "IO.puts(:ok)"
+          CALL "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" eval "IO.puts(:ok)"
 
       - name: Start backend
         shell: cmd
         run: |
-          "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" start
+          CALL "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" start
 
       - name: Wait for web UI
         shell: pwsh
@@ -205,12 +205,12 @@ jobs:
       - name: Stop backend
         shell: cmd
         run: |
-          "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" stop
+          CALL "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" stop
 
       - name: Run uninstall.bat
         shell: cmd
         run: |
-          "%LOCALAPPDATA%\scry_2\uninstall.bat"
+          CALL "%LOCALAPPDATA%\scry_2\uninstall.bat"
 
       - name: Wait for uninstall to complete
         shell: pwsh
@@ -258,8 +258,11 @@ jobs:
         shell: pwsh
         run: |
           $exe = Get-ChildItem -Filter "Scry2Setup-*.exe" | Select-Object -First 1
+          $logFile = "$env:TEMP\scry2-burn-install.log"
           Write-Host "Installing: $($exe.Name)"
-          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "/quiet /norestart" -Wait -PassThru
+          Write-Host "Log file: $logFile"
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "/quiet /norestart /log `"$logFile`"" -Wait -PassThru
+          if (Test-Path $logFile) { Get-Content $logFile -Tail 50 }
           if ($proc.ExitCode -ne 0) { throw "Bootstrapper exited with code $($proc.ExitCode)" }
           Write-Host "Installation completed"
 
@@ -317,8 +320,10 @@ jobs:
         shell: pwsh
         run: |
           $exe = Get-ChildItem -Filter "Scry2Setup-*.exe" | Select-Object -First 1
+          $logFile = "$env:TEMP\scry2-burn-uninstall.log"
           Write-Host "Uninstalling: $($exe.Name)"
-          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "/uninstall /quiet /norestart" -Wait -PassThru
+          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "/uninstall /quiet /norestart /log `"$logFile`"" -Wait -PassThru
+          if (Test-Path $logFile) { Get-Content $logFile -Tail 50 }
           if ($proc.ExitCode -ne 0) { throw "Uninstall exited with code $($proc.ExitCode)" }
           Write-Host "Uninstall completed"
 
@@ -337,4 +342,5 @@ jobs:
           name: scry2-logs-msi
           path: |
             ${{ env.APPDATA }}\scry_2\log\
+            ${{ env.TEMP }}\scry2-burn-*.log
           if-no-files-found: ignore
