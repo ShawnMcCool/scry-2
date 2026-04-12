@@ -677,7 +677,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
         wildcards_uncommon: inventory["WildCardUnCommons"],
         wildcards_rare: inventory["WildCardRares"],
         wildcards_mythic: inventory["WildCardMythics"],
-        vault_progress: inventory["TotalVaultProgress"],
+        vault_progress: safe_divide(inventory["TotalVaultProgress"], 10),
         draft_tokens: inventory["DraftTokens"],
         sealed_tokens: inventory["SealedTokens"],
         occurred_at: occurred_at
@@ -915,7 +915,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
         wildcards_uncommon: inventory["WildCardUnCommons"],
         wildcards_rare: inventory["WildCardRares"],
         wildcards_mythic: inventory["WildCardMythics"],
-        vault_progress: inventory["TotalVaultProgress"],
+        vault_progress: safe_divide(inventory["TotalVaultProgress"], 10),
         draft_tokens: inventory["DraftTokens"],
         sealed_tokens: inventory["SealedTokens"],
         occurred_at: occurred_at
@@ -1032,7 +1032,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          %InventorySnapshot{
            gold: payload["Gold"],
            gems: payload["Gems"],
-           vault_progress: payload["TotalVaultProgress"],
+           vault_progress: safe_divide(payload["TotalVaultProgress"], 10),
            wildcards_common: payload["WildCardCommons"],
            wildcards_uncommon: payload["WildCardUnCommons"],
            wildcards_rare: payload["WildCardRares"],
@@ -1843,4 +1843,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   defp parse_arena_id(id) when is_integer(id), do: id
   defp parse_arena_id(_), do: nil
+
+  defp safe_divide(nil, _divisor), do: nil
+  defp safe_divide(value, divisor) when is_number(value), do: value / divisor
 end
