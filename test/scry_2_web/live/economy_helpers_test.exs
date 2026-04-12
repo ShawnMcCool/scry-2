@@ -189,6 +189,66 @@ defmodule Scry2Web.EconomyHelpersTest do
     end
   end
 
+  describe "format_event_name/1" do
+    test "splits quickdraft format" do
+      assert EconomyHelpers.format_event_name("Quickdraft Tmt 20260407") ==
+               {"Quick Draft", "Tmt 20260407"}
+    end
+
+    test "splits premier draft format" do
+      assert EconomyHelpers.format_event_name("PremierDraft Fdn 20260301") ==
+               {"Premier Draft", "Fdn 20260301"}
+    end
+
+    test "handles single word" do
+      assert EconomyHelpers.format_event_name("Sealed") == {"Sealed", nil}
+    end
+
+    test "handles nil" do
+      assert EconomyHelpers.format_event_name(nil) == {"—", nil}
+    end
+  end
+
+  describe "roi_color_class/1" do
+    test "in-progress entry" do
+      assert EconomyHelpers.roi_color_class(%{claimed_at: nil}) == "text-amber-400"
+    end
+
+    test "profitable gem entry" do
+      entry = %{
+        entry_fee: 750,
+        entry_currency_type: "Gems",
+        gems_awarded: 2000,
+        gold_awarded: 0,
+        claimed_at: ~U[2026-04-08 12:00:00Z]
+      }
+
+      assert EconomyHelpers.roi_color_class(entry) == "text-emerald-400"
+    end
+
+    test "losing gem entry" do
+      entry = %{
+        entry_fee: 750,
+        entry_currency_type: "Gems",
+        gems_awarded: 300,
+        gold_awarded: 0,
+        claimed_at: ~U[2026-04-08 12:00:00Z]
+      }
+
+      assert EconomyHelpers.roi_color_class(entry) == "text-red-400"
+    end
+  end
+
+  describe "format_short_date/1" do
+    test "formats datetime to short date" do
+      assert EconomyHelpers.format_short_date(~U[2026-04-11 09:02:00Z]) == "Apr 11"
+    end
+
+    test "returns dash for nil" do
+      assert EconomyHelpers.format_short_date(nil) == "—"
+    end
+  end
+
   describe "filter_snapshots_to_range/2" do
     test "season returns all snapshots" do
       snapshots = [snapshot(%{}), snapshot(%{})]

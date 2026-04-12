@@ -19,7 +19,6 @@ defmodule Scry2Web.EconomyLive do
      assign(socket,
        entries: [],
        inventory: nil,
-       transactions: [],
        snapshots: [],
        time_range: "week",
        currency_series: "{}",
@@ -59,7 +58,6 @@ defmodule Scry2Web.EconomyLive do
     |> assign(
       entries: Economy.list_event_entries(player_id: player_id),
       inventory: Economy.latest_inventory(player_id: player_id),
-      transactions: Economy.list_transactions(player_id: player_id, limit: 50),
       snapshots: Economy.list_inventory_snapshots(player_id: player_id)
     )
     |> build_chart_assigns()
@@ -85,12 +83,12 @@ defmodule Scry2Web.EconomyLive do
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <h1 class="text-2xl font-semibold mb-6">Economy</h1>
 
-      <.empty_state :if={is_nil(@inventory) and @entries == [] and @transactions == []}>
+      <.empty_state :if={is_nil(@inventory) and @entries == []}>
         No economy data yet. Join an event or play a match to start tracking.
       </.empty_state>
 
       <div
-        :if={@inventory || @entries != [] || @transactions != []}
+        :if={@inventory || @entries != []}
         class="space-y-8"
       >
         <%!-- Current balance cards --%>
@@ -162,25 +160,29 @@ defmodule Scry2Web.EconomyLive do
           </div>
         </section>
 
-        <%!-- Event entries / ROI --%>
+        <%!-- Event history --%>
         <section :if={@entries != []}>
           <h2 class="text-lg font-semibold mb-3">Event History</h2>
-          <div class="overflow-x-auto">
+          <div class="overflow-x-auto rounded-lg border border-base-content/5">
             <table class="table table-sm">
               <thead>
-                <tr>
+                <tr class="text-xs uppercase tracking-wide text-base-content/40">
                   <th>Event</th>
-                  <th class="text-right">Entry Fee</th>
+                  <th class="text-right">Entry</th>
                   <th class="text-right">Record</th>
-                  <th class="text-right">Gems Won</th>
-                  <th class="text-right">Gold Won</th>
-                  <th class="text-right">Net ROI</th>
-                  <th>Joined</th>
+                  <th class="text-right">Prizes</th>
+                  <th class="text-right">Net</th>
+                  <th class="text-right">Date</th>
                 </tr>
               </thead>
               <tbody>
-                <tr :for={entry <- @entries}>
-                  <td>{format_label(entry.event_name)}</td>
+                <tr :for={entry <- @entries} class="hover">
+                  <td>
+                    <div class="font-medium">{entry.event_type || entry.event_name}</div>
+                    <div :if={entry.set_code} class="text-xs text-base-content/40">
+                      {entry.set_code}
+                    </div>
+                  </td>
                   <td class="text-right tabular-nums">
                     {EconomyHelpers.format_currency(entry.entry_fee, entry.entry_currency_type || "")}
                   </td>
@@ -188,58 +190,17 @@ defmodule Scry2Web.EconomyLive do
                     {if entry.final_wins, do: "#{entry.final_wins}–#{entry.final_losses}", else: "—"}
                   </td>
                   <td class="text-right tabular-nums">
-                    {EconomyHelpers.format_delta(entry.gems_awarded)}
+                    {format_prizes(entry)}
                   </td>
-                  <td class="text-right tabular-nums">
-                    {EconomyHelpers.format_delta(entry.gold_awarded)}
-                  </td>
-                  <td class="text-right tabular-nums font-semibold">
+                  <td class={[
+                    "text-right tabular-nums font-medium",
+                    EconomyHelpers.roi_color_class(entry)
+                  ]}>
                     {EconomyHelpers.format_roi(entry)}
                   </td>
-                  <td class="tabular-nums">{format_datetime(entry.joined_at)}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <%!-- Recent transactions --%>
-        <section :if={@transactions != []}>
-          <h2 class="text-lg font-semibold mb-3">Recent Transactions</h2>
-          <div class="overflow-x-auto">
-            <table class="table table-sm">
-              <thead>
-                <tr>
-                  <th>Source</th>
-                  <th class="text-right">Gold</th>
-                  <th class="text-right">Gems</th>
-                  <th class="text-right">Balance (G)</th>
-                  <th class="text-right">Balance (💎)</th>
-                  <th>Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr :for={transaction <- @transactions}>
-                  <td>{format_label(transaction.source)}</td>
-                  <td class={[
-                    "text-right tabular-nums",
-                    EconomyHelpers.delta_class(transaction.gold_delta)
-                  ]}>
-                    {EconomyHelpers.format_delta(transaction.gold_delta)}
+                  <td class="text-right tabular-nums text-base-content/50">
+                    {EconomyHelpers.format_short_date(entry.joined_at)}
                   </td>
-                  <td class={[
-                    "text-right tabular-nums",
-                    EconomyHelpers.delta_class(transaction.gems_delta)
-                  ]}>
-                    {EconomyHelpers.format_delta(transaction.gems_delta)}
-                  </td>
-                  <td class="text-right tabular-nums">
-                    {EconomyHelpers.format_number(transaction.gold_balance || 0)}
-                  </td>
-                  <td class="text-right tabular-nums">
-                    {EconomyHelpers.format_number(transaction.gems_balance || 0)}
-                  </td>
-                  <td class="tabular-nums">{format_datetime(transaction.occurred_at)}</td>
                 </tr>
               </tbody>
             </table>
@@ -249,4 +210,17 @@ defmodule Scry2Web.EconomyLive do
     </Layouts.app>
     """
   end
+
+  defp format_prizes(%{gems_awarded: gems, gold_awarded: gold}) do
+    parts =
+      [
+        if(gems && gems > 0, do: EconomyHelpers.format_number(gems) <> " Gems"),
+        if(gold && gold > 0, do: EconomyHelpers.format_number(gold) <> " Gold")
+      ]
+      |> Enum.reject(&is_nil/1)
+
+    if parts == [], do: "—", else: Enum.join(parts, ", ")
+  end
+
+  defp format_prizes(_), do: "—"
 end

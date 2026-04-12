@@ -22,9 +22,13 @@ defmodule Scry2.Economy.EconomyProjection do
   alias Scry2.Events.Event.{EventJoined, EventRewardClaimed}
 
   defp project(%EventJoined{entry_fee: fee} = event) when is_integer(fee) and fee > 0 do
+    {event_type, set_code} = Economy.parse_event_name(event.event_name)
+
     Economy.upsert_event_entry!(%{
       player_id: event.player_id,
       event_name: event.event_name,
+      event_type: event_type,
+      set_code: set_code,
       course_id: event.course_id,
       entry_currency_type: event.entry_currency_type,
       entry_fee: event.entry_fee,

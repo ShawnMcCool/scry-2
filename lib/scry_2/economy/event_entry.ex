@@ -18,6 +18,8 @@ defmodule Scry2.Economy.EventEntry do
   schema "economy_event_entries" do
     field :player_id, :integer
     field :event_name, :string
+    field :event_type, :string
+    field :set_code, :string
     field :course_id, :string
     field :entry_currency_type, :string
     field :entry_fee, :integer
@@ -37,6 +39,8 @@ defmodule Scry2.Economy.EventEntry do
     |> cast(attrs, [
       :player_id,
       :event_name,
+      :event_type,
+      :set_code,
       :course_id,
       :entry_currency_type,
       :entry_fee,
