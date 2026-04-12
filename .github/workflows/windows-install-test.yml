@@ -202,12 +202,22 @@ jobs:
         run: |
           Start-Process -FilePath "$env:LOCALAPPDATA\scry_2\bin\scry_2.bat" -ArgumentList "stop" -Wait -WindowStyle Hidden
 
-      - name: Run uninstall.bat
-        shell: cmd
+      - name: Kill remaining processes and uninstall
+        shell: pwsh
         run: |
-          CALL "%LOCALAPPDATA%\scry_2\uninstall.bat"
+          $installDir = "$env:LOCALAPPDATA\scry_2"
+          # Kill any lingering erlang/epmd processes under the install dir
+          Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+          # Remove registry autostart
+          Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Scry2" -ErrorAction SilentlyContinue
+          # Remove install directory
+          if (Test-Path $installDir) { Remove-Item -Recurse -Force $installDir -ErrorAction SilentlyContinue }
+          Start-Sleep -Seconds 2
+          # Retry if locked
+          if (Test-Path $installDir) { Remove-Item -Recurse -Force $installDir }
 
-      - name: Wait for uninstall to complete
+      - name: Verify cleanup
         shell: pwsh
         run: |
           $timeout = 30
