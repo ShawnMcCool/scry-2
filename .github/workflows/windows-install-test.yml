@@ -176,12 +176,12 @@ jobs:
       - name: Verify runtime eval
         shell: cmd
         run: |
-          CALL "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" eval "IO.puts(:ok)"
+          cmd /c ""%LOCALAPPDATA%\scry_2\bin\scry_2.bat" eval "IO.puts(:ok)""
 
       - name: Start backend
         shell: cmd
         run: |
-          CALL "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" start
+          cmd /c ""%LOCALAPPDATA%\scry_2\bin\scry_2.bat" start"
 
       - name: Wait for web UI
         shell: pwsh
@@ -205,7 +205,7 @@ jobs:
       - name: Stop backend
         shell: cmd
         run: |
-          CALL "%LOCALAPPDATA%\scry_2\bin\scry_2.bat" stop
+          cmd /c ""%LOCALAPPDATA%\scry_2\bin\scry_2.bat" stop"
 
       - name: Run uninstall.bat
         shell: cmd
@@ -334,6 +334,15 @@ jobs:
           $autostart = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "Scry2" -ErrorAction SilentlyContinue
           if ($autostart) { throw "Autostart registry key not removed" }
           Write-Host "Cleanup OK: install dir gone, registry key removed"
+
+      - name: Dump MSI logs on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Write-Host "=== Burn install log ==="
+          if (Test-Path "$env:TEMP\scry2-burn-install.log") { Get-Content "$env:TEMP\scry2-burn-install.log" -Tail 100 }
+          Write-Host "=== MSI package log ==="
+          Get-ChildItem "$env:TEMP\scry2-burn-install_*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "--- $($_.Name) ---"; Get-Content $_.FullName -Tail 80 }
 
       - name: Upload logs on failure
         if: failure()

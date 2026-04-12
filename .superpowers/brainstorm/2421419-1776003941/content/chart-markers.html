@@ -1,0 +1,139 @@
+<h2>Win/Loss Markers on the Rank Line</h2>
+<p class="subtitle">Three approaches — from minimal to information-dense. Currently wins/losses are a separate bar chart below the line.</p>
+
+<div class="cards">
+
+  <!-- Option A -->
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #0d1117; padding: 24px 16px; min-height: 220px; position: relative;">
+      <svg viewBox="0 0 400 180" style="width:100%; height:auto;">
+        <!-- Grid lines -->
+        <line x1="40" y1="20" x2="380" y2="20" stroke="#1f2937" stroke-width="0.5"/>
+        <line x1="40" y1="60" x2="380" y2="60" stroke="#1f2937" stroke-width="0.5"/>
+        <line x1="40" y1="100" x2="380" y2="100" stroke="#1f2937" stroke-width="0.5"/>
+        <line x1="40" y1="140" x2="380" y2="140" stroke="#1f2937" stroke-width="0.5"/>
+
+        <!-- Y-axis labels -->
+        <text x="35" y="64" fill="#9ca3af" font-size="10" text-anchor="end">Gold</text>
+        <text x="35" y="104" fill="#9ca3af" font-size="10" text-anchor="end">Silver</text>
+        <text x="35" y="24" fill="#9ca3af" font-size="10" text-anchor="end">Plat</text>
+
+        <!-- Area fill -->
+        <path d="M60,100 L100,100 L100,80 L140,80 L140,60 L180,60 L180,80 L220,80 L220,60 L260,60 L260,40 L300,40 L300,20 L340,20 L340,20 L340,140 L60,140 Z"
+              fill="rgba(99,102,241,0.08)"/>
+
+        <!-- Step line -->
+        <polyline points="60,100 100,100 100,80 140,80 140,60 180,60 180,80 220,80 220,60 260,60 260,40 300,40 300,20 340,20"
+                  fill="none" stroke="#6366f1" stroke-width="2"/>
+
+        <!-- Win dots (green) -->
+        <circle cx="100" cy="80" r="4" fill="#22c55e"/>
+        <circle cx="140" cy="60" r="4" fill="#22c55e"/>
+        <circle cx="220" cy="60" r="4" fill="#22c55e"/>
+        <circle cx="260" cy="40" r="4" fill="#22c55e"/>
+        <circle cx="300" cy="20" r="4" fill="#22c55e"/>
+
+        <!-- Loss dots (orange) -->
+        <circle cx="180" cy="80" r="4" fill="#f97316"/>
+        <circle cx="340" cy="20" r="4" fill="#f97316"/>
+
+        <!-- Start dot (neutral) -->
+        <circle cx="60" cy="100" r="3" fill="#6366f1"/>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>A: Colored Dots (Recommended)</h3>
+      <p>Replace the uniform indigo dots with <span style="color:#22c55e">green</span> for wins and <span style="color:#f97316">orange</span> for losses. Remove the separate results bar chart entirely. Minimal change — the line shape tells the rank story, dot colors tell win/loss.</p>
+    </div>
+  </div>
+
+  <!-- Option B -->
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #0d1117; padding: 24px 16px; min-height: 220px; position: relative;">
+      <svg viewBox="0 0 400 180" style="width:100%; height:auto;">
+        <!-- Grid lines -->
+        <line x1="40" y1="20" x2="380" y2="20" stroke="#1f2937" stroke-width="0.5"/>
+        <line x1="40" y1="60" x2="380" y2="60" stroke="#1f2937" stroke-width="0.5"/>
+        <line x1="40" y1="100" x2="380" y2="100" stroke="#1f2937" stroke-width="0.5"/>
+        <line x1="40" y1="140" x2="380" y2="140" stroke="#1f2937" stroke-width="0.5"/>
+
+        <!-- Y-axis labels -->
+        <text x="35" y="64" fill="#9ca3af" font-size="10" text-anchor="end">Gold</text>
+        <text x="35" y="104" fill="#9ca3af" font-size="10" text-anchor="end">Silver</text>
+        <text x="35" y="24" fill="#9ca3af" font-size="10" text-anchor="end">Plat</text>
+
+        <!-- Area fill -->
+        <path d="M60,100 L100,100 L100,80 L140,80 L140,60 L180,60 L180,80 L220,80 L220,60 L260,60 L260,40 L300,40 L300,20 L340,20 L340,20 L340,140 L60,140 Z"
+              fill="rgba(99,102,241,0.08)"/>
+
+        <!-- Colored line segments: green for up, orange for down -->
+        <polyline points="60,100 100,100 100,80" fill="none" stroke="#22c55e" stroke-width="2"/>
+        <polyline points="100,80 140,80 140,60" fill="none" stroke="#22c55e" stroke-width="2"/>
+        <polyline points="140,60 180,60 180,80" fill="none" stroke="#f97316" stroke-width="2"/>
+        <polyline points="180,80 220,80 220,60" fill="none" stroke="#22c55e" stroke-width="2"/>
+        <polyline points="220,60 260,60 260,40" fill="none" stroke="#22c55e" stroke-width="2"/>
+        <polyline points="260,40 300,40 300,20" fill="none" stroke="#22c55e" stroke-width="2"/>
+        <polyline points="300,20 340,20" fill="none" stroke="#f97316" stroke-width="2"/>
+
+        <!-- Dots at each data point -->
+        <circle cx="60" cy="100" r="3" fill="#6366f1"/>
+        <circle cx="100" cy="80" r="3.5" fill="#22c55e"/>
+        <circle cx="140" cy="60" r="3.5" fill="#22c55e"/>
+        <circle cx="180" cy="80" r="3.5" fill="#f97316"/>
+        <circle cx="220" cy="60" r="3.5" fill="#22c55e"/>
+        <circle cx="260" cy="40" r="3.5" fill="#22c55e"/>
+        <circle cx="300" cy="20" r="3.5" fill="#22c55e"/>
+        <circle cx="340" cy="20" r="3.5" fill="#f97316"/>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>B: Colored Segments + Dots</h3>
+      <p>Color the line segments themselves — <span style="color:#22c55e">green segments</span> for wins (rank goes up), <span style="color:#f97316">orange segments</span> for losses (rank drops). Plus colored dots. More information density but busier visually. Loses the clean indigo identity.</p>
+    </div>
+  </div>
+
+  <!-- Option C -->
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="background: #0d1117; padding: 24px 16px; min-height: 220px; position: relative;">
+      <svg viewBox="0 0 400 180" style="width:100%; height:auto;">
+        <!-- Grid lines -->
+        <line x1="40" y1="20" x2="380" y2="20" stroke="#1f2937" stroke-width="0.5"/>
+        <line x1="40" y1="60" x2="380" y2="60" stroke="#1f2937" stroke-width="0.5"/>
+        <line x1="40" y1="100" x2="380" y2="100" stroke="#1f2937" stroke-width="0.5"/>
+        <line x1="40" y1="140" x2="380" y2="140" stroke="#1f2937" stroke-width="0.5"/>
+
+        <!-- Y-axis labels -->
+        <text x="35" y="64" fill="#9ca3af" font-size="10" text-anchor="end">Gold</text>
+        <text x="35" y="104" fill="#9ca3af" font-size="10" text-anchor="end">Silver</text>
+        <text x="35" y="24" fill="#9ca3af" font-size="10" text-anchor="end">Plat</text>
+
+        <!-- Area fill -->
+        <path d="M60,100 L100,100 L100,80 L140,80 L140,60 L180,60 L180,80 L220,80 L220,60 L260,60 L260,40 L300,40 L300,20 L340,20 L340,20 L340,140 L60,140 Z"
+              fill="rgba(99,102,241,0.08)"/>
+
+        <!-- Main step line (indigo) -->
+        <polyline points="60,100 100,100 100,80 140,80 140,60 180,60 180,80 220,80 220,60 260,60 260,40 300,40 300,20 340,20"
+                  fill="none" stroke="#6366f1" stroke-width="2"/>
+
+        <!-- Win triangles (up-pointing) -->
+        <polygon points="100,74 96,82 104,82" fill="#22c55e"/>
+        <polygon points="140,54 136,62 144,62" fill="#22c55e"/>
+        <polygon points="220,54 216,62 224,62" fill="#22c55e"/>
+        <polygon points="260,34 256,42 264,42" fill="#22c55e"/>
+        <polygon points="300,14 296,22 304,22" fill="#22c55e"/>
+
+        <!-- Loss triangles (down-pointing) -->
+        <polygon points="180,86 176,78 184,78" fill="#f97316"/>
+        <polygon points="340,26 336,18 344,18" fill="#f97316"/>
+
+        <!-- Start dot (neutral) -->
+        <circle cx="60" cy="100" r="3" fill="#6366f1"/>
+      </svg>
+    </div>
+    <div class="card-body">
+      <h3>C: Directional Markers</h3>
+      <p>Keep the indigo line. Use <span style="color:#22c55e">▲ green up-triangles</span> for wins and <span style="color:#f97316">▼ orange down-triangles</span> for losses. Shape encodes direction, color encodes outcome. Most distinctive but slightly heavier visually.</p>
+    </div>
+  </div>
+
+</div>
