@@ -42,7 +42,7 @@ if config_env() == :prod do
     database: database_path,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "5"),
     journal_mode: :wal,
-    busy_timeout: 5_000
+    busy_timeout: 30_000
 
   # Secret key base: env var → TOML → random.
   # On first boot the TOML doesn't exist yet, so a random key is used for
