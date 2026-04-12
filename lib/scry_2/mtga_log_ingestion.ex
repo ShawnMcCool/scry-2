@@ -120,13 +120,31 @@ defmodule Scry2.MtgaLogIngestion do
   @doc "Records a processing error without marking the event as processed."
   def mark_error!(id, reason) when is_integer(id) do
     require Scry2.Log, as: Log
-    Log.warning(:ingester, "processing error on event #{id}: #{inspect(reason)}")
+    message = humanize_error(reason)
+    Log.warning(:ingester, "processing error on event #{id}: #{message}")
 
     {1, _} =
       from(r in EventRecord, where: r.id == ^id)
-      |> Repo.update_all(set: [processing_error: inspect(reason)])
+      |> Repo.update_all(set: [processing_error: message])
 
     :ok
+  end
+
+  defp humanize_error(warnings) when is_list(warnings) do
+    warnings
+    |> Enum.map(fn
+      %{detail: detail} -> detail
+      other -> inspect(other)
+    end)
+    |> Enum.join("; ")
+  end
+
+  defp humanize_error(%{message: message}) when is_binary(message), do: message
+
+  defp humanize_error(reason) do
+    Exception.message(reason)
+  rescue
+    _ -> inspect(reason)
   end
 
   @doc """

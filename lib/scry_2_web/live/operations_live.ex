@@ -574,17 +574,17 @@ defmodule Scry2Web.OperationsLive do
       <%!-- Processing errors --%>
       <section :if={@errors != []} class="alert alert-soft alert-error">
         <.icon name="hero-exclamation-circle" class="size-5" />
-        <div>
+        <div class="w-full">
           <p class="font-semibold">Processing errors ({@error_count})</p>
           <p class="text-sm mb-2">
-            Raw events that failed translation. Check the console drawer for details.
+            Some events couldn't be processed. Reingesting usually resolves this.
           </p>
           <div class="overflow-x-auto">
-            <table class="table table-sm">
+            <table class="table table-sm w-full">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Event type</th>
+                  <th class="w-16">ID</th>
+                  <th class="w-48">Event type</th>
                   <th>Error</th>
                 </tr>
               </thead>
@@ -592,7 +592,7 @@ defmodule Scry2Web.OperationsLive do
                 <tr :for={error <- @errors}>
                   <td class="tabular-nums">{error.id}</td>
                   <td><code>{error.event_type}</code></td>
-                  <td class="text-sm max-w-md truncate">{error.processing_error}</td>
+                  <td class="text-sm truncate">{error.processing_error}</td>
                 </tr>
               </tbody>
             </table>
