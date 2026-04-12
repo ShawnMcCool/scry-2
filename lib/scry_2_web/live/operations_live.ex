@@ -103,6 +103,16 @@ defmodule Scry2Web.OperationsLive do
     {:noreply, socket}
   end
 
+  def handle_event("dismiss_error", %{"id" => id_string}, socket) do
+    id_string |> String.to_integer() |> MtgaLogIngestion.dismiss_error!()
+    {:noreply, load_status(socket)}
+  end
+
+  def handle_event("dismiss_all_errors", _params, socket) do
+    MtgaLogIngestion.dismiss_all_errors!()
+    {:noreply, load_status(socket)}
+  end
+
   def handle_event("dismiss_operation", _params, socket) do
     {:noreply,
      socket
@@ -575,7 +585,12 @@ defmodule Scry2Web.OperationsLive do
       <section :if={@errors != []} class="alert alert-soft alert-error">
         <.icon name="hero-exclamation-circle" class="size-5" />
         <div class="w-full">
-          <p class="font-semibold">Processing errors ({@error_count})</p>
+          <div class="flex items-center justify-between">
+            <p class="font-semibold">Processing errors ({@error_count})</p>
+            <button phx-click="dismiss_all_errors" class="btn btn-xs btn-ghost">
+              Dismiss all
+            </button>
+          </div>
           <p class="text-sm mb-2">
             Some events couldn't be processed. Reingesting usually resolves this.
           </p>
@@ -586,6 +601,7 @@ defmodule Scry2Web.OperationsLive do
                   <th class="w-16">ID</th>
                   <th class="w-48">Event type</th>
                   <th>Error</th>
+                  <th class="w-10"></th>
                 </tr>
               </thead>
               <tbody>
@@ -593,6 +609,16 @@ defmodule Scry2Web.OperationsLive do
                   <td class="tabular-nums">{error.id}</td>
                   <td><code>{error.event_type}</code></td>
                   <td class="text-sm whitespace-pre-wrap break-all">{error.processing_error}</td>
+                  <td>
+                    <button
+                      phx-click="dismiss_error"
+                      phx-value-id={error.id}
+                      class="btn btn-xs btn-ghost"
+                      title="Dismiss"
+                    >
+                      <.icon name="hero-x-mark" class="size-3" />
+                    </button>
+                  </td>
                 </tr>
               </tbody>
             </table>

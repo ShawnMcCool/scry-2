@@ -240,22 +240,45 @@ defmodule Scry2.MtgaLogIngestion do
     |> Repo.aggregate(:count)
   end
 
-  @doc "Returns the count of events with a non-nil processing_error."
+  @doc "Returns the count of non-dismissed events with a non-nil processing_error."
   def count_errors do
-    from(r in EventRecord, where: not is_nil(r.processing_error))
+    from(r in EventRecord,
+      where: not is_nil(r.processing_error) and is_nil(r.dismissed_at)
+    )
     |> Repo.aggregate(:count)
   end
 
-  @doc "Returns recent errored events, newest first."
+  @doc "Returns recent non-dismissed errored events, newest first."
   def list_errors(opts \\ []) do
     limit_count = Keyword.get(opts, :limit, 20)
 
     from(r in EventRecord,
-      where: not is_nil(r.processing_error),
+      where: not is_nil(r.processing_error) and is_nil(r.dismissed_at),
       order_by: [desc: r.id],
       limit: ^limit_count
     )
     |> Repo.all()
+  end
+
+  @doc "Permanently dismisses a single processing error by ID."
+  def dismiss_error!(id) when is_integer(id) do
+    now = DateTime.utc_now(:second)
+
+    {1, _} =
+      from(r in EventRecord, where: r.id == ^id)
+      |> Repo.update_all(set: [dismissed_at: now])
+
+    :ok
+  end
+
+  @doc "Permanently dismisses all current processing errors."
+  def dismiss_all_errors! do
+    from(r in EventRecord,
+      where: not is_nil(r.processing_error) and is_nil(r.dismissed_at)
+    )
+    |> Repo.update_all(set: [dismissed_at: DateTime.utc_now(:second)])
+
+    :ok
   end
 
   # ── Cursor ──────────────────────────────────────────────────────────────
