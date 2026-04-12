@@ -532,7 +532,6 @@ function buildOption(el) {
 
 export const Chart = {
   mounted() {
-    console.log("[Chart] mounted", this.el.id, "size:", this.el.offsetWidth, "x", this.el.offsetHeight)
     this.chart = echarts.init(this.el, null, {renderer: "canvas"})
     this.chart.setOption(buildOption(this.el))
     this.resizeObserver = new ResizeObserver(() => this.chart.resize())
@@ -540,12 +539,9 @@ export const Chart = {
   },
 
   updated() {
-    const canvas = this.el.querySelector("canvas")
-    console.log("[Chart] updated", this.el.id, "canvas?", !!canvas, "children:", this.el.children.length)
     // Morphdom may remove the ECharts canvas during DOM patching.
     // Re-init the chart instance when the canvas is gone.
-    if (!canvas || this.el.children.length === 0) {
-      console.log("[Chart] re-init", this.el.id)
+    if (!this.el.querySelector("canvas")) {
       this.chart.dispose()
       this.chart = echarts.init(this.el, null, {renderer: "canvas"})
     }
@@ -553,7 +549,6 @@ export const Chart = {
   },
 
   destroyed() {
-    console.log("[Chart] destroyed", this.el.id)
     this.resizeObserver?.disconnect()
     this.chart?.dispose()
   },

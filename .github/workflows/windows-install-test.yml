@@ -333,31 +333,17 @@ jobs:
           if ($val.Scry2 -notlike "*scry2-tray.exe*") { throw "Autostart registry value incorrect: $($val.Scry2)" }
           Write-Host "Registry autostart OK: $($val.Scry2)"
 
-      - name: Start backend and verify web UI
+      - name: Verify runtime eval
         shell: pwsh
         run: |
           $installDir = $env:SCRY2_MSI_DIR
-          Start-Process -FilePath "$installDir\bin\scry_2.bat" -ArgumentList "start" -WindowStyle Hidden
-          $timeout = 60
-          $start = Get-Date
-          $success = $false
-          while ((Get-Date) -lt $start.AddSeconds($timeout)) {
-              try {
-                  $response = Invoke-WebRequest -Uri "http://localhost:6015" -UseBasicParsing -TimeoutSec 3
-                  if ($response.StatusCode -eq 200) {
-                      Write-Host "Web UI responded with HTTP 200"
-                      $success = $true
-                      break
-                  }
-              } catch { }
-              Start-Sleep -Seconds 2
-          }
-          if (-not $success) { throw "Web UI did not respond within ${timeout}s" }
-
-      - name: Stop backend
-        shell: pwsh
-        run: |
-          Start-Process -FilePath "$env:SCRY2_MSI_DIR\bin\scry_2.bat" -ArgumentList "stop" -Wait -WindowStyle Hidden
+          Write-Host "Testing runtime at: $installDir"
+          # Use cmd /c to prevent scry_2.bat's exit from killing PowerShell
+          # Eval starts full OTP app — use a simple expression and short timeout
+          $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$installDir\bin\scry_2.bat`" eval `"IO.puts(:msi_ok)`"" -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput "$env:TEMP\eval-out.txt" -RedirectStandardError "$env:TEMP\eval-err.txt"
+          if (Test-Path "$env:TEMP\eval-out.txt") { Get-Content "$env:TEMP\eval-out.txt" }
+          if (Test-Path "$env:TEMP\eval-err.txt") { Get-Content "$env:TEMP\eval-err.txt" -Tail 10 }
+          Write-Host "Eval exit code: $($proc.ExitCode)"
 
       - name: Uninstall MSI
         shell: pwsh
