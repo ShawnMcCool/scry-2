@@ -41,7 +41,8 @@ if errorlevel 1 (
 
 REM Verify the runtime is functional before proceeding
 echo Verifying runtime...
-cmd /c ""%INSTALL_DIR%\bin\scry_2.bat" eval "IO.puts(:ok)"" >nul 2>&1
+cmd /c ""%INSTALL_DIR%\bin\scry_2.bat" eval "IO.puts(:ok)""
+echo Runtime check returned errorlevel: %errorlevel%
 if errorlevel 1 (
     echo.
     echo ERROR: The Erlang runtime failed to start.
@@ -53,11 +54,9 @@ if errorlevel 1 (
 )
 
 REM Register autostart on login — point to tray, not backend
-reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" ^
-    /v "Scry2" ^
-    /t REG_SZ ^
-    /d "\"%INSTALL_DIR%\scry2-tray.exe\"" ^
-    /f >nul
+echo Registering autostart...
+reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "Scry2" /t REG_SZ /d "\"%INSTALL_DIR%\scry2-tray.exe\"" /f
+echo Registry returned errorlevel: %errorlevel%
 
 REM Start the tray (it will launch the backend and open the browser)
 echo Starting Scry2...

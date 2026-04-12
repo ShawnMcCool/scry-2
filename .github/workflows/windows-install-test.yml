@@ -341,8 +341,11 @@ jobs:
         run: |
           Write-Host "=== Burn install log ==="
           if (Test-Path "$env:TEMP\scry2-burn-install.log") { Get-Content "$env:TEMP\scry2-burn-install.log" -Tail 100 }
-          Write-Host "=== MSI package log ==="
-          Get-ChildItem "$env:TEMP\scry2-burn-install_*" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "--- $($_.Name) ---"; Get-Content $_.FullName -Tail 80 }
+          Write-Host "=== MSI package log (errors and actions) ==="
+          Get-ChildItem "$env:TEMP\scry2-burn-install_*" -ErrorAction SilentlyContinue | ForEach-Object {
+              Write-Host "--- $($_.Name) ---"
+              Select-String -Path $_.FullName -Pattern "return value 3|Error |Action start|Action ended|CustomAction|1603" | ForEach-Object { $_.Line }
+          }
 
       - name: Upload logs on failure
         if: failure()
