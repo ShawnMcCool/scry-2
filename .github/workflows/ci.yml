@@ -17,8 +17,8 @@ jobs:
 
       - uses: erlef/setup-beam@v1
         with:
-          elixir-version: '1.18'
-          otp-version: '27'
+          elixir-version: '1.19'
+          otp-version: '28'
 
       - name: Cache Mix deps
         uses: actions/cache@v4
@@ -26,8 +26,8 @@ jobs:
           path: |
             deps
             _build
-          key: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.18-27-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.18-27-
+          key: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-
 
       - name: Install system dependencies
         run: sudo apt-get install -y inotify-tools
