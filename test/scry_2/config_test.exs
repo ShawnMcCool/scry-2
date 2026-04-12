@@ -70,6 +70,36 @@ defmodule Scry2.ConfigTest do
       assert is_binary(cache_dir)
       assert String.length(cache_dir) > 0
     end
+
+    test "generated config uses TOML literal strings so backslashes survive round-trip", %{
+      tmp_path: tmp
+    } do
+      :ok = Config.load!()
+      {:ok, contents} = File.read(tmp)
+
+      # The bootstrap config writes paths in TOML literal strings (single quotes)
+      # so that Windows-style backslashes like C:\Users\... are not interpreted
+      # as escape sequences (e.g. \U → Unicode escape in double-quoted TOML).
+      # Verify all path values use single-quoted syntax.
+      assert contents =~ ~r/path = '.*scry_2\.db'/
+      assert contents =~ ~r/dir = '.*cache'/
+
+      # Verify the TOML round-trips: the paths parsed back must match what was written
+      {:ok, toml} = Toml.decode(contents)
+      database_path = get_in(toml, ["database", "path"])
+      cache_dir = get_in(toml, ["cache", "dir"])
+
+      assert is_binary(database_path)
+      assert is_binary(cache_dir)
+      assert database_path =~ "scry_2.db"
+      assert cache_dir =~ "cache"
+
+      # On any platform, the parsed path must not contain TOML escape artifacts
+      refute database_path =~ "\t"
+      refute database_path =~ "\n"
+      refute cache_dir =~ "\t"
+      refute cache_dir =~ "\n"
+    end
   end
 
   describe "cache_dir key" do

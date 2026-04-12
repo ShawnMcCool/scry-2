@@ -10,13 +10,20 @@
 # ── Database ─────────────────────────────────────────────────────────────
 [database]
 # SQLite database path. Parent directory will be created if it doesn't exist.
+# Platform defaults (auto-detected at runtime):
+#   Linux:   ~/.local/share/scry_2/scry_2.db
+#   macOS:   ~/Library/Application Support/scry_2/scry_2.db
+#   Windows: %APPDATA%\scry_2\scry_2.db
 path = "~/.local/share/scry_2/scry_2.db"
 
 # ── MTGA log watcher ─────────────────────────────────────────────────────
 [mtga_logs]
 # Absolute path to MTGA's Player.log. If unset, Scry2 tries well-known
-# locations (Steam/Proton flatpak, Lutris, Bottles, native macOS) in order
-# and uses the first match. Uncomment to override.
+# locations in order and uses the first match. Uncomment to override.
+# Well-known locations checked per platform:
+#   Linux:   Steam (Flatpak + native), Lutris, Bottles
+#   macOS:   ~/Library/Logs/Wizards Of The Coast/MTGA/Player.log
+#   Windows: ~/AppData/LocalLow/Wizards Of The Coast/MTGA/Player.log
 # player_log_path = "/home/you/.var/app/com.valvesoftware.Steam/.local/share/Steam/steamapps/compatdata/2141910/pfx/drive_c/users/steamuser/AppData/LocalLow/Wizards Of The Coast/MTGA/Player.log"
 
 # Path to MTGA's data directory containing Raw_CardDatabase_*.mtga.

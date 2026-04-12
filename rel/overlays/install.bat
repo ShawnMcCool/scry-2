@@ -23,6 +23,19 @@ echo Copying files to %INSTALL_DIR%...
 mkdir "%INSTALL_DIR%"
 xcopy /e /i /q /h "%SCRIPT_DIR%." "%INSTALL_DIR%" >nul
 
+REM Verify the runtime is functional before proceeding
+echo Verifying runtime...
+"%INSTALL_DIR%\bin\scry_2.bat" eval "IO.puts(:ok)" >nul 2>&1
+if errorlevel 1 (
+    echo.
+    echo ERROR: The Erlang runtime failed to start.
+    echo This usually means the Visual C++ Redistributable is missing.
+    echo Download it from: https://aka.ms/vs/17/release/vc_redist.x64.exe
+    echo.
+    pause
+    exit /b 1
+)
+
 REM Register autostart on login — point to tray, not backend
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" ^
     /v "Scry2" ^
