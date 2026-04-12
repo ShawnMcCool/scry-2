@@ -49,13 +49,16 @@ print('mix.exs updated')
 # Describe the jj change
 jj describe -m "chore: release ${TAG}"
 
+# Capture the change ID before tagging (tagging makes @ immutable and creates a new empty commit)
+RELEASE_CHANGE=$(jj log -r @ --no-graph -T 'change_id')
+
 # Create the git tag at the current revision
 echo "Creating tag ${TAG}..."
 jj tag set "${TAG}"
 
 # Move main bookmark to the release commit so CI workflows trigger on main
 echo "Setting main bookmark..."
-jj bookmark set main -r @
+jj bookmark set main -r "${RELEASE_CHANGE}"
 
 # Push main bookmark and the tag
 echo "Pushing main to remote..."
