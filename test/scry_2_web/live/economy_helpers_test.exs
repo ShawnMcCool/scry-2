@@ -43,7 +43,9 @@ defmodule Scry2Web.EconomyHelpersTest do
 
   describe "roi_parts/1" do
     test "in-progress entry" do
-      assert EconomyHelpers.roi_parts(%{claimed_at: nil}) == [{"In progress", "text-amber-400"}]
+      assert EconomyHelpers.roi_parts(%{claimed_at: nil}) == [
+               {"In progress", nil, "text-amber-400"}
+             ]
     end
 
     test "gem entry with profit includes gold reward, each independently colored" do
@@ -56,8 +58,8 @@ defmodule Scry2Web.EconomyHelpersTest do
       }
 
       assert EconomyHelpers.roi_parts(entry) == [
-               {"+500 Gems", "text-emerald-400"},
-               {"+1,000 Gold", "text-emerald-400"}
+               {"+500", "Gems", "text-emerald-400"},
+               {"+1,000", "Gold", "text-emerald-400"}
              ]
     end
 
@@ -70,7 +72,7 @@ defmodule Scry2Web.EconomyHelpersTest do
         claimed_at: ~U[2026-04-08 12:00:00Z]
       }
 
-      assert EconomyHelpers.roi_parts(entry) == [{"+200 Gems", "text-emerald-400"}]
+      assert EconomyHelpers.roi_parts(entry) == [{"+200", "Gems", "text-emerald-400"}]
     end
 
     test "gold entry with loss but gem gain — each colored independently" do
@@ -83,8 +85,8 @@ defmodule Scry2Web.EconomyHelpersTest do
       }
 
       assert EconomyHelpers.roi_parts(entry) == [
-               {"-9,000 Gold", "text-red-400"},
-               {"+200 Gems", "text-emerald-400"}
+               {"-9,000", "Gold", "text-red-400"},
+               {"+200", "Gems", "text-emerald-400"}
              ]
     end
 
@@ -97,7 +99,7 @@ defmodule Scry2Web.EconomyHelpersTest do
         claimed_at: ~U[2026-04-08 12:00:00Z]
       }
 
-      assert EconomyHelpers.roi_parts(entry) == [{"-400 Gold", "text-red-400"}]
+      assert EconomyHelpers.roi_parts(entry) == [{"-400", "Gold", "text-red-400"}]
     end
   end
 
@@ -220,14 +222,19 @@ defmodule Scry2Web.EconomyHelpersTest do
   end
 
   describe "format_event_name/1" do
-    test "splits quickdraft format" do
-      assert EconomyHelpers.format_event_name("Quickdraft Tmt 20260407") ==
-               {"Quick Draft", "Tmt 20260407"}
+    test "underscore-separated quickdraft" do
+      assert EconomyHelpers.format_event_name("QuickDraft_TMT_20260407") ==
+               {"Quick Draft", "TMT"}
     end
 
-    test "splits premier draft format" do
-      assert EconomyHelpers.format_event_name("PremierDraft Fdn 20260301") ==
-               {"Premier Draft", "Fdn 20260301"}
+    test "space-separated quickdraft" do
+      assert EconomyHelpers.format_event_name("Quickdraft Tmt 20260407") ==
+               {"Quick Draft", "TMT"}
+    end
+
+    test "premier draft" do
+      assert EconomyHelpers.format_event_name("PremierDraft_FDN_20260301") ==
+               {"Premier Draft", "FDN"}
     end
 
     test "handles single word" do
