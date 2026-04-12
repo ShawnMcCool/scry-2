@@ -98,6 +98,7 @@ defmodule Scry2.Events.IngestRawEventsTest do
   end
 
   describe "error handling" do
+    @tag capture_log: true
     test "malformed raw event is marked processed with no domain event created",
          %{worker: worker, projector: projector, worker_pid: worker_pid} do
       raw =

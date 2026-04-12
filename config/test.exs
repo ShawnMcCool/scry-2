@@ -39,6 +39,11 @@ config :scry_2, Scry2Web.Endpoint,
 # Print only warnings and errors during test
 config :logger, level: :warning
 
+# Don't install the Scry2 console :logger handler during tests — it bypasses
+# ExUnit's capture_log mechanism and causes expected cross-process warnings
+# to leak into test output.
+config :scry_2, install_console_handler: false
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 

@@ -7,6 +7,7 @@ defmodule Scry2.MtgaLogIngestion.WatcherTest do
   alias Scry2.Topics
 
   describe "lifecycle with an unreachable path" do
+    @tag capture_log: true
     test "enters :path_not_found gracefully without crashing" do
       Topics.subscribe(Topics.mtga_logs_status())
 

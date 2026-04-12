@@ -108,6 +108,7 @@ defmodule Scry2.MtgaLogIngestionTest do
   end
 
   describe "mark_error!/2" do
+    @tag capture_log: true
     test "records processing_error without marking the event processed" do
       record = TestFactory.create_event_record()
 
