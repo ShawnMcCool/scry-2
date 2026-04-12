@@ -4,7 +4,7 @@
 # Run from the repo root after building the Elixir release and tray binary.
 #
 # Usage:
-#   installer/scripts/build-msi -Version 0.5.0 -TrayExe scry2-tray.exe -VCRedistPath installer/vc_redist.x64.exe
+#   installer/scripts/build-msi.ps1 -Version 0.5.0 -TrayExe scry2-tray.exe -VCRedistPath installer/vc_redist.x64.exe
 #
 # Requires: wix CLI (dotnet tool install --global wix)
 # Extensions: WixToolset.UI.wixext, WixToolset.Util.wixext, WixToolset.Firewall.wixext, WixToolset.Bal.wixext
@@ -38,26 +38,7 @@ Write-Host "Detected ERTS version: $ertsVersion"
 # Create output directory
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 
-# Harvest release directories into WiX fragments
-Write-Host "Harvesting release files..."
-
-$harvestJobs = @(
-    @{ Dir = "$ReleaseDir/bin";       Group = "BinComponents";      DrId = "BinDir";      Out = "$WixDir/BinFragment.wxs" },
-    @{ Dir = "$ReleaseDir/$ertsVersion"; Group = "ErtsComponents";   DrId = "ErtsDir";     Out = "$WixDir/ErtsFragment.wxs" },
-    @{ Dir = "$ReleaseDir/lib";       Group = "LibComponents";      DrId = "LibDir";      Out = "$WixDir/LibFragment.wxs" },
-    @{ Dir = "$ReleaseDir/releases";  Group = "ReleasesComponents"; DrId = "ReleasesDir"; Out = "$WixDir/ReleasesFragment.wxs" }
-)
-
-foreach ($job in $harvestJobs) {
-    Write-Host "  Harvesting $($job.Dir)..."
-    wix harvest dir $job.Dir -cg $job.Group -dr $job.DrId -o $job.Out
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to harvest $($job.Dir)"
-        exit 1
-    }
-}
-
-# Build the MSI
+# Build the MSI (Files element in Components.wxs handles directory inclusion automatically)
 Write-Host "Building MSI..."
 $msiPath = "$OutputDir/Scry2-$Version.msi"
 
@@ -69,11 +50,7 @@ $wxsFiles = @(
     "$WixDir/Firewall.wxs",
     "$WixDir/Registry.wxs",
     "$WixDir/UI.wxs",
-    "$WixDir/LegacyCleanup.wxs",
-    "$WixDir/BinFragment.wxs",
-    "$WixDir/ErtsFragment.wxs",
-    "$WixDir/LibFragment.wxs",
-    "$WixDir/ReleasesFragment.wxs"
+    "$WixDir/LegacyCleanup.wxs"
 )
 
 $wixArgs = @("build") + $wxsFiles + @(
@@ -111,8 +88,4 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Host "Bootstrapper built: $bundlePath"
-
-# Clean up harvested fragments
-Remove-Item "$WixDir/*Fragment.wxs" -Force
-
 Write-Host "Done. Artifacts in $OutputDir/"
