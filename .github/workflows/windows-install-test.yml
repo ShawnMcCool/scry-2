@@ -138,7 +138,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: scry2-msi
-          path: installer/output/Scry2Setup-v0.0.0.exe
+          path: |
+            installer/output/Scry2Setup-v0.0.0.exe
+            installer/output/Scry2-0.0.0.msi
 
   test-zip-install:
     name: Test zip installation
@@ -259,16 +261,20 @@ jobs:
         with:
           name: scry2-msi
 
-      - name: Install via Burn bootstrapper
+      - name: Install MSI directly
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Filter "Scry2Setup-*.exe" | Select-Object -First 1
-          $logFile = "$env:TEMP\scry2-burn-install.log"
-          Write-Host "Installing: $($exe.Name)"
-          Write-Host "Log file: $logFile"
-          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "/quiet /norestart /log `"$logFile`"" -Wait -PassThru
-          if (Test-Path $logFile) { Get-Content $logFile -Tail 50 }
-          if ($proc.ExitCode -ne 0) { throw "Bootstrapper exited with code $($proc.ExitCode)" }
+          $msi = Get-ChildItem -Filter "Scry2-*.msi" | Select-Object -First 1
+          $logFile = "$env:TEMP\scry2-msi-install.log"
+          Write-Host "Installing: $($msi.Name)"
+          $proc = Start-Process msiexec -ArgumentList "/i `"$($msi.FullName)`" /quiet /norestart /l*v `"$logFile`"" -Wait -PassThru
+          if (Test-Path $logFile) {
+              Write-Host "=== Last 30 lines of MSI log ==="
+              Get-Content $logFile -Tail 30
+              Write-Host "=== Actions with errors ==="
+              Select-String -Path $logFile -Pattern "return value 3|Error |1603" | ForEach-Object { $_.Line }
+          }
+          if ($proc.ExitCode -ne 0) { throw "msiexec exited with code $($proc.ExitCode)" }
           Write-Host "Installation completed"
 
       - name: Verify file layout
@@ -312,15 +318,17 @@ jobs:
         run: |
           Start-Process -FilePath "${env:ProgramFiles}\Scry2\bin\scry_2.bat" -ArgumentList "stop" -Wait -WindowStyle Hidden
 
-      - name: Uninstall via Burn bootstrapper
+      - name: Uninstall MSI
         shell: pwsh
         run: |
-          $exe = Get-ChildItem -Filter "Scry2Setup-*.exe" | Select-Object -First 1
-          $logFile = "$env:TEMP\scry2-burn-uninstall.log"
-          Write-Host "Uninstalling: $($exe.Name)"
-          $proc = Start-Process -FilePath $exe.FullName -ArgumentList "/uninstall /quiet /norestart /log `"$logFile`"" -Wait -PassThru
-          if (Test-Path $logFile) { Get-Content $logFile -Tail 50 }
-          if ($proc.ExitCode -ne 0) { throw "Uninstall exited with code $($proc.ExitCode)" }
+          $msi = Get-ChildItem -Filter "Scry2-*.msi" | Select-Object -First 1
+          $logFile = "$env:TEMP\scry2-msi-uninstall.log"
+          Write-Host "Uninstalling: $($msi.Name)"
+          $proc = Start-Process msiexec -ArgumentList "/x `"$($msi.FullName)`" /quiet /norestart /l*v `"$logFile`"" -Wait -PassThru
+          if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 1605) {
+              if (Test-Path $logFile) { Get-Content $logFile -Tail 30 }
+              throw "msiexec uninstall exited with code $($proc.ExitCode)"
+          }
           Write-Host "Uninstall completed"
 
       - name: Verify cleanup
@@ -331,18 +339,6 @@ jobs:
           if ($autostart) { throw "Autostart registry key not removed" }
           Write-Host "Cleanup OK: install dir gone, registry key removed"
 
-      - name: Dump MSI logs on failure
-        if: failure()
-        shell: pwsh
-        run: |
-          Write-Host "=== Burn install log ==="
-          if (Test-Path "$env:TEMP\scry2-burn-install.log") { Get-Content "$env:TEMP\scry2-burn-install.log" -Tail 100 }
-          Write-Host "=== MSI package log (errors and actions) ==="
-          Get-ChildItem "$env:TEMP\scry2-burn-install_*" -ErrorAction SilentlyContinue | ForEach-Object {
-              Write-Host "--- $($_.Name) ---"
-              Select-String -Path $_.FullName -Pattern "return value 3|Error |Action start|Action ended|CustomAction|1603" | ForEach-Object { $_.Line }
-          }
-
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -350,5 +346,5 @@ jobs:
           name: scry2-logs-msi
           path: |
             ${{ env.APPDATA }}\scry_2\log\
-            ${{ env.TEMP }}\scry2-burn-*.log
+            ${{ env.TEMP }}\scry2-msi-*.log
           if-no-files-found: ignore
