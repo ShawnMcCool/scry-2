@@ -275,7 +275,7 @@ defmodule Scry2Web.RanksLive do
             data-x-min={@x_min}
             data-x-max={@x_max}
             class="w-full rounded-lg bg-base-200"
-            style="height: 300px"
+            style="height: 18.75rem"
           />
         </div>
         <div :if={@has_percentile}>
@@ -288,7 +288,7 @@ defmodule Scry2Web.RanksLive do
             data-chart-type="percentile"
             data-series={@percentile_series}
             class="w-full rounded-lg bg-base-200"
-            style="height: 180px"
+            style="height: 11.25rem"
           />
         </div>
       </div>

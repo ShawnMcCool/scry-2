@@ -287,7 +287,7 @@ defmodule Scry2Web.DecksLive do
               data-chart-type="curve"
               data-series={DecksHelpers.mana_curve_series(@deck, @cards_by_arena_id)}
               class="w-full rounded-lg bg-base-200"
-              style="height: 80px"
+              style="height: 5rem"
             />
 
             <div class="space-y-4">

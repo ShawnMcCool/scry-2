@@ -266,7 +266,7 @@ defmodule Scry2Web.CardsLive do
         <div
           :if={@results != []}
           class="grid gap-2"
-          style="grid-template-columns: repeat(auto-fill, minmax(120px, 1fr))"
+          style="grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr))"
         >
           <div :for={card <- @results} class="flex flex-col gap-1">
             <.card_image
@@ -373,7 +373,7 @@ defmodule Scry2Web.CardsLive do
       />
 
       <div class={[
-        "fixed top-0 right-0 h-full w-[360px] bg-base-200 z-50 shadow-2xl",
+        "fixed top-0 right-0 h-full w-[22.5rem] bg-base-200 z-50 shadow-2xl",
         "flex flex-col transition-transform duration-300",
         if(@filter_open, do: "translate-x-0", else: "translate-x-full")
       ]}>

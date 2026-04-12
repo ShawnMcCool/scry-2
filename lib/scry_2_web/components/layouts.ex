@@ -65,7 +65,7 @@ defmodule Scry2Web.Layouts do
     </header>
 
     <main class="px-4 py-8 sm:px-6 lg:px-8">
-      <div class="mx-auto max-w-screen-2xl space-y-6">
+      <div class="mx-auto space-y-6" style="max-width: min(90vw, 1400px)">
         {render_slot(@inner_block)}
       </div>
     </main>
