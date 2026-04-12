@@ -234,6 +234,71 @@ defmodule Scry2.Matches.MatchProjectionTest do
       assert hd(submissions).match_id == nil
     end
 
+    # GRE game results are unreliable for conceded games — the GRE reports
+    # the last game state before concession, not the actual outcome.
+    # MatchCompleted.game_results from the matchmaking layer is authoritative.
+    # MatchProjection must correct per-game `won` values on MatchCompleted.
+    test "match_completed corrects per-game won values from authoritative game_results" do
+      player = create_player()
+      match_id = "test-correction-#{System.unique_integer([:positive])}"
+      started_at = ~U[2026-04-08 10:00:00Z]
+
+      # GameCompleted reports won: true (GRE lie — opponent conceded while ahead)
+      events = [
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          occurred_at: started_at
+        }),
+        build_game_completed(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          game_number: 1,
+          won: true,
+          on_play: true,
+          num_turns: 7
+        }),
+        build_game_completed(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          game_number: 2,
+          won: true,
+          on_play: false,
+          num_turns: 5
+        }),
+        # MatchCompleted carries authoritative game_results: game 2 was actually lost
+        build_match_completed(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          won: true,
+          num_games: 2,
+          game_results: [
+            %{game_number: 1, won: true, winning_team_id: 1, reason: nil},
+            %{game_number: 2, won: false, winning_team_id: 2, reason: "ResultReason_Concede"}
+          ],
+          occurred_at: DateTime.add(started_at, 900, :second)
+        })
+      ]
+
+      project_events(MatchProjection, events)
+
+      match = Matches.get_by_mtga_id(match_id, player.id)
+
+      # Game rows should be corrected
+      games =
+        Scry2.Repo.all(Scry2.Matches.Game)
+        |> Enum.filter(&(&1.match_id == match.id))
+        |> Enum.sort_by(& &1.game_number)
+
+      assert length(games) == 2
+      assert Enum.at(games, 0).won == true
+      assert Enum.at(games, 1).won == false
+
+      # game_results JSON on match row should also be corrected
+      results = match.game_results["results"]
+      assert Enum.find(results, &(&1["game"] == 2))["won"] == false
+    end
+
     test "watermark advances to last processed event" do
       player = create_player()
 

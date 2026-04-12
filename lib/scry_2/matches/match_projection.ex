@@ -33,9 +33,12 @@ defmodule Scry2.Matches.MatchProjection do
       Scry2.Matches.Match
     ]
 
+  import Ecto.Query
+
   alias Scry2.Events.Deck.DeckSubmitted
   alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.Matches
+  alias Scry2.Repo
 
   # ── Projection handlers ─────────────────────────────────────────────
 
@@ -81,6 +84,15 @@ defmodule Scry2.Matches.MatchProjection do
     }
 
     match = Matches.upsert_match!(attrs)
+
+    # GRE game results are unreliable for conceded games — the GRE reports
+    # the last game state before concession, not the actual outcome.
+    # MatchCompleted.game_results from the matchmaking layer is authoritative.
+    # Correct per-game `won` values on both Game rows and the match's
+    # game_results JSON. See GameCompleted @moduledoc for details.
+    if event.game_results && match do
+      correct_game_results(match, event.game_results)
+    end
 
     Log.info(
       :ingester,
@@ -180,6 +192,56 @@ defmodule Scry2.Matches.MatchProjection do
     )
 
     :ok
+  end
+
+  # ── Game result correction ───────────────────────────────────────────
+  #
+  # GRE game results are unreliable for conceded games — the GRE reports
+  # the last game state before concession, not the actual outcome.
+  # MatchCompleted.game_results from the matchmaking layer is authoritative.
+  # This corrects per-game `won` values on both Game rows and the match's
+  # game_results JSON map. See GameCompleted @moduledoc for details.
+
+  defp correct_game_results(match, authoritative_games) do
+    won_by_game =
+      Map.new(authoritative_games, fn game ->
+        game_num = game["game_number"] || game[:game_number]
+        won = if is_nil(game["won"]), do: game[:won], else: game["won"]
+        {game_num, won}
+      end)
+
+    # Correct individual Game rows
+    Scry2.Matches.Game
+    |> where([g], g.match_id == ^match.id)
+    |> Repo.all()
+    |> Enum.each(fn game ->
+      case Map.get(won_by_game, game.game_number) do
+        nil ->
+          :ok
+
+        won ->
+          Matches.upsert_game!(%{match_id: match.id, game_number: game.game_number, won: won})
+      end
+    end)
+
+    # Correct the game_results JSON on the match row
+    prev_results = (match.game_results && match.game_results["results"]) || []
+
+    if prev_results != [] do
+      corrected =
+        Enum.map(prev_results, fn game ->
+          case Map.get(won_by_game, game["game"]) do
+            nil -> game
+            won -> Map.put(game, "won", won)
+          end
+        end)
+
+      Matches.upsert_match!(%{
+        player_id: match.player_id,
+        mtga_match_id: match.mtga_match_id,
+        game_results: %{"results" => corrected}
+      })
+    end
   end
 
   defp compose_rank(nil, _tier), do: nil

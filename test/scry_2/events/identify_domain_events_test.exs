@@ -407,6 +407,176 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     end
   end
 
+  # ── Seat-2 perspective tests ────────────────────────────────────────
+  #
+  # MTGA alternates the player between seat 1 and seat 2 across matches.
+  # These tests verify that perspective-sensitive fields (self_goes_first,
+  # chose_play, won) are correct when the player is seat 2.
+
+  describe "translate/3 — DieRolled with player as seat 2" do
+    test "self_goes_first is true when seat-2 player rolled higher" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "GreToClientEvent",
+        mtga_timestamp: ~U[2026-04-05 19:18:40Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "greToClientEvent" => %{
+              "greToClientMessages" => [
+                %{
+                  "type" => "GREMessageType_ConnectResp",
+                  "systemSeatIds" => [2],
+                  "msgId" => 1,
+                  "connectResp" => %{
+                    "status" => "ConnectionStatus_Success",
+                    "deckMessage" => %{
+                      "deckCards" => [91234, 91234, 91234, 91234],
+                      "sideboardCards" => []
+                    }
+                  }
+                },
+                %{
+                  "type" => "GREMessageType_DieRollResultsResp",
+                  "systemSeatIds" => [1, 2],
+                  "msgId" => 2,
+                  "dieRollResultsResp" => %{
+                    "playerDieRolls" => [
+                      %{"systemSeatId" => 1, "rollValue" => 6},
+                      %{"systemSeatId" => 2, "rollValue" => 19}
+                    ]
+                  }
+                }
+              ]
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{current_match_id: "seat2-test-match"}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      die_event = Enum.find(events, &match?(%DieRolled{}, &1))
+      assert die_event != nil
+      assert die_event.self_roll == 19
+      assert die_event.opponent_roll == 6
+      assert die_event.self_goes_first == true
+    end
+
+    test "self_goes_first is false when seat-2 player rolled lower" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "GreToClientEvent",
+        mtga_timestamp: ~U[2026-04-05 19:18:40Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "greToClientEvent" => %{
+              "greToClientMessages" => [
+                %{
+                  "type" => "GREMessageType_ConnectResp",
+                  "systemSeatIds" => [2],
+                  "msgId" => 1,
+                  "connectResp" => %{
+                    "status" => "ConnectionStatus_Success",
+                    "deckMessage" => %{
+                      "deckCards" => [91234, 91234, 91234, 91234],
+                      "sideboardCards" => []
+                    }
+                  }
+                },
+                %{
+                  "type" => "GREMessageType_DieRollResultsResp",
+                  "systemSeatIds" => [1, 2],
+                  "msgId" => 2,
+                  "dieRollResultsResp" => %{
+                    "playerDieRolls" => [
+                      %{"systemSeatId" => 1, "rollValue" => 19},
+                      %{"systemSeatId" => 2, "rollValue" => 6}
+                    ]
+                  }
+                }
+              ]
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{current_match_id: "seat2-test-match"}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      die_event = Enum.find(events, &match?(%DieRolled{}, &1))
+      assert die_event != nil
+      assert die_event.self_roll == 6
+      assert die_event.opponent_roll == 19
+      assert die_event.self_goes_first == false
+    end
+  end
+
+  describe "translate/3 — StartingPlayerChosen with player as seat 2" do
+    test "chose_play is true when seat-2 player chose themselves" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "ClientToGremessage",
+        mtga_timestamp: ~U[2026-04-05 19:19:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "type" => "ClientMessageType_ChooseStartingPlayerResp",
+            "payload" => %{
+              "type" => "ClientMessageType_ChooseStartingPlayerResp",
+              "chooseStartingPlayerResp" => %{"systemSeatId" => 2}
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{
+        current_match_id: "seat2-test-match",
+        self_seat_id: 2
+      }
+
+      {[%Scry2.Events.Gameplay.StartingPlayerChosen{} = event], []} =
+        IdentifyDomainEvents.translate(record, nil, match_context)
+
+      assert event.chose_play == true
+    end
+
+    test "chose_play is false when seat-2 player chose opponent" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "ClientToGremessage",
+        mtga_timestamp: ~U[2026-04-05 19:19:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "type" => "ClientMessageType_ChooseStartingPlayerResp",
+            "payload" => %{
+              "type" => "ClientMessageType_ChooseStartingPlayerResp",
+              "chooseStartingPlayerResp" => %{"systemSeatId" => 1}
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{
+        current_match_id: "seat2-test-match",
+        self_seat_id: 2
+      }
+
+      {[%Scry2.Events.Gameplay.StartingPlayerChosen{} = event], []} =
+        IdentifyDomainEvents.translate(record, nil, match_context)
+
+      assert event.chose_play == false
+    end
+  end
+
   # ── GraphGetGraphState → MasteryProgress ────────────────────────────
 
   describe "translate/2 — GraphGetGraphState response → MasteryProgress" do

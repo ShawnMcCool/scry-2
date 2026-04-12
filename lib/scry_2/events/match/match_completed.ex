@@ -24,7 +24,11 @@ defmodule Scry2.Events.Match.MatchCompleted do
   - `won` — true if the player won the match
   - `num_games` — total number of games played in the match
   - `reason` — overall match result reason (e.g. `"ResultReason_LifeLoss"`)
-  - `game_results` — per-game list of `%{game_number, winning_team_id, reason}`
+  - `game_results` — per-game list of `%{game_number, winning_team_id, won, reason}`.
+    This is the **authoritative** source for per-game win/loss. The GRE's
+    `GameCompleted.won` is unreliable for conceded games (see `GameCompleted`
+    @moduledoc). Projections storing per-game `won` must reconcile against
+    this field when processing `MatchCompleted`.
 
   ## Slug
 

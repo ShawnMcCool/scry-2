@@ -64,15 +64,27 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   `GreToClientEvent` is the player's client feed, `systemSeatIds[0]`
   IS the player's seat number.
 
+  **Perspective is resolved once per GRE batch** via
+  `resolve_player_seat/1` and threaded as `player_seat` to all
+  perspective-sensitive sub-handlers (DeckSubmitted, DieRolled,
+  GameCompleted). No handler determines perspective independently.
+  For `ClientToGremessage` events (e.g. StartingPlayerChosen), the
+  player's seat comes from `match_context[:self_seat_id]`, established
+  by the ConnectResp that produced the earlier DeckSubmitted.
+
   ### GRE game results are wrong for conceded games
 
   When a player concedes, the GRE's `GameStateMessage` with
   `MatchState_GameComplete` reports the last game state before the
   concession — showing the conceding player as "winning" that game.
   The matchmaking layer's `finalMatchResult.resultList[]` (in
-  `MatchGameRoomStateChangedEvent`) is authoritative. The
-  `DeckProjection` corrects per-game `won` values using
-  `MatchCompleted.game_results` after the GRE values are written.
+  `MatchGameRoomStateChangedEvent`) is authoritative. The translation
+  layer cannot correct `GameCompleted.won` because the authoritative
+  source (`MatchCompleted`) arrives in a later event. Correction
+  happens at the projection level: both `MatchProjection` and
+  `DeckProjection` correct per-game `won` values using
+  `MatchCompleted.game_results`. See `GameCompleted` and
+  `MatchCompleted` @moduledocs for details.
 
   ### Deck format gets overwritten by event type
 
@@ -234,6 +246,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   @type match_context :: %{
           optional(:current_match_id) => String.t() | nil,
           optional(:current_game_number) => non_neg_integer() | nil,
+          optional(:self_seat_id) => non_neg_integer() | nil,
           optional(:last_hand_game_objects) => map() | {integer(), list()}
         }
 
@@ -305,11 +318,18 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       match_id = extract_match_id_from_gre(messages)
       context_match_id = match_id || match_context[:current_match_id]
 
+      # Resolve the player's seat once for the entire GRE batch.
+      # Every message in a GreToClientEvent is sent to this player's client.
+      # Messages addressed to a single seat (ConnectResp, GameStateMessage)
+      # identify the player's seat; broadcast messages (DieRollResultsResp)
+      # are addressed to all seats. See "MTGA protocol pitfalls" in @moduledoc.
+      player_seat = resolve_player_seat(messages)
+
       events =
         [
-          maybe_build_deck_submitted(messages, context_match_id, occurred_at),
-          maybe_build_die_roll_completed(messages, context_match_id, occurred_at),
-          maybe_build_game_completed(messages, context_match_id, occurred_at),
+          maybe_build_deck_submitted(messages, context_match_id, occurred_at, player_seat),
+          maybe_build_die_roll_completed(messages, context_match_id, occurred_at, player_seat),
+          maybe_build_game_completed(messages, context_match_id, occurred_at, player_seat),
           build_mulligan_offered(messages, context_match_id, occurred_at, match_context),
           build_turn_actions(messages, context_match_id, occurred_at, match_context)
         ]
@@ -373,11 +393,15 @@ defmodule Scry2.Events.IdentifyDomainEvents do
             }
 
           "ClientMessageType_ChooseStartingPlayerResp" ->
-            seat = get_in(gre_payload, ["chooseStartingPlayerResp", "systemSeatId"])
+            # The seat chosen to go first. Compare against the player's own
+            # seat (from ConnectResp via ingestion state) to determine if the
+            # player chose play (themselves) or draw (opponent).
+            chosen_seat = get_in(gre_payload, ["chooseStartingPlayerResp", "systemSeatId"])
+            self_seat_id = match_context[:self_seat_id]
 
             %StartingPlayerChosen{
               mtga_match_id: match_id,
-              chose_play: seat == 1,
+              chose_play: chosen_seat == self_seat_id,
               occurred_at: occurred_at
             }
 
@@ -1262,11 +1286,12 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   # ConnectResp carries the deck list as flat arrays of arena_ids (one
   # entry per copy). Aggregate into [%{arena_id, count}] shape.
-  defp maybe_build_deck_submitted(messages, match_id, occurred_at) do
+  # `player_seat` is resolved once per GRE batch by the caller.
+  defp maybe_build_deck_submitted(messages, match_id, occurred_at, player_seat) do
     case find_gre_message(messages, "GREMessageType_ConnectResp") do
-      %{"connectResp" => connect_resp} = message ->
+      %{"connectResp" => connect_resp} ->
         deck_message = connect_resp["deckMessage"] || %{}
-        seat_id = message["systemSeatIds"] |> List.first()
+        seat_id = player_seat
 
         main_deck = aggregate_card_list(deck_message["deckCards"] || [])
         sideboard = aggregate_card_list(deck_message["sideboardCards"] || [])
@@ -1296,15 +1321,14 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # player's seat number. We use it to determine which `players[]` entry
   # is "self" vs "opponent". Without this, hardcoding seat 1 inverts
   # won/lost and swaps mulligan counts when the player is seat 2.
-  defp maybe_build_game_completed(messages, match_id, occurred_at)
+  # `player_seat` is resolved once per GRE batch by the caller.
+  defp maybe_build_game_completed(messages, match_id, occurred_at, player_seat)
        when is_binary(match_id) do
     Enum.find_value(messages, fn msg ->
       with true <- game_state_message?(msg),
            gsm when is_map(gsm) <- extract_game_state(msg),
            game_info when is_map(game_info) <- gsm["gameInfo"],
            "MatchState_GameComplete" <- game_info["matchState"] do
-        # The message's systemSeatIds tells us the player's seat
-        player_seat = msg_seat(msg)
         results = game_info["results"] || []
         game_result = Enum.find(results, &(&1["scope"] == "MatchScope_Game"))
         players = gsm["players"] || []
@@ -1332,16 +1356,17 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end)
   end
 
-  defp maybe_build_game_completed(_messages, _match_id, _occurred_at), do: nil
+  defp maybe_build_game_completed(_messages, _match_id, _occurred_at, _player_seat), do: nil
 
   # DieRollResultsResp carries both players' roll values. The higher
   # roll wins and chooses to play first (virtually always chooses play).
-  defp maybe_build_die_roll_completed(messages, match_id, occurred_at)
+  # `player_seat` is resolved once per GRE batch by the caller.
+  defp maybe_build_die_roll_completed(messages, match_id, occurred_at, player_seat)
        when is_binary(match_id) do
     case find_gre_message(messages, "GREMessageType_DieRollResultsResp") do
       %{"dieRollResultsResp" => %{"playerDieRolls" => rolls}} ->
-        self_roll_entry = Enum.find(rolls, &(&1["systemSeatId"] == 1))
-        opponent_roll_entry = Enum.find(rolls, &(&1["systemSeatId"] != 1))
+        self_roll_entry = Enum.find(rolls, &(&1["systemSeatId"] == player_seat))
+        opponent_roll_entry = Enum.find(rolls, &(&1["systemSeatId"] != player_seat))
 
         if self_roll_entry && opponent_roll_entry do
           self_roll = self_roll_entry["rollValue"]
@@ -1361,7 +1386,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end
   end
 
-  defp maybe_build_die_roll_completed(_messages, _match_id, _occurred_at), do: nil
+  defp maybe_build_die_roll_completed(_messages, _match_id, _occurred_at, _player_seat), do: nil
 
   # MulliganReq messages offer a mulligan decision to a specific seat.
   # Returns a list (not a single value) since a batch can contain
@@ -1746,11 +1771,20 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   defp game_state_message?(%{"type" => "GREMessageType_QueuedGameStateMessage"}), do: true
   defp game_state_message?(_), do: false
 
-  # Extracts the seat number from a GRE message's systemSeatIds.
-  # Since GreToClientEvent is the player's client feed, the seat
-  # in systemSeatIds IS the player's seat. Defaults to 1.
-  defp msg_seat(%{"systemSeatIds" => [seat_id | _]}), do: seat_id
-  defp msg_seat(_), do: 1
+  # Resolves the player's seat from a GRE message batch.
+  #
+  # GreToClientEvent is the player's client feed. Messages addressed to
+  # a single seat (ConnectResp, GameStateMessage) carry the player's
+  # seat in systemSeatIds. Broadcast messages (DieRollResultsResp)
+  # carry all seats. We find the first single-seat message to determine
+  # the player's seat. Falls back to 1 defensively (should not happen
+  # in practice — ConnectResp always precedes other messages).
+  defp resolve_player_seat(messages) when is_list(messages) do
+    Enum.find_value(messages, 1, fn
+      %{"systemSeatIds" => [seat_id]} -> seat_id
+      _ -> nil
+    end)
+  end
 
   defp extract_game_state(msg) when is_map(msg), do: msg["gameStateMessage"]
 

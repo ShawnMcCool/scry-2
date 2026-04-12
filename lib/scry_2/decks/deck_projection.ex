@@ -137,7 +137,19 @@ defmodule Scry2.Decks.DeckProjection do
           maybe_add_draft_name(base, match_created_attrs)
         end
 
-      Decks.upsert_deck!(deck_attrs)
+      deck = Decks.upsert_deck!(deck_attrs)
+
+      # Backfill nil format from the match's event_name. DeckUpdated sometimes
+      # carries event-type strings ("DirectGame") that normalize_deck_format/1
+      # filters to nil. The match's event_name reliably identifies the format.
+      if is_nil(deck.format) do
+        event_name = match_created_attrs[:event_name]
+        inferred = EnrichEvents.infer_deck_format(event_name)
+
+        if inferred do
+          Decks.upsert_deck!(%{mtga_deck_id: mtga_deck_id, format: inferred})
+        end
+      end
 
       # Seed match result row. MatchCreated fires before DeckSubmitted in the
       # MTGA event stream, so retroactively apply any already-persisted
