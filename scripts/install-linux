@@ -7,7 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Installing Scry2..."
 
-# Stop existing tray and backend if running
+# Stop existing backend and tray if running
+if [ -x "$INSTALL_DIR/bin/scry_2" ]; then
+    echo "Stopping existing Scry2 backend..."
+    "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
+fi
 if pgrep -x scry2-tray &>/dev/null; then
     echo "Stopping existing Scry2 tray..."
     pkill -x scry2-tray 2>/dev/null || true
