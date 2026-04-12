@@ -21,7 +21,7 @@ defmodule Scry2.Economy.EconomyProjection do
   alias Scry2.Events.Economy.{InventoryChanged, InventoryUpdated}
   alias Scry2.Events.Event.{EventJoined, EventRewardClaimed}
 
-  defp project(%EventJoined{} = event) do
+  defp project(%EventJoined{entry_fee: fee} = event) when is_integer(fee) and fee > 0 do
     Economy.upsert_event_entry!(%{
       player_id: event.player_id,
       event_name: event.event_name,
@@ -34,6 +34,8 @@ defmodule Scry2.Economy.EconomyProjection do
     Log.info(:ingester, "projected EventJoined event=#{event.event_name}")
     :ok
   end
+
+  defp project(%EventJoined{}), do: :ok
 
   defp project(%EventRewardClaimed{} = event) do
     Economy.enrich_with_reward!(event.player_id, event.event_name, %{
