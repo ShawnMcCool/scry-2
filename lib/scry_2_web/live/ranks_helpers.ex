@@ -268,6 +268,92 @@ defmodule Scry2Web.RanksHelpers do
   end
 
   @doc """
+  Builds a map of ISO8601 timestamp → match detail map for chart tooltips.
+
+  Correlates rank snapshots with matches by finding the match whose `ended_at`
+  is closest to each snapshot's `occurred_at` (within a 5-minute window).
+  Only snapshots that had a win/loss delta get a match detail entry.
+  """
+  @spec match_details_by_timestamp([map()], [map()], :constructed | :limited) :: %{
+          String.t() => map()
+        }
+  def match_details_by_timestamp(snapshots, _matches, _format) when length(snapshots) < 2,
+    do: %{}
+
+  def match_details_by_timestamp(snapshots, matches, format) do
+    result_timestamps =
+      snapshots
+      |> Enum.chunk_every(2, 1, :discard)
+      |> Enum.flat_map(fn [prev, curr] ->
+        {delta_wins, delta_losses} = snapshot_deltas(prev, curr, format)
+
+        if delta_wins > 0 or delta_losses > 0,
+          do: [curr.occurred_at],
+          else: []
+      end)
+
+    result_timestamps
+    |> Enum.reduce(%{}, fn occurred_at, accumulator ->
+      case find_closest_match(matches, occurred_at) do
+        nil ->
+          accumulator
+
+        match ->
+          key = DateTime.to_iso8601(occurred_at)
+
+          detail = %{
+            deck_name: match.deck_name,
+            deck_colors: match.deck_colors || "",
+            opponent: match.opponent_screen_name,
+            duration: match.duration_seconds,
+            on_play: match.on_play,
+            num_games: match.num_games,
+            event_name: match.event_name
+          }
+
+          Map.put(accumulator, key, detail)
+      end
+    end)
+  end
+
+  defp snapshot_deltas(prev, curr, :constructed) do
+    delta_wins = (curr.constructed_matches_won || 0) - (prev.constructed_matches_won || 0)
+    delta_losses = (curr.constructed_matches_lost || 0) - (prev.constructed_matches_lost || 0)
+    {delta_wins, delta_losses}
+  end
+
+  defp snapshot_deltas(prev, curr, :limited) do
+    delta_wins = (curr.limited_matches_won || 0) - (prev.limited_matches_won || 0)
+    delta_losses = (curr.limited_matches_lost || 0) - (prev.limited_matches_lost || 0)
+    {delta_wins, delta_losses}
+  end
+
+  defp find_closest_match(matches, occurred_at) do
+    max_drift_seconds = 300
+
+    matches
+    |> Enum.min_by(
+      fn match ->
+        case match.ended_at do
+          nil -> max_drift_seconds + 1
+          ended_at -> abs(DateTime.diff(ended_at, occurred_at, :second))
+        end
+      end,
+      fn -> nil end
+    )
+    |> case do
+      nil ->
+        nil
+
+      match ->
+        if match.ended_at &&
+             abs(DateTime.diff(match.ended_at, occurred_at, :second)) <= max_drift_seconds,
+           do: match,
+           else: nil
+    end
+  end
+
+  @doc """
   Computes Y-axis bounds for the climb chart, snapped to tier boundaries.
 
   Pads one tier below the minimum score and snaps the maximum up to the next
