@@ -47,7 +47,7 @@ defmodule Scry2Web.StatsLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold mb-6">Stats</h1>
+      <h1 class="text-2xl font-semibold mb-6 font-beleren">Stats</h1>
 
       <.empty_state :if={@stats.total == 0}>
         No completed matches yet. Play some games to see statistics here.
@@ -73,7 +73,7 @@ defmodule Scry2Web.StatsLive do
 
         <%!-- By format breakdown --%>
         <section :if={@stats.by_format != []}>
-          <h2 class="text-lg font-semibold mb-3">By Format</h2>
+          <h2 class="text-lg font-semibold mb-3 font-beleren">By Format</h2>
           <div class="overflow-x-auto">
             <table class="table table-sm">
               <thead>
@@ -102,7 +102,7 @@ defmodule Scry2Web.StatsLive do
 
         <%!-- By deck colors breakdown --%>
         <section :if={@stats.by_deck_colors != []}>
-          <h2 class="text-lg font-semibold mb-3">By Deck Colors</h2>
+          <h2 class="text-lg font-semibold mb-3 font-beleren">By Deck Colors</h2>
           <div class="overflow-x-auto">
             <table class="table table-sm">
               <thead>
@@ -135,7 +135,7 @@ defmodule Scry2Web.StatsLive do
 
         <%!-- By deck name breakdown --%>
         <section :if={@stats.by_deck_name != []}>
-          <h2 class="text-lg font-semibold mb-3">By Deck</h2>
+          <h2 class="text-lg font-semibold mb-3 font-beleren">By Deck</h2>
           <div class="overflow-x-auto">
             <table class="table table-sm">
               <thead>
@@ -164,7 +164,7 @@ defmodule Scry2Web.StatsLive do
 
         <%!-- Play vs Draw breakdown --%>
         <section :if={@stats.by_on_play != []}>
-          <h2 class="text-lg font-semibold mb-3">Play vs Draw</h2>
+          <h2 class="text-lg font-semibold mb-3 font-beleren">Play vs Draw</h2>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div :for={row <- @stats.by_on_play} class="card bg-base-200">
               <div class="card-body p-4">
@@ -186,7 +186,7 @@ defmodule Scry2Web.StatsLive do
 
         <%!-- Mulligan analytics --%>
         <section :if={@mulligan_stats.total_hands > 0}>
-          <h2 class="text-lg font-semibold mb-3">Mulligan Analytics</h2>
+          <h2 class="text-lg font-semibold mb-3 font-beleren">Mulligan Analytics</h2>
 
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <%!-- Keep rate by hand size --%>

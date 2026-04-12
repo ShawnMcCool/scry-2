@@ -46,7 +46,7 @@ defmodule Scry2Web.DraftsLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold">Drafts</h1>
+      <h1 class="text-2xl font-semibold font-beleren">Drafts</h1>
 
       <.empty_state :if={@drafts == []}>
         No drafts recorded yet.
@@ -88,13 +88,13 @@ defmodule Scry2Web.DraftsLive do
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <.back_link navigate={~p"/drafts"} label="All drafts" />
 
-      <h1 class="text-2xl font-semibold">{@draft.event_name}</h1>
+      <h1 class="text-2xl font-semibold font-beleren">{@draft.event_name}</h1>
       <p class="text-sm text-base-content/60">
         {@draft.set_code} · {format_label(@draft.format)} · {format_datetime(@draft.started_at)}
       </p>
 
       <section>
-        <h2 class="text-lg font-semibold mb-2">Picks ({length(@draft.picks)})</h2>
+        <h2 class="text-lg font-semibold mb-2 font-beleren">Picks ({length(@draft.picks)})</h2>
         <table :if={@draft.picks != []} class="table table-sm">
           <thead>
             <tr>

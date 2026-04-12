@@ -70,7 +70,7 @@ defmodule Scry2Web.MulligansLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold mb-6">Mulligans</h1>
+      <h1 class="text-2xl font-semibold mb-6 font-beleren">Mulligans</h1>
 
       <.empty_state :if={@events == []}>
         No mulligan data recorded yet. Play a game with MTGA detailed logs enabled.

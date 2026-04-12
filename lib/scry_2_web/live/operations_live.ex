@@ -55,19 +55,13 @@ defmodule Scry2Web.OperationsLive do
     socket =
       if socket.assigns.operation == nil do
         case Operations.last_operation() do
-          nil ->
-            socket
-
-          %{type: type, running: false} ->
-            socket
-            |> assign(:operation, type)
-            |> assign(:operation_running, false)
-            |> assign(:progress, %{percent: 100})
-
           %{type: type, running: true} ->
             socket
             |> assign(:operation, type)
             |> assign(:operation_running, true)
+
+          _completed_or_nil ->
+            socket
         end
       else
         socket
@@ -399,7 +393,7 @@ defmodule Scry2Web.OperationsLive do
     ~H"""
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
-      <h1 class="text-2xl font-semibold">Operations</h1>
+      <h1 class="text-2xl font-semibold font-beleren">Operations</h1>
 
       <%!-- Pipeline overview --%>
       <section class="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -628,7 +622,7 @@ defmodule Scry2Web.OperationsLive do
 
       <%!-- Projections table --%>
       <section>
-        <h2 class="text-lg font-semibold mb-3">Projections</h2>
+        <h2 class="text-lg font-semibold mb-3 font-beleren">Projections</h2>
         <div class="overflow-x-auto">
           <table class="table table-sm">
             <thead>
@@ -655,7 +649,7 @@ defmodule Scry2Web.OperationsLive do
                 </td>
                 <td>
                   <span :if={proj.caught_up} class="badge badge-sm badge-soft badge-success gap-1">
-                    <.icon name="hero-check-circle-mini" class="size-3" /> Caught up
+                    <.icon name="hero-check-circle-mini" class="size-3" /> Caught&nbsp;up
                   </span>
                   <span :if={!proj.caught_up} class="badge badge-sm badge-soft badge-warning gap-1">
                     <.icon name="hero-exclamation-triangle-mini" class="size-3" /> Behind

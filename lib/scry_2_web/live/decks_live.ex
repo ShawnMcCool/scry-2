@@ -98,7 +98,7 @@ defmodule Scry2Web.DecksLive do
     <Layouts.console_mount socket={@socket} />
     <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
       <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-semibold">Decks</h1>
+        <h1 class="text-2xl font-semibold font-beleren">Decks</h1>
         <div class="flex items-center gap-1">
           <.link
             patch={~p"/decks?filter=played"}
@@ -186,7 +186,7 @@ defmodule Scry2Web.DecksLive do
             <span class="text-base-content/30">/</span>
             <span class="text-sm text-base-content/70">{@deck.current_name || "Unnamed Deck"}</span>
           </div>
-          <h1 class="text-2xl font-semibold">{@deck.current_name || "Unnamed Deck"}</h1>
+          <h1 class="text-2xl font-semibold font-beleren">{@deck.current_name || "Unnamed Deck"}</h1>
           <div class="flex items-center gap-3 mt-1 text-sm text-base-content/60">
             <.mana_pips
               :if={DecksHelpers.deck_colors(@deck) != ""}
