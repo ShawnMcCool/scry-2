@@ -551,7 +551,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert inv.gold == 8200
       assert inv.gems == 4900
       assert inv.wildcards_common == 2
-      assert inv.vault_progress == 150
+      assert inv.vault_progress == 15.0
     end
   end
 
@@ -927,7 +927,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert event.wildcards_uncommon == 4
       assert event.wildcards_rare == 2
       assert event.wildcards_mythic == 1
-      assert event.vault_progress == 475
+      assert event.vault_progress == 47.5
     end
 
     test "returns empty list when InventoryInfo is absent (empty-payload login)" do
