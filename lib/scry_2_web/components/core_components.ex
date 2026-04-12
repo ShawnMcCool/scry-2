@@ -455,15 +455,58 @@ defmodule Scry2Web.CoreComponents do
   attr :title, :string, required: true
   attr :value, :any, required: true
   attr :class, :string, default: ""
+  slot :icon
 
   def stat_card(assigns) do
     ~H"""
     <div class="card bg-base-200">
       <div class="card-body p-4">
-        <p class="text-xs uppercase text-base-content/60">{@title}</p>
+        <p class="text-xs uppercase text-base-content/60 flex items-center gap-1">
+          {render_slot(@icon)}
+          {@title}
+        </p>
         <p class={["text-2xl font-semibold", @class]}>{@value}</p>
       </div>
     </div>
+    """
+  end
+
+  @doc """
+  Renders an MTGA wildcard lotus icon in the appropriate rarity color.
+
+  ## Examples
+
+      <.wildcard_icon rarity="common" />
+      <.wildcard_icon rarity="mythic" class="size-6" />
+  """
+  attr :rarity, :string, values: ~w(common uncommon rare mythic), required: true
+  attr :class, :string, default: "size-4 inline-block"
+
+  @wildcard_colors %{
+    "common" => "#9ca3af",
+    "uncommon" => "#3b82f6",
+    "rare" => "#f59e0b",
+    "mythic" => "#dc2626"
+  }
+
+  def wildcard_icon(assigns) do
+    assigns = assign(assigns, :color, @wildcard_colors[assigns.rarity])
+
+    ~H"""
+    <svg viewBox="0 0 24 24" fill={@color} class={@class} aria-label={"#{@rarity} wildcard"}>
+      <path d="M12 2C12 2 9 6 9 9C9 11 10.5 12.5 12 13C13.5 12.5 15 11 15 9C15 6 12 2 12 2Z" />
+      <path d="M7 8C7 8 3 10 3 13C3 15.5 5.5 16.5 7.5 16C6 14.5 6 12 7 8Z" opacity="0.85" />
+      <path d="M17 8C17 8 21 10 21 13C21 15.5 18.5 16.5 16.5 16C18 14.5 18 12 17 8Z" opacity="0.85" />
+      <path d="M5 14C5 14 2 17 3.5 20C4.5 22 7 21.5 8.5 20C6.5 19.5 5.5 17 5 14Z" opacity="0.7" />
+      <path
+        d="M19 14C19 14 22 17 20.5 20C19.5 22 17 21.5 15.5 20C17.5 19.5 18.5 17 19 14Z"
+        opacity="0.7"
+      />
+      <path
+        d="M12 13C12 13 10 17 10 20C10 22 12 23 12 23C12 23 14 22 14 20C14 17 12 13 12 13Z"
+        opacity="0.9"
+      />
+    </svg>
     """
   end
 
