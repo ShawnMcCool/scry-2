@@ -261,6 +261,17 @@ jobs:
         with:
           name: scry2-msi
 
+      - name: Diagnose installer environment
+        shell: pwsh
+        run: |
+          Write-Host "User: $env:USERNAME"
+          Write-Host "Admin: $([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"
+          Write-Host "MSI service: $((Get-Service msiserver).Status)"
+          Write-Host "Rollback key exists: $(Test-Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Installer\Rollback\Scripts')"
+          # Check if we can write to Program Files
+          $testFile = "${env:ProgramFiles}\Scry2_test_write"
+          try { New-Item -ItemType Directory -Path $testFile -Force | Out-Null; Remove-Item $testFile; Write-Host "ProgramFiles writable: True" } catch { Write-Host "ProgramFiles writable: False - $_" }
+
       - name: Install MSI directly
         shell: pwsh
         run: |
@@ -269,10 +280,18 @@ jobs:
           Write-Host "Installing: $($msi.Name)"
           $proc = Start-Process msiexec -ArgumentList "/i `"$($msi.FullName)`" /quiet /norestart /l*v `"$logFile`"" -Wait -PassThru
           if (Test-Path $logFile) {
-              Write-Host "=== Last 30 lines of MSI log ==="
-              Get-Content $logFile -Tail 30
+              Write-Host "=== Lines around InstallInitialize ==="
+              $lines = Get-Content $logFile
+              for ($i = 0; $i -lt $lines.Count; $i++) {
+                  if ($lines[$i] -match "InstallInitialize") {
+                      $start = [Math]::Max(0, $i - 10)
+                      $end = [Math]::Min($lines.Count - 1, $i + 5)
+                      for ($j = $start; $j -le $end; $j++) { Write-Host $lines[$j] }
+                      Write-Host "---"
+                  }
+              }
               Write-Host "=== Actions with errors ==="
-              Select-String -Path $logFile -Pattern "return value 3|Error |1603" | ForEach-Object { $_.Line }
+              Select-String -Path $logFile -Pattern "return value 3|1603" | ForEach-Object { $_.Line }
           }
           if ($proc.ExitCode -ne 0) { throw "msiexec exited with code $($proc.ExitCode)" }
           Write-Host "Installation completed"
@@ -339,12 +358,21 @@ jobs:
           if ($autostart) { throw "Autostart registry key not removed" }
           Write-Host "Cleanup OK: install dir gone, registry key removed"
 
+      - name: Upload MSI log on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          $logFile = "$env:TEMP\scry2-msi-install.log"
+          if (Test-Path $logFile) {
+              Copy-Item $logFile "D:\a\scry-2\scry-2\msi-install.log"
+          }
+
       - name: Upload logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: scry2-logs-msi
           path: |
+            msi-install.log
             ${{ env.APPDATA }}\scry_2\log\
-            ${{ env.TEMP }}\scry2-msi-*.log
           if-no-files-found: ignore
