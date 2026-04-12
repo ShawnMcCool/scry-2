@@ -351,8 +351,8 @@ defmodule Scry2Web.DecksLive do
                       name={card.name}
                       class="w-28"
                     />
-                    <span class="absolute top-1 right-1 rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
-                      {card.count}/4
+                    <span class="absolute top-1 right-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
+                      {card.count}
                     </span>
                   </div>
                 </div>
@@ -418,7 +418,7 @@ defmodule Scry2Web.DecksLive do
             name={card.name}
             class="w-28"
           />
-          <span class="absolute bottom-1 left-1 rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
+          <span class="absolute bottom-1 left-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
             {card.count}
           </span>
         </div>
