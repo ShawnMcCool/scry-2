@@ -33,7 +33,7 @@
       <ExePackage Id="VCRedist"
                   Name="VC++ Redistributable"
                   SourceFile="$(var.VCRedistPath)"
-                  InstallCommand="/install /quiet /norestart"
+                  InstallArguments="/install /quiet /norestart"
                   DetectCondition="VCRedistInstalled"
                   Permanent="yes"
                   Vital="yes" />
