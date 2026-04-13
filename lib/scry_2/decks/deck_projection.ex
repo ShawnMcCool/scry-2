@@ -40,10 +40,14 @@ defmodule Scry2.Decks.DeckProjection do
       Scry2.Decks.Deck
     ]
 
+  import Ecto.Query
+
   alias Scry2.Decks
+  alias Scry2.Decks.MatchResult
   alias Scry2.Events.Deck.{DeckSubmitted, DeckUpdated}
   alias Scry2.Events.EnrichEvents
   alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Repo
 
   # ── Projection handlers ─────────────────────────────────────────────
 
@@ -214,20 +218,12 @@ defmodule Scry2.Decks.DeckProjection do
   defp project(%GameCompleted{} = event) do
     # Accumulate per-game results on decks_match_results for BO3 game 1 vs 2/3 analysis.
     # Look up each deck result for this match (there may be one per deck used in the match).
-    import Ecto.Query
-    alias Scry2.Decks.MatchResult
-    alias Scry2.Repo
-
-    deck_ids =
+    match_results =
       MatchResult
       |> where([mr], mr.mtga_match_id == ^event.mtga_match_id)
-      |> select([mr], mr.mtga_deck_id)
       |> Repo.all()
 
-    Enum.each(deck_ids, fn mtga_deck_id ->
-      existing =
-        Repo.get_by(MatchResult, mtga_deck_id: mtga_deck_id, mtga_match_id: event.mtga_match_id)
-
+    Enum.each(match_results, fn existing ->
       if existing do
         prev_results = (existing.game_results && existing.game_results["results"]) || []
         other_results = Enum.reject(prev_results, &(&1["game"] == event.game_number))
@@ -246,7 +242,7 @@ defmodule Scry2.Decks.DeckProjection do
         on_play = game1 && game1["on_play"]
 
         Decks.upsert_match_result!(%{
-          mtga_deck_id: mtga_deck_id,
+          mtga_deck_id: existing.mtga_deck_id,
           mtga_match_id: event.mtga_match_id,
           game_results: %{"results" => all_results},
           on_play: on_play
@@ -363,10 +359,6 @@ defmodule Scry2.Decks.DeckProjection do
   # authoritative data. The GRE's GameCompleted reports the last game state,
   # which is wrong for conceded games (opponent concedes while ahead).
   defp correct_game_results(mtga_match_id, authoritative_games) do
-    import Ecto.Query
-    alias Scry2.Decks.MatchResult
-    alias Scry2.Repo
-
     won_by_game =
       Map.new(authoritative_games, fn g ->
         game_num = g["game_number"] || g[:game_number]
@@ -399,10 +391,6 @@ defmodule Scry2.Decks.DeckProjection do
   end
 
   defp enrich_match_results(mtga_match_id, attrs) do
-    import Ecto.Query
-    alias Scry2.Decks.MatchResult
-    alias Scry2.Repo
-
     deck_ids =
       MatchResult
       |> where([mr], mr.mtga_match_id == ^mtga_match_id)
@@ -417,10 +405,6 @@ defmodule Scry2.Decks.DeckProjection do
   end
 
   defp update_version_stats_for_match(mtga_match_id) do
-    import Ecto.Query
-    alias Scry2.Decks.MatchResult
-    alias Scry2.Repo
-
     MatchResult
     |> where([mr], mr.mtga_match_id == ^mtga_match_id and not is_nil(mr.won))
     |> Repo.all()

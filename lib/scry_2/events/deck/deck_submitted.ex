@@ -56,6 +56,8 @@ defmodule Scry2.Events.Deck.DeckSubmitted do
           game_number: pos_integer() | nil,
           main_deck: [card_count()],
           sideboard: [card_count()],
+          deck_colors: String.t() | nil,
+          self_seat_id: non_neg_integer() | nil,
           occurred_at: DateTime.t()
         }
 
@@ -68,6 +70,7 @@ defmodule Scry2.Events.Deck.DeckSubmitted do
       main_deck: payload["main_deck"] || [],
       sideboard: payload["sideboard"] || [],
       deck_colors: payload["deck_colors"],
+      self_seat_id: payload["self_seat_id"],
       occurred_at: Payload.parse_datetime(payload["occurred_at"])
     }
   end

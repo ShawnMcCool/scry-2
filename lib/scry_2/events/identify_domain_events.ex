@@ -1008,7 +1008,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- JSON.decode(record.raw_json),
+    with {:ok, payload} <- Jason.decode(record.raw_json),
          %{"NodeStates" => node_states} when is_map(node_states) <- payload do
       total = map_size(node_states)
 

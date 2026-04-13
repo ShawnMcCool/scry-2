@@ -166,7 +166,7 @@ defmodule Scry2.Events.IngestRawEvents do
         ingestion
 
       records ->
-        {new_ingestion, rev_events, rev_errors} =
+        {new_ingestion, reversed_events, reversed_errors} =
           records
           |> Enum.with_index(processed + 1)
           |> Enum.reduce({ingestion, [], []}, fn {record, index},
@@ -188,8 +188,8 @@ defmodule Scry2.Events.IngestRawEvents do
             {result_ingestion, [new_events | acc_events], [new_errors | acc_errors]}
           end)
 
-        event_tuples = rev_events |> Enum.reverse() |> Enum.concat()
-        error_pairs = rev_errors |> Enum.reverse() |> Enum.concat()
+        event_tuples = reversed_events |> Enum.reverse() |> Enum.concat()
+        error_pairs = reversed_errors |> Enum.reverse() |> Enum.concat()
         ids = Enum.map(records, & &1.id)
 
         Scry2.Repo.transaction(fn ->
@@ -392,7 +392,7 @@ defmodule Scry2.Events.IngestRawEvents do
       events ->
         {new_state, all_events} = apply_events_to_state(state, events)
 
-        {new_state, _sequence, rev_tuples} =
+        {new_state, _sequence, reversed_tuples} =
           all_events
           |> stamp_player_id(new_state.session.player_id, record)
           |> enrich_events(new_state)
@@ -445,7 +445,7 @@ defmodule Scry2.Events.IngestRawEvents do
             end
           end)
 
-        event_tuples = Enum.reverse(rev_tuples)
+        event_tuples = Enum.reverse(reversed_tuples)
 
         Log.info(
           :ingester,
