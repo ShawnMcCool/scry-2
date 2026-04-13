@@ -482,7 +482,7 @@ defmodule Scry2Web.DecksLive do
 
   defp performance_section(assigns) do
     ~H"""
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
       <.stats_panel
         title="Best-of-1"
         stats={@performance.bo1}
@@ -535,24 +535,35 @@ defmodule Scry2Web.DecksLive do
 
   defp stats_panel(assigns) do
     chart_series = DecksHelpers.cumulative_winrate_series(assigns.cumulative_series)
-    assigns = assign(assigns, :chart_series, chart_series)
+    has_trend = length(assigns.cumulative_series) > 2
+
+    assigns =
+      assigns
+      |> assign(:chart_series, chart_series)
+      |> assign(:has_trend, has_trend)
 
     ~H"""
-    <div class="bg-base-200 rounded-xl p-5 flex gap-4">
-      <div class="flex flex-col gap-3 w-44 shrink-0">
+    <div class="bg-base-200 rounded-xl p-5 flex gap-4 h-full">
+      <div class="flex flex-col gap-3 w-52 shrink-0">
         <h3 class="text-xs font-semibold text-base-content/40 uppercase tracking-widest">
           {@title}
         </h3>
         <.stats_body stats={@stats} format={@format} />
       </div>
       <div
+        :if={@has_trend}
         id={"deck-winrate-#{@format}"}
         phx-hook="Chart"
         data-chart-type="cumulative_winrate"
         data-series={@chart_series}
-        class="flex-1 min-w-0 rounded-lg bg-base-300/40"
-        style="height: 10rem"
+        class="flex-1 min-w-0 min-h-[12rem] rounded-lg bg-base-300/40"
       />
+      <div
+        :if={!@has_trend}
+        class="flex-1 min-w-0 min-h-[12rem] rounded-lg bg-base-300/40 flex items-center justify-center"
+      >
+        <span class="text-sm text-base-content/20">Not enough data for trend</span>
+      </div>
     </div>
     """
   end
@@ -582,39 +593,32 @@ defmodule Scry2Web.DecksLive do
         <span class="text-base-content/50 text-sm">{@stats.wins}W – {@stats.losses}L</span>
       </div>
       <div class="border-t border-base-300" />
-      <div class="grid grid-cols-2 gap-x-2 gap-y-2 text-sm">
+      <div class="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
         <.stat_row
           label="On Play"
-          value={DecksHelpers.format_win_rate(@stats.on_play_win_rate)}
-          sub={
-            DecksHelpers.record_str(@stats.on_play_wins, @stats.on_play_total - @stats.on_play_wins)
-          }
+          win_rate={@stats.on_play_win_rate}
+          total={@stats.on_play_total}
+          wins={@stats.on_play_wins}
         />
         <.stat_row
           label="On Draw"
-          value={DecksHelpers.format_win_rate(@stats.on_draw_win_rate)}
-          sub={
-            DecksHelpers.record_str(@stats.on_draw_wins, @stats.on_draw_total - @stats.on_draw_wins)
-          }
+          win_rate={@stats.on_draw_win_rate}
+          total={@stats.on_draw_total}
+          wins={@stats.on_draw_wins}
         />
         <.stat_row
           :if={@format == :bo3}
           label="Game 1"
-          value={DecksHelpers.format_win_rate(@stats[:game1_win_rate])}
-          sub={
-            DecksHelpers.record_str(@stats[:game1_wins], @stats[:game1_total] - @stats[:game1_wins])
-          }
+          win_rate={@stats[:game1_win_rate]}
+          total={@stats[:game1_total] || 0}
+          wins={@stats[:game1_wins] || 0}
         />
         <.stat_row
           :if={@format == :bo3}
           label="Games 2–3"
-          value={DecksHelpers.format_win_rate(@stats[:games_2_3_win_rate])}
-          sub={
-            DecksHelpers.record_str(
-              @stats[:games_2_3_wins],
-              @stats[:games_2_3_total] - @stats[:games_2_3_wins]
-            )
-          }
+          win_rate={@stats[:games_2_3_win_rate]}
+          total={@stats[:games_2_3_total] || 0}
+          wins={@stats[:games_2_3_wins] || 0}
         />
       </div>
     </div>
@@ -622,15 +626,21 @@ defmodule Scry2Web.DecksLive do
   end
 
   attr :label, :string, required: true
-  attr :value, :string, required: true
-  attr :sub, :string, default: nil
+  attr :win_rate, :float, default: nil
+  attr :total, :integer, required: true
+  attr :wins, :integer, required: true
 
   defp stat_row(assigns) do
+    losses = assigns.total - assigns.wins
+    record = if assigns.total > 0, do: DecksHelpers.record_str(assigns.wins, losses), else: nil
+    assigns = assign(assigns, :record, record)
+
     ~H"""
     <div>
       <div class="text-base-content/50 text-xs">{@label}</div>
-      <div class="font-medium">
-        {@value} <span :if={@sub} class="text-xs text-base-content/50">{@sub}</span>
+      <div class={["font-medium", DecksHelpers.win_rate_class(@win_rate)]}>
+        {DecksHelpers.format_win_rate(@win_rate)}
+        <span :if={@record} class="text-xs text-base-content/50">{@record}</span>
       </div>
     </div>
     """

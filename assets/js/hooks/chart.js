@@ -257,9 +257,18 @@ function cumulativeWinrateOption(data) {
     },
     xAxis: {
       type: "time",
-      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLabel: {
+        color: "#9ca3af",
+        fontSize: 11,
+        formatter(value) {
+          const d = new Date(value)
+          return d.toLocaleDateString(undefined, {month: "short", day: "numeric"})
+        },
+        hideOverlap: true,
+      },
       axisLine: {lineStyle: {color: "#374151"}},
       splitLine: {show: false},
+      minInterval: 3600 * 1000 * 24,
     },
     yAxis: {
       type: "value",

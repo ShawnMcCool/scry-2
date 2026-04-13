@@ -97,10 +97,17 @@ defmodule Scry2Web.DecksHelpers do
   def win_rate_class(rate) when rate >= 45.0, do: "text-base-content"
   def win_rate_class(_), do: "text-red-400"
 
-  @doc "Returns a formatted win rate string like '55.3%' or '—' if nil."
+  @doc "Returns a formatted win rate string like '55.3%' or '—' if nil. Trims '.0' for whole numbers."
   @spec format_win_rate(float() | nil) :: String.t()
   def format_win_rate(nil), do: "—"
-  def format_win_rate(rate), do: "#{rate}%"
+
+  def format_win_rate(rate) do
+    if rate == trunc(rate) do
+      "#{trunc(rate)}%"
+    else
+      "#{rate}%"
+    end
+  end
 
   @doc "Returns a 'NW–ML' record string."
   @spec record_str(integer(), integer()) :: String.t()
