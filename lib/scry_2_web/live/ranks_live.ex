@@ -128,7 +128,7 @@ defmodule Scry2Web.RanksLive do
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-semibold font-beleren">Rank Progression</h1>
       </div>
