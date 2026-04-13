@@ -194,9 +194,10 @@ defmodule Scry2.Matches do
     |> select([m], %{
       key: field(m, ^field),
       total: count(m.id),
-      wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.won))
+      wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.won)),
+      last_played_at: max(m.started_at)
     })
-    |> order_by([m], desc: count(m.id))
+    |> order_by([m], desc: max(m.started_at))
     |> Repo.all()
     |> Enum.map(fn row ->
       wins = row.wins || 0
@@ -206,7 +207,8 @@ defmodule Scry2.Matches do
         total: row.total,
         wins: wins,
         losses: row.total - wins,
-        win_rate: Float.round(wins / row.total * 100, 1)
+        win_rate: Float.round(wins / row.total * 100, 1),
+        last_played_at: row.last_played_at
       }
     end)
   end
