@@ -33,33 +33,35 @@ defmodule Scry2Web.Layouts do
 
   attr :players, :list, default: []
   attr :active_player_id, :integer, default: nil
+  attr :current_path, :string, default: "/"
 
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
     <header class="navbar px-4 sm:px-6 lg:px-8 border-b border-base-300">
-      <div class="flex-1">
+      <div class="flex-1 flex items-center gap-5">
         <.link navigate={~p"/"} class="flex items-center gap-2 text-lg font-semibold font-beleren">
           <.icon name="hero-eye" class="size-6 text-primary" /> Scry&nbsp;2
         </.link>
+        <div class="w-px h-5 bg-base-300"></div>
+        <nav class="flex gap-1">
+          <.nav_link path={~p"/matches"} label="Matches" current_path={@current_path} />
+          <.nav_link path={~p"/decks"} label="Decks" current_path={@current_path} />
+          <.nav_link path={~p"/drafts"} label="Drafts" current_path={@current_path} />
+          <.nav_link path={~p"/cards"} label="Cards" current_path={@current_path} />
+          <.nav_link path={~p"/stats"} label="Stats" current_path={@current_path} />
+          <.nav_link path={~p"/ranks"} label="Ranks" current_path={@current_path} />
+          <.nav_link path={~p"/economy"} label="Economy" current_path={@current_path} />
+        </nav>
       </div>
-      <div class="flex-none">
-        <ul class="menu menu-horizontal gap-2">
-          <li><.link navigate={~p"/"}>Health</.link></li>
-          <li><.link navigate={~p"/stats"}>Stats</.link></li>
-          <li><.link navigate={~p"/ranks"}>Ranks</.link></li>
-          <li><.link navigate={~p"/economy"}>Economy</.link></li>
-          <li><.link navigate={~p"/matches"}>Matches</.link></li>
-          <li><.link navigate={~p"/decks"}>Decks</.link></li>
-          <li><.link navigate={~p"/drafts"}>Drafts</.link></li>
-          <li><.link navigate={~p"/cards"}>Cards</.link></li>
-          <li><.link navigate={~p"/settings"}>Settings</.link></li>
-          <li><.link navigate={~p"/operations"}>Ops</.link></li>
-          <li>
-            <.player_selector players={@players} active_player_id={@active_player_id} />
-          </li>
-        </ul>
+      <div class="flex-none flex items-center gap-3">
+        <.profile_dropdown
+          players={@players}
+          active_player_id={@active_player_id}
+          current_path={@current_path}
+        />
+        <.gear_dropdown current_path={@current_path} />
       </div>
     </header>
 
@@ -71,6 +73,139 @@ defmodule Scry2Web.Layouts do
 
     <.flash_group flash={@flash} />
     """
+  end
+
+  attr :path, :string, required: true
+  attr :label, :string, required: true
+  attr :current_path, :string, required: true
+
+  defp nav_link(assigns) do
+    assigns = assign(assigns, :active, String.starts_with?(assigns.current_path, assigns.path))
+
+    ~H"""
+    <.link
+      navigate={@path}
+      class={[
+        "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+        if(@active,
+          do: "bg-primary/10 text-primary",
+          else: "text-base-content/60 hover:text-base-content"
+        )
+      ]}
+    >
+      {@label}
+    </.link>
+    """
+  end
+
+  attr :players, :list, required: true
+  attr :active_player_id, :integer, default: nil
+  attr :current_path, :string, required: true
+
+  defp profile_dropdown(assigns) do
+    active_player = Enum.find(assigns.players, &(&1.id == assigns.active_player_id))
+
+    assigns =
+      assign(assigns,
+        display_name: if(active_player, do: active_player.screen_name, else: "All Players"),
+        avatar_letter: if(active_player, do: String.first(active_player.screen_name), else: "?")
+      )
+
+    ~H"""
+    <details
+      id="profile-dropdown"
+      class="dropdown dropdown-end"
+      phx-click-away={close_dropdown("profile-dropdown")}
+    >
+      <summary
+        class="btn btn-ghost btn-sm gap-2 border border-base-300 px-3"
+        phx-click={close_dropdown("gear-dropdown")}
+      >
+        <div class="w-5 h-5 rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
+          <span class="text-[10px] font-bold text-primary-content">{@avatar_letter}</span>
+        </div>
+        <span class="text-sm text-base-content/70">{@display_name}</span>
+        <.icon name="hero-chevron-down" class="size-3 text-base-content/40" />
+      </summary>
+      <div class="dropdown-content z-50 mt-2 w-52 rounded-lg border border-base-300 bg-base-200 shadow-xl p-2">
+        <div
+          :for={player <- @players}
+          phx-click="select_player"
+          phx-value-player_id={player.id}
+          class={[
+            "w-full text-left px-3 py-1.5 rounded-md text-sm cursor-pointer",
+            if(player.id == @active_player_id,
+              do: "bg-primary/10 text-primary font-medium",
+              else: "text-base-content/60 hover:bg-base-300"
+            )
+          ]}
+        >
+          {player.screen_name}
+        </div>
+        <div
+          phx-click="select_player"
+          phx-value-player_id=""
+          class={[
+            "w-full text-left px-3 py-1.5 rounded-md text-sm cursor-pointer",
+            if(is_nil(@active_player_id),
+              do: "bg-primary/10 text-primary font-medium",
+              else: "text-base-content/60 hover:bg-base-300"
+            )
+          ]}
+        >
+          All Players
+        </div>
+      </div>
+    </details>
+    """
+  end
+
+  attr :current_path, :string, required: true
+
+  defp gear_dropdown(assigns) do
+    ~H"""
+    <details
+      id="gear-dropdown"
+      class="dropdown dropdown-end"
+      phx-click-away={close_dropdown("gear-dropdown")}
+    >
+      <summary
+        class="btn btn-ghost btn-sm btn-square border border-base-300"
+        phx-click={close_dropdown("profile-dropdown")}
+      >
+        <.icon name="hero-cog-6-tooth" class="size-4 text-base-content/50" />
+      </summary>
+      <ul class="dropdown-content z-50 mt-2 menu menu-sm w-48 rounded-lg border border-base-300 bg-base-200 shadow-xl p-2">
+        <li>
+          <.link navigate={~p"/settings"} class={dropdown_link_class(@current_path, "/settings")}>
+            <.icon name="hero-cog-6-tooth" class="size-4" /> Settings
+          </.link>
+        </li>
+        <li>
+          <.link navigate={~p"/operations"} class={dropdown_link_class(@current_path, "/operations")}>
+            <.icon name="hero-wrench-screwdriver" class="size-4" /> Operations
+          </.link>
+        </li>
+        <li>
+          <.link navigate={~p"/"} class={dropdown_link_class(@current_path, "/health")}>
+            <.icon name="hero-heart" class="size-4" /> Health
+          </.link>
+        </li>
+      </ul>
+    </details>
+    """
+  end
+
+  defp close_dropdown(id) do
+    JS.remove_attribute("open", to: "##{id}")
+  end
+
+  defp dropdown_link_class(current_path, link_path) do
+    if String.starts_with?(current_path, link_path) do
+      "text-primary"
+    else
+      ""
+    end
   end
 
   @doc """
@@ -126,30 +261,6 @@ defmodule Scry2Web.Layouts do
         <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
       </.flash>
     </div>
-    """
-  end
-
-  @doc """
-  Player filter dropdown. Always visible in the nav — shows "All Players"
-  plus one option per auto-discovered player.
-  """
-  attr :players, :list, required: true
-  attr :active_player_id, :integer, default: nil
-
-  def player_selector(assigns) do
-    ~H"""
-    <form phx-change="select_player">
-      <select name="player_id" class="select select-sm select-bordered w-40">
-        <option value="" selected={is_nil(@active_player_id)}>All Players</option>
-        <option
-          :for={player <- @players}
-          value={player.id}
-          selected={player.id == @active_player_id}
-        >
-          {player.screen_name}
-        </option>
-      </select>
-    </form>
     """
   end
 end

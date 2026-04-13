@@ -142,7 +142,7 @@ defmodule Scry2Web.MatchesLive do
   def render(%{match: nil} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
       <h1 class="text-2xl font-semibold mb-6 font-beleren">Matches</h1>
 
       <%!-- Dashboard stats --%>
@@ -207,7 +207,7 @@ defmodule Scry2Web.MatchesLive do
   def render(%{match: _} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
       <.back_link navigate={~p"/matches"} label="All matches" />
 
       <%!-- Rich match header --%>

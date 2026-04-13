@@ -122,7 +122,7 @@ defmodule Scry2Web.DecksLive do
   def render(%{deck: nil} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-semibold font-beleren">Decks</h1>
         <div class="flex items-center gap-1">
@@ -199,7 +199,7 @@ defmodule Scry2Web.DecksLive do
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id}>
+    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
       <%!-- Deck header --%>
       <div class="flex items-start justify-between mb-6">
         <div>
