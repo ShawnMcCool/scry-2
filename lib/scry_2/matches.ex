@@ -18,15 +18,20 @@ defmodule Scry2.Matches do
   alias Scry2.Repo
   alias Scry2.Topics
 
-  @doc "Returns the most recent matches, newest first. Optionally filtered by player_id."
+  @doc """
+  Returns the most recent matches, newest first.
+
+  Options: `:limit`, `:offset`, `:player_id`, `:format`, `:bo`, `:won`.
+  """
   def list_matches(opts \\ []) do
     limit_count = Keyword.get(opts, :limit, 50)
-    player_id = Keyword.get(opts, :player_id)
+    offset_count = Keyword.get(opts, :offset, 0)
 
-    Match
-    |> maybe_filter_by_player(player_id)
+    opts
+    |> base_query()
     |> order_by([m], desc: m.started_at)
     |> limit(^limit_count)
+    |> offset(^offset_count)
     |> Repo.all()
   end
 
@@ -115,12 +120,10 @@ defmodule Scry2.Matches do
     submission
   end
 
-  @doc "Returns the total number of recorded matches. Optionally filtered by player_id."
+  @doc "Returns the total number of recorded matches. Accepts same filter opts as list_matches."
   def count(opts \\ []) do
-    player_id = Keyword.get(opts, :player_id)
-
-    Match
-    |> maybe_filter_by_player(player_id)
+    opts
+    |> base_query()
     |> Repo.aggregate(:count)
   end
 
@@ -139,11 +142,9 @@ defmodule Scry2.Matches do
     * `:by_deck_name` — same shape
   """
   def aggregate_stats(opts \\ []) do
-    player_id = Keyword.get(opts, :player_id)
-
     base =
-      Match
-      |> maybe_filter_by_player(player_id)
+      opts
+      |> base_query()
       |> where([m], not is_nil(m.won))
 
     overall = overall_stats(base)
@@ -224,8 +225,94 @@ defmodule Scry2.Matches do
     |> Map.new()
   end
 
+  @doc """
+  Returns cumulative win rate data points for the chart, respecting filter opts.
+
+  Returns `[%{timestamp: iso8601, win_rate: float, wins: int, total: int}]`.
+  """
+  def cumulative_win_rate(opts \\ []) do
+    opts
+    |> base_query()
+    |> where([m], not is_nil(m.won))
+    |> order_by([m], asc: m.started_at)
+    |> select([m], %{started_at: m.started_at, won: m.won})
+    |> Repo.all()
+    |> Enum.reduce({0, 0, []}, fn match, {wins, total, acc} ->
+      wins = if match.won, do: wins + 1, else: wins
+      total = total + 1
+      rate = Float.round(wins / total * 100, 1)
+
+      point = %{
+        timestamp: DateTime.to_iso8601(match.started_at),
+        win_rate: rate,
+        wins: wins,
+        total: total
+      }
+
+      {wins, total, [point | acc]}
+    end)
+    |> elem(2)
+    |> Enum.reverse()
+  end
+
+  @doc """
+  Returns all matches against a specific opponent, excluding a given match.
+  """
+  def opponent_matches(opponent_screen_name, opts \\ []) do
+    exclude_id = Keyword.get(opts, :exclude_match_id)
+    player_id = Keyword.get(opts, :player_id)
+
+    Match
+    |> maybe_filter_by_player(player_id)
+    |> where([m], m.opponent_screen_name == ^opponent_screen_name)
+    |> then(fn query ->
+      if exclude_id, do: where(query, [m], m.id != ^exclude_id), else: query
+    end)
+    |> order_by([m], desc: m.started_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns match counts grouped by format for filter badge display.
+  Respects `:player_id`, `:bo`, `:won` filters (not `:format` — that's what we're counting).
+  """
+  def format_counts(opts \\ []) do
+    opts
+    |> Keyword.delete(:format)
+    |> base_query()
+    |> where([m], not is_nil(m.format) and m.format != "")
+    |> group_by([m], m.format)
+    |> select([m], {m.format, count(m.id)})
+    |> Repo.all()
+    |> Map.new()
+  end
+
+  # ── Private ─────────────────────────────────────────────────────────
+
+  defp base_query(opts) do
+    Match
+    |> maybe_filter_by_player(Keyword.get(opts, :player_id))
+    |> maybe_filter_by_format(Keyword.get(opts, :format))
+    |> maybe_filter_by_bo(Keyword.get(opts, :bo))
+    |> maybe_filter_by_won(Keyword.get(opts, :won))
+  end
+
   defp maybe_filter_by_player(query, nil), do: query
   defp maybe_filter_by_player(query, player_id), do: where(query, [m], m.player_id == ^player_id)
+
+  defp maybe_filter_by_format(query, nil), do: query
+  defp maybe_filter_by_format(query, format), do: where(query, [m], m.format == ^format)
+
+  defp maybe_filter_by_bo(query, nil), do: query
+  defp maybe_filter_by_bo(query, "3"), do: where(query, [m], m.format_type == "Traditional")
+
+  defp maybe_filter_by_bo(query, "1"),
+    do: where(query, [m], m.format_type != "Traditional" or is_nil(m.format_type))
+
+  defp maybe_filter_by_bo(query, _), do: query
+
+  defp maybe_filter_by_won(query, nil), do: query
+  defp maybe_filter_by_won(query, won) when is_boolean(won), do: where(query, [m], m.won == ^won)
 
   defp broadcast_update(match_id) do
     Topics.broadcast(Topics.matches_updates(), {:match_updated, match_id})
