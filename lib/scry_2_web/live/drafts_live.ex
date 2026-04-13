@@ -45,7 +45,12 @@ defmodule Scry2Web.DraftsLive do
   def render(%{draft: nil} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
+    <Layouts.app
+      flash={@flash}
+      players={@players}
+      active_player_id={@active_player_id}
+      current_path={@player_scope_uri}
+    >
       <h1 class="text-2xl font-semibold font-beleren">Drafts</h1>
 
       <.empty_state :if={@drafts == []}>
@@ -85,7 +90,12 @@ defmodule Scry2Web.DraftsLive do
   def render(%{draft: _} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
+    <Layouts.app
+      flash={@flash}
+      players={@players}
+      active_player_id={@active_player_id}
+      current_path={@player_scope_uri}
+    >
       <.back_link navigate={~p"/drafts"} label="All drafts" />
 
       <h1 class="text-2xl font-semibold font-beleren">{@draft.event_name}</h1>

@@ -287,6 +287,49 @@ defmodule Scry2.Matches do
     |> Map.new()
   end
 
+  @doc """
+  Returns the last `count` completed match results, newest first.
+
+  Returns `[%{won: boolean, started_at: DateTime.t()}]`.
+  """
+  def recent_results(opts \\ []) do
+    count = Keyword.get(opts, :count, 10)
+
+    opts
+    |> base_query()
+    |> where([m], not is_nil(m.won))
+    |> order_by([m], desc: m.started_at)
+    |> limit(^count)
+    |> select([m], %{won: m.won, started_at: m.started_at})
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns the current win or loss streak as `{:win | :loss, count}`.
+
+  Scans completed matches newest-first until the streak breaks.
+  Returns `{:none, 0}` if no completed matches exist.
+  """
+  def current_streak(opts \\ []) do
+    matches =
+      opts
+      |> base_query()
+      |> where([m], not is_nil(m.won))
+      |> order_by([m], desc: m.started_at)
+      |> select([m], m.won)
+      |> Repo.all()
+
+    case matches do
+      [] ->
+        {:none, 0}
+
+      [first | rest] ->
+        streak_type = if first, do: :win, else: :loss
+        streak_count = 1 + length(Enum.take_while(rest, fn won -> won == first end))
+        {streak_type, streak_count}
+    end
+  end
+
   # ── Private ─────────────────────────────────────────────────────────
 
   defp base_query(opts) do

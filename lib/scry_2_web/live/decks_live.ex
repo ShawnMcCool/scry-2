@@ -40,7 +40,6 @@ defmodule Scry2Web.DecksLive do
        active_format: nil,
        cards_by_arena_id: %{},
        active_tab: :overview,
-       deck_view_mode: :compact,
        mulligan_analytics: nil,
        mulligan_heatmap: [],
        card_performance: [],
@@ -75,10 +74,6 @@ defmodule Scry2Web.DecksLive do
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
     deck = socket.assigns.deck
     {:noreply, push_patch(socket, to: ~p"/decks/#{deck.mtga_deck_id}?tab=#{tab}")}
-  end
-
-  def handle_event("switch_deck_view", %{"mode" => mode}, socket) do
-    {:noreply, assign(socket, deck_view_mode: String.to_existing_atom(mode))}
   end
 
   def handle_event("sort_cards", %{"by" => sort_key}, socket) do
@@ -122,7 +117,12 @@ defmodule Scry2Web.DecksLive do
   def render(%{deck: nil} = assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
+    <Layouts.app
+      flash={@flash}
+      players={@players}
+      active_player_id={@active_player_id}
+      current_path={@player_scope_uri}
+    >
       <div class="flex items-center justify-between mb-6">
         <h1 class="text-2xl font-semibold font-beleren">Decks</h1>
         <div class="flex items-center gap-1">
@@ -199,7 +199,12 @@ defmodule Scry2Web.DecksLive do
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
+    <Layouts.app
+      flash={@flash}
+      players={@players}
+      active_player_id={@active_player_id}
+      current_path={@player_scope_uri}
+    >
       <%!-- Deck header --%>
       <div class="flex items-start justify-between mb-6">
         <div>
@@ -227,6 +232,7 @@ defmodule Scry2Web.DecksLive do
       <%!-- Tabs --%>
       <div role="tablist" class="tabs tabs-border mb-6">
         <.tab_link label="Overview" tab={:overview} active={@active_tab} deck={@deck} />
+        <.tab_link label="Analysis" tab={:analysis} active={@active_tab} deck={@deck} />
         <.tab_link
           label="Matches"
           tab={:matches}
@@ -241,7 +247,6 @@ defmodule Scry2Web.DecksLive do
           deck={@deck}
           count={if(@version_count > 1, do: @version_count)}
         />
-        <.tab_link label="Analysis" tab={:analysis} active={@active_tab} deck={@deck} />
       </div>
 
       <%!-- Tab content --%>
@@ -251,7 +256,6 @@ defmodule Scry2Web.DecksLive do
             performance={@performance}
             deck={@deck}
             cards_by_arena_id={@cards_by_arena_id}
-            deck_view_mode={@deck_view_mode}
           />
         <% :matches -> %>
           <.matches_tab
@@ -329,7 +333,6 @@ defmodule Scry2Web.DecksLive do
   attr :performance, :map, required: true
   attr :deck, :map, required: true
   attr :cards_by_arena_id, :map, required: true
-  attr :deck_view_mode, :atom, required: true
 
   defp overview_tab(assigns) do
     cmc_columns = DecksHelpers.group_cards_by_cmc(assigns.deck, assigns.cards_by_arena_id)
@@ -390,28 +393,13 @@ defmodule Scry2Web.DecksLive do
           </div>
         </div>
 
-        <%!-- Deck View header + mode toggle --%>
-        <div class="flex items-center justify-between mt-8">
-          <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide">
-            Main Deck ({@main_deck_total})
-          </h3>
-          <select
-            phx-change="switch_deck_view"
-            name="mode"
-            class="select select-xs select-ghost text-base-content/40"
-          >
-            <option value="compact" selected={@deck_view_mode == :compact}>Compact</option>
-            <option value="large" selected={@deck_view_mode == :large}>Large</option>
-          </select>
-        </div>
+        <%!-- Deck View header --%>
+        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mt-8">
+          Main Deck ({@main_deck_total})
+        </h3>
 
         <%!-- Compact deck grid — responsive, no wrapping --%>
-        <div
-          :if={@deck_view_mode == :compact}
-          id="deck-view-compact"
-          phx-hook="DeckView"
-          class="mt-3"
-        >
+        <div id="deck-view-compact" phx-hook="DeckView" class="mt-3">
           <div class="flex gap-3 items-start" data-deck-grid>
             <div
               :for={{cmc_label, cards} <- @cmc_columns}
@@ -442,46 +430,6 @@ defmodule Scry2Web.DecksLive do
           </div>
 
           <.sideboard_splay :if={@sideboard != []} cards={@sideboard} />
-        </div>
-
-        <%!-- Large deck grid — wrapping, bigger cards --%>
-        <div
-          :if={@deck_view_mode == :large}
-          id="deck-view-large"
-          phx-hook="DeckView"
-          class="mt-3"
-        >
-          <div class="flex flex-wrap gap-3 items-start" data-deck-grid>
-            <div
-              :for={{cmc_label, cards} <- @cmc_columns}
-              class="flex flex-col items-center"
-              style={"width: min(calc((100% - #{(length(@cmc_columns) - 1) * 0.75}rem) / 3), 366px)"}
-            >
-              <p class="text-xs text-base-content/30 mb-1">{cmc_label}</p>
-              <div
-                class="relative w-full"
-                style={"height: #{DecksHelpers.card_stack_height(length(cards))}rem"}
-              >
-                <div
-                  :for={{card, index} <- Enum.with_index(cards)}
-                  class="absolute left-0 w-full"
-                  style={"top: #{index * DecksHelpers.card_visible_slice()}rem; z-index: #{index}"}
-                >
-                  <.card_image
-                    id={"card-grid-lg-#{card.arena_id}"}
-                    arena_id={card.arena_id}
-                    name={card.name}
-                    class="w-full"
-                  />
-                  <span class="absolute top-1 right-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
-                    {card.count}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <.sideboard_splay :if={@sideboard != []} cards={@sideboard} mode={:large} />
         </div>
       </div>
 

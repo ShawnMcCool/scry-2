@@ -264,7 +264,12 @@ defmodule Scry2Web.SettingsLive do
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
+    <Layouts.app
+      flash={@flash}
+      players={@players}
+      active_player_id={@active_player_id}
+      current_path={@player_scope_uri}
+    >
       <div class="max-w-3xl space-y-6">
         <h1 class="text-2xl font-semibold font-beleren">Settings</h1>
 
