@@ -39,9 +39,7 @@ defmodule Scry2.Events.PipelineIntegrationTest do
     # Start all projectors first (subscribe before events arrive)
     _match_proj = start_supervised!({Scry2.Matches.MatchProjection, name: :"MatchProj#{suffix}"})
 
-    _mull_proj =
-      start_supervised!({Scry2.Mulligans.MulliganProjection, name: :"MullProj#{suffix}"})
-
+    _deck_proj = start_supervised!({Scry2.Decks.DeckProjection, name: :"DeckProj#{suffix}"})
     _draft_proj = start_supervised!({Scry2.Drafts.DraftProjection, name: :"DraftProj#{suffix}"})
 
     # Start the ingestion worker last (producer)
@@ -57,7 +55,7 @@ defmodule Scry2.Events.PipelineIntegrationTest do
       worker_pid: worker_pid,
       projectors: %{
         matches: :"MatchProj#{suffix}",
-        mulligans: :"MullProj#{suffix}",
+        decks: :"DeckProj#{suffix}",
         drafts: :"DraftProj#{suffix}"
       }
     }
@@ -143,9 +141,9 @@ defmodule Scry2.Events.PipelineIntegrationTest do
       matches_watermark = Events.get_watermark("Matches.MatchProjection")
       assert matches_watermark > 0
 
-      # Mulligans also claims match_created, so it advances too
-      mulligans_watermark = Events.get_watermark("Mulligans.MulliganProjection")
-      assert mulligans_watermark > 0
+      # Decks also claims match_created, so it advances too
+      decks_watermark = Events.get_watermark("Decks.DeckProjection")
+      assert decks_watermark > 0
 
       # Drafts doesn't handle match events — watermark stays at 0
       drafts_watermark = Events.get_watermark("Drafts.DraftProjection")

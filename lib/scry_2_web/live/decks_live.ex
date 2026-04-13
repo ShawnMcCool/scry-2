@@ -41,6 +41,10 @@ defmodule Scry2Web.DecksLive do
        cards_by_arena_id: %{},
        active_tab: :overview,
        deck_view_mode: :compact,
+       mulligan_analytics: nil,
+       mulligan_heatmap: [],
+       card_performance: [],
+       card_sort: :type,
        reload_timer: nil
      )}
   end
@@ -75,6 +79,10 @@ defmodule Scry2Web.DecksLive do
 
   def handle_event("switch_deck_view", %{"mode" => mode}, socket) do
     {:noreply, assign(socket, deck_view_mode: String.to_existing_atom(mode))}
+  end
+
+  def handle_event("sort_cards", %{"by" => sort_key}, socket) do
+    {:noreply, assign(socket, card_sort: String.to_existing_atom(sort_key))}
   end
 
   @impl true
@@ -165,6 +173,7 @@ defmodule Scry2Web.DecksLive do
                     <.mana_pips
                       :if={entry.deck.current_main_deck}
                       colors={DecksHelpers.deck_colors(entry.deck)}
+                      class="text-[0.65rem]"
                     />
                   </span>
                 </div>
@@ -209,6 +218,7 @@ defmodule Scry2Web.DecksLive do
             <.mana_pips
               :if={DecksHelpers.deck_colors(@deck) != ""}
               colors={DecksHelpers.deck_colors(@deck)}
+              class="text-[0.65rem]"
             />
           </div>
         </div>
@@ -231,6 +241,7 @@ defmodule Scry2Web.DecksLive do
           deck={@deck}
           count={if(@version_count > 1, do: @version_count)}
         />
+        <.tab_link label="Analysis" tab={:analysis} active={@active_tab} deck={@deck} />
       </div>
 
       <%!-- Tab content --%>
@@ -257,6 +268,14 @@ defmodule Scry2Web.DecksLive do
             versions={@versions}
             version_matches={@version_matches}
             cards_by_arena_id={@cards_by_arena_id}
+          />
+        <% :analysis -> %>
+          <.analysis_tab
+            mulligan_analytics={@mulligan_analytics}
+            mulligan_heatmap={@mulligan_heatmap}
+            card_performance={@card_performance}
+            cards_by_arena_id={@cards_by_arena_id}
+            card_sort={@card_sort}
           />
       <% end %>
     </Layouts.app>
@@ -693,14 +712,13 @@ defmodule Scry2Web.DecksLive do
             <th>Opponent</th>
             <th>{if @active_format == :bo3, do: "Games", else: "Play / Draw"}</th>
             <th>Event</th>
-            <th>Rank</th>
           </tr>
         </thead>
         <tbody>
           <%= for {date_label, date_matches} <- @grouped_matches do %>
             <tr>
               <td
-                colspan="5"
+                colspan="4"
                 class="text-sm text-base-content/50 font-medium pt-4 pb-1 border-b-0"
               >
                 {date_label}
@@ -814,22 +832,21 @@ defmodule Scry2Web.DecksLive do
           </div>
         </div>
       </td>
-      <td class="text-sm text-base-content/70 align-top">
-        {DecksHelpers.humanize_event(@match.event_name, @deck.format)}
-      </td>
       <td class="align-top">
-        <span
+        <div class="text-sm text-base-content/70">
+          {DecksHelpers.humanize_event(@match.event_name, @deck.format)}
+        </div>
+        <div
           :if={@match.player_rank}
-          class="inline-flex items-center gap-1.5 text-sm text-base-content/70"
+          class="inline-flex items-center gap-1 text-xs text-base-content/50 mt-0.5"
         >
           <.rank_icon
             rank={@match.player_rank}
             format_type={@match.format_type || "Constructed"}
-            class="h-4"
+            class="h-3.5"
           />
           {@match.player_rank}
-        </span>
-        <span :if={is_nil(@match.player_rank)} class="text-sm text-base-content/40">—</span>
+        </div>
       </td>
     </tr>
     """
@@ -880,22 +897,21 @@ defmodule Scry2Web.DecksLive do
           </span>
         <% end %>
       </td>
-      <td class="text-sm text-base-content/70">
-        {DecksHelpers.humanize_event(@match.event_name, @deck.format)}
-      </td>
       <td>
-        <span
+        <div class="text-sm text-base-content/70">
+          {DecksHelpers.humanize_event(@match.event_name, @deck.format)}
+        </div>
+        <div
           :if={@match.player_rank}
-          class="inline-flex items-center gap-1.5 text-sm text-base-content/70"
+          class="inline-flex items-center gap-1 text-xs text-base-content/50 mt-0.5"
         >
           <.rank_icon
             rank={@match.player_rank}
             format_type={@match.format_type || "Constructed"}
-            class="h-4"
+            class="h-3.5"
           />
           {@match.player_rank}
-        </span>
-        <span :if={is_nil(@match.player_rank)} class="text-sm text-base-content/40">—</span>
+        </div>
       </td>
     </tr>
     """
@@ -915,7 +931,6 @@ defmodule Scry2Web.DecksLive do
       <td class="text-sm text-base-content/70">
         {DecksHelpers.humanize_event(@match.event_name, @deck.format)}
       </td>
-      <td class="text-sm text-base-content/40">—</td>
     </tr>
     """
   end
@@ -954,6 +969,233 @@ defmodule Scry2Web.DecksLive do
     </div>
     """
   end
+
+  # ── Analysis tab ──────────────────────────────────────────────────────
+
+  alias Scry2Web.DecksAnalysisHelpers, as: AH
+
+  attr :mulligan_analytics, :map
+  attr :mulligan_heatmap, :list, required: true
+  attr :card_performance, :list, required: true
+  attr :cards_by_arena_id, :map, required: true
+  attr :card_sort, :atom, default: :type
+
+  defp analysis_tab(%{mulligan_analytics: nil} = assigns) do
+    ~H"""
+    <.empty_state>Not enough data for analysis yet. Play some games with this deck!</.empty_state>
+    """
+  end
+
+  defp analysis_tab(%{mulligan_analytics: %{total_hands: 0}} = assigns) do
+    ~H"""
+    <.empty_state>No mulligan data recorded for this deck yet.</.empty_state>
+    """
+  end
+
+  defp analysis_tab(assigns) do
+    ~H"""
+    <%!-- Mulligan Analytics Section --%>
+    <section class="mb-10">
+      <h3 class="text-lg font-semibold mb-4">Mulligan Analytics</h3>
+
+      <%!-- Headline stat cards --%>
+      <div class="grid grid-cols-3 gap-4 mb-6">
+        <div class="bg-base-200 rounded-lg p-4 text-center">
+          <div class="text-2xl font-bold">{@mulligan_analytics.total_hands}</div>
+          <div class="text-xs text-base-content/60">Hands Seen</div>
+        </div>
+        <div class="bg-base-200 rounded-lg p-4 text-center">
+          <div class={"text-2xl font-bold #{DecksHelpers.win_rate_class(@mulligan_analytics.keep_rate)}"}>
+            {AH.format_pct(@mulligan_analytics.keep_rate)}
+          </div>
+          <div class="text-xs text-base-content/60">Keep Rate</div>
+        </div>
+        <div class="bg-base-200 rounded-lg p-4 text-center">
+          <div class={"text-2xl font-bold #{DecksHelpers.win_rate_class(@mulligan_analytics.win_rate_on_7)}"}>
+            {AH.format_pct(@mulligan_analytics.win_rate_on_7)}
+          </div>
+          <div class="text-xs text-base-content/60">Keep Rate on 7</div>
+        </div>
+      </div>
+
+      <%!-- Heatmap: hand_size x land_count --%>
+      <div class="mb-6">
+        <h4 class="text-sm font-medium text-base-content/60 mb-2">
+          Win Rate by Kept Hand Profile
+          <span
+            class="tooltip tooltip-right"
+            data-tip="Shows your win rate for kept hands, grouped by hand size (rows) and number of lands (columns). Only includes hands you chose to keep."
+          >
+            <span class="text-base-content/40 cursor-help">(?)</span>
+          </span>
+        </h4>
+        <div class="overflow-x-auto">
+          <table class="table table-xs">
+            <thead>
+              <tr>
+                <th class="text-base-content/40">Size \ Lands</th>
+                <th :for={land <- 0..7} class="text-center text-base-content/40">{land}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr :for={hand_size <- [7, 6, 5]}>
+                <td class="text-base-content/60 font-medium">{hand_size} cards</td>
+                <td :for={land <- 0..7} class="text-center p-1">
+                  <% cell = AH.heatmap_cell(@mulligan_heatmap, hand_size, land) %>
+                  <%= if cell do %>
+                    <div class={"rounded px-2 py-1 text-xs font-medium #{AH.heatmap_cell_class(cell.win_rate)}"}>
+                      <div>{AH.format_pct(cell.win_rate)}</div>
+                      <div class="text-[10px] opacity-60">{cell.count}g</div>
+                    </div>
+                  <% else %>
+                    <span class="text-base-content/20 text-xs">—</span>
+                  <% end %>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <%!-- Win rate by land count bar breakdown --%>
+      <div :if={@mulligan_analytics.by_land_count != []}>
+        <h4 class="text-sm font-medium text-base-content/60 mb-2">
+          Win Rate by Land Count (Kept Hands)
+        </h4>
+        <div class="flex items-end gap-2 h-32 px-2">
+          <div
+            :for={row <- @mulligan_analytics.by_land_count}
+            class="flex-1 flex flex-col items-center gap-1"
+          >
+            <span class={"text-xs font-medium #{DecksHelpers.win_rate_class(row.win_rate)}"}>
+              {AH.format_pct(row.win_rate)}
+            </span>
+            <div
+              class={"w-full rounded-t #{land_count_bar_class(row.win_rate)}"}
+              style={"height: #{land_count_bar_height(row.win_rate)}%"}
+            >
+            </div>
+            <span class="text-xs text-base-content/50">{row.land_count}L</span>
+            <span class="text-[10px] text-base-content/30">{row.total}g</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <%!-- Card Performance Section --%>
+    <section :if={@card_performance != []}>
+      <div class="flex items-baseline justify-between mb-3">
+        <h3 class="text-lg font-semibold">Card Performance</h3>
+        <div class="flex items-center gap-1">
+          <span class="text-xs text-base-content/40 mr-1">Sort:</span>
+          <button
+            :for={
+              {key, label} <- [
+                {:type, "Type"},
+                {:iwd, "IWD"},
+                {:gih_wr, "GIH WR"},
+                {:oh_wr, "OH WR"},
+                {:name, "Name"}
+              ]
+            }
+            phx-click="sort_cards"
+            phx-value-by={key}
+            class={[
+              "btn btn-xs",
+              if(@card_sort == key, do: "btn-soft btn-primary", else: "btn-ghost")
+            ]}
+          >
+            {label}
+          </button>
+        </div>
+      </div>
+      <p class="text-xs text-base-content/50 mb-3">
+        Hover column headers for metric definitions.
+        <span :if={Enum.any?(@card_performance, &AH.low_sample?(&1.gih_games))} class="text-warning">
+          Metrics with &lt; 5 games dimmed.
+        </span>
+      </p>
+
+      <div class="overflow-x-auto">
+        <table class="table table-sm" style="max-width: 720px;">
+          <thead>
+            <tr>
+              <th>Card</th>
+              <th class="text-center">#</th>
+              <th :for={{_key, metric} <- AH.metric_definitions()} class="text-center">
+                <span class="tooltip tooltip-bottom" data-tip={metric.description}>
+                  <span class="cursor-help border-b border-dotted border-base-content/30">
+                    {metric.short}
+                  </span>
+                </span>
+              </th>
+            </tr>
+          </thead>
+          <tbody :for={
+            {type_label, cards} <- AH.sort_cards(@card_performance, @cards_by_arena_id, @card_sort)
+          }>
+            <tr :if={type_label}>
+              <td
+                colspan="7"
+                class="text-xs font-semibold text-base-content/40 uppercase tracking-wider pt-3 pb-0.5 border-b-0"
+              >
+                {type_label}
+              </td>
+            </tr>
+            <tr
+              :for={card <- cards}
+              class={if AH.low_sample?(card.gih_games), do: "opacity-40"}
+            >
+              <td class="max-w-[160px] pr-0">
+                <div class="truncate font-medium" title={card.card_name || "Unknown"}>
+                  {card.card_name || "Unknown"}
+                </div>
+              </td>
+              <td class="text-center text-base-content/50 px-1">{card.copies}</td>
+              <td
+                class={"text-center tabular-nums #{DecksHelpers.win_rate_class(card.oh_wr)}"}
+                title={"#{card.oh_games} games"}
+              >
+                {AH.format_pct(card.oh_wr)}
+              </td>
+              <td
+                class={"text-center tabular-nums #{DecksHelpers.win_rate_class(card.gih_wr)}"}
+                title={"#{card.gih_games} games"}
+              >
+                {AH.format_pct(card.gih_wr)}
+              </td>
+              <td
+                class={"text-center tabular-nums #{DecksHelpers.win_rate_class(card.gd_wr)}"}
+                title={"#{card.gd_games} games"}
+              >
+                {AH.format_pct(card.gd_wr)}
+              </td>
+              <td
+                class={"text-center tabular-nums #{DecksHelpers.win_rate_class(card.gnd_wr)}"}
+                title={"#{card.gnd_games} games"}
+              >
+                {AH.format_pct(card.gnd_wr)}
+              </td>
+              <td class={"text-center tabular-nums font-semibold #{AH.iwd_class(card.iwd)}"}>
+                {AH.format_iwd(card.iwd)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    """
+  end
+
+  defp land_count_bar_class(nil), do: "bg-base-300"
+  defp land_count_bar_class(rate) when rate >= 55, do: "bg-success"
+  defp land_count_bar_class(rate) when rate >= 45, do: "bg-warning"
+  defp land_count_bar_class(_), do: "bg-error"
+
+  defp land_count_bar_height(nil), do: 5
+  defp land_count_bar_height(rate), do: max(5, round(rate))
+
+  # ── Changes tab ────────────────────────────────────────────────────────
 
   attr :versions, :list, required: true
   attr :version_matches, :map, required: true
@@ -1259,6 +1501,17 @@ defmodule Scry2Web.DecksLive do
         {[], %{}}
       end
 
+    {mulligan_analytics, mulligan_heatmap, card_performance} =
+      if tab == :analysis do
+        {
+          Decks.mulligan_analytics(deck.mtga_deck_id),
+          Decks.mulligan_heatmap(deck.mtga_deck_id),
+          Decks.card_performance(deck.mtga_deck_id)
+        }
+      else
+        {nil, [], []}
+      end
+
     arena_ids = collect_arena_ids(deck, versions)
     cards_by_arena_id = Cards.list_by_arena_ids(arena_ids)
 
@@ -1282,7 +1535,10 @@ defmodule Scry2Web.DecksLive do
       format_counts: format_counts,
       active_format: active_format,
       cards_by_arena_id: cards_by_arena_id,
-      active_tab: tab
+      active_tab: tab,
+      mulligan_analytics: mulligan_analytics,
+      mulligan_heatmap: mulligan_heatmap,
+      card_performance: card_performance
     )
   end
 
@@ -1312,6 +1568,7 @@ defmodule Scry2Web.DecksLive do
   defp card_arena_id(%{arena_id: id}), do: id
   defp card_arena_id(_), do: nil
 
+  defp parse_tab("analysis"), do: :analysis
   defp parse_tab("matches"), do: :matches
   defp parse_tab("changes"), do: :changes
   defp parse_tab(_), do: :overview

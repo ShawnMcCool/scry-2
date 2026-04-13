@@ -546,6 +546,18 @@ defmodule Scry2.Cards do
     Map.merge(from_mtga, from_cards)
   end
 
+  @doc """
+  Returns a map of `arena_id => card_name` for the given arena_ids.
+  Resolves from both `cards_cards` (17lands) and `cards_mtga_cards` (MTGA).
+  """
+  def names_by_arena_ids(arena_ids) when is_list(arena_ids) do
+    list_by_arena_ids(arena_ids)
+    |> Map.new(fn {arena_id, card} ->
+      name = if is_map(card), do: Map.get(card, :name) || card[:name], else: nil
+      {arena_id, name}
+    end)
+  end
+
   # Decodes MTGA's comma-separated integer type enums to a space-separated
   # human-readable string (e.g. "2,5" → "Creature Land"). Used only for
   # MtgaCard fallback entries where 17lands data is unavailable.

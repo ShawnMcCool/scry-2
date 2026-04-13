@@ -15,7 +15,7 @@ defmodule Scry2.Decks do
 
   import Ecto.Query
 
-  alias Scry2.Decks.{Deck, DeckVersion, GameSubmission, MatchResult}
+  alias Scry2.Decks.{Deck, DeckVersion, GameDraw, GameSubmission, MatchResult, MulliganHand}
   alias Scry2.Repo
   alias Scry2.Topics
 
@@ -288,6 +288,232 @@ defmodule Scry2.Decks do
 
   defp apply_format_filter(query, _), do: query
 
+  # ── Analysis queries ──────────────────────────────────────────────────────
+
+  @doc """
+  Returns mulligan analytics for a single deck.
+
+  Returns:
+    * `:total_hands` — total mulligan offers
+    * `:total_keeps` — hands kept
+    * `:keep_rate` — percentage of hands kept
+    * `:win_rate_on_7` — win rate when keeping a 7-card hand
+    * `:by_hand_size` — keep rate per hand size (7, 6, 5...)
+    * `:by_land_count` — win rate when keeping with N lands
+  """
+  def mulligan_analytics(mtga_deck_id) when is_binary(mtga_deck_id) do
+    base = where(MulliganHand, [m], m.mtga_deck_id == ^mtga_deck_id)
+
+    %{total_hands: total_hands, total_keeps: total_keeps} =
+      base
+      |> select([m], %{
+        total_hands: count(),
+        total_keeps: sum(fragment("CASE WHEN ? = 'kept' THEN 1 ELSE 0 END", m.decision))
+      })
+      |> Repo.one()
+      |> then(fn row -> %{row | total_keeps: row.total_keeps || 0} end)
+
+    by_hand_size =
+      base
+      |> where([m], not is_nil(m.decision))
+      |> group_by([m], m.hand_size)
+      |> select([m], %{
+        hand_size: m.hand_size,
+        total: count(),
+        keeps: sum(fragment("CASE WHEN ? = 'kept' THEN 1 ELSE 0 END", m.decision))
+      })
+      |> order_by([m], desc: m.hand_size)
+      |> Repo.all()
+      |> Enum.map(fn row -> Map.put(row, :keep_rate, win_rate(row.keeps, row.total)) end)
+
+    by_land_count =
+      base
+      |> where([m], m.decision == "kept" and not is_nil(m.land_count) and not is_nil(m.match_won))
+      |> group_by([m], m.land_count)
+      |> select([m], %{
+        land_count: m.land_count,
+        total: count(),
+        wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.match_won))
+      })
+      |> order_by([m], asc: m.land_count)
+      |> Repo.all()
+      |> Enum.map(fn row -> Map.put(row, :win_rate, win_rate(row.wins, row.total)) end)
+
+    win_rate_on_7 =
+      case Enum.find(by_hand_size, &(&1.hand_size == 7)) do
+        nil -> nil
+        row -> win_rate(row.keeps, row.total)
+      end
+
+    %{
+      total_hands: total_hands,
+      total_keeps: total_keeps,
+      keep_rate: win_rate(total_keeps, total_hands),
+      win_rate_on_7: win_rate_on_7,
+      by_hand_size: by_hand_size,
+      by_land_count: by_land_count
+    }
+  end
+
+  @doc """
+  Returns mulligan analytics across ALL decks (for the global stats page).
+  Same shape as `mulligan_analytics/1` but unscoped.
+  """
+  def global_mulligan_analytics do
+    base = MulliganHand
+
+    %{total_hands: total_hands, total_keeps: total_keeps} =
+      base
+      |> select([m], %{
+        total_hands: count(),
+        total_keeps: sum(fragment("CASE WHEN ? = 'kept' THEN 1 ELSE 0 END", m.decision))
+      })
+      |> Repo.one()
+      |> then(fn row -> %{row | total_keeps: row.total_keeps || 0} end)
+
+    by_hand_size =
+      base
+      |> where([m], not is_nil(m.decision))
+      |> group_by([m], m.hand_size)
+      |> select([m], %{
+        hand_size: m.hand_size,
+        total: count(),
+        keeps: sum(fragment("CASE WHEN ? = 'kept' THEN 1 ELSE 0 END", m.decision))
+      })
+      |> order_by([m], desc: m.hand_size)
+      |> Repo.all()
+      |> Enum.map(fn row -> Map.put(row, :keep_rate, win_rate(row.keeps, row.total)) end)
+
+    by_land_count =
+      base
+      |> where([m], m.decision == "kept" and not is_nil(m.land_count) and not is_nil(m.match_won))
+      |> group_by([m], m.land_count)
+      |> select([m], %{
+        land_count: m.land_count,
+        total: count(),
+        wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.match_won))
+      })
+      |> order_by([m], asc: m.land_count)
+      |> Repo.all()
+      |> Enum.map(fn row -> Map.put(row, :win_rate, win_rate(row.wins, row.total)) end)
+
+    %{
+      total_hands: total_hands,
+      total_keeps: total_keeps,
+      by_hand_size: by_hand_size,
+      by_land_count: by_land_count
+    }
+  end
+
+  @doc """
+  Returns a heatmap of hand_size x land_count for kept hands, with win rates.
+
+  Each entry: `%{hand_size, land_count, count, wins, win_rate}`.
+  """
+  def mulligan_heatmap(mtga_deck_id) when is_binary(mtga_deck_id) do
+    MulliganHand
+    |> where(
+      [m],
+      m.mtga_deck_id == ^mtga_deck_id and
+        m.decision == "kept" and
+        not is_nil(m.land_count) and
+        not is_nil(m.match_won)
+    )
+    |> group_by([m], [m.hand_size, m.land_count])
+    |> select([m], %{
+      hand_size: m.hand_size,
+      land_count: m.land_count,
+      count: count(),
+      wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.match_won))
+    })
+    |> Repo.all()
+    |> Enum.map(fn row -> Map.put(row, :win_rate, win_rate(row.wins, row.count)) end)
+  end
+
+  @doc """
+  Returns per-card performance metrics for a deck, combining opening hand
+  data from `decks_mulligan_hands` and mid-game draw data from `decks_cards_drawn`.
+
+  Builds a unified per-card-per-match presence map to avoid double-counting
+  cards that appear in both the opening hand and as a draw annotation.
+
+  Each entry includes OH WR, GIH WR, GD WR, GND WR, and IWD.
+  """
+  def card_performance(mtga_deck_id) when is_binary(mtga_deck_id) do
+    # Total completed matches and wins for this deck
+    total_matches =
+      MatchResult
+      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> select([mr], count())
+      |> Repo.one()
+
+    total_wins =
+      MatchResult
+      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and mr.won == true)
+      |> select([mr], count())
+      |> Repo.one()
+
+    # Build per-card, per-match presence: {arena_id, match_id} => %{in_opener, drawn, won}
+    presence = build_card_match_presence(mtga_deck_id)
+
+    deck = get_deck(mtga_deck_id)
+    deck_cards = deck_card_counts(deck)
+
+    # Resolve card names from the Cards table
+    all_arena_ids = presence |> Map.keys() |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+    card_names = Scry2.Cards.names_by_arena_ids(all_arena_ids)
+
+    # Aggregate per card
+    presence
+    |> Enum.group_by(fn {{arena_id, _match_id}, _} -> arena_id end)
+    |> Enum.map(fn {arena_id, entries} ->
+      matches = Enum.map(entries, fn {_key, info} -> info end)
+
+      oh_matches = Enum.filter(matches, & &1.in_opener)
+      oh_games = length(oh_matches)
+      oh_wins = Enum.count(oh_matches, & &1.won)
+
+      # GD = drawn during game but NOT in opening hand
+      gd_matches = Enum.filter(matches, &(&1.drawn && !&1.in_opener))
+      gd_games = length(gd_matches)
+      gd_wins = Enum.count(gd_matches, & &1.won)
+
+      # GIH = union of opener and drawn (deduplicated by match)
+      gih_games = length(matches)
+      gih_wins = Enum.count(matches, & &1.won)
+
+      gnd_games = max(total_matches - gih_games, 0)
+      gnd_wins = max(total_wins - gih_wins, 0)
+
+      oh_wr = win_rate(oh_wins, oh_games)
+      gih_wr = win_rate(gih_wins, gih_games)
+      gd_wr = win_rate(gd_wins, gd_games)
+      gnd_wr = win_rate(gnd_wins, gnd_games)
+
+      iwd =
+        if gih_wr && gnd_wr do
+          Float.round(gih_wr - gnd_wr, 1)
+        end
+
+      %{
+        card_arena_id: arena_id,
+        card_name: Map.get(card_names, arena_id),
+        copies: Map.get(deck_cards, arena_id, 0),
+        oh_wr: oh_wr,
+        oh_games: oh_games,
+        gih_wr: gih_wr,
+        gih_games: gih_games,
+        gd_wr: gd_wr,
+        gd_games: gd_games,
+        gnd_wr: gnd_wr,
+        gnd_games: gnd_games,
+        iwd: iwd,
+        community: nil
+      }
+    end)
+    |> Enum.sort_by(& &1.iwd, &((&1 || -999) >= (&2 || -999)))
+  end
+
   # ── Writes ────────────────────────────────────────────────────────────────
 
   @doc """
@@ -402,6 +628,87 @@ defmodule Scry2.Decks do
 
     broadcast_update(submission.mtga_deck_id)
     submission
+  end
+
+  # ── Mulligan hand writes ──────────────────────────────────────────────────
+
+  @doc """
+  Upserts a mulligan hand by `(mtga_match_id, occurred_at)`. Idempotent per ADR-016.
+  """
+  def upsert_mulligan_hand!(attrs) do
+    attrs = Map.new(attrs)
+
+    %MulliganHand{}
+    |> MulliganHand.changeset(attrs)
+    |> Repo.insert!(
+      on_conflict: {:replace_all_except, [:id, :inserted_at]},
+      conflict_target: [:mtga_match_id, :occurred_at]
+    )
+  end
+
+  @doc """
+  London mulligan rule: marks all existing hands for a match as `"mulliganed"`.
+  Called just before inserting a new hand offer.
+  """
+  def stamp_mulligan_decision_mulliganed!(mtga_match_id) when is_binary(mtga_match_id) do
+    from(m in MulliganHand, where: m.mtga_match_id == ^mtga_match_id)
+    |> Repo.update_all(set: [decision: "mulliganed"])
+  end
+
+  @doc "Backfills `mtga_deck_id` on mulligan hands for a match."
+  def stamp_deck_id_on_mulligan_hands!(mtga_match_id, mtga_deck_id)
+      when is_binary(mtga_match_id) and is_binary(mtga_deck_id) do
+    from(m in MulliganHand,
+      where: m.mtga_match_id == ^mtga_match_id and is_nil(m.mtga_deck_id)
+    )
+    |> Repo.update_all(set: [mtga_deck_id: mtga_deck_id])
+  end
+
+  @doc "Stamps `event_name` on all mulligan hands for a match."
+  def stamp_mulligan_event_name!(mtga_match_id, event_name)
+      when is_binary(mtga_match_id) and is_binary(event_name) do
+    from(m in MulliganHand, where: m.mtga_match_id == ^mtga_match_id)
+    |> Repo.update_all(set: [event_name: event_name])
+  end
+
+  @doc "Stamps `match_won` on all mulligan hands for a match."
+  def stamp_mulligan_match_won!(mtga_match_id, won)
+      when is_binary(mtga_match_id) and is_boolean(won) do
+    from(m in MulliganHand, where: m.mtga_match_id == ^mtga_match_id)
+    |> Repo.update_all(set: [match_won: won])
+  end
+
+  # ── Game draw writes ─────────────────────────────────────────────────────
+
+  @doc """
+  Upserts a game draw by `(mtga_match_id, game_number, card_arena_id, occurred_at)`.
+  Idempotent per ADR-016.
+  """
+  def upsert_game_draw!(attrs) do
+    attrs = Map.new(attrs)
+
+    %GameDraw{}
+    |> GameDraw.changeset(attrs)
+    |> Repo.insert!(
+      on_conflict: {:replace_all_except, [:id, :inserted_at]},
+      conflict_target: [:mtga_match_id, :game_number, :card_arena_id, :occurred_at]
+    )
+  end
+
+  @doc "Backfills `mtga_deck_id` on game draws for a match."
+  def stamp_deck_id_on_game_draws!(mtga_match_id, mtga_deck_id)
+      when is_binary(mtga_match_id) and is_binary(mtga_deck_id) do
+    from(d in GameDraw,
+      where: d.mtga_match_id == ^mtga_match_id and is_nil(d.mtga_deck_id)
+    )
+    |> Repo.update_all(set: [mtga_deck_id: mtga_deck_id])
+  end
+
+  @doc "Stamps `match_won` on all game draws for a match."
+  def stamp_game_draws_match_won!(mtga_match_id, won)
+      when is_binary(mtga_match_id) and is_boolean(won) do
+    from(d in GameDraw, where: d.mtga_match_id == ^mtga_match_id)
+    |> Repo.update_all(set: [match_won: won])
   end
 
   # ── Private helpers ───────────────────────────────────────────────────────
@@ -558,6 +865,70 @@ defmodule Scry2.Decks do
 
   defp win_rate(_, 0), do: nil
   defp win_rate(wins, total), do: Float.round(wins / total * 100, 1)
+
+  # Builds a unified presence map: `{arena_id, match_id} => %{in_opener, drawn, won}`.
+  # Deduplicates cards that appear in both the opening hand and as draw annotations
+  # within the same match, preventing double-counting in GIH WR.
+  defp build_card_match_presence(mtga_deck_id) do
+    # Opening hand cards from kept hands
+    oh_entries =
+      MulliganHand
+      |> where(
+        [m],
+        m.mtga_deck_id == ^mtga_deck_id and
+          m.decision == "kept" and
+          not is_nil(m.match_won)
+      )
+      |> Repo.all()
+      |> Enum.flat_map(fn hand ->
+        arena_ids = (hand.hand_arena_ids && hand.hand_arena_ids["cards"]) || []
+
+        arena_ids
+        |> Enum.uniq()
+        |> Enum.map(fn arena_id ->
+          {{arena_id, hand.mtga_match_id}, %{in_opener: true, drawn: false, won: hand.match_won}}
+        end)
+      end)
+
+    # Mid-game draw entries
+    draw_entries =
+      GameDraw
+      |> where([d], d.mtga_deck_id == ^mtga_deck_id and not is_nil(d.match_won))
+      |> select([d], {d.card_arena_id, d.mtga_match_id, d.match_won})
+      |> Repo.all()
+      |> Enum.uniq_by(fn {arena_id, match_id, _} -> {arena_id, match_id} end)
+      |> Enum.map(fn {arena_id, match_id, won} ->
+        {{arena_id, match_id}, %{in_opener: false, drawn: true, won: won}}
+      end)
+
+    # Merge: if a card appears in both opener and draws for the same match,
+    # combine the flags (in_opener: true, drawn: true)
+    (oh_entries ++ draw_entries)
+    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    |> Map.new(fn {key, infos} ->
+      merged =
+        Enum.reduce(infos, %{in_opener: false, drawn: false, won: false}, fn info, acc ->
+          %{
+            in_opener: acc.in_opener || info.in_opener,
+            drawn: acc.drawn || info.drawn,
+            won: acc.won || info.won
+          }
+        end)
+
+      {key, merged}
+    end)
+  end
+
+  # Extracts `%{arena_id => count}` from a deck's current main deck composition.
+  defp deck_card_counts(nil), do: %{}
+
+  defp deck_card_counts(%Deck{} = deck) do
+    cards = (deck.current_main_deck && deck.current_main_deck["cards"]) || []
+
+    Map.new(cards, fn card ->
+      {card["arena_id"] || card[:arena_id], card["count"] || card[:count] || 1}
+    end)
+  end
 
   defp parse_cards(nil), do: []
   defp parse_cards(%{"cards" => cards}), do: cards

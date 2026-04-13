@@ -1515,6 +1515,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   defp build_turn_actions(messages, match_id, occurred_at, match_context) do
     cached_objects = match_context[:last_hand_game_objects] || %{}
+    game_number = match_context[:current_game_number]
 
     messages
     |> Enum.flat_map(fn msg ->
@@ -1532,7 +1533,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
         annotations
         |> Enum.flat_map(
-          &annotation_to_turn_actions(&1, turn_info, match_id, occurred_at, objects)
+          &annotation_to_turn_actions(&1, turn_info, match_id, occurred_at, objects, game_number)
         )
       else
         []
@@ -1549,7 +1550,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          turn_info,
          match_id,
          occurred_at,
-         objects
+         objects,
+         game_number
        ) do
     details = ann["details"] || []
     category = find_detail_string(details, "category")
@@ -1561,6 +1563,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
     common = %{
       mtga_match_id: match_id,
+      game_number: game_number,
       turn_number: turn_info["turnNumber"],
       phase: turn_info["phase"],
       active_player: turn_info["activePlayer"],
@@ -1646,7 +1649,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          turn_info,
          match_id,
          occurred_at,
-         objects
+         objects,
+         _game_number
        ) do
     details = ann["details"] || []
     damage = find_detail_int(details, "damage")
@@ -1671,7 +1675,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          turn_info,
          match_id,
          occurred_at,
-         _objects
+         _objects,
+         _game_number
        ) do
     details = ann["details"] || []
     life_change = find_detail_int(details, "life")
@@ -1695,7 +1700,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          turn_info,
          match_id,
          occurred_at,
-         objects
+         objects,
+         _game_number
        ) do
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
     grp_id = Map.get(objects, instance_id)
@@ -1717,7 +1723,8 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          turn_info,
          match_id,
          occurred_at,
-         objects
+         objects,
+         _game_number
        ) do
     details = ann["details"] || []
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
@@ -1738,7 +1745,15 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   end
 
   # All other annotation types — skip silently
-  defp annotation_to_turn_actions(_ann, _turn_info, _match_id, _occurred_at, _objects), do: []
+  defp annotation_to_turn_actions(
+         _ann,
+         _turn_info,
+         _match_id,
+         _occurred_at,
+         _objects,
+         _game_number
+       ),
+       do: []
 
   # Detail extraction helpers
   defp find_detail_string(details, key) do
