@@ -20,7 +20,9 @@ defmodule Scry2Web.DecksHelpersTest do
   describe "format_win_rate/1" do
     test "formats a float as percentage" do
       assert DecksHelpers.format_win_rate(55.3) == "55.3%"
-      assert DecksHelpers.format_win_rate(100.0) == "100.0%"
+      assert DecksHelpers.format_win_rate(100.0) == "100%"
+      assert DecksHelpers.format_win_rate(0.0) == "0%"
+      assert DecksHelpers.format_win_rate(50.0) == "50%"
     end
 
     test "returns em dash for nil" do
