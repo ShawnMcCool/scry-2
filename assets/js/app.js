@@ -27,6 +27,7 @@ import {Console} from "./hooks/console"
 import {CardHover} from "./hooks/card_hover"
 import {Chart} from "./hooks/chart"
 import {SideboardSplay} from "./hooks/sideboard_splay"
+import {DeckView} from "./hooks/deck_view"
 import {RangePreference, storedRangePreference} from "./hooks/range_preference"
 import topbar from "../vendor/topbar"
 
@@ -36,7 +37,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
     _csrf_token: csrfToken,
     range_preference: storedRangePreference(),
   }),
-  hooks: {...colocatedHooks, Console, CardHover, Chart, SideboardSplay, RangePreference},
+  hooks: {...colocatedHooks, Console, CardHover, Chart, SideboardSplay, DeckView, RangePreference},
 })
 
 // Global backtick hotkey to toggle the sticky console drawer. Registered in
