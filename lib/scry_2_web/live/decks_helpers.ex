@@ -3,6 +3,61 @@ defmodule Scry2Web.DecksHelpers do
   Pure helper functions for `Scry2Web.DecksLive`. Extracted per ADR-013.
   """
 
+  # ── Card grid layout ───────────────────────────────────────────────
+  #
+  # Two layout modes for the deck card grid:
+  #
+  # **Compact** — columns are `flex: 1`, cards are `w-full`. Sizing is
+  # fully responsive via CSS aspect-ratio + percentage offsets. No JS
+  # needed to calculate card dimensions.
+  #
+  # **Large** — columns have fixed max widths (366px = 75% of 488px
+  # native), cards use rem-based absolute positioning.
+
+  # Each overlapped card reveals 25% of its height.
+  @visible_fraction 0.25
+
+  # Fixed-rem values for large mode (w-28 = 7rem)
+  @card_height_rem 7.0 * (680 / 488)
+  @visible_slice_rem @card_height_rem * @visible_fraction
+
+  @doc "Visible portion (rem) of each overlapped card in large mode."
+  @spec card_visible_slice() :: float()
+  def card_visible_slice, do: Float.round(@visible_slice_rem, 2)
+
+  @doc "Total height (rem) for an absolutely-positioned stack of `n` cards (large mode)."
+  @spec card_stack_height(non_neg_integer()) :: float()
+  def card_stack_height(0), do: 0.0
+  def card_stack_height(n), do: Float.round((n - 1) * @visible_slice_rem + @card_height_rem, 2)
+
+  @doc """
+  CSS aspect-ratio value for a responsive card stack container (compact mode).
+
+  Returns a string like `"488 / 850.0"` that scales the container height
+  proportionally to its width, so the stack looks correct at any card size.
+  """
+  @spec card_stack_aspect_ratio(non_neg_integer()) :: String.t()
+  def card_stack_aspect_ratio(0), do: "1"
+  def card_stack_aspect_ratio(1), do: "488 / 680"
+
+  def card_stack_aspect_ratio(n) do
+    height_factor = (n - 1) * @visible_fraction + 1.0
+    "488 / #{Float.round(680 * height_factor, 1)}"
+  end
+
+  @doc """
+  Top offset as a percentage of the stack container height (compact mode).
+
+  Card at index 0 → 0%, subsequent cards are spaced by the visible fraction.
+  """
+  @spec card_top_percent(non_neg_integer(), pos_integer()) :: float()
+  def card_top_percent(0, _n), do: 0.0
+
+  def card_top_percent(index, n) do
+    height_factor = (n - 1) * @visible_fraction + 1.0
+    Float.round(index * @visible_fraction / height_factor * 100, 2)
+  end
+
   # ── Display formatting ─────────────────────────────────────────────
 
   @doc "Returns the deck_colors string for mana pip rendering."
@@ -201,6 +256,17 @@ defmodule Scry2Web.DecksHelpers do
       _ ->
         []
     end
+  end
+
+  @doc """
+  Returns main deck card groups (by type) plus a Sideboard column if present.
+  Each entry is `{type_label, [%{arena_id, count, name, ...}]}`.
+  """
+  @spec card_list_with_sideboard(map(), map()) :: [{String.t(), list()}]
+  def card_list_with_sideboard(deck, cards_by_arena_id) do
+    main = group_deck_cards(deck, cards_by_arena_id)
+    sideboard = sideboard_cards(deck, cards_by_arena_id)
+    if sideboard == [], do: main, else: main ++ [{"Sideboard", sideboard}]
   end
 
   @doc """

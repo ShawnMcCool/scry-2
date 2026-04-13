@@ -40,6 +40,7 @@ defmodule Scry2Web.DecksLive do
        active_format: nil,
        cards_by_arena_id: %{},
        active_tab: :overview,
+       deck_view_mode: :compact,
        reload_timer: nil
      )}
   end
@@ -70,6 +71,10 @@ defmodule Scry2Web.DecksLive do
   def handle_event("switch_tab", %{"tab" => tab}, socket) do
     deck = socket.assigns.deck
     {:noreply, push_patch(socket, to: ~p"/decks/#{deck.mtga_deck_id}?tab=#{tab}")}
+  end
+
+  def handle_event("switch_deck_view", %{"mode" => mode}, socket) do
+    {:noreply, assign(socket, deck_view_mode: String.to_existing_atom(mode))}
   end
 
   @impl true
@@ -235,6 +240,7 @@ defmodule Scry2Web.DecksLive do
             performance={@performance}
             deck={@deck}
             cards_by_arena_id={@cards_by_arena_id}
+            deck_view_mode={@deck_view_mode}
           />
         <% :matches -> %>
           <.matches_tab
@@ -303,89 +309,163 @@ defmodule Scry2Web.DecksLive do
   attr :performance, :map, required: true
   attr :deck, :map, required: true
   attr :cards_by_arena_id, :map, required: true
+  attr :deck_view_mode, :atom, required: true
 
   defp overview_tab(assigns) do
-    card_groups = DecksHelpers.group_deck_cards(assigns.deck, assigns.cards_by_arena_id)
     cmc_columns = DecksHelpers.group_cards_by_cmc(assigns.deck, assigns.cards_by_arena_id)
+
+    card_list_columns =
+      DecksHelpers.card_list_with_sideboard(assigns.deck, assigns.cards_by_arena_id)
+
     sideboard = DecksHelpers.sideboard_cards(assigns.deck, assigns.cards_by_arena_id)
+    main_deck_total = Enum.sum(for {_, cards} <- cmc_columns, card <- cards, do: card.count)
 
     assigns =
-      assign(assigns, card_groups: card_groups, cmc_columns: cmc_columns, sideboard: sideboard)
+      assign(assigns,
+        cmc_columns: cmc_columns,
+        card_list_columns: card_list_columns,
+        sideboard: sideboard,
+        main_deck_total: main_deck_total
+      )
 
     ~H"""
-    <div class="space-y-10">
+    <div class="space-y-8">
       <%!-- Performance --%>
       <.performance_section performance={@performance} />
 
-      <%!-- Composition + Sideboard --%>
-      <div :if={@card_groups != []}>
-        <div class="flex gap-6 items-start">
-          <%!-- Left sidebar: mana curve + card list by type --%>
-          <div class="w-52 flex-shrink-0 space-y-4">
+      <div :if={@card_list_columns != []}>
+        <%!-- Mana Curve — half width, space reserved for future chart --%>
+        <div class="w-1/2">
+          <div
+            id="deck-curve-chart"
+            phx-hook="Chart"
+            data-chart-type="curve"
+            data-series={DecksHelpers.mana_curve_series(@deck, @cards_by_arena_id)}
+            class="w-full rounded-lg bg-base-200"
+            style="height: 5rem"
+          />
+        </div>
+
+        <%!-- Card List — columns by type + sideboard --%>
+        <div class="flex gap-8 mt-8">
+          <div :for={{type_label, cards} <- @card_list_columns}>
+            <h3 class="flex items-center gap-2 text-xs font-medium text-base-content/40 uppercase tracking-wide mb-1">
+              <span class="w-4 shrink-0" />{type_label} ({Enum.sum(Enum.map(cards, & &1.count))})
+            </h3>
+            <div class="space-y-0.5">
+              <div
+                :for={card <- cards}
+                id={"card-row-#{card.arena_id}"}
+                class="flex items-baseline gap-2 text-sm py-0.5 cursor-default"
+                phx-hook={if ImageCache.cached?(card.arena_id), do: "CardHover"}
+                data-card-src={ImageCache.url_for(card.arena_id)}
+                data-card-alt={card.name}
+              >
+                <span class="text-base-content/50 w-4 text-right tabular-nums shrink-0">
+                  {card.count}
+                </span>
+                <span>{card.name}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <%!-- Deck View header + mode toggle --%>
+        <div class="flex items-center justify-between mt-8">
+          <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide">
+            Main Deck ({@main_deck_total})
+          </h3>
+          <select
+            phx-change="switch_deck_view"
+            name="mode"
+            class="select select-xs select-ghost text-base-content/40"
+          >
+            <option value="compact" selected={@deck_view_mode == :compact}>Compact</option>
+            <option value="large" selected={@deck_view_mode == :large}>Large</option>
+          </select>
+        </div>
+
+        <%!-- Compact deck grid — responsive, no wrapping --%>
+        <div
+          :if={@deck_view_mode == :compact}
+          id="deck-view-compact"
+          phx-hook="DeckView"
+          class="mt-3"
+        >
+          <div class="flex gap-3 items-start" data-deck-grid>
             <div
-              id="deck-curve-chart"
-              phx-hook="Chart"
-              data-chart-type="curve"
-              data-series={DecksHelpers.mana_curve_series(@deck, @cards_by_arena_id)}
-              class="w-full rounded-lg bg-base-200"
-              style="height: 5rem"
-            />
-
-            <div class="space-y-4">
-              <div :for={{type_label, cards} <- @card_groups}>
-                <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-1">
-                  {type_label} ({Enum.sum(Enum.map(cards, & &1.count))})
-                </h3>
-                <div class="space-y-0.5">
-                  <div
-                    :for={card <- cards}
-                    id={"card-row-#{card.arena_id}"}
-                    class="flex items-center gap-2 text-sm py-0.5 cursor-default"
-                    phx-hook={if ImageCache.cached?(card.arena_id), do: "CardHover"}
-                    data-card-src={ImageCache.url_for(card.arena_id)}
-                    data-card-alt={card.name}
-                  >
-                    <span class="text-base-content/50 w-4 text-right tabular-nums shrink-0">
-                      {card.count}
-                    </span>
-                    <span>{card.name}</span>
-                  </div>
+              :for={{cmc_label, cards} <- @cmc_columns}
+              class="flex-1 min-w-0 flex flex-col items-center"
+            >
+              <p class="text-xs text-base-content/30 mb-1">{cmc_label}</p>
+              <div
+                class="relative w-full"
+                style={"aspect-ratio: #{DecksHelpers.card_stack_aspect_ratio(length(cards))}"}
+              >
+                <div
+                  :for={{card, index} <- Enum.with_index(cards)}
+                  class="absolute w-full left-0"
+                  style={"top: #{DecksHelpers.card_top_percent(index, length(cards))}%; z-index: #{index}"}
+                >
+                  <.card_image
+                    id={"card-grid-#{card.arena_id}"}
+                    arena_id={card.arena_id}
+                    name={card.name}
+                    class="w-full"
+                  />
+                  <span class="absolute top-1 right-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
+                    {card.count}
+                  </span>
                 </div>
               </div>
             </div>
           </div>
 
-          <%!-- Right: card images + sideboard below --%>
-          <div class="flex flex-col flex-1 min-w-0">
-            <div class="flex gap-3 items-start overflow-x-auto pb-4" data-deck-grid>
-              <div :for={{cmc_label, cards} <- @cmc_columns} class="flex flex-col items-center">
-                <p class="text-xs text-base-content/30 mb-1">{cmc_label}</p>
-                <div class="flex flex-col">
-                  <div
-                    :for={{card, index} <- Enum.with_index(cards)}
-                    class={["relative", if(index > 0, do: "-mt-[7rem]")]}
-                  >
-                    <.card_image
-                      id={"card-grid-#{card.arena_id}"}
-                      arena_id={card.arena_id}
-                      name={card.name}
-                      class="w-28"
-                    />
-                    <span class="absolute top-1 right-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
-                      {card.count}
-                    </span>
-                  </div>
+          <.sideboard_splay :if={@sideboard != []} cards={@sideboard} />
+        </div>
+
+        <%!-- Large deck grid — wrapping, bigger cards --%>
+        <div
+          :if={@deck_view_mode == :large}
+          id="deck-view-large"
+          phx-hook="DeckView"
+          class="mt-3"
+        >
+          <div class="flex flex-wrap gap-3 items-start" data-deck-grid>
+            <div
+              :for={{cmc_label, cards} <- @cmc_columns}
+              class="flex flex-col items-center"
+              style={"width: min(calc((100% - #{(length(@cmc_columns) - 1) * 0.75}rem) / 3), 366px)"}
+            >
+              <p class="text-xs text-base-content/30 mb-1">{cmc_label}</p>
+              <div
+                class="relative w-full"
+                style={"height: #{DecksHelpers.card_stack_height(length(cards))}rem"}
+              >
+                <div
+                  :for={{card, index} <- Enum.with_index(cards)}
+                  class="absolute left-0 w-full"
+                  style={"top: #{index * DecksHelpers.card_visible_slice()}rem; z-index: #{index}"}
+                >
+                  <.card_image
+                    id={"card-grid-lg-#{card.arena_id}"}
+                    arena_id={card.arena_id}
+                    name={card.name}
+                    class="w-full"
+                  />
+                  <span class="absolute top-1 right-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
+                    {card.count}
+                  </span>
                 </div>
               </div>
             </div>
-
-            <%!-- Sideboard: horizontal splay below main deck cards --%>
-            <.sideboard_splay :if={@sideboard != []} cards={@sideboard} />
           </div>
+
+          <.sideboard_splay :if={@sideboard != []} cards={@sideboard} mode={:large} />
         </div>
       </div>
 
-      <.empty_state :if={@card_groups == []}>
+      <.empty_state :if={@card_list_columns == []}>
         No composition data available. A DeckUpdated event is needed to show the current list.
       </.empty_state>
     </div>
@@ -420,23 +500,24 @@ defmodule Scry2Web.DecksLive do
   end
 
   attr :cards, :list, required: true
+  attr :mode, :atom, default: :compact
 
   defp sideboard_splay(assigns) do
     total = Enum.sum(Enum.map(assigns.cards, & &1.count))
     assigns = assign(assigns, total: total)
 
     ~H"""
-    <div id="sideboard-splay" phx-hook="SideboardSplay" class="mt-8">
+    <div id="sideboard-splay" class="mt-8" data-sideboard-splay>
       <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-3">
         Sideboard ({@total})
       </h3>
       <div data-splay-container class="flex items-end pb-4">
-        <div :for={card <- @cards} class="relative flex-shrink-0">
+        <div :for={card <- @cards} class="relative flex-shrink-0" data-splay-card>
           <.card_image
             id={"sideboard-#{card.arena_id}"}
             arena_id={card.arena_id}
             name={card.name}
-            class="w-28"
+            class={if @mode == :compact, do: "w-full", else: "w-28"}
           />
           <span class="absolute bottom-1 left-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
             {card.count}
