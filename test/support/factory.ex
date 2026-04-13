@@ -38,8 +38,21 @@ defmodule Scry2.TestFactory do
     InventoryUpdated
   }
 
-  alias Scry2.Events.Event.{EventCourseUpdated, EventRecordChanged}
-  alias Scry2.Events.Gameplay.{MulliganOffered, StartingPlayerChosen}
+  alias Scry2.Events.Event.{
+    EventCourseUpdated,
+    EventJoined,
+    EventRecordChanged,
+    EventRewardClaimed,
+    PairingEntered
+  }
+
+  alias Scry2.Events.Gameplay.{
+    GameConceded,
+    MulliganDecided,
+    MulliganOffered,
+    StartingPlayerChosen
+  }
+
   alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
 
   alias Scry2.Events.Progression.{
@@ -463,6 +476,67 @@ defmodule Scry2.TestFactory do
     }
 
     struct(StartingPlayerChosen, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_mulligan_decided(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      decision: "keep",
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(MulliganDecided, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_game_conceded(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      scope: nil,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(GameConceded, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_pairing_entered(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      event_name: "PremierDraft_FDN_20260401",
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(PairingEntered, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_event_joined(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      event_name: "PremierDraft_FDN_20260401",
+      course_id: nil,
+      entry_currency_type: nil,
+      entry_fee: nil,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(EventJoined, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_event_reward_claimed(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      event_name: "PremierDraft_FDN_20260401",
+      final_wins: nil,
+      final_losses: nil,
+      gems_awarded: nil,
+      gold_awarded: nil,
+      boosters_awarded: nil,
+      card_pool: nil,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(EventRewardClaimed, Map.merge(defaults, Map.new(attrs)))
   end
 
   def build_deck_selected(attrs \\ %{}) do

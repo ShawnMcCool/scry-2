@@ -51,4 +51,42 @@ defmodule Scry2.Events.EnrichEventsTest do
       assert is_nil(enriched.game_number)
     end
   end
+
+  describe "enrich/2 — GameCompleted on_play enrichment" do
+    test "populates on_play from ingestion state when nil on event" do
+      event = build_game_completed(on_play: nil)
+
+      state = %IngestionState{
+        match: %Match{on_play_for_current_game: true}
+      }
+
+      [enriched] = EnrichEvents.enrich([event], state)
+
+      assert enriched.on_play == true
+    end
+
+    test "preserves existing on_play when event is true" do
+      event = build_game_completed(on_play: true)
+
+      state = %IngestionState{
+        match: %Match{on_play_for_current_game: false}
+      }
+
+      [enriched] = EnrichEvents.enrich([event], state)
+
+      assert enriched.on_play == true
+    end
+
+    test "on_play stays nil when both event and state are nil" do
+      event = build_game_completed(on_play: nil)
+
+      state = %IngestionState{
+        match: %Match{on_play_for_current_game: nil}
+      }
+
+      [enriched] = EnrichEvents.enrich([event], state)
+
+      assert is_nil(enriched.on_play)
+    end
+  end
 end

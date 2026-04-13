@@ -26,6 +26,10 @@ defmodule Scry2.Events.Draft.DraftCompleted do
   """
 
   @enforce_keys [:mtga_draft_id, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :mtga_draft_id,
@@ -43,6 +47,17 @@ defmodule Scry2.Events.Draft.DraftCompleted do
           card_pool_arena_ids: [integer()] | nil,
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_draft_id: payload["mtga_draft_id"],
+      event_name: payload["event_name"],
+      is_bot_draft: payload["is_bot_draft"],
+      card_pool_arena_ids: payload["card_pool_arena_ids"] || [],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "draft_completed"

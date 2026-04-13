@@ -27,6 +27,10 @@ defmodule Scry2.Events.Draft.HumanDraftPickMade do
   """
 
   @enforce_keys [:mtga_draft_id, :pack_number, :pick_number, :picked_arena_ids, :occurred_at]
+  @behaviour Scry2.Events.DomainEvent
+
+  alias Scry2.Events.Payload
+
   defstruct [
     :player_id,
     :mtga_draft_id,
@@ -44,6 +48,17 @@ defmodule Scry2.Events.Draft.HumanDraftPickMade do
           picked_arena_ids: [integer()],
           occurred_at: DateTime.t()
         }
+
+  def from_payload(payload) do
+    %__MODULE__{
+      player_id: payload["player_id"],
+      mtga_draft_id: payload["mtga_draft_id"],
+      pack_number: payload["pack_number"],
+      pick_number: payload["pick_number"],
+      picked_arena_ids: payload["picked_arena_ids"] || [],
+      occurred_at: Payload.parse_datetime(payload["occurred_at"])
+    }
+  end
 
   defimpl Scry2.Events.Event do
     def type_slug(_), do: "human_draft_pick_made"

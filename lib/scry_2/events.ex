@@ -195,15 +195,6 @@ defmodule Scry2.Events do
   end
 
   @doc """
-  Streams every domain event in id order. Must be called inside a
-  transaction (Ecto stream requirement).
-  """
-  @spec stream_all() :: Ecto.Query.t()
-  def stream_all do
-    EventRecord |> order_by([e], asc: e.id)
-  end
-
-  @doc """
   Fetches domain events of the given types in batches, ordered by id.
   Calls `fun` with each rehydrated event struct. Cursor-based — fetches
   `batch_size` rows at a time starting from id 0.
@@ -660,6 +651,7 @@ defmodule Scry2.Events do
     "deck_submitted" => Scry2.Events.Deck.DeckSubmitted,
     "deck_updated" => Scry2.Events.Deck.DeckUpdated,
     "die_roll_completed" => Scry2.Events.Match.DieRolled,
+    "draft_completed" => Scry2.Events.Draft.DraftCompleted,
     "draft_pick_made" => Scry2.Events.Draft.DraftPickMade,
     "draft_started" => Scry2.Events.Draft.DraftStarted,
     "event_course_updated" => Scry2.Events.Event.EventCourseUpdated,
@@ -668,6 +660,8 @@ defmodule Scry2.Events do
     "event_reward_claimed" => Scry2.Events.Event.EventRewardClaimed,
     "game_completed" => Scry2.Events.Match.GameCompleted,
     "game_conceded" => Scry2.Events.Gameplay.GameConceded,
+    "human_draft_pack_offered" => Scry2.Events.Draft.HumanDraftPackOffered,
+    "human_draft_pick_made" => Scry2.Events.Draft.HumanDraftPickMade,
     "inventory_changed" => Scry2.Events.Economy.InventoryChanged,
     "inventory_snapshot" => Scry2.Events.Economy.InventorySnapshot,
     "inventory_updated" => Scry2.Events.Economy.InventoryUpdated,

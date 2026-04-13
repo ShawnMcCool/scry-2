@@ -4,6 +4,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
 
   alias Scry2.Events.Draft.{
+    DraftCompleted,
     DraftPickMade,
     DraftStarted,
     HumanDraftPackOffered,
@@ -15,7 +16,8 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.Events.Progression.{DailyWinsStatus, MasteryProgress, QuestStatus, RankSnapshot}
-  alias Scry2.Events.Session.SessionStarted
+  alias Scry2.Events.Gameplay.MulliganDecided
+  alias Scry2.Events.Session.{SessionDisconnected, SessionStarted}
   alias Scry2.Events.TranslationWarning
 
   alias Scry2.MtgaLogIngestion.{Event, ExtractEventsFromLog, EventRecord}
@@ -1235,6 +1237,140 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       }
 
       assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # ── DraftCompleteDraft → DraftCompleted ────────────────────────────
+
+  describe "translate/2 — DraftCompleteDraft → DraftCompleted" do
+    test "produces a %DraftCompleted{} with the expected fields" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "DraftCompleteDraft",
+        mtga_timestamp: ~U[2026-04-06 12:30:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "EventName" => "PremierDraft_FDN_20260401",
+            "InternalEventName" => "PremierDraft_FDN_20260401",
+            "IsBotDraft" => false,
+            "CardPool" => [91234, 91235, 91236, 91237]
+          }),
+        processed: false
+      }
+
+      assert {[%DraftCompleted{} = event], []} =
+               IdentifyDomainEvents.translate(record, nil)
+
+      assert event.mtga_draft_id == "PremierDraft_FDN_20260401"
+      assert event.event_name == "PremierDraft_FDN_20260401"
+      assert event.is_bot_draft == false
+      assert event.card_pool_arena_ids == [91234, 91235, 91236, 91237]
+      assert event.occurred_at == ~U[2026-04-06 12:30:00Z]
+    end
+
+    test "skips request-format DraftCompleteDraft events" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "DraftCompleteDraft",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "request" => ~s({"EventName":"PremierDraft_FDN_20260401"})
+          }),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # ── FrontDoorConnection.Close → SessionDisconnected ────────────────
+
+  describe "translate/2 — FrontDoorConnection.Close → SessionDisconnected" do
+    test "produces a %SessionDisconnected{} with the timestamp" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "FrontDoorConnection.Close",
+        mtga_timestamp: ~U[2026-04-06 14:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: ~s({}),
+        processed: false
+      }
+
+      assert {[%SessionDisconnected{} = event], []} =
+               IdentifyDomainEvents.translate(record, nil)
+
+      assert event.occurred_at == ~U[2026-04-06 14:00:00Z]
+    end
+  end
+
+  # ── ClientToGremessage MulliganResp → MulliganDecided ──────────────
+
+  describe "translate/3 — ClientToGremessage MulliganResp → MulliganDecided" do
+    test "AcceptHand maps to decision 'keep'" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "ClientToGremessage",
+        mtga_timestamp: ~U[2026-04-05 19:20:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "type" => "ClientMessageType_MulliganResp",
+            "payload" => %{
+              "type" => "ClientMessageType_MulliganResp",
+              "mulliganResp" => %{"decision" => "MulliganOption_AcceptHand"}
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{
+        current_match_id: "mulligan-test-match",
+        self_seat_id: 1
+      }
+
+      {[%MulliganDecided{} = event], []} =
+        IdentifyDomainEvents.translate(record, nil, match_context)
+
+      assert event.mtga_match_id == "mulligan-test-match"
+      assert event.decision == "keep"
+      assert event.occurred_at == ~U[2026-04-05 19:20:00Z]
+    end
+
+    test "Mulligan maps to decision 'mulligan'" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "ClientToGremessage",
+        mtga_timestamp: ~U[2026-04-05 19:20:05Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "type" => "ClientMessageType_MulliganResp",
+            "payload" => %{
+              "type" => "ClientMessageType_MulliganResp",
+              "mulliganResp" => %{"decision" => "MulliganOption_Mulligan"}
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{
+        current_match_id: "mulligan-test-match",
+        self_seat_id: 1
+      }
+
+      {[%MulliganDecided{} = event], []} =
+        IdentifyDomainEvents.translate(record, nil, match_context)
+
+      assert event.mtga_match_id == "mulligan-test-match"
+      assert event.decision == "mulligan"
+      assert event.occurred_at == ~U[2026-04-05 19:20:05Z]
     end
   end
 end
