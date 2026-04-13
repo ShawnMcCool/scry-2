@@ -919,14 +919,17 @@ defmodule Scry2.Decks do
     end)
   end
 
-  # Extracts `%{arena_id => count}` from a deck's current main deck composition.
+  # Extracts `%{arena_id => count}` from a deck's main deck + sideboard.
   defp deck_card_counts(nil), do: %{}
 
   defp deck_card_counts(%Deck{} = deck) do
-    cards = (deck.current_main_deck && deck.current_main_deck["cards"]) || []
+    main = (deck.current_main_deck && deck.current_main_deck["cards"]) || []
+    side = (deck.current_sideboard && deck.current_sideboard["cards"]) || []
 
-    Map.new(cards, fn card ->
-      {card["arena_id"] || card[:arena_id], card["count"] || card[:count] || 1}
+    (main ++ side)
+    |> Enum.group_by(fn card -> card["arena_id"] || card[:arena_id] end)
+    |> Map.new(fn {arena_id, cards} ->
+      {arena_id, Enum.sum(Enum.map(cards, fn c -> c["count"] || c[:count] || 1 end))}
     end)
   end
 

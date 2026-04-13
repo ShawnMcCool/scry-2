@@ -276,6 +276,7 @@ defmodule Scry2Web.DecksLive do
             card_performance={@card_performance}
             cards_by_arena_id={@cards_by_arena_id}
             card_sort={@card_sort}
+            deck={@deck}
           />
       <% end %>
     </Layouts.app>
@@ -979,6 +980,7 @@ defmodule Scry2Web.DecksLive do
   attr :card_performance, :list, required: true
   attr :cards_by_arena_id, :map, required: true
   attr :card_sort, :atom, default: :type
+  attr :deck, :map, required: true
 
   defp analysis_tab(%{mulligan_analytics: nil} = assigns) do
     ~H"""
@@ -1132,7 +1134,8 @@ defmodule Scry2Web.DecksLive do
             </tr>
           </thead>
           <tbody :for={
-            {type_label, cards} <- AH.sort_cards(@card_performance, @cards_by_arena_id, @card_sort)
+            {type_label, cards} <-
+              AH.sort_cards(@card_performance, @cards_by_arena_id, @deck, @card_sort)
           }>
             <tr :if={type_label}>
               <td
