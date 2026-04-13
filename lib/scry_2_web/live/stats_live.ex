@@ -8,8 +8,8 @@ defmodule Scry2Web.StatsLive do
   """
   use Scry2Web, :live_view
 
+  alias Scry2.Decks
   alias Scry2.Matches
-  alias Scry2.Mulligans
   alias Scry2.Topics
   alias Scry2Web.StatsHelpers
 
@@ -24,7 +24,7 @@ defmodule Scry2Web.StatsLive do
   def handle_params(_params, _uri, socket) do
     player_id = socket.assigns[:active_player_id]
     stats = Matches.aggregate_stats(player_id: player_id)
-    mulligan_stats = Mulligans.mulligan_analytics(player_id: player_id)
+    mulligan_stats = Decks.global_mulligan_analytics()
     {:noreply, assign(socket, stats: stats, mulligan_stats: mulligan_stats)}
   end
 
@@ -36,7 +36,7 @@ defmodule Scry2Web.StatsLive do
   def handle_info(:reload_data, socket) do
     player_id = socket.assigns[:active_player_id]
     stats = Matches.aggregate_stats(player_id: player_id)
-    mulligan_stats = Mulligans.mulligan_analytics(player_id: player_id)
+    mulligan_stats = Decks.global_mulligan_analytics()
     {:noreply, assign(socket, stats: stats, mulligan_stats: mulligan_stats, reload_timer: nil)}
   end
 
@@ -117,7 +117,7 @@ defmodule Scry2Web.StatsLive do
                 <tr :for={row <- @stats.by_deck_colors}>
                   <td>
                     <span class="flex gap-0.5">
-                      <.mana_pips colors={row.key} />
+                      <.mana_pips colors={row.key} class="text-[0.65rem]" />
                     </span>
                   </td>
                   <td class="text-right tabular-nums">{row.total}</td>

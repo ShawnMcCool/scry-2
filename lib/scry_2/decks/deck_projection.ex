@@ -7,7 +7,7 @@ defmodule Scry2.Decks.DeckProjection do
   | | |
   |---|---|
   | **Input**  | `{:domain_event, id, type_slug}` messages on `domain:events` |
-  | **Output** | Rows in `decks_decks`, `decks_deck_versions`, `decks_match_results`, `decks_game_submissions` |
+  | **Output** | Rows in `decks_decks`, `decks_deck_versions`, `decks_match_results`, `decks_game_submissions`, `decks_mulligan_hands`, `decks_cards_drawn` |
   | **Nature** | GenServer (subscribes at init) |
   | **Called from** | Broadcast from `Scry2.Events.append!/2` |
 
@@ -23,6 +23,9 @@ defmodule Scry2.Decks.DeckProjection do
       increment version stats on the active `decks_deck_versions` row
     * `"game_completed"` → accumulate game_results on `decks_match_results` for BO3
       game 1 vs games 2/3 analysis; captures on_play from game 1
+    * `"mulligan_offered"` → upsert `decks_mulligan_hands`; London mulligan rule stamps
+      prior hands as mulliganed; resolves deck_id from match_results
+    * `"card_drawn"` → upsert `decks_cards_drawn`; resolves deck_id from match_results
 
   ## Idempotency
 
@@ -32,8 +35,11 @@ defmodule Scry2.Decks.DeckProjection do
 
   # projection_tables listed in FK-safe delete order (children first)
   use Scry2.Events.Projector,
-    claimed_slugs: ~w(deck_updated deck_submitted match_created match_completed game_completed),
+    claimed_slugs:
+      ~w(deck_updated deck_submitted match_created match_completed game_completed mulligan_offered card_drawn),
     projection_tables: [
+      Scry2.Decks.GameDraw,
+      Scry2.Decks.MulliganHand,
       Scry2.Decks.GameSubmission,
       Scry2.Decks.MatchResult,
       Scry2.Decks.DeckVersion,
@@ -46,6 +52,7 @@ defmodule Scry2.Decks.DeckProjection do
   alias Scry2.Decks.MatchResult
   alias Scry2.Events.Deck.{DeckSubmitted, DeckUpdated}
   alias Scry2.Events.EnrichEvents
+  alias Scry2.Events.Gameplay.{CardDrawn, MulliganOffered}
   alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.Repo
 
@@ -165,6 +172,11 @@ defmodule Scry2.Decks.DeckProjection do
         })
       )
 
+      # Backfill deck_id on mulligan hands and game draws that arrived
+      # before this DeckSubmitted (MulliganOffered fires before deck context)
+      Decks.stamp_deck_id_on_mulligan_hands!(event.mtga_match_id, mtga_deck_id)
+      Decks.stamp_deck_id_on_game_draws!(event.mtga_match_id, mtga_deck_id)
+
       Log.info(
         :ingester,
         "projected DeckSubmitted deck_id=#{mtga_deck_id} match=#{event.mtga_match_id} game=#{event.game_number}"
@@ -187,6 +199,11 @@ defmodule Scry2.Decks.DeckProjection do
       started_at: event.occurred_at
     })
 
+    # Stamp event_name on mulligan hands for this match
+    if event.event_name do
+      Decks.stamp_mulligan_event_name!(event.mtga_match_id, event.event_name)
+    end
+
     :ok
   end
 
@@ -206,6 +223,12 @@ defmodule Scry2.Decks.DeckProjection do
 
     # Update version stats for each deck that played this match
     update_version_stats_for_match(event.mtga_match_id)
+
+    # Stamp match outcome on mulligan hands and game draws
+    if is_boolean(event.won) do
+      Decks.stamp_mulligan_match_won!(event.mtga_match_id, event.won)
+      Decks.stamp_game_draws_match_won!(event.mtga_match_id, event.won)
+    end
 
     Log.info(
       :ingester,
@@ -253,7 +276,65 @@ defmodule Scry2.Decks.DeckProjection do
     :ok
   end
 
+  defp project(%MulliganOffered{} = event) do
+    if event.mtga_match_id do
+      # Resolve deck_id from an existing match_results row (may be nil
+      # if DeckSubmitted hasn't fired yet — backfilled later)
+      mtga_deck_id = resolve_deck_id_for_match(event.mtga_match_id)
+
+      # London mulligan rule: mark all prior hands for this match as mulliganed
+      Decks.stamp_mulligan_decision_mulliganed!(event.mtga_match_id)
+
+      Decks.upsert_mulligan_hand!(%{
+        mtga_deck_id: mtga_deck_id,
+        mtga_match_id: event.mtga_match_id,
+        seat_id: event.seat_id,
+        hand_size: event.hand_size,
+        hand_arena_ids: %{"cards" => event.hand_arena_ids || []},
+        land_count: event.land_count,
+        nonland_count: event.nonland_count,
+        total_cmc: event.total_cmc,
+        cmc_distribution: event.cmc_distribution,
+        color_distribution: event.color_distribution,
+        card_names: event.card_names,
+        decision: "kept",
+        occurred_at: event.occurred_at
+      })
+    end
+
+    :ok
+  end
+
+  defp project(%CardDrawn{} = event) do
+    if event.mtga_match_id && event.card_arena_id do
+      mtga_deck_id = resolve_deck_id_for_match(event.mtga_match_id)
+
+      Decks.upsert_game_draw!(%{
+        mtga_deck_id: mtga_deck_id,
+        mtga_match_id: event.mtga_match_id,
+        game_number: event.game_number,
+        card_arena_id: event.card_arena_id,
+        card_name: event.card_name,
+        turn_number: event.turn_number,
+        occurred_at: event.occurred_at
+      })
+    end
+
+    :ok
+  end
+
   # ── Private helpers ─────────────────────────────────────────────────
+
+  # Looks up the mtga_deck_id for a match from the existing match_results row.
+  # Returns nil if no match result exists yet (MulliganOffered can fire before
+  # DeckSubmitted). The caller inserts with nil and DeckSubmitted backfills later.
+  defp resolve_deck_id_for_match(mtga_match_id) do
+    MatchResult
+    |> where([mr], mr.mtga_match_id == ^mtga_match_id)
+    |> select([mr], mr.mtga_deck_id)
+    |> limit(1)
+    |> Repo.one()
+  end
 
   # For Limited-format matches (drafts, sealed), returns a stable deck ID
   # derived from the event_name so all matches from the same draft run
