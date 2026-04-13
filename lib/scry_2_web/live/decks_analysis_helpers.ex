@@ -28,14 +28,19 @@ defmodule Scry2Web.DecksAnalysisHelpers do
   Formats a percentage with one decimal place and % suffix, or "—" for nil.
   """
   def format_pct(nil), do: "—"
-  def format_pct(value), do: "#{value}%"
+  def format_pct(value) when is_float(value), do: "#{format_number(value)}%"
 
   @doc """
   Formats IWD with a sign prefix: "+5.2pp", "-3.1pp", or "—" for nil.
   """
   def format_iwd(nil), do: "—"
-  def format_iwd(value) when value > 0, do: "+#{value}pp"
-  def format_iwd(value), do: "#{value}pp"
+  def format_iwd(value) when value > 0, do: "+#{format_number(value)}"
+  def format_iwd(value), do: "#{format_number(value)}"
+
+  # Drops trailing ".0" from floats: 100.0 → "100", 66.7 → "66.7"
+  defp format_number(value) when is_float(value) do
+    if value == trunc(value), do: "#{trunc(value)}", else: "#{value}"
+  end
 
   @doc """
   Returns true if the sample size is too small for meaningful stats (< 5 games).
@@ -63,29 +68,48 @@ defmodule Scry2Web.DecksAnalysisHelpers do
   Returns `[{group_label | nil, [card]}]`. Grouped modes return type labels;
   flat modes return a single `{nil, sorted_list}`.
   """
-  def sort_cards(card_performance, cards_by_arena_id, sort_mode) do
-    cards_with_type =
-      Enum.map(card_performance, fn card ->
+  def sort_cards(card_performance, cards_by_arena_id, deck, sort_mode) do
+    sideboard_ids = sideboard_arena_ids(deck)
+
+    {side_cards, main_cards} =
+      card_performance
+      |> Enum.map(fn card ->
         card_data = Map.get(cards_by_arena_id, card.card_arena_id)
         Map.put(card, :type, card_type_label(card_data))
       end)
+      |> Enum.split_with(&MapSet.member?(sideboard_ids, &1.card_arena_id))
 
-    case sort_mode do
-      :type ->
-        cards_with_type
-        |> Enum.sort_by(&{type_order(&1.type), -(&1.iwd || -999)})
-        |> Enum.group_by(& &1.type)
-        |> Enum.sort_by(fn {type, _} -> type_order(type) end)
+    main_groups =
+      case sort_mode do
+        :type ->
+          main_cards
+          |> Enum.sort_by(&{type_order(&1.type), -(&1.iwd || -999)})
+          |> Enum.group_by(& &1.type)
+          |> Enum.sort_by(fn {type, _} -> type_order(type) end)
 
-      :name ->
-        [{nil, Enum.sort_by(cards_with_type, &(&1.card_name || "zzz"))}]
+        :name ->
+          [{nil, Enum.sort_by(main_cards, &(&1.card_name || "zzz"))}]
 
-      sort_key when sort_key in [:iwd, :oh_wr, :gih_wr] ->
-        [{nil, Enum.sort_by(cards_with_type, &(-(&1[sort_key] || -999)))}]
+        sort_key when sort_key in [:iwd, :oh_wr, :gih_wr] ->
+          [{nil, Enum.sort_by(main_cards, &(-(&1[sort_key] || -999)))}]
 
-      _ ->
-        [{nil, cards_with_type}]
+        _ ->
+          [{nil, main_cards}]
+      end
+
+    if side_cards == [] do
+      main_groups
+    else
+      sorted_side = Enum.sort_by(side_cards, &(-(&1.iwd || -999)))
+      main_groups ++ [{"Sideboard", sorted_side}]
     end
+  end
+
+  defp sideboard_arena_ids(nil), do: MapSet.new()
+
+  defp sideboard_arena_ids(deck) do
+    cards = (deck.current_sideboard && deck.current_sideboard["cards"]) || []
+    MapSet.new(cards, fn card -> card["arena_id"] || card[:arena_id] end)
   end
 
   defp card_type_label(nil), do: "Unknown"
@@ -147,7 +171,7 @@ defmodule Scry2Web.DecksAnalysisHelpers do
         short: "IWD",
         name: "Improvement When Drawn",
         description:
-          "GIH WR minus GND WR. Positive means drawing this card improves your chances. Negative means drawing it hurts. The higher the value, the more impactful the card."
+          "GIH WR minus GND WR, in percentage points. Positive means drawing this card improves your win rate. Negative means drawing it correlates with losing. The bigger the number, the more impactful."
       }
     }
   end
