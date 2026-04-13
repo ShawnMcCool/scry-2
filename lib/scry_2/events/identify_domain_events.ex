@@ -339,15 +339,9 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       {events, []}
     else
       _ ->
-        {[],
-         [
-           %TranslationWarning{
-             category: :payload_extraction_failed,
-             raw_event_id: record.id,
-             event_type: record.event_type,
-             detail: "failed to decode/extract greToClientMessages"
-           }
-         ]}
+        # Misrouted payload (e.g., ClientToMatchServiceMessage logged under
+        # GreToClientEvent header). Skip silently — raw event is preserved.
+        {[], []}
     end
   end
 
