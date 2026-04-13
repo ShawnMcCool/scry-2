@@ -13,6 +13,7 @@ defmodule Scry2.Events.EnrichEvents do
 
   alias Scry2.Cards
   alias Scry2.Events.Deck.DeckSubmitted
+  alias Scry2.Events.EventName
   alias Scry2.Events.Gameplay.MulliganOffered
   alias Scry2.Events.Match.{GameCompleted, MatchCreated}
 
@@ -24,10 +25,10 @@ defmodule Scry2.Events.EnrichEvents do
   end
 
   defp enrich_one(%MatchCreated{} = event, state) do
-    {format, format_type} = infer_format(event.event_name)
+    parsed = EventName.parse(event.event_name)
 
     rank =
-      case format_type do
+      case parsed.format_type do
         "Limited" -> state.session.limited_rank
         "Constructed" -> state.session.constructed_rank
         _ -> state.session.constructed_rank || state.session.limited_rank
@@ -35,7 +36,13 @@ defmodule Scry2.Events.EnrichEvents do
 
     deck_name = state.match.last_deck_name
 
-    %{event | player_rank: rank, format: format, format_type: format_type, deck_name: deck_name}
+    %{
+      event
+      | player_rank: rank,
+        format: parsed.format,
+        format_type: parsed.format_type,
+        deck_name: deck_name
+    }
   end
 
   defp enrich_one(%MulliganOffered{hand_arena_ids: nil} = event, _state), do: event
@@ -142,33 +149,12 @@ defmodule Scry2.Events.EnrichEvents do
   @doc """
   Infers `{format, format_type}` from an MTGA event_name string.
 
-  Returns a human-readable format name and a category:
-  - `"Limited"` — drafts, sealed
-  - `"Constructed"` — ranked ladder, play queue
-  - `"Traditional"` — BO3 variants
-  - `nil` — direct challenges, unknown events
+  Delegates to `Scry2.Events.EventName.parse/1` for the actual parsing.
+  Returns a `{format, format_type}` tuple for backward compatibility.
   """
-  def infer_format(nil), do: {nil, nil}
-
-  def infer_format(event_name) when is_binary(event_name) do
-    cond do
-      String.starts_with?(event_name, "QuickDraft") -> {"Quick Draft", "Limited"}
-      String.starts_with?(event_name, "PremierDraft") -> {"Premier Draft", "Limited"}
-      String.starts_with?(event_name, "TradDraft") -> {"Traditional Draft", "Limited"}
-      String.starts_with?(event_name, "BotDraft") -> {"Bot Draft", "Limited"}
-      String.starts_with?(event_name, "CompDraft") -> {"Comp Draft", "Limited"}
-      String.starts_with?(event_name, "Sealed") -> {"Sealed", "Limited"}
-      String.starts_with?(event_name, "Traditional_Ladder") -> {"Ranked BO3", "Traditional"}
-      String.starts_with?(event_name, "Traditional_Play") -> {"Play BO3", "Traditional"}
-      String.starts_with?(event_name, "Traditional") -> {"Traditional", "Traditional"}
-      String.starts_with?(event_name, "Ladder") -> {"Ranked", "Constructed"}
-      String.starts_with?(event_name, "Play") -> {"Play", "Constructed"}
-      event_name == "DirectGameLimited" -> {"Direct Challenge", "Limited"}
-      String.starts_with?(event_name, "DirectGame") -> {"Direct Challenge", "Constructed"}
-      String.contains?(event_name, "Draft") -> {"Draft", "Limited"}
-      String.contains?(event_name, "Sealed") -> {"Sealed", "Limited"}
-      true -> {event_name, nil}
-    end
+  def infer_format(event_name) do
+    parsed = EventName.parse(event_name)
+    {parsed.format, parsed.format_type}
   end
 
   @doc """

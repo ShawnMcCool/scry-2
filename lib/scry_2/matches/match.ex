@@ -22,6 +22,7 @@ defmodule Scry2.Matches.Match do
     field :mtga_deck_id, :string
     field :duration_seconds, :integer
     field :format_type, :string
+    field :set_code, :string
     field :game_results, :map
     field :raw_event_ids, :map
 
@@ -53,6 +54,7 @@ defmodule Scry2.Matches.Match do
       :mtga_deck_id,
       :duration_seconds,
       :format_type,
+      :set_code,
       :game_results,
       :raw_event_ids
     ])
