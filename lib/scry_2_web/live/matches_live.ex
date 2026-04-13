@@ -24,7 +24,7 @@ defmodule Scry2Web.MatchesLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.matches_updates())
 
-    {:ok, assign(socket, reload_timer: nil)}
+    {:ok, assign(socket, reload_timer: nil, show_all_formats: false)}
   end
 
   @impl true
@@ -40,6 +40,11 @@ defmodule Scry2Web.MatchesLive do
 
   def handle_params(params, _uri, socket) do
     {:noreply, assign_index(socket, params)}
+  end
+
+  @impl true
+  def handle_event("toggle_all_formats", _params, socket) do
+    {:noreply, assign(socket, show_all_formats: !socket.assigns.show_all_formats)}
   end
 
   @impl true
@@ -151,7 +156,11 @@ defmodule Scry2Web.MatchesLive do
       <h1 class="text-2xl font-semibold mb-6 font-beleren">Matches</h1>
 
       <%!-- Dashboard stats --%>
-      <.dashboard stats={@stats} cumulative_series={@cumulative_series} />
+      <.dashboard
+        stats={@stats}
+        cumulative_series={@cumulative_series}
+        show_all_formats={@show_all_formats}
+      />
 
       <%!-- Filter bar --%>
       <.filter_bar
@@ -277,7 +286,11 @@ defmodule Scry2Web.MatchesLive do
           data-series={@chart_series}
           class="flex-[2] min-w-0 min-h-[12rem] rounded-lg bg-base-300/40"
         />
-        <.format_breakdown :if={@stats.by_format != []} formats={@stats.by_format} />
+        <.format_breakdown
+          :if={@stats.by_format != []}
+          formats={@stats.by_format}
+          show_all_formats={@show_all_formats}
+        />
       </div>
     </div>
     """
@@ -312,12 +325,27 @@ defmodule Scry2Web.MatchesLive do
     """
   end
 
+  attr :formats, :list, required: true
+  attr :show_all_formats, :boolean, required: true
+
   defp format_breakdown(assigns) do
+    visible =
+      if assigns.show_all_formats, do: assigns.formats, else: Enum.take(assigns.formats, 5)
+
+    has_more = length(assigns.formats) > 5
+    overflow_count = length(assigns.formats) - 5
+
+    assigns =
+      assigns
+      |> assign(:visible_formats, visible)
+      |> assign(:has_more, has_more)
+      |> assign(:overflow_count, overflow_count)
+
     ~H"""
     <div class="flex-1 bg-base-200 rounded-box p-4 min-w-[200px]">
       <h3 class="text-xs text-base-content/50 uppercase tracking-wider mb-3">Wins By Format</h3>
       <div class="flex flex-col gap-2">
-        <div :for={fmt <- @formats} class="text-sm">
+        <div :for={fmt <- @visible_formats} class="text-sm">
           <div class="flex justify-between mb-1">
             <span class="text-base-content/80 truncate">{format_label(fmt.key)}</span>
             <span class={["tabular-nums", win_rate_class(fmt.win_rate)]}>
@@ -332,6 +360,13 @@ defmodule Scry2Web.MatchesLive do
           </div>
         </div>
       </div>
+      <button
+        :if={@has_more}
+        phx-click="toggle_all_formats"
+        class="text-xs text-base-content/50 hover:text-base-content mt-2 transition-colors"
+      >
+        {if @show_all_formats, do: "Show less", else: "Show all formats (+#{@overflow_count})"}
+      </button>
     </div>
     """
   end
@@ -496,7 +531,12 @@ defmodule Scry2Web.MatchesLive do
             />
             {@match.player_rank}
           </div>
-          <div class="text-xs text-base-content/40">
+          <div class="text-xs text-base-content/40 inline-flex items-center gap-1">
+            <.set_icon
+              :if={@match.set_code}
+              code={@match.set_code}
+              class="text-sm text-base-content/60"
+            />
             {format_label(@match.format)}
           </div>
         </div>
@@ -539,7 +579,10 @@ defmodule Scry2Web.MatchesLive do
         </div>
 
         <div class="flex items-center gap-3 text-sm text-base-content/60 mt-1 flex-wrap">
-          <span>{format_label(@match.format)}</span>
+          <span class="inline-flex items-center gap-1">
+            <.set_icon :if={@match.set_code} code={@match.set_code} />
+            {format_label(@match.format)}
+          </span>
           <span :if={@match.num_games && @match.num_games > 1}>
             Best of 3 · {MatchesHelpers.game_score(@match.game_results, @match.won)}
           </span>
@@ -658,7 +701,10 @@ defmodule Scry2Web.MatchesLive do
             <span class={["font-bold w-6 text-center", MatchesHelpers.result_letter_class(prev.won)]}>
               {MatchesHelpers.result_letter(prev.won)}
             </span>
-            <span class="text-sm text-base-content/60">{format_label(prev.format)}</span>
+            <span class="text-sm text-base-content/60 inline-flex items-center gap-1">
+              <.set_icon :if={prev.set_code} code={prev.set_code} />
+              {format_label(prev.format)}
+            </span>
             <span class="text-xs text-base-content/40 tabular-nums">
               {MatchesHelpers.format_match_datetime(prev.started_at)}
             </span>

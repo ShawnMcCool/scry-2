@@ -18,12 +18,17 @@ defmodule Scry2Web.PlayerLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.matches_updates())
 
-    {:ok, assign(socket, stats: nil, reload_timer: nil)}
+    {:ok, assign(socket, stats: nil, reload_timer: nil, show_all_formats: false)}
   end
 
   @impl true
   def handle_params(_params, _uri, socket) do
     {:noreply, load_data(socket)}
+  end
+
+  @impl true
+  def handle_event("toggle_all_formats", _params, socket) do
+    {:noreply, assign(socket, show_all_formats: !socket.assigns.show_all_formats)}
   end
 
   @impl true
@@ -108,7 +113,7 @@ defmodule Scry2Web.PlayerLive do
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <%!-- Left column: Format Performance + Play vs Draw --%>
           <div class="space-y-6">
-            <.format_performance formats={@stats.by_format} />
+            <.format_performance formats={@stats.by_format} show_all_formats={@show_all_formats} />
             <.play_draw by_on_play={@stats.by_on_play} />
           </div>
 
@@ -130,10 +135,21 @@ defmodule Scry2Web.PlayerLive do
   # ── Components ─────────────────────────────────────────────────────
 
   attr :formats, :list, required: true
+  attr :show_all_formats, :boolean, required: true
 
   defp format_performance(assigns) do
+    sorted = Enum.sort_by(assigns.formats, & &1.last_played_at, {:desc, DateTime})
+    visible = if assigns.show_all_formats, do: sorted, else: Enum.take(sorted, 5)
+    has_more = length(sorted) > 5
+
+    assigns =
+      assigns
+      |> assign(:sorted_formats, visible)
+      |> assign(:has_more, has_more)
+      |> assign(:overflow_count, length(sorted) - 5)
+
     ~H"""
-    <section :if={@formats != []}>
+    <section :if={@sorted_formats != []}>
       <h2 class="text-base font-semibold mb-3 font-beleren">Format Performance</h2>
       <div class="overflow-x-auto">
         <table class="table table-sm">
@@ -145,7 +161,7 @@ defmodule Scry2Web.PlayerLive do
             </tr>
           </thead>
           <tbody>
-            <tr :for={row <- @formats}>
+            <tr :for={row <- @sorted_formats}>
               <td>{format_label(row.key)}</td>
               <td class="text-right tabular-nums">
                 {PlayerHelpers.record(row.wins, row.losses)}
@@ -157,6 +173,13 @@ defmodule Scry2Web.PlayerLive do
           </tbody>
         </table>
       </div>
+      <button
+        :if={@has_more}
+        phx-click="toggle_all_formats"
+        class="text-xs text-base-content/50 hover:text-base-content mt-2 transition-colors"
+      >
+        {if @show_all_formats, do: "Show less", else: "Show all formats (+#{@overflow_count})"}
+      </button>
     </section>
     """
   end
