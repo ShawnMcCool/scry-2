@@ -210,18 +210,13 @@ defmodule Scry2.Matches.MatchProjection do
         {game_num, won}
       end)
 
-    # Correct individual Game rows
-    Scry2.Matches.Game
-    |> where([g], g.match_id == ^match.id)
-    |> Repo.all()
-    |> Enum.each(fn game ->
-      case Map.get(won_by_game, game.game_number) do
-        nil ->
-          :ok
-
-        won ->
-          Matches.upsert_game!(%{match_id: match.id, game_number: game.game_number, won: won})
-      end
+    # Correct individual Game rows — one UPDATE per distinct won value
+    won_by_game
+    |> Enum.group_by(fn {_game_num, won} -> won end, fn {game_num, _won} -> game_num end)
+    |> Enum.each(fn {won, game_numbers} ->
+      Scry2.Matches.Game
+      |> where([g], g.match_id == ^match.id and g.game_number in ^game_numbers)
+      |> Repo.update_all(set: [won: won])
     end)
 
     # Correct the game_results JSON on the match row

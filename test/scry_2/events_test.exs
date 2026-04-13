@@ -29,7 +29,7 @@ defmodule Scry2.EventsTest do
       assert record.payload["event_name"] == "Traditional_Ladder"
       assert record.payload["occurred_at"] == "2026-04-05T19:18:40Z"
 
-      assert_receive {:domain_event, id, "match_created"}
+      assert_receive {:domain_event, id, "match_created", _event}
       assert id == record.id
     end
 
@@ -75,11 +75,11 @@ defmodule Scry2.EventsTest do
 
       first = Events.append!(event, source)
       assert first != nil
-      assert_receive {:domain_event, _, "match_created"}
+      assert_receive {:domain_event, _, "match_created", _}
 
       second = Events.append!(event, source)
       assert second == nil
-      refute_receive {:domain_event, _, _}
+      refute_receive {:domain_event, _, _, _}
     end
 
     test "different event types from same source both persist" do
@@ -256,7 +256,7 @@ defmodule Scry2.EventsTest do
       event = match_created("sub-test")
       record = Events.append!(event, nil)
 
-      assert_receive {:domain_event, id, "match_created"}
+      assert_receive {:domain_event, id, "match_created", _event}
       assert id == record.id
     end
   end

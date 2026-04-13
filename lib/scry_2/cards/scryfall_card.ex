@@ -9,48 +9,21 @@ defmodule Scry2.Cards.ScryfallCard do
 
   ## Typed columns
 
-  The typed columns below cover the most commonly queried fields. The `raw`
-  column preserves the complete Scryfall JSON (~60 fields per card) for
-  forward-compatibility. If you need a new queryable column:
+  The typed columns below cover the most commonly queried fields. If you
+  need a new queryable column:
 
   1. Add the field to this schema and a migration.
-  2. The next `Scryfall.run()` will populate it from the `raw` data.
-  3. No data loss — the `raw` column already contains every field.
+  2. Update `Scryfall.parse_card/1` to extract the new field from the
+     Scryfall JSON.
+  3. Re-run `Scryfall.run()` to populate it from the API.
 
-  ## All available Scryfall fields (in `raw`)
+  ## Additional Scryfall fields (available via re-import)
 
-  Card identity: `id` (scryfall_id), `oracle_id`, `arena_id`, `mtgo_id`,
-  `multiverse_ids`, `cardmarket_id`, `tcgplayer_id`, `object`, `lang`.
+  The Scryfall API provides ~60 fields per card. Only the most commonly
+  queried fields have typed columns here. To add a new field, update the
+  schema, migration, and `Scryfall.parse_card/1`, then re-run the import.
 
-  Card content: `name`, `type_line`, `oracle_text`, `mana_cost`, `cmc`,
-  `colors`, `color_identity`, `keywords`, `layout`, `flavor_text`.
-
-  Printing: `set`, `set_name`, `set_id`, `set_type`, `collector_number`,
-  `rarity`, `released_at`, `reprint`, `variation`, `booster`, `digital`.
-
-  Images: `image_uris` (map with `small`, `normal`, `large`, `png`,
-  `art_crop`, `border_crop`), `image_status`, `highres_image`.
-  Note: DFCs store images under `card_faces[].image_uris` instead.
-
-  Legalities: `legalities` (map of format → status, ~21 formats).
-
-  Prices: `prices` (map of `usd`, `usd_foil`, `eur`, `tix`).
-
-  Art: `artist`, `artist_ids`, `illustration_id`, `frame`, `full_art`,
-  `textless`, `border_color`, `story_spotlight`.
-
-  Booleans: `foil`, `nonfoil`, `oversized`, `promo`, `reserved`,
-  `game_changer`.
-
-  Games: `games` (list: `paper`, `mtgo`, `arena`).
-
-  External links: `scryfall_uri`, `uri`, `rulings_uri`,
-  `prints_search_uri`, `purchase_uris`, `related_uris`.
-
-  Related cards: `all_parts` (list of related card objects).
-
-  Card faces (DFCs): `card_faces` (list of face objects with their own
-  `name`, `mana_cost`, `oracle_text`, `image_uris`, etc.).
+  See <https://scryfall.com/docs/api/cards> for the full field reference.
   """
 
   use Ecto.Schema
@@ -73,7 +46,6 @@ defmodule Scry2.Cards.ScryfallCard do
     field :layout, :string
     field :booster, :boolean
     field :image_uris, :map
-    field :raw, :map
 
     timestamps(type: :utc_datetime)
   end
@@ -99,8 +71,7 @@ defmodule Scry2.Cards.ScryfallCard do
       :rarity,
       :layout,
       :booster,
-      :image_uris,
-      :raw
+      :image_uris
     ])
     |> validate_required([:scryfall_id, :name, :set_code])
     |> unique_constraint(:scryfall_id)

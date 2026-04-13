@@ -279,8 +279,20 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
           )
         end
 
+        events_attrs =
+          Enum.map(events, fn event ->
+            %{
+              event_type: event.type,
+              mtga_timestamp: event.mtga_timestamp,
+              file_offset: event.file_offset,
+              source_file: event.source_file,
+              log_epoch: new_epoch,
+              raw_json: event.raw_json
+            }
+          end)
+
         Scry2.Repo.transaction(fn ->
-          Enum.each(events, &persist_event(&1, new_epoch))
+          MtgaLogIngestion.insert_events!(events_attrs)
 
           MtgaLogIngestion.put_cursor!(%{
             file_path: path,
@@ -299,20 +311,6 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
   end
 
   defp drain_file(state), do: state
-
-  defp persist_event(%Scry2.MtgaLogIngestion.Event{} = event, log_epoch) do
-    MtgaLogIngestion.insert_event!(%{
-      event_type: event.type,
-      mtga_timestamp: event.mtga_timestamp,
-      file_offset: event.file_offset,
-      source_file: event.source_file,
-      log_epoch: log_epoch,
-      raw_json: event.raw_json
-    })
-  rescue
-    error ->
-      Log.warning(:watcher, "failed to persist event: #{inspect(error)}")
-  end
 
   defp broadcast_status(status) do
     Topics.broadcast(Topics.mtga_logs_status(), {:status, status})

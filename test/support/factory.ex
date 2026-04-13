@@ -230,8 +230,7 @@ defmodule Scry2.TestFactory do
       color_identity: "W",
       rarity: "common",
       layout: "normal",
-      image_uris: %{"normal" => "https://example.com/card.jpg"},
-      raw: %{}
+      image_uris: %{"normal" => "https://example.com/card.jpg"}
     }
 
     struct(ScryfallCard, Map.merge(defaults, Map.new(attrs)))

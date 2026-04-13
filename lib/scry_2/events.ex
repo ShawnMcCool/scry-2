@@ -95,7 +95,17 @@ defmodule Scry2.Events do
            conflict_target: [:mtga_source_id, :event_type, :sequence]
          ) do
       {:ok, %{id: id} = record} when not is_nil(id) ->
-        Topics.broadcast(Topics.domain_events(), {:domain_event, record.id, record.event_type})
+        # Include the typed domain event in the broadcast so projectors
+        # can process it directly without a DB round-trip back to get!().
+        enriched =
+          %{domain_event | player_id: record.player_id}
+          |> Map.put(:id, record.id)
+
+        Topics.broadcast(
+          Topics.domain_events(),
+          {:domain_event, record.id, record.event_type, enriched}
+        )
+
         record
 
       {:ok, _record} ->

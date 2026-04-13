@@ -95,7 +95,6 @@ defmodule Scry2.Cards.ScryfallTest do
       assert result.colors == ""
       assert result.color_identity == "R"
       assert result.cmc == 0.0
-      assert result.raw == @scryfall_mountain
     end
 
     test "preserves DFC name as-is (splitting happens in backfill path only)" do
@@ -231,7 +230,7 @@ defmodule Scry2.Cards.ScryfallTest do
       assert mountain.set_code == "LCI"
       assert mountain.type_line == "Basic Land — Mountain"
       assert mountain.rarity == "common"
-      assert mountain.raw["id"] == "scryfallid-mountain-lci"
+      assert mountain.name == "Mountain"
     end
 
     test "persists Scryfall cards idempotently on re-run" do
