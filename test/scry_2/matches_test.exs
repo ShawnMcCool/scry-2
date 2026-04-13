@@ -267,6 +267,68 @@ defmodule Scry2.MatchesTest do
     end
   end
 
+  describe "recent_results/1" do
+    test "returns the last N completed match results newest first" do
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-01-01 12:00:00Z]})
+      TestFactory.create_match(%{won: false, started_at: ~U[2026-01-02 12:00:00Z]})
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-01-03 12:00:00Z]})
+
+      results = Matches.recent_results(count: 2)
+
+      assert length(results) == 2
+      assert hd(results).won == true
+      assert List.last(results).won == false
+    end
+
+    test "excludes matches with nil won" do
+      TestFactory.create_match(%{won: true})
+      TestFactory.create_match(%{won: nil})
+
+      results = Matches.recent_results()
+      assert length(results) == 1
+    end
+
+    test "defaults to 10 results" do
+      for i <- 1..12 do
+        TestFactory.create_match(%{
+          won: rem(i, 2) == 0,
+          started_at: DateTime.add(~U[2026-01-01 00:00:00Z], i, :hour)
+        })
+      end
+
+      results = Matches.recent_results()
+      assert length(results) == 10
+    end
+  end
+
+  describe "current_streak/1" do
+    test "returns win streak when recent matches are wins" do
+      TestFactory.create_match(%{won: false, started_at: ~U[2026-01-01 12:00:00Z]})
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-01-02 12:00:00Z]})
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-01-03 12:00:00Z]})
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-01-04 12:00:00Z]})
+
+      assert Matches.current_streak() == {:win, 3}
+    end
+
+    test "returns loss streak when recent matches are losses" do
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-01-01 12:00:00Z]})
+      TestFactory.create_match(%{won: false, started_at: ~U[2026-01-02 12:00:00Z]})
+      TestFactory.create_match(%{won: false, started_at: ~U[2026-01-03 12:00:00Z]})
+
+      assert Matches.current_streak() == {:loss, 2}
+    end
+
+    test "returns {:none, 0} when no completed matches exist" do
+      assert Matches.current_streak() == {:none, 0}
+    end
+
+    test "returns streak of 1 for a single match" do
+      TestFactory.create_match(%{won: true})
+      assert Matches.current_streak() == {:win, 1}
+    end
+  end
+
   describe "list_matches/1" do
     test "returns matches ordered by started_at desc" do
       older = TestFactory.create_match(%{started_at: ~U[2026-01-01 12:00:00Z]})

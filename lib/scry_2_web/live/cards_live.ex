@@ -186,7 +186,12 @@ defmodule Scry2Web.CardsLive do
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
+    <Layouts.app
+      flash={@flash}
+      players={@players}
+      active_player_id={@active_player_id}
+      current_path={@player_scope_uri}
+    >
       <%!-- Search bar row --%>
       <div class="flex items-center gap-3">
         <form phx-change="search" phx-submit="search" class="relative flex-1">

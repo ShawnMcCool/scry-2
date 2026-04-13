@@ -50,7 +50,7 @@ defmodule Scry2Web.Layouts do
           <.nav_link path={~p"/decks"} label="Decks" current_path={@current_path} />
           <.nav_link path={~p"/drafts"} label="Drafts" current_path={@current_path} />
           <.nav_link path={~p"/cards"} label="Cards" current_path={@current_path} />
-          <.nav_link path={~p"/stats"} label="Stats" current_path={@current_path} />
+          <.nav_link path={~p"/player"} label="Player" current_path={@current_path} />
           <.nav_link path={~p"/ranks"} label="Ranks" current_path={@current_path} />
           <.nav_link path={~p"/economy"} label="Economy" current_path={@current_path} />
         </nav>

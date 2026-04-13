@@ -80,7 +80,12 @@ defmodule Scry2Web.EconomyLive do
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
-    <Layouts.app flash={@flash} players={@players} active_player_id={@active_player_id} current_path={@player_scope_uri}>
+    <Layouts.app
+      flash={@flash}
+      players={@players}
+      active_player_id={@active_player_id}
+      current_path={@player_scope_uri}
+    >
       <h1 class="text-2xl font-semibold mb-6 font-beleren">Economy</h1>
 
       <.empty_state :if={is_nil(@inventory) and @entries == []}>
