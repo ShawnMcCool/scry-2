@@ -97,8 +97,7 @@ defmodule Scry2.Cards.Scryfall do
       rarity: card["rarity"],
       layout: card["layout"],
       booster: card["booster"],
-      image_uris: card["image_uris"],
-      raw: card
+      image_uris: card["image_uris"]
     }
   end
 

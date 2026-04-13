@@ -7,7 +7,7 @@ defmodule Scry2.Events.IngestRawEvents do
 
   | | |
   |---|---|
-  | **Input**  | `{:event, %EventRecord{}}` messages on `mtga_logs:events` |
+  | **Input**  | `{:events_inserted, count}` or `{:event, %EventRecord{}}` on `mtga_logs:events` |
   | **Output** | Persisted rows in `domain_events` + broadcasts on `domain:events` |
   | **Nature** | GenServer (subscribes at init) |
   | **Called from** | Broadcast from `Scry2.MtgaLogIngestion.insert_event!/1` (stage 05 → 08) |
@@ -232,6 +232,11 @@ defmodule Scry2.Events.IngestRawEvents do
           state.ingestion
       end
 
+    {:noreply, %{state | ingestion: new_ingestion}}
+  end
+
+  def handle_info({:events_inserted, _count}, state) do
+    new_ingestion = catch_up_unprocessed(state.ingestion)
     {:noreply, %{state | ingestion: new_ingestion}}
   end
 

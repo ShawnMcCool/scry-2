@@ -22,7 +22,7 @@ defmodule Scry2.MtgaLogIngestion do
   | 02    | `Scry2.MtgaLogIngestion.Watcher`               | Subscribe to inotify events, drive the pipeline  |
   | 03    | `Scry2.MtgaLogIngestion.ReadNewBytes`          | Read new bytes since the last cursor offset      |
   | 04    | `Scry2.MtgaLogIngestion.ExtractEventsFromLog`  | Extract `%Event{}` structs from raw log text     |
-  | 05    | `Scry2.MtgaLogIngestion.insert_event!`         | Persist raw event + broadcast `mtga_logs:events` |
+  | 05    | `Scry2.MtgaLogIngestion.insert_events!`        | Batch-persist raw events + signal `mtga_logs:events` |
   | 06    | `Scry2.MtgaLogIngestion.put_cursor!`           | Advance cursor durably (ADR-012)                 |
 
   Stages 07+ live in `Scry2.Events` and downstream projection contexts,
@@ -70,11 +70,50 @@ defmodule Scry2.MtgaLogIngestion do
     end
   end
 
+  @doc """
+  Batch-inserts raw parsed events and broadcasts a single catch-up signal.
+
+  Uses `Repo.insert_all` for a single SQL statement instead of per-event
+  inserts. Duplicates (same `source_file, log_epoch, file_offset`) are
+  silently skipped via `on_conflict: :nothing`.
+
+  After inserting, broadcasts `{:events_inserted, count}` on `mtga_logs:events`
+  so `IngestRawEvents` can catch up from its watermark.
+
+  Returns `{inserted_count, nil}`.
+  """
+  def insert_events!(events_attrs) when is_list(events_attrs) do
+    now = DateTime.utc_now(:second)
+
+    rows =
+      Enum.map(events_attrs, fn attrs ->
+        attrs
+        |> Map.new()
+        |> Map.put_new(:inserted_at, now)
+        |> Map.put_new(:processed, false)
+      end)
+
+    {count, _} =
+      Repo.insert_all(EventRecord, rows,
+        on_conflict: :nothing,
+        conflict_target: [:source_file, :log_epoch, :file_offset]
+      )
+
+    if count > 0 do
+      Topics.broadcast(Topics.mtga_logs_events(), {:events_inserted, count})
+    end
+
+    {count, nil}
+  end
+
   @doc "Returns unprocessed raw events with id > last_raw_event_id, ordered by id."
-  def list_unprocessed_after(last_raw_event_id) do
+  def list_unprocessed_after(last_raw_event_id, opts \\ []) do
+    limit_count = Keyword.get(opts, :limit, 1000)
+
     EventRecord
     |> where([e], e.id > ^last_raw_event_id and e.processed == false)
     |> order_by([e], asc: e.id)
+    |> limit(^limit_count)
     |> Repo.all()
   end
 

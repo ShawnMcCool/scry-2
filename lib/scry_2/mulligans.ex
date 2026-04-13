@@ -89,16 +89,15 @@ defmodule Scry2.Mulligans do
   def mulligan_analytics(opts \\ []) do
     player_id = opts[:player_id]
 
-    total_hands =
+    %{total_hands: total_hands, total_keeps: total_keeps} =
       MulliganListing
       |> maybe_filter_by_player(player_id)
-      |> Repo.aggregate(:count)
-
-    total_keeps =
-      MulliganListing
-      |> maybe_filter_by_player(player_id)
-      |> where([m], m.decision == "kept")
-      |> Repo.aggregate(:count)
+      |> select([m], %{
+        total_hands: count(),
+        total_keeps: sum(fragment("CASE WHEN ? = 'kept' THEN 1 ELSE 0 END", m.decision))
+      })
+      |> Repo.one()
+      |> then(fn row -> %{row | total_keeps: row.total_keeps || 0} end)
 
     by_hand_size =
       MulliganListing

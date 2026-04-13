@@ -261,6 +261,25 @@ defmodule Scry2.Events.Projector do
         {:noreply, state}
       end
 
+      # 4-tuple: event struct included in broadcast — skip DB fetch
+      @impl true
+      def handle_info({:domain_event, id, type_slug, event}, state)
+          when type_slug in @claimed_slugs do
+        try do
+          project(event)
+          Events.put_watermark!(@projector_name, id)
+        rescue
+          error ->
+            Log.error(
+              :ingester,
+              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug}: #{inspect(error)}"
+            )
+        end
+
+        {:noreply, state}
+      end
+
+      # 3-tuple fallback: legacy or catch-up messages — fetch from DB
       @impl true
       def handle_info({:domain_event, id, type_slug}, state)
           when type_slug in @claimed_slugs do
@@ -279,6 +298,7 @@ defmodule Scry2.Events.Projector do
         {:noreply, state}
       end
 
+      def handle_info({:domain_event, _id, _type_slug, _event}, state), do: {:noreply, state}
       def handle_info({:domain_event, _id, _type_slug}, state), do: {:noreply, state}
       def handle_info(_other, state), do: {:noreply, state}
     end
