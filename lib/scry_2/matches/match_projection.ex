@@ -36,6 +36,7 @@ defmodule Scry2.Matches.MatchProjection do
   import Ecto.Query
 
   alias Scry2.Events.Deck.DeckSubmitted
+  alias Scry2.Events.EventName
   alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.Matches
   alias Scry2.Repo
@@ -43,6 +44,8 @@ defmodule Scry2.Matches.MatchProjection do
   # ── Projection handlers ─────────────────────────────────────────────
 
   defp project(%MatchCreated{} = event) do
+    parsed = EventName.parse(event.event_name)
+
     attrs = %{
       player_id: event.player_id,
       mtga_match_id: event.mtga_match_id,
@@ -53,6 +56,7 @@ defmodule Scry2.Matches.MatchProjection do
       player_rank: event.player_rank,
       format: event.format,
       format_type: event.format_type,
+      set_code: parsed.set_code,
       deck_name: event.deck_name
     }
 

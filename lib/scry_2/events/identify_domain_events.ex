@@ -103,6 +103,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   """
 
   alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
+  alias Scry2.Events.EventName
 
   alias Scry2.Events.Draft.{
     DraftCompleted,
@@ -423,7 +424,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     with {:ok, payload} <- Jason.decode(record.raw_json),
          {:ok, request} <- decode_request_field(payload) do
       event_name = request["EventName"]
-      set_code = extract_set_code(event_name)
+      set_code = EventName.parse(event_name).set_code
 
       {[
          %DraftStarted{
@@ -1956,17 +1957,6 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   end
 
   defp decode_request_field(_), do: :error
-
-  # Extract set code from event names like "QuickDraft_FDN_20260323"
-  # or "PremierDraft_LCI_20260401". The set code is the middle segment.
-  defp extract_set_code(event_name) when is_binary(event_name) do
-    case String.split(event_name, "_") do
-      [_, set_code, _] -> set_code
-      _ -> nil
-    end
-  end
-
-  defp extract_set_code(_), do: nil
 
   # CardIds in draft picks come as strings ("93959"). Parse to integer.
   defp parse_arena_id(id) when is_binary(id) do

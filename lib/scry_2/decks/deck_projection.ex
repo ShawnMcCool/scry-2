@@ -52,6 +52,7 @@ defmodule Scry2.Decks.DeckProjection do
   alias Scry2.Decks.MatchResult
   alias Scry2.Events.Deck.{DeckSubmitted, DeckUpdated}
   alias Scry2.Events.EnrichEvents
+  alias Scry2.Events.EventName
   alias Scry2.Events.Gameplay.{CardDrawn, MulliganOffered}
   alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.Repo
@@ -351,12 +352,14 @@ defmodule Scry2.Decks.DeckProjection do
   # Seeds current_name and format on a new draft deck row from the
   # MatchCreated event_name (e.g. "Quick Draft — TMT").
   defp maybe_add_draft_name(attrs, %{event_name: event_name}) when is_binary(event_name) do
-    case EnrichEvents.infer_format(event_name) do
-      {format, "Limited"} ->
-        set_code = extract_set_code(event_name)
-        display_name = if set_code, do: "#{format} — #{set_code}", else: format
+    parsed = EventName.parse(event_name)
 
-        Map.merge(attrs, %{current_name: display_name, format: format})
+    case parsed.format_type do
+      "Limited" ->
+        display_name =
+          if parsed.set_code, do: "#{parsed.format} — #{parsed.set_code}", else: parsed.format
+
+        Map.merge(attrs, %{current_name: display_name, format: parsed.format})
 
       _ ->
         attrs
@@ -364,25 +367,6 @@ defmodule Scry2.Decks.DeckProjection do
   end
 
   defp maybe_add_draft_name(attrs, _), do: attrs
-
-  # Extracts a 3-letter set code from event_name strings like
-  # "QuickDraft_TMT_20260407" or "MWM_TMT_BotDraft_20260407".
-  # Skips the leading queue-type segment (e.g. "MWM") by dropping the first
-  # part when multiple 3-letter candidates exist.
-  defp extract_set_code(event_name) do
-    candidates =
-      event_name
-      |> String.split("_")
-      |> Enum.filter(fn part ->
-        String.length(part) == 3 and part =~ ~r/^[A-Z]+$/
-      end)
-
-    case candidates do
-      [_prefix, set_code | _] -> set_code
-      [set_code] -> set_code
-      _ -> nil
-    end
-  end
 
   # Finds the stable MTGA deck UUID for a submitted composition by comparing
   # the main deck card list against all known decks in decks_decks.
