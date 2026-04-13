@@ -65,55 +65,12 @@ defmodule Scry2Web.DecksHelpers do
   def deck_colors(%{deck_colors: colors}) when is_binary(colors), do: colors
   def deck_colors(_), do: ""
 
-  @doc "Returns a relative time string from a UTC datetime."
-  @spec relative_time(DateTime.t() | nil) :: String.t()
-  def relative_time(nil), do: "—"
-
-  def relative_time(dt) do
-    diff = DateTime.diff(DateTime.utc_now(), dt, :second)
-
-    cond do
-      diff < 60 -> "just now"
-      diff < 3600 -> "#{div(diff, 60)}m ago"
-      diff < 86_400 -> "#{div(diff, 3600)}h ago"
-      diff < 7 * 86_400 -> "#{div(diff, 86_400)}d ago"
-      true -> format_date(dt)
-    end
-  end
-
-  @doc "Returns a human-readable date string from a UTC datetime."
-  @spec format_date(DateTime.t() | nil) :: String.t()
-  def format_date(nil), do: "—"
-
-  def format_date(dt) do
-    date = DateTime.to_date(dt)
-    "#{date.year}-#{pad(date.month)}-#{pad(date.day)}"
-  end
-
-  @doc "Returns a Tailwind text-color class based on win rate."
-  @spec win_rate_class(float() | nil) :: String.t()
-  def win_rate_class(nil), do: "text-base-content/40"
-  def win_rate_class(rate) when rate >= 55.0, do: "text-emerald-400"
-  def win_rate_class(rate) when rate >= 45.0, do: "text-base-content"
-  def win_rate_class(_), do: "text-red-400"
-
-  @doc "Returns a formatted win rate string like '55.3%' or '—' if nil. Trims '.0' for whole numbers."
-  @spec format_win_rate(float() | nil) :: String.t()
-  def format_win_rate(nil), do: "—"
-
-  def format_win_rate(rate) do
-    if rate == trunc(rate) do
-      "#{trunc(rate)}%"
-    else
-      "#{rate}%"
-    end
-  end
-
-  @doc "Returns a 'NW–ML' record string."
-  @spec record_str(integer(), integer()) :: String.t()
-  def record_str(nil, _), do: ""
-  def record_str(_, nil), do: ""
-  def record_str(wins, losses), do: "#{wins}W–#{losses}L"
+  # Delegated to LiveHelpers (imported via `use Scry2Web, :live_view`)
+  defdelegate relative_time(dt), to: Scry2Web.LiveHelpers
+  defdelegate format_date(dt), to: Scry2Web.LiveHelpers
+  defdelegate win_rate_class(rate), to: Scry2Web.LiveHelpers
+  defdelegate format_win_rate(rate), to: Scry2Web.LiveHelpers
+  defdelegate record_str(wins, losses), to: Scry2Web.LiveHelpers
 
   @doc "Returns a card name by arena_id from the cards lookup map, or a fallback."
   @spec card_name(integer() | nil, map()) :: String.t()
@@ -276,19 +233,7 @@ defmodule Scry2Web.DecksHelpers do
     if sideboard == [], do: main, else: main ++ [{"Sideboard", sideboard}]
   end
 
-  @doc """
-  Returns JSON-encoded cumulative win rate series for the ECharts chart.
-  Each data point is `[iso8601_timestamp, win_rate, "NW–ML"]`.
-  """
-  @spec cumulative_winrate_series(list()) :: String.t()
-  def cumulative_winrate_series(points) do
-    series =
-      Enum.map(points, fn point ->
-        [point.timestamp, point.win_rate, "#{point.wins}W–#{point.total - point.wins}L"]
-      end)
-
-    Jason.encode!(series)
-  end
+  defdelegate cumulative_winrate_series(points), to: Scry2Web.LiveHelpers
 
   # ── Version timeline helpers ────────────────────────────────────────
 
@@ -381,112 +326,18 @@ defmodule Scry2Web.DecksHelpers do
 
   def deck_card_count(_), do: 0
 
-  # ── Match display helpers ────────────────────────────────────────────
+  # ── Match display helpers (delegated to LiveHelpers) ─────────────────
 
-  @doc """
-  Groups a chronologically-sorted list of matches under date labels.
-  Returns `[{label, [match, ...]}]` where label is "Today", "Yesterday",
-  or a formatted date like "April 10".
-  """
-  @spec group_matches_by_date(list()) :: [{String.t(), list()}]
-  def group_matches_by_date([]), do: []
-
-  def group_matches_by_date(matches) do
-    today = Date.utc_today()
-    yesterday = Date.add(today, -1)
-
-    matches
-    |> Enum.group_by(fn match ->
-      case match.started_at do
-        nil -> "Unknown"
-        dt -> date_label(DateTime.to_date(dt), today, yesterday)
-      end
-    end)
-    |> Enum.sort_by(fn {_label, [first | _]} -> first.started_at end, {:desc, DateTime})
-  end
-
-  @doc """
-  Converts an MTGA event name to a human-readable label.
-  Combines the inferred event format with the deck's format when applicable.
-  """
-  @spec humanize_event(String.t() | nil, String.t() | nil) :: String.t()
-  def humanize_event(nil, _deck_format), do: "—"
-
-  def humanize_event(event_name, deck_format) do
-    case Scry2.Events.EnrichEvents.infer_format(event_name) do
-      {"Ranked", _} -> "Ranked #{deck_format || "Constructed"}"
-      {"Ranked BO3", _} -> "Ranked #{deck_format || "Constructed"}"
-      {"Play", _} -> "Play #{deck_format || "Constructed"}"
-      {"Play BO3", _} -> "Play BO3 #{deck_format || "Constructed"}"
-      {"Direct Challenge", _} -> "Direct Challenge"
-      {format, "Limited"} -> format
-      {format, _} -> format
-    end
-  end
-
-  @doc """
-  Extracts per-game details from a match's game_results map.
-  Returns a list of `%{won, on_play, num_mulligans}` sorted by game number.
-  """
-  @spec format_game_results(map() | nil) :: list()
-  def format_game_results(nil), do: []
-
-  def format_game_results(%{"results" => results}) when is_list(results) do
-    results
-    |> Enum.sort_by(& &1["game"])
-    |> Enum.map(fn game ->
-      %{
-        won: game["won"],
-        on_play: game["on_play"],
-        num_mulligans: game["num_mulligans"] || 0
-      }
-    end)
-  end
-
-  def format_game_results(_), do: []
-
-  @doc """
-  Returns a match score string like '2–1' for BO3 matches.
-  Uses the match-level `won` and `num_games` fields since per-game
-  `won` values in game_results may reflect the opponent's perspective.
-  Returns nil for BO1 (single game) or missing data.
-  """
-  @spec match_score(map()) :: String.t() | nil
-  def match_score(%{won: won, num_games: num_games})
-      when is_boolean(won) and is_integer(num_games) and num_games > 1 do
-    if won do
-      losses = num_games - 2
-      "2–#{losses}"
-    else
-      wins = num_games - 2
-      "#{wins}–2"
-    end
-  end
-
-  def match_score(_), do: nil
+  defdelegate group_matches_by_date(matches), to: Scry2Web.LiveHelpers
+  defdelegate humanize_event(event_name, deck_format), to: Scry2Web.LiveHelpers
+  defdelegate format_game_results(game_results), to: Scry2Web.LiveHelpers
+  defdelegate match_score(match), to: Scry2Web.LiveHelpers
 
   # ── Private ─────────────────────────────────────────────────────────
 
   defp to_int(n) when is_integer(n), do: n
   defp to_int(n) when is_binary(n), do: String.to_integer(n)
   defp to_int(_), do: 0
-
-  defp month_name(1), do: "January"
-  defp month_name(2), do: "February"
-  defp month_name(3), do: "March"
-  defp month_name(4), do: "April"
-  defp month_name(5), do: "May"
-  defp month_name(6), do: "June"
-  defp month_name(7), do: "July"
-  defp month_name(8), do: "August"
-  defp month_name(9), do: "September"
-  defp month_name(10), do: "October"
-  defp month_name(11), do: "November"
-  defp month_name(12), do: "December"
-
-  defp date_label(date, today, _yesterday) when date == today, do: "Today"
-  defp date_label(date, _today, yesterday) when date == yesterday, do: "Yesterday"
-  defp date_label(date, _today, _yesterday), do: "#{month_name(date.month)} #{date.day}"
 
   # Returns mana curve as %{cmc => total_count} excluding lands.
   defp deck_mana_curve(deck_map, cards_by_arena_id) do
@@ -509,6 +360,19 @@ defmodule Scry2Web.DecksHelpers do
       end
     end)
   end
+
+  defp month_name(1), do: "January"
+  defp month_name(2), do: "February"
+  defp month_name(3), do: "March"
+  defp month_name(4), do: "April"
+  defp month_name(5), do: "May"
+  defp month_name(6), do: "June"
+  defp month_name(7), do: "July"
+  defp month_name(8), do: "August"
+  defp month_name(9), do: "September"
+  defp month_name(10), do: "October"
+  defp month_name(11), do: "November"
+  defp month_name(12), do: "December"
 
   defp pad(n) when n < 10, do: "0#{n}"
   defp pad(n), do: "#{n}"

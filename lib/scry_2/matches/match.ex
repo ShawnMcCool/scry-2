@@ -19,6 +19,7 @@ defmodule Scry2.Matches.Match do
     field :total_turns, :integer, default: 0
     field :deck_colors, :string, default: ""
     field :deck_name, :string
+    field :mtga_deck_id, :string
     field :duration_seconds, :integer
     field :format_type, :string
     field :game_results, :map
@@ -49,6 +50,7 @@ defmodule Scry2.Matches.Match do
       :total_turns,
       :deck_colors,
       :deck_name,
+      :mtga_deck_id,
       :duration_seconds,
       :format_type,
       :game_results,

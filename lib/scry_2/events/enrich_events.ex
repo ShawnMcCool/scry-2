@@ -158,12 +158,13 @@ defmodule Scry2.Events.EnrichEvents do
       String.starts_with?(event_name, "BotDraft") -> {"Bot Draft", "Limited"}
       String.starts_with?(event_name, "CompDraft") -> {"Comp Draft", "Limited"}
       String.starts_with?(event_name, "Sealed") -> {"Sealed", "Limited"}
-      String.starts_with?(event_name, "Ladder") -> {"Ranked", "Constructed"}
-      String.starts_with?(event_name, "Play") -> {"Play", "Constructed"}
       String.starts_with?(event_name, "Traditional_Ladder") -> {"Ranked BO3", "Traditional"}
       String.starts_with?(event_name, "Traditional_Play") -> {"Play BO3", "Traditional"}
       String.starts_with?(event_name, "Traditional") -> {"Traditional", "Traditional"}
-      event_name == "DirectGame" -> {"Direct Challenge", nil}
+      String.starts_with?(event_name, "Ladder") -> {"Ranked", "Constructed"}
+      String.starts_with?(event_name, "Play") -> {"Play", "Constructed"}
+      event_name == "DirectGameLimited" -> {"Direct Challenge", "Limited"}
+      String.starts_with?(event_name, "DirectGame") -> {"Direct Challenge", "Constructed"}
       String.contains?(event_name, "Draft") -> {"Draft", "Limited"}
       String.contains?(event_name, "Sealed") -> {"Sealed", "Limited"}
       true -> {event_name, nil}

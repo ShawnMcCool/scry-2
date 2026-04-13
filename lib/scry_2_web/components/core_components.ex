@@ -675,9 +675,11 @@ defmodule Scry2Web.CoreComponents do
       <.mana_pips colors="GRW" />
       <.mana_pips colors="" />
       <.mana_pips colors="UB" size="2x" />
+      <.mana_pips colors="WB" class="text-xs" />
   """
   attr :colors, :string, required: true
   attr :size, :string, default: nil
+  attr :class, :string, default: nil
 
   def mana_pips(assigns) do
     pips =
@@ -690,7 +692,7 @@ defmodule Scry2Web.CoreComponents do
     assigns = assign(assigns, :pips, pips)
 
     ~H"""
-    <span class="inline-flex gap-0.5 items-center">
+    <span class={["inline-flex gap-0.5 items-center", @class]}>
       <.mana_pip :for={color <- @pips} color={color} size={@size} />
     </span>
     """

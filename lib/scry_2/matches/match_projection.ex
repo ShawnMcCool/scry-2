@@ -177,12 +177,13 @@ defmodule Scry2.Matches.MatchProjection do
 
     Matches.upsert_deck_submission!(submission_attrs)
 
-    # Write deck_colors on the match row
+    # Write deck_colors and mtga_deck_id on the match row
     if match do
       Matches.upsert_match!(%{
         player_id: event.player_id,
         mtga_match_id: event.mtga_match_id,
-        deck_colors: event.deck_colors
+        deck_colors: event.deck_colors,
+        mtga_deck_id: event.mtga_deck_id
       })
     end
 
