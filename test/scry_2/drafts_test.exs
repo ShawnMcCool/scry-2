@@ -55,6 +55,61 @@ defmodule Scry2.DraftsTest do
     end
   end
 
+  describe "upsert_draft!/1" do
+    test "second call with same mtga_draft_id updates instead of inserting" do
+      player = create_player()
+      mtga_id = "QuickDraft_FDN_#{System.unique_integer([:positive])}"
+
+      first = Drafts.upsert_draft!(%{player_id: player.id, mtga_draft_id: mtga_id, wins: 0})
+      second = Drafts.upsert_draft!(%{player_id: player.id, mtga_draft_id: mtga_id, wins: 3})
+
+      assert first.id == second.id
+      assert Drafts.count() == 1
+      assert second.wins == 3
+    end
+  end
+
+  describe "upsert_pick!/1" do
+    test "second call with same (draft_id, pack, pick) updates instead of inserting" do
+      player = create_player()
+      draft = create_draft(%{player_id: player.id})
+
+      first =
+        Drafts.upsert_pick!(%{
+          draft_id: draft.id,
+          pack_number: 1,
+          pick_number: 1,
+          picked_arena_id: 11_111
+        })
+
+      second =
+        Drafts.upsert_pick!(%{
+          draft_id: draft.id,
+          pack_number: 1,
+          pick_number: 1,
+          picked_arena_id: 22_222
+        })
+
+      assert first.id == second.id
+      assert Scry2.Repo.aggregate(Scry2.Drafts.Pick, :count) == 1
+      assert second.picked_arena_id == 22_222
+    end
+  end
+
+  describe "get_draft_with_picks/1" do
+    test "returns picks ordered by pack then pick number" do
+      draft = create_draft(%{})
+
+      create_pick(%{draft: draft, pack_number: 2, pick_number: 1, picked_arena_id: 300})
+      create_pick(%{draft: draft, pack_number: 1, pick_number: 2, picked_arena_id: 200})
+      create_pick(%{draft: draft, pack_number: 1, pick_number: 1, picked_arena_id: 100})
+
+      result = Drafts.get_draft_with_picks(draft.id)
+      pick_numbers = Enum.map(result.picks, & &1.picked_arena_id)
+      assert pick_numbers == [100, 200, 300]
+    end
+  end
+
   describe "draft_stats/1" do
     test "returns zeros when no drafts" do
       player = create_player()

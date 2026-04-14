@@ -183,8 +183,11 @@ defmodule Scry2.Drafts do
     pick
   end
 
-  defp find_pick(%{draft_id: draft_id, pack_number: p, pick_number: n}) do
-    Repo.get_by(Pick, draft_id: draft_id, pack_number: p, pick_number: n)
+  defp find_pick(attrs) do
+    draft_id = attrs[:draft_id] || attrs["draft_id"]
+    pack_number = attrs[:pack_number] || attrs["pack_number"]
+    pick_number = attrs[:pick_number] || attrs["pick_number"]
+    Repo.get_by(Pick, draft_id: draft_id, pack_number: pack_number, pick_number: pick_number)
   end
 
   @doc "Returns the total number of recorded drafts. Optionally filtered by player_id."
