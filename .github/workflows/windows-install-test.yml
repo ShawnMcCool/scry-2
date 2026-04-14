@@ -112,21 +112,13 @@ jobs:
           wix extension add WixToolset.UI.wixext/5.0.2
           wix extension add WixToolset.Util.wixext/5.0.2
           wix extension add WixToolset.Firewall.wixext/5.0.2
-          wix extension add WixToolset.BootstrapperApplications.wixext/5.0.2
-
-      - name: Download VC++ Redistributable
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" `
-            -OutFile "installer/vc_redist.x64.exe"
 
       - name: Build MSI installer
         shell: pwsh
         run: |
           installer/scripts/build-msi.ps1 `
             -Version "0.0.0" `
-            -TrayExe scry2-tray-msi.exe `
-            -VCRedistPath installer/vc_redist.x64.exe
+            -TrayExe scry2-tray-msi.exe
 
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4
@@ -138,9 +130,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: scry2-msi
-          path: |
-            installer/output/Scry2Setup-v0.0.0.exe
-            installer/output/Scry2-0.0.0.msi
+          path: installer/output/Scry2-0.0.0.msi
 
   test-zip-install:
     name: Test zip installation
