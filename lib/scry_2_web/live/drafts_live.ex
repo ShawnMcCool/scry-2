@@ -11,6 +11,7 @@ defmodule Scry2Web.DraftsLive do
   use Scry2Web, :live_view
 
   alias Scry2.Cards
+  alias Scry2.Cards.ImageCache
   alias Scry2.Drafts
   alias Scry2.Matches
   alias Scry2.Topics
@@ -111,11 +112,13 @@ defmodule Scry2Web.DraftsLive do
       :picks ->
         arena_ids = all_pack_arena_ids(draft)
         cards_by_arena_id = Cards.list_by_arena_ids(arena_ids)
+        if connected?(socket), do: ImageCache.ensure_cached(arena_ids)
         assign(base, cards_by_arena_id: cards_by_arena_id)
 
       :deck ->
         pool_ids = pool_arena_ids(draft)
         cards_by_arena_id = Cards.list_by_arena_ids(pool_ids)
+        if connected?(socket), do: ImageCache.ensure_cached(pool_ids)
         groups = DraftsHelpers.group_pool_by_type(pool_ids, cards_by_arena_id)
 
         decks =
