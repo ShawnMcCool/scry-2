@@ -887,17 +887,28 @@ defmodule Scry2.TestFactory do
   def create_deck_match_result(attrs \\ %{}) do
     base = Map.new(attrs)
     deck = base[:deck] || create_deck()
+    won = Map.get(base, :won, true)
+    format_type = base[:format_type] || "Standard"
+    num_games = base[:num_games]
 
-    Decks.upsert_match_result!(%{
-      mtga_deck_id: deck.mtga_deck_id,
-      mtga_match_id: base[:mtga_match_id] || "match-#{System.unique_integer([:positive])}",
-      won: Map.get(base, :won, true),
-      format_type: base[:format_type] || "Standard",
-      on_play: Map.get(base, :on_play, true),
-      player_rank: base[:player_rank],
-      started_at: base[:started_at] || DateTime.utc_now(:second),
-      completed_at: base[:completed_at] || DateTime.utc_now(:second)
-    })
+    result =
+      Decks.upsert_match_result!(%{
+        mtga_deck_id: deck.mtga_deck_id,
+        mtga_match_id: base[:mtga_match_id] || "match-#{System.unique_integer([:positive])}",
+        won: won,
+        format_type: format_type,
+        num_games: num_games,
+        on_play: Map.get(base, :on_play, true),
+        player_rank: base[:player_rank],
+        started_at: base[:started_at] || DateTime.utc_now(:second),
+        completed_at: base[:completed_at] || DateTime.utc_now(:second)
+      })
+
+    if is_boolean(won) do
+      Decks.increment_deck_result_counters!(deck.mtga_deck_id, won, format_type, num_games)
+    end
+
+    result
   end
 
   def create_draft(attrs \\ %{}) do

@@ -222,8 +222,9 @@ defmodule Scry2.Decks.DeckProjection do
       correct_game_results(event.mtga_match_id, event.game_results)
     end
 
-    # Update version stats for each deck that played this match
+    # Update version stats and deck-level counters for each deck in this match
     update_version_stats_for_match(event.mtga_match_id)
+    update_deck_counters_for_match(event.mtga_match_id)
 
     # Stamp match outcome on mulligan hands and game draws
     if is_boolean(event.won) do
@@ -481,6 +482,21 @@ defmodule Scry2.Decks.DeckProjection do
           match_result
         )
       end
+    end)
+  end
+
+  defp update_deck_counters_for_match(mtga_match_id) do
+    MatchResult
+    |> where([mr], mr.mtga_match_id == ^mtga_match_id and not is_nil(mr.won))
+    |> select([mr], %{
+      mtga_deck_id: mr.mtga_deck_id,
+      won: mr.won,
+      format_type: mr.format_type,
+      num_games: mr.num_games
+    })
+    |> Repo.all()
+    |> Enum.each(fn mr ->
+      Decks.increment_deck_result_counters!(mr.mtga_deck_id, mr.won, mr.format_type, mr.num_games)
     end)
   end
 

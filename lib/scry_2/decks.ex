@@ -45,15 +45,24 @@ defmodule Scry2.Decks do
       |> order_by([d], desc_nulls_last: d.last_played_at, desc: d.last_updated_at)
       |> Repo.all()
 
-    deck_ids = Enum.map(decks, & &1.mtga_deck_id)
-
-    stats_by_deck_id = aggregate_stats_for_decks(deck_ids)
-
     decks
-    |> maybe_filter_played(stats_by_deck_id, only_played)
+    |> maybe_filter_played_from_deck(only_played)
     |> Enum.map(fn deck ->
-      row = Map.get(stats_by_deck_id, deck.mtga_deck_id, %{})
-      %{deck: deck, bo1: build_stats(row, :bo1), bo3: build_stats(row, :bo3)}
+      %{
+        deck: deck,
+        bo1: %{
+          total: deck.bo1_wins + deck.bo1_losses,
+          wins: deck.bo1_wins,
+          losses: deck.bo1_losses,
+          win_rate: win_rate(deck.bo1_wins, deck.bo1_wins + deck.bo1_losses)
+        },
+        bo3: %{
+          total: deck.bo3_wins + deck.bo3_losses,
+          wins: deck.bo3_wins,
+          losses: deck.bo3_losses,
+          win_rate: win_rate(deck.bo3_wins, deck.bo3_wins + deck.bo3_losses)
+        }
+      }
     end)
   end
 
@@ -80,20 +89,12 @@ defmodule Scry2.Decks do
       `%{timestamp, win_rate, wins, total}` for a running win rate line chart
   """
   def get_deck_performance(mtga_deck_id) when is_binary(mtga_deck_id) do
-    results =
-      MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
-      |> Repo.all()
-
-    bo1_results = Enum.reject(results, &bo3?/1)
-    bo3_results = Enum.filter(results, &bo3?/1)
-
     %{
-      bo1: compute_detailed_stats(bo1_results, :bo1),
-      bo3: compute_detailed_stats(bo3_results, :bo3),
+      bo1: aggregate_deck_format_stats(mtga_deck_id, :bo1),
+      bo3: aggregate_deck_bo3_stats(mtga_deck_id),
       cumulative_win_rate: %{
-        bo1: cumulative_win_rate(bo1_results),
-        bo3: cumulative_win_rate(bo3_results)
+        bo1: deck_cumulative_win_rate(mtga_deck_id, :bo1),
+        bo3: deck_cumulative_win_rate(mtga_deck_id, :bo3)
       }
     }
   end
@@ -265,12 +266,30 @@ defmodule Scry2.Decks do
   which format tabs should be enabled.
   """
   def match_counts_by_format(mtga_deck_id) when is_binary(mtga_deck_id) do
-    base = where(MatchResult, [mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+    %{bo1: bo1_count, bo3: bo3_count} =
+      MatchResult
+      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> select([mr], %{
+        bo3:
+          sum(
+            fragment(
+              "CASE WHEN ? = 'Traditional' OR ? > 1 THEN 1 ELSE 0 END",
+              mr.format_type,
+              mr.num_games
+            )
+          ),
+        bo1:
+          sum(
+            fragment(
+              "CASE WHEN COALESCE(?, '') != 'Traditional' AND COALESCE(?, 1) <= 1 THEN 1 ELSE 0 END",
+              mr.format_type,
+              mr.num_games
+            )
+          )
+      })
+      |> Repo.one()
 
-    bo3_count = base |> apply_format_filter(:bo3) |> Repo.aggregate(:count)
-    bo1_count = base |> apply_format_filter(:bo1) |> Repo.aggregate(:count)
-
-    %{bo1: bo1_count, bo3: bo3_count}
+    %{bo1: bo1_count || 0, bo3: bo3_count || 0}
   end
 
   defp apply_format_filter(query, :bo3) do
@@ -440,18 +459,18 @@ defmodule Scry2.Decks do
   Each entry includes OH WR, GIH WR, GD WR, GND WR, and IWD.
   """
   def card_performance(mtga_deck_id) when is_binary(mtga_deck_id) do
-    # Total completed matches and wins for this deck
-    total_matches =
+    # Total completed matches and wins for this deck — one aggregate query
+    %{total: total_matches, wins: total_wins} =
       MatchResult
       |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
-      |> select([mr], count())
+      |> select([mr], %{
+        total: count(),
+        wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", mr.won))
+      })
       |> Repo.one()
 
-    total_wins =
-      MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and mr.won == true)
-      |> select([mr], count())
-      |> Repo.one()
+    total_matches = total_matches || 0
+    total_wins = total_wins || 0
 
     # Build per-card, per-match presence: {arena_id, match_id} => %{in_opener, drawn, won}
     presence = build_card_match_presence(mtga_deck_id)
@@ -515,6 +534,28 @@ defmodule Scry2.Decks do
   end
 
   # ── Writes ────────────────────────────────────────────────────────────────
+
+  @doc """
+  Atomically increments the bo1/bo3 win or loss counter on the deck row.
+
+  Called by `DeckProjection` on every `match_completed` event. Uses
+  `Repo.update_all` for an atomic increment — no read-modify-write race.
+  No-op if the deck row does not exist (draft decks without a submission).
+  """
+  def increment_deck_result_counters!(mtga_deck_id, won, format_type, num_games)
+      when is_binary(mtga_deck_id) and is_boolean(won) do
+    bo3 = format_type == "Traditional" or (is_integer(num_games) and num_games > 1)
+
+    {wins_field, losses_field} =
+      if bo3, do: {:bo3_wins, :bo3_losses}, else: {:bo1_wins, :bo1_losses}
+
+    {field, delta} = if won, do: {wins_field, 1}, else: {losses_field, 1}
+
+    from(d in Deck, where: d.mtga_deck_id == ^mtga_deck_id)
+    |> Repo.update_all(inc: [{field, delta}])
+
+    :ok
+  end
 
   @doc """
   Upserts a deck by `mtga_deck_id`. Idempotent per ADR-016.
@@ -716,112 +757,79 @@ defmodule Scry2.Decks do
   # decks_decks has no player_id — the context is single-player by design.
   defp maybe_filter_player(query, _player_id), do: query
 
-  defp maybe_filter_played(decks, _stats_by_deck_id, false), do: decks
+  defp maybe_filter_played_from_deck(decks, false), do: decks
 
-  defp maybe_filter_played(decks, stats_by_deck_id, true) do
+  defp maybe_filter_played_from_deck(decks, true) do
     Enum.filter(decks, fn deck ->
-      row = Map.get(stats_by_deck_id, deck.mtga_deck_id, %{bo1_total: 0, bo3_total: 0})
-      row.bo1_total + row.bo3_total > 0
+      deck.bo1_wins + deck.bo1_losses + deck.bo3_wins + deck.bo3_losses > 0
     end)
   end
 
-  defp aggregate_stats_for_decks([]), do: %{}
+  # SQL aggregate for bo1 or bo3 base stats — one query, no full-row load.
+  # on_play = nil is treated as on_draw (matches Enum.reject behaviour).
+  defp aggregate_deck_format_stats(mtga_deck_id, format) do
+    row =
+      MatchResult
+      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> apply_format_filter(format)
+      |> select([mr], %{
+        total: count(),
+        wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", mr.won)),
+        on_play_total: sum(fragment("CASE WHEN ? IS TRUE THEN 1 ELSE 0 END", mr.on_play)),
+        on_play_wins:
+          sum(fragment("CASE WHEN ? IS TRUE AND ? THEN 1 ELSE 0 END", mr.on_play, mr.won))
+      })
+      |> Repo.one()
 
-  defp aggregate_stats_for_decks(deck_ids) do
-    MatchResult
-    |> where([mr], mr.mtga_deck_id in ^deck_ids and not is_nil(mr.won))
-    |> group_by([mr], mr.mtga_deck_id)
-    |> select([mr], %{
-      mtga_deck_id: mr.mtga_deck_id,
-      bo3_total:
-        sum(
-          fragment(
-            "CASE WHEN ? = 'Traditional' OR ? > 1 THEN 1 ELSE 0 END",
-            mr.format_type,
-            mr.num_games
-          )
-        ),
-      bo3_wins:
-        sum(
-          fragment(
-            "CASE WHEN (? = 'Traditional' OR ? > 1) AND ? = 1 THEN 1 ELSE 0 END",
-            mr.format_type,
-            mr.num_games,
-            mr.won
-          )
-        ),
-      bo1_total:
-        sum(
-          fragment(
-            "CASE WHEN COALESCE(?, '') != 'Traditional' AND COALESCE(?, 1) <= 1 THEN 1 ELSE 0 END",
-            mr.format_type,
-            mr.num_games
-          )
-        ),
-      bo1_wins:
-        sum(
-          fragment(
-            "CASE WHEN COALESCE(?, '') != 'Traditional' AND COALESCE(?, 1) <= 1 AND ? = 1 THEN 1 ELSE 0 END",
-            mr.format_type,
-            mr.num_games,
-            mr.won
-          )
-        )
-    })
-    |> Repo.all()
-    |> Map.new(&{&1.mtga_deck_id, &1})
-  end
+    total = row.total || 0
+    wins = row.wins || 0
+    on_play_total = row.on_play_total || 0
+    on_play_wins = row.on_play_wins || 0
+    on_draw_total = max(total - on_play_total, 0)
+    on_draw_wins = max(wins - on_play_wins, 0)
 
-  defp build_stats(row, :bo1) do
-    total = row[:bo1_total] || 0
-    wins = row[:bo1_wins] || 0
-    %{total: total, wins: wins, losses: total - wins, win_rate: win_rate(wins, total)}
-  end
-
-  defp build_stats(row, :bo3) do
-    total = row[:bo3_total] || 0
-    wins = row[:bo3_wins] || 0
-    %{total: total, wins: wins, losses: total - wins, win_rate: win_rate(wins, total)}
-  end
-
-  defp compute_detailed_stats(results, format_type) do
-    total = length(results)
-    wins = Enum.count(results, & &1.won)
-    on_play = Enum.filter(results, & &1.on_play)
-    on_draw = Enum.reject(results, & &1.on_play)
-
-    base = %{
+    %{
       total: total,
       wins: wins,
       losses: total - wins,
       win_rate: win_rate(wins, total),
-      on_play_total: length(on_play),
-      on_play_wins: Enum.count(on_play, & &1.won),
-      on_play_win_rate: win_rate(Enum.count(on_play, & &1.won), length(on_play)),
-      on_draw_total: length(on_draw),
-      on_draw_wins: Enum.count(on_draw, & &1.won),
-      on_draw_win_rate: win_rate(Enum.count(on_draw, & &1.won), length(on_draw))
+      on_play_total: on_play_total,
+      on_play_wins: on_play_wins,
+      on_play_win_rate: win_rate(on_play_wins, on_play_total),
+      on_draw_total: on_draw_total,
+      on_draw_wins: on_draw_wins,
+      on_draw_win_rate: win_rate(on_draw_wins, on_draw_total)
     }
-
-    if format_type == :bo3 do
-      {game1_wins, game1_total, later_wins, later_total} = bo3_game_split(results)
-
-      Map.merge(base, %{
-        game1_total: game1_total,
-        game1_wins: game1_wins,
-        game1_win_rate: win_rate(game1_wins, game1_total),
-        games_2_3_total: later_total,
-        games_2_3_wins: later_wins,
-        games_2_3_win_rate: win_rate(later_wins, later_total)
-      })
-    else
-      base
-    end
   end
 
-  defp bo3_game_split(results) do
-    Enum.reduce(results, {0, 0, 0, 0}, fn mr, {g1w, g1t, lw, lt} ->
-      game_results = (mr.game_results && mr.game_results["results"]) || []
+  # Bo3 stats extend the base aggregate with game1 vs games-2/3 win rates.
+  # Those require per-match game_results JSON, so a lean row query is still
+  # needed — but it only selects the two fields used by bo3_game_split/1.
+  defp aggregate_deck_bo3_stats(mtga_deck_id) do
+    base = aggregate_deck_format_stats(mtga_deck_id, :bo3)
+
+    game_rows =
+      MatchResult
+      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> apply_format_filter(:bo3)
+      |> select([mr], %{game_results: mr.game_results})
+      |> Repo.all()
+
+    {game1_wins, game1_total, later_wins, later_total} = bo3_game_split(game_rows)
+
+    Map.merge(base, %{
+      game1_total: game1_total,
+      game1_wins: game1_wins,
+      game1_win_rate: win_rate(game1_wins, game1_total),
+      games_2_3_total: later_total,
+      games_2_3_wins: later_wins,
+      games_2_3_win_rate: win_rate(later_wins, later_total)
+    })
+  end
+
+  defp bo3_game_split(rows) do
+    Enum.reduce(rows, {0, 0, 0, 0}, fn row, {g1w, g1t, lw, lt} ->
+      game_results = (row.game_results && row.game_results["results"]) || []
       game1 = Enum.find(game_results, &(&1["game"] == 1))
       later = Enum.filter(game_results, &(&1["game"] > 1))
 
@@ -834,16 +842,22 @@ defmodule Scry2.Decks do
     end)
   end
 
-  defp cumulative_win_rate(results) do
-    results
-    |> Enum.filter(& &1.started_at)
-    |> Enum.sort_by(& &1.started_at, DateTime)
-    |> Enum.map_reduce({0, 0}, fn match_result, {wins, total} ->
-      new_wins = if match_result.won, do: wins + 1, else: wins
+  defp deck_cumulative_win_rate(mtga_deck_id, format) do
+    MatchResult
+    |> where(
+      [mr],
+      mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won) and not is_nil(mr.started_at)
+    )
+    |> apply_format_filter(format)
+    |> order_by([mr], asc: mr.started_at)
+    |> select([mr], %{started_at: mr.started_at, won: mr.won})
+    |> Repo.all()
+    |> Enum.map_reduce({0, 0}, fn row, {wins, total} ->
+      new_wins = if row.won, do: wins + 1, else: wins
       new_total = total + 1
 
       point = %{
-        timestamp: DateTime.to_iso8601(match_result.started_at),
+        timestamp: DateTime.to_iso8601(row.started_at),
         win_rate: win_rate(new_wins, new_total),
         wins: new_wins,
         total: new_total
