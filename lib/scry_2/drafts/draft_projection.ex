@@ -27,6 +27,7 @@ defmodule Scry2.Drafts.DraftProjection do
   alias Scry2.Events.Draft.{DraftCompleted, DraftPickMade, DraftStarted}
   alias Scry2.Events.Draft.{HumanDraftPackOffered, HumanDraftPickMade}
   alias Scry2.Matches
+  alias Scry2.Topics
 
   if Mix.env() == :test do
     @doc "Test-only helper — calls project/1 directly, bypassing GenServer."
@@ -175,6 +176,10 @@ defmodule Scry2.Drafts.DraftProjection do
     :ok
   end
 
+  # Catch-all: ignore event types not handled above (guards against FunctionClauseError
+  # if new event slugs are claimed before their project/1 clause is added).
+  defp project(_event), do: :ok
+
   # Human drafts have no DraftStarted event. Create the draft row on the
   # first HumanDraftPackOffered if it doesn't exist yet.
   defp ensure_human_draft!(event) do
@@ -225,6 +230,9 @@ defmodule Scry2.Drafts.DraftProjection do
   defp derive_format("TradDraft_" <> _), do: "traditional_draft"
   defp derive_format(_), do: "unknown"
 
+  # Works for event-name-style IDs (e.g. "PremierDraft_FDN_20260401") but returns nil
+  # for UUID-style human draft IDs (MTGA's Draft.Notify draftId is a UUID).
+  # The UUID case is a known gap — pending real human draft log samples.
   defp extract_set_code(event_name) do
     case String.split(event_name, "_") do
       [_, set | _] -> set
