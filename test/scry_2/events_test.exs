@@ -4,6 +4,7 @@ defmodule Scry2.EventsTest do
   alias Scry2.Events
   alias Scry2.Events.EventRecord
   alias Scry2.Events.Match.{MatchCompleted, MatchCreated}
+  alias Scry2.Events.ProjectorWatermark
   alias Scry2.TestFactory
   alias Scry2.Topics
 
@@ -552,6 +553,59 @@ defmodule Scry2.EventsTest do
       opponent_screen_name: "Opponent1",
       occurred_at: ~U[2026-04-05 19:18:40Z]
     }
+  end
+
+  describe "get_content_hash/1" do
+    test "returns nil when no row exists" do
+      assert is_nil(Events.get_content_hash("nonexistent"))
+    end
+
+    test "returns the stored hash" do
+      Events.put_content_hash!("test_component", "abc123")
+      assert Events.get_content_hash("test_component") == "abc123"
+    end
+
+    test "returns nil when row exists but hash was never set" do
+      # Create a watermark row without a content_hash (legacy row)
+      %ProjectorWatermark{}
+      |> ProjectorWatermark.changeset(%{
+        projector_name: "legacy_projector",
+        last_event_id: 42,
+        updated_at: DateTime.utc_now(:second)
+      })
+      |> Repo.insert!()
+
+      assert is_nil(Events.get_content_hash("legacy_projector"))
+    end
+  end
+
+  describe "put_content_hash!/2" do
+    test "creates a new row with the hash" do
+      result = Events.put_content_hash!("new_component", "hash_value")
+
+      assert result.projector_name == "new_component"
+      assert result.content_hash == "hash_value"
+    end
+
+    test "updates an existing row without clobbering last_event_id" do
+      # First, create a watermark with a real event cursor
+      Events.put_watermark!("my_projector", 100)
+
+      # Now set the content hash
+      Events.put_content_hash!("my_projector", "v1_hash")
+
+      # Verify the event cursor was preserved
+      watermark = Repo.get_by!(ProjectorWatermark, projector_name: "my_projector")
+      assert watermark.content_hash == "v1_hash"
+      assert watermark.last_event_id == 100
+    end
+
+    test "upserts when called twice" do
+      Events.put_content_hash!("component", "first_hash")
+      Events.put_content_hash!("component", "second_hash")
+
+      assert Events.get_content_hash("component") == "second_hash"
+    end
   end
 
   defp match_completed(match_id) do

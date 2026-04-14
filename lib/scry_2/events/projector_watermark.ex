@@ -14,12 +14,13 @@ defmodule Scry2.Events.ProjectorWatermark do
   schema "projector_watermarks" do
     field :projector_name, :string
     field :last_event_id, :integer, default: 0
+    field :content_hash, :string
     field :updated_at, :utc_datetime
   end
 
   def changeset(watermark, attrs) do
     watermark
-    |> cast(attrs, [:projector_name, :last_event_id, :updated_at])
+    |> cast(attrs, [:projector_name, :last_event_id, :content_hash, :updated_at])
     |> validate_required([:projector_name, :last_event_id])
     |> unique_constraint(:projector_name)
   end

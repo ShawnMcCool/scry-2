@@ -61,6 +61,7 @@ defmodule Scry2.Events.Projector do
   defmacro __using__(opts) do
     claimed_slugs = Keyword.fetch!(opts, :claimed_slugs)
     projection_tables = Keyword.fetch!(opts, :projection_tables)
+    caller_file = __CALLER__.file
 
     quote do
       use GenServer
@@ -70,12 +71,24 @@ defmodule Scry2.Events.Projector do
       alias Scry2.Events
       alias Scry2.Topics
 
+      @external_resource unquote(caller_file)
+
       @claimed_slugs unquote(claimed_slugs)
       @projection_tables unquote(projection_tables)
       @projector_name __MODULE__
                       |> Module.split()
                       |> Enum.take(-2)
                       |> Enum.join(".")
+
+      @content_hash (
+                      {:ok, ast} =
+                        unquote(caller_file) |> File.read!() |> Code.string_to_quoted()
+
+                      :erlang.phash2(ast) |> Integer.to_string()
+                    )
+
+      @doc "Returns the compile-time AST hash of this projector's source."
+      def content_hash, do: @content_hash
 
       def start_link(opts \\ []) do
         {name, opts} = Keyword.pop(opts, :name, __MODULE__)
