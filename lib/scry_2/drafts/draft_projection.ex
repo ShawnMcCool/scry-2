@@ -52,6 +52,8 @@ defmodule Scry2.Drafts.DraftProjection do
     end
   end
 
+  def handle_extra_info(_msg, state), do: {:noreply, state}
+
   defp project(%DraftStarted{} = event) do
     attrs = %{
       player_id: event.player_id,
