@@ -81,8 +81,6 @@ defmodule Scry2.Drafts.DraftProjection do
         pack_number: event.pack_number,
         pick_number: event.pick_number,
         picked_arena_id: event.picked_arena_id,
-        pack_arena_ids: %{"cards" => event.pack_arena_ids || []},
-        pool_arena_ids: %{"cards" => []},
         picked_at: event.occurred_at
       }
 
