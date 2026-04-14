@@ -501,6 +501,16 @@ defmodule Scry2.Cards do
           where: mc.arena_id == ^arena_id,
           select: fragment("json_extract(?, '$.normal')", sc.image_uris),
           limit: 1
+      ) ||
+      Repo.one(
+        from cc in "cards_cards",
+          join: sc in "cards_scryfall_cards",
+          on: sc.name == cc.name,
+          where:
+            cc.arena_id == ^arena_id and
+              not is_nil(fragment("json_extract(?, '$.normal')", sc.image_uris)),
+          select: fragment("json_extract(?, '$.normal')", sc.image_uris),
+          limit: 1
       )
   end
 
