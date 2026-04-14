@@ -209,11 +209,19 @@ defmodule Scry2.Events.IngestRawEvents do
         error_pairs = reversed_errors |> Enum.reverse() |> Enum.concat()
         ids = Enum.map(records, & &1.id)
 
-        Scry2.Repo.transaction(fn ->
-          Events.append_batch!(event_tuples)
-          MtgaLogIngestion.bulk_mark_processed!(ids)
-          MtgaLogIngestion.bulk_mark_errors!(error_pairs)
-        end)
+        try do
+          Scry2.Repo.transaction(fn ->
+            Events.append_batch!(event_tuples)
+            MtgaLogIngestion.bulk_mark_processed!(ids)
+            MtgaLogIngestion.bulk_mark_errors!(error_pairs)
+          end)
+        rescue
+          error ->
+            Log.error(
+              :ingester,
+              "retranslate_all transaction failed for batch ending at id=#{List.last(ids)}: #{inspect(error)}"
+            )
+        end
 
         do_retranslate_chunk(
           List.last(records).id,
