@@ -120,6 +120,35 @@ defmodule Scry2.Matches do
     submission
   end
 
+  @doc "Returns a single match by id, or nil."
+  def get_match(id), do: Repo.get(Match, id)
+
+  @doc "Returns all matches for a given event_name and player, newest first."
+  def list_matches_for_event(event_name, player_id) do
+    Match
+    |> where([m], m.event_name == ^event_name and m.player_id == ^player_id)
+    |> order_by([m], desc: m.started_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Returns distinct deck entries (mtga_deck_id, deck_name, deck_colors) used
+  in matches for the given event_name and player. One entry per unique mtga_deck_id.
+  """
+  def list_decks_for_event(event_name, player_id) do
+    Match
+    |> where([m], m.event_name == ^event_name and m.player_id == ^player_id)
+    |> where([m], not is_nil(m.mtga_deck_id))
+    |> group_by([m], m.mtga_deck_id)
+    |> select([m], %{
+      mtga_deck_id: m.mtga_deck_id,
+      deck_name: max(m.deck_name),
+      deck_colors: max(m.deck_colors)
+    })
+    |> order_by([m], desc: max(m.started_at))
+    |> Repo.all()
+  end
+
   @doc "Returns the total number of recorded matches. Accepts same filter opts as list_matches."
   def count(opts \\ []) do
     opts

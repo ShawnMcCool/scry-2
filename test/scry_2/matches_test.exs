@@ -344,4 +344,68 @@ defmodule Scry2.MatchesTest do
       assert length(Matches.list_matches(limit: 2)) == 2
     end
   end
+
+  describe "get_match/1" do
+    test "returns match by id" do
+      match = TestFactory.create_match(%{event_name: "QuickDraft_FDN_20260401"})
+      assert Matches.get_match(match.id).id == match.id
+    end
+
+    test "returns nil for unknown id" do
+      assert Matches.get_match(999_999) == nil
+    end
+  end
+
+  describe "list_matches_for_event/2" do
+    test "returns matches for the given event_name and player_id" do
+      player = Scry2.Players.find_or_create!("player-list-event", "Player List Event")
+
+      match =
+        TestFactory.create_match(%{
+          event_name: "QuickDraft_FDN_20260401",
+          player_id: player.id,
+          won: true
+        })
+
+      _other =
+        TestFactory.create_match(%{
+          event_name: "OtherEvent_FDN_20260401",
+          player_id: player.id
+        })
+
+      results = Matches.list_matches_for_event("QuickDraft_FDN_20260401", player.id)
+      assert length(results) == 1
+      assert hd(results).id == match.id
+    end
+
+    test "returns empty list when no matches" do
+      assert Matches.list_matches_for_event("NoSuchEvent", 1) == []
+    end
+  end
+
+  describe "list_decks_for_event/2" do
+    test "returns distinct deck entries used in the event" do
+      player = Scry2.Players.find_or_create!("player-list-decks", "Player List Decks")
+
+      TestFactory.create_match(%{
+        event_name: "QuickDraft_FDN_20260401",
+        player_id: player.id,
+        mtga_deck_id: "deck-abc",
+        deck_name: "UR Control"
+      })
+
+      # Duplicate deck_id — should only appear once
+      TestFactory.create_match(%{
+        event_name: "QuickDraft_FDN_20260401",
+        player_id: player.id,
+        mtga_deck_id: "deck-abc",
+        deck_name: "UR Control"
+      })
+
+      results = Matches.list_decks_for_event("QuickDraft_FDN_20260401", player.id)
+      assert length(results) == 1
+      assert hd(results).mtga_deck_id == "deck-abc"
+      assert hd(results).deck_name == "UR Control"
+    end
+  end
 end
