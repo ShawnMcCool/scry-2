@@ -216,7 +216,11 @@ defmodule Scry2Web.DraftsLive do
         </.link>
         <.link
           :for={fmt <- ~w(quick_draft premier_draft traditional_draft)}
-          patch={filter_path(fmt, @set_filter)}
+          patch={
+            if @set_filter,
+              do: ~p"/drafts?format=#{fmt}&set=#{@set_filter}",
+              else: ~p"/drafts?format=#{fmt}"
+          }
           class={[
             "btn btn-xs",
             if(@format_filter == fmt, do: "btn-soft btn-primary", else: "btn-ghost")
@@ -227,7 +231,11 @@ defmodule Scry2Web.DraftsLive do
         <div class="flex-1" />
         <.link
           :for={set <- @available_sets}
-          patch={filter_path(@format_filter, set)}
+          patch={
+            if @format_filter,
+              do: ~p"/drafts?set=#{set}&format=#{@format_filter}",
+              else: ~p"/drafts?set=#{set}"
+          }
           class={[
             "btn btn-xs",
             if(@set_filter == set, do: "btn-soft btn-primary", else: "btn-ghost")
@@ -579,18 +587,6 @@ defmodule Scry2Web.DraftsLive do
       card -> Map.get(card, :name, "")
     end
   end
-
-  defp filter_path(format, set) do
-    params =
-      %{}
-      |> maybe_put("format", format)
-      |> maybe_put("set", set)
-
-    if params == %{}, do: ~p"/drafts", else: ~p"/drafts?#{params}"
-  end
-
-  defp maybe_put(map, _key, nil), do: map
-  defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp format_bar_color(rate) when is_float(rate) and rate >= 0.55, do: "bg-success"
   defp format_bar_color(rate) when is_float(rate) and rate >= 0.40, do: "bg-warning"
