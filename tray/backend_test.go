@@ -76,6 +76,52 @@ func TestStop(t *testing.T) {
 	}
 }
 
+func TestWatchdogNotifiesAfterConsecutiveFailures(t *testing.T) {
+	notifyCh := make(chan struct{}, 1)
+
+	b := &RealBackend{
+		binPath:          "/nonexistent/fake-backend-bin",
+		WatchdogInterval: 50 * time.Millisecond,
+		GracePeriod:      50 * time.Millisecond,
+		RestartDelay:     10 * time.Millisecond,
+		FailureThreshold: 2,
+		OnNotResponding: func() {
+			select {
+			case notifyCh <- struct{}{}:
+			default:
+			}
+		},
+	}
+
+	quit := make(chan struct{})
+	defer close(quit)
+	b.StartWatchdog(quit)
+
+	select {
+	case <-notifyCh:
+		// OnNotResponding was called — pass
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected OnNotResponding to be called after consecutive failures")
+	}
+}
+
+func TestWatchdogDoesNotNotifyWhileBackendHealthy(t *testing.T) {
+	b, _ := newTestBackend(t)
+	b.FailureThreshold = 2
+	b.OnNotResponding = func() {
+		t.Error("OnNotResponding should not be called when backend is healthy")
+	}
+
+	b.Start()
+	time.Sleep(200 * time.Millisecond)
+
+	quit := make(chan struct{})
+	b.StartWatchdog(quit)
+
+	time.Sleep(500 * time.Millisecond)
+	close(quit)
+}
+
 func TestWatchdogRestarts(t *testing.T) {
 	pidFile := filepath.Join(t.TempDir(), "backend.pid")
 	b := &RealBackend{

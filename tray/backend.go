@@ -24,6 +24,9 @@ type RealBackend struct {
 	WatchdogInterval time.Duration // how often to poll (default 10s)
 	GracePeriod      time.Duration // initial startup grace + post-restart grace (default 20s)
 	RestartDelay     time.Duration // delay before restarting after crash (default 2s)
+	FailureThreshold int           // consecutive failures before calling OnNotResponding (default 3)
+	OnNotResponding  func()        // called once when FailureThreshold consecutive failures occur
+	OnRecovered      func()        // called when backend becomes healthy after OnNotResponding fired
 }
 
 func newRealBackend() *RealBackend {
@@ -32,6 +35,7 @@ func newRealBackend() *RealBackend {
 		WatchdogInterval: 10 * time.Second,
 		GracePeriod:      20 * time.Second,
 		RestartDelay:     2 * time.Second,
+		FailureThreshold: 3,
 	}
 }
 
@@ -79,13 +83,32 @@ func (b *RealBackend) watchdog(quitCh <-chan struct{}) {
 	case <-quitCh:
 		return
 	}
+
+	threshold := b.FailureThreshold
+	if threshold <= 0 {
+		threshold = 3
+	}
+
+	consecutiveFailures := 0
+	notified := false
+
 	for {
 		select {
 		case <-time.After(b.WatchdogInterval):
 		case <-quitCh:
 			return
 		}
+
 		if !b.IsRunning() {
+			consecutiveFailures++
+
+			if consecutiveFailures >= threshold && !notified {
+				notified = true
+				if b.OnNotResponding != nil {
+					b.OnNotResponding()
+				}
+			}
+
 			select {
 			case <-time.After(b.RestartDelay):
 			case <-quitCh:
@@ -97,6 +120,12 @@ func (b *RealBackend) watchdog(quitCh <-chan struct{}) {
 			case <-quitCh:
 				return
 			}
+		} else {
+			if notified && b.OnRecovered != nil {
+				b.OnRecovered()
+			}
+			consecutiveFailures = 0
+			notified = false
 		}
 	}
 }

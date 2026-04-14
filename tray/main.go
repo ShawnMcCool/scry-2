@@ -27,11 +27,24 @@ func onReady() {
 	mOpen := systray.AddMenuItem("Open", "Open Scry2 in browser")
 	mAutoStart := systray.AddMenuItemCheckbox("Auto-start on login", "Toggle auto-start on login", IsAutoStartEnabled())
 	systray.AddSeparator()
+	mNotResponding := systray.AddMenuItem("⚠ Backend not responding — click for help", "Open the operations page")
+	mNotResponding.Hide()
+	systray.AddSeparator()
 	mUpdate := systray.AddMenuItem("Check for Updates", "Check for a newer version of Scry2")
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Quit", "Stop Scry2 and quit")
 
 	firstRun := IsFirstRun()
+
+	backend.OnNotResponding = func() {
+		mNotResponding.Show()
+		systray.SetTooltip("Scry2 — backend not responding")
+		go sendNotification("Scry2 is not responding", "The backend failed to start. Click the tray icon for help.")
+	}
+	backend.OnRecovered = func() {
+		mNotResponding.Hide()
+		systray.SetTooltip("Scry2 — MTGA Stats")
+	}
 
 	backend.Start()
 	backend.StartWatchdog(quitCh)
@@ -59,6 +72,8 @@ func onReady() {
 			select {
 			case <-mOpen.ClickedCh:
 				openBrowser(DashboardURL)
+			case <-mNotResponding.ClickedCh:
+				openBrowser(DashboardURL + "/operations")
 			case <-mAutoStart.ClickedCh:
 				if mAutoStart.Checked() {
 					if err := SetAutoStart(false); err == nil {
