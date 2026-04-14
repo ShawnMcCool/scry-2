@@ -223,7 +223,9 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          # real match data flows through MatchGameRoomStateChangedEvent
                          "EventGetActiveMatches",
                          # Preconstructed deck catalogue — static reference data, not player activity
-                         "DeckGetAllPreconDecksV3"
+                         "DeckGetAllPreconDecksV3",
+                         # Deck summaries listing — static reference data, not player activity
+                         "DeckGetDeckSummariesV3"
                        ])
 
   @deferred_event_types MapSet.new([])
@@ -415,7 +417,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # BotDraftDraftStatus has two wire formats (request ==> and response <==).
   # The request carries a double-encoded JSON `request` string with the
   # EventName (format identifier like "QuickDraft_FDN_20260323").
-  # The response carries a "Payload" with draft state — we skip it silently.
+  # The response carries a "Payload" with the initial 14-card pack for pick 1.
   def translate(
         %EventRecord{event_type: "BotDraftDraftStatus"} = record,
         _self_user_id,
@@ -440,7 +442,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       _ ->
         case Jason.decode(record.raw_json) do
           {:ok, %{"Payload" => _}} ->
-            {[], []}
+            translate_bot_pack_response(record)
 
           _ ->
             {[],
@@ -458,9 +460,11 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   # BotDraftDraftPick has two wire formats:
   #   Request (==>) — {"id", "request": "{\"PickInfo\": ...}"} — the pick itself
-  #   Response (<==) — {"CurrentModule", "Payload": "{\"DraftPack\": ...}"} — server ack with next pack
-  # We only need the request; the response is a server confirmation that
-  # carries the next pack state but requires stateful correlation to be useful.
+  #   Response (<==) — {"CurrentModule", "Payload": "{\"DraftPack\": ...}"} — server ack
+  #
+  # The response carries the pack for the NEXT pick (DraftPack with N-1 cards remaining
+  # after the picked card was removed). Emitting HumanDraftPackOffered from the response
+  # guarantees the pack data is in the event store before DraftPickMade for that pick.
   def translate(
         %EventRecord{event_type: "BotDraftDraftPick"} = record,
         _self_user_id,
@@ -472,7 +476,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     else
       _ ->
         case Jason.decode(record.raw_json) do
-          {:ok, %{"Payload" => _}} -> {[], []}
+          {:ok, %{"Payload" => _}} -> translate_bot_pack_response(record)
           _ -> draft_pick_warning(record)
         end
     end
@@ -708,8 +712,10 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   end
 
   # EventClaimPrize response carries Course (final record) + InventoryInfo (rewards).
-  # Emits EventRewardClaimed (rich reward detail) and InventoryUpdated (economy snapshot).
-  # Request format has {"id", "request"} — skip it.
+  # Emits EventRewardClaimed + InventoryUpdated always. Also emits DraftCompleted when
+  # Course.CurrentModule is "Complete" and CardPool is present — this is the primary
+  # draft-completion signal for Quick Draft (bot draft). DraftCompleteDraft is not
+  # emitted by MTGA for bot drafts. Request format has {"id", "request"} — skip it.
   def translate(
         %EventRecord{event_type: "EventClaimPrize"} = record,
         _self_user_id,
@@ -745,7 +751,26 @@ defmodule Scry2.Events.IdentifyDomainEvents do
         occurred_at: occurred_at
       }
 
-      {[reward_event, inventory_event], []}
+      draft_events =
+        case {course["CurrentModule"], course["CardPool"], course["InternalEventName"]} do
+          {"Complete", card_pool, draft_id} when is_list(card_pool) and is_binary(draft_id) ->
+            [
+              %DraftCompleted{
+                mtga_draft_id: draft_id,
+                event_name: draft_id,
+                is_bot_draft:
+                  String.contains?(draft_id, "BotDraft") or
+                    String.starts_with?(draft_id, "QuickDraft"),
+                card_pool_arena_ids: card_pool,
+                occurred_at: occurred_at
+              }
+            ]
+
+          _ ->
+            []
+        end
+
+      {[reward_event, inventory_event] ++ draft_events, []}
     else
       %{"request" => _} -> {[], []}
       _ -> {[], translation_warning(record, "failed to decode EventClaimPrize response")}
@@ -1950,6 +1975,36 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          detail: "failed to decode/extract draft pick request"
        }
      ]}
+  end
+
+  # Decodes a BotDraftDraftStatus or BotDraftDraftPick response Payload and
+  # emits HumanDraftPackOffered for the pack being offered at the next pick.
+  # PackNumber and PickNumber in the response are 0-indexed; we convert to 1-indexed
+  # to match DraftPickMade. DraftPack must be non-empty — empty means no next pick.
+  defp translate_bot_pack_response(record) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, outer} <- Jason.decode(record.raw_json),
+         payload_str when is_binary(payload_str) <- outer["Payload"],
+         {:ok, inner} <- Jason.decode(payload_str),
+         [_ | _] = pack_strs <- inner["DraftPack"],
+         draft_id when is_binary(draft_id) <- inner["EventName"],
+         pick_number when is_integer(pick_number) <- inner["PickNumber"],
+         pack_number when is_integer(pack_number) <- inner["PackNumber"] do
+      arena_ids = Enum.map(pack_strs, &parse_arena_id/1) |> Enum.reject(&is_nil/1)
+
+      {[
+         %HumanDraftPackOffered{
+           mtga_draft_id: draft_id,
+           pack_number: pack_number + 1,
+           pick_number: pick_number + 1,
+           pack_arena_ids: arena_ids,
+           occurred_at: occurred_at
+         }
+       ], []}
+    else
+      _ -> {[], []}
+    end
   end
 
   # BotDraftDraftPick and BotDraftDraftStatus carry a double-encoded
