@@ -309,15 +309,14 @@ jobs:
       - name: Verify file layout
         shell: pwsh
         run: |
-          # Check both possible locations
-          $candidates = @("${env:ProgramFiles}\Scry2", "${env:ProgramFiles(x86)}\Scry2")
-          $installDir = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $installDir) {
-              Write-Host "Checked: $($candidates -join ', ')"
-              Write-Host "ProgramFiles=$env:ProgramFiles"
-              # Search for it
-              Get-ChildItem "C:\Program Files*" -Directory -ErrorAction SilentlyContinue | ForEach-Object { Get-ChildItem $_.FullName -Filter "Scry2" -Directory -ErrorAction SilentlyContinue } | ForEach-Object { Write-Host "Found: $($_.FullName)" }
-              throw "Scry2 install directory not found"
+          # Must install to 64-bit Program Files — never Program Files (x86)
+          $installDir = "${env:ProgramFiles}\Scry2"
+          if (-not (Test-Path $installDir)) {
+              # Detect wrong-arch install to surface the bug clearly
+              if (Test-Path "${env:ProgramFiles(x86)}\Scry2") {
+                  throw "Scry2 installed to Program Files (x86) instead of Program Files — MSI missing -arch x64"
+              }
+              throw "Scry2 install directory not found at $installDir"
           }
           Write-Host "Install dir: $installDir"
           if (-not (Test-Path "$installDir\scry2-tray.exe")) { throw "scry2-tray.exe missing from $installDir" }
