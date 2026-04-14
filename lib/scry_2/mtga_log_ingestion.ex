@@ -310,6 +310,97 @@ defmodule Scry2.MtgaLogIngestion do
     :ok
   end
 
+  @doc """
+  Returns user-friendly error context for a `processing_error` string.
+
+  Categorizes the stored error message into one of three buckets and returns
+  a map with `:title`, `:explanation`, and `:action` keys — suitable for
+  display to non-technical end users on the Operations page.
+
+  Categories:
+  - `:decode_failure` — the translator found the event but couldn't extract its payload
+  - `:missing_field` — an expected field was absent from the event data
+  - `:generic` — an unexpected error with no more specific classification
+  """
+  def user_friendly_error(processing_error) when is_binary(processing_error) do
+    describe_error(categorize_error(processing_error))
+  end
+
+  defp categorize_error(message) do
+    cond do
+      String.contains?(message, "failed to decode") -> :decode_failure
+      String.contains?(message, ["key :", "enforce_keys", "missing required"]) -> :missing_field
+      true -> :generic
+    end
+  end
+
+  defp describe_error(:decode_failure) do
+    %{
+      title: "Event data could not be read",
+      explanation:
+        "Scry2 received a valid event from MTGA Arena but couldn't extract the data it expected. " <>
+          "This usually happens after a MTGA client update changes the event format.",
+      action:
+        "You can safely dismiss this. If it keeps happening after a MTGA update, " <>
+          "use \"Export Error Report\" to send the details for diagnosis."
+    }
+  end
+
+  defp describe_error(:missing_field) do
+    %{
+      title: "Event was missing expected data",
+      explanation:
+        "An event from MTGA Arena arrived without a field that Scry2 requires. " <>
+          "This is usually caused by a MTGA update changing what data is included.",
+      action:
+        "You can safely dismiss this. Use \"Export Error Report\" to help diagnose the issue."
+    }
+  end
+
+  defp describe_error(:generic) do
+    %{
+      title: "An unexpected error occurred",
+      explanation:
+        "Scry2 encountered an error while processing an event from MTGA Arena. " <>
+          "Your match history has not been affected.",
+      action:
+        "Use \"Export Error Report\" to send the details. You can dismiss this in the meantime."
+    }
+  end
+
+  @doc """
+  Returns an export-ready map of all current (non-dismissed) errors.
+
+  Parses `raw_json` back to a map so the full MTGA event payload is
+  included — this is what you send to the developer to reproduce the issue.
+  """
+  def export_errors do
+    errors = list_errors(limit: 1000)
+
+    %{
+      scry2_version: to_string(Application.spec(:scry_2, :vsn)),
+      exported_at: DateTime.utc_now(),
+      error_count: length(errors),
+      errors: Enum.map(errors, &format_error_for_export/1)
+    }
+  end
+
+  defp format_error_for_export(record) do
+    raw_event =
+      case Jason.decode(record.raw_json) do
+        {:ok, parsed} -> parsed
+        {:error, _} -> record.raw_json
+      end
+
+    %{
+      id: record.id,
+      event_type: record.event_type,
+      occurred_at: record.mtga_timestamp,
+      error_summary: record.processing_error,
+      raw_event: raw_event
+    }
+  end
+
   @doc "Permanently dismisses all current processing errors."
   def dismiss_all_errors! do
     from(r in EventRecord,

@@ -183,4 +183,68 @@ defmodule Scry2.MtgaLogIngestionTest do
       assert counts["EventJoin"] == 1
     end
   end
+
+  describe "user_friendly_error/1" do
+    test "decode failures produce an event-data-could-not-be-read title" do
+      result = MtgaLogIngestion.user_friendly_error("failed to decode/extract gameRoomInfo")
+
+      assert result.title == "Event data could not be read"
+      assert is_binary(result.explanation)
+      assert result.action =~ "Export Error Report"
+    end
+
+    test "missing field errors produce an event-was-missing-expected-data title" do
+      result = MtgaLogIngestion.user_friendly_error("key :match_id not found in: %{}")
+
+      assert result.title == "Event was missing expected data"
+      assert is_binary(result.explanation)
+      assert is_binary(result.action)
+    end
+
+    test "unrecognized errors produce a generic title" do
+      result =
+        MtgaLogIngestion.user_friendly_error("some completely unexpected exception message")
+
+      assert result.title == "An unexpected error occurred"
+      assert is_binary(result.explanation)
+      assert is_binary(result.action)
+    end
+  end
+
+  describe "export_errors/0" do
+    @tag capture_log: true
+    test "returns version, timestamp, error_count, and errors with parsed raw_json" do
+      record =
+        TestFactory.create_event_record(%{
+          event_type: "EventMatch",
+          raw_json: ~s({"matchId":"abc123"})
+        })
+
+      MtgaLogIngestion.mark_error!(record.id, [%{detail: "failed to decode/extract gameRoomInfo"}])
+
+      result = MtgaLogIngestion.export_errors()
+
+      assert is_binary(result.scry2_version)
+      assert %DateTime{} = result.exported_at
+      assert result.error_count == 1
+
+      [exported] = result.errors
+      assert exported.id == record.id
+      assert exported.event_type == "EventMatch"
+      assert is_binary(exported.error_summary)
+      assert exported.raw_event == %{"matchId" => "abc123"}
+    end
+
+    @tag capture_log: true
+    test "excludes dismissed errors from the export" do
+      record = TestFactory.create_event_record()
+      MtgaLogIngestion.mark_error!(record.id, [%{detail: "some error"}])
+      MtgaLogIngestion.dismiss_error!(record.id)
+
+      result = MtgaLogIngestion.export_errors()
+
+      assert result.error_count == 0
+      assert result.errors == []
+    end
+  end
 end

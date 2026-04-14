@@ -47,7 +47,20 @@ defmodule Scry2Web.OperationsLive do
     deferred_with_payloads = MtgaLogIngestion.deferred_types_with_payloads(deferred_types)
 
     errors =
-      if status.error_count > 0, do: MtgaLogIngestion.list_errors(), else: []
+      if status.error_count > 0 do
+        MtgaLogIngestion.list_errors()
+        |> Enum.map(fn record ->
+          %{
+            id: record.id,
+            event_type: record.event_type,
+            processing_error: record.processing_error,
+            occurred_at: record.mtga_timestamp,
+            friendly: MtgaLogIngestion.user_friendly_error(record.processing_error)
+          }
+        end)
+      else
+        []
+      end
 
     # Restore last operation state so the section survives page reload /
     # WebSocket reconnect. Only applied when no operation is already tracked
@@ -95,6 +108,17 @@ defmodule Scry2Web.OperationsLive do
   def handle_event("reingest", _params, socket) do
     Operations.start_reingest!()
     {:noreply, socket}
+  end
+
+  def handle_event("export_errors", _params, socket) do
+    export = MtgaLogIngestion.export_errors()
+
+    filename =
+      "scry2-error-report-#{Calendar.strftime(export.exported_at, "%Y-%m-%d")}.json"
+
+    content = Jason.encode!(export, pretty: true)
+
+    {:noreply, push_event(socket, "operations:download", %{filename: filename, content: content})}
   end
 
   def handle_event("dismiss_error", %{"id" => id_string}, socket) do
@@ -581,47 +605,74 @@ defmodule Scry2Web.OperationsLive do
       </section>
 
       <%!-- Processing errors --%>
-      <section :if={@errors != []} class="alert alert-soft alert-error">
-        <.icon name="hero-exclamation-circle" class="size-5" />
-        <div class="w-full">
-          <div class="flex items-center justify-between">
-            <p class="font-semibold">Processing errors ({@error_count})</p>
-            <button phx-click="dismiss_all_errors" class="btn btn-xs btn-ghost">
-              Dismiss all
-            </button>
+      <section
+        :if={@errors != []}
+        id="operations-error-section"
+        phx-hook="OperationsDownload"
+        class="card bg-base-200 border border-error/30"
+      >
+        <div class="card-body p-5 gap-4">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-center gap-2">
+              <.icon name="hero-exclamation-circle" class="size-5 text-error shrink-0" />
+              <div>
+                <p class="font-semibold">
+                  {if @error_count == 1,
+                    do: "1 event could not be processed",
+                    else: "#{format_number(@error_count)} events could not be processed"}
+                </p>
+                <p class="text-sm text-base-content/60">
+                  These errors don't affect your match history. Dismiss them or export the details below.
+                </p>
+              </div>
+            </div>
+            <div class="flex gap-2 shrink-0">
+              <button
+                phx-click="export_errors"
+                class="btn btn-xs btn-soft btn-primary"
+                title="Download a JSON report to send to the developer"
+              >
+                <.icon name="hero-arrow-down-tray" class="size-3" /> Export Report
+              </button>
+              <button phx-click="dismiss_all_errors" class="btn btn-xs btn-ghost">
+                Dismiss all
+              </button>
+            </div>
           </div>
-          <p class="text-sm mb-2">
-            Some events couldn't be processed. Reingesting usually resolves this.
-          </p>
-          <div class="overflow-x-auto">
-            <table class="table table-sm w-full">
-              <thead>
-                <tr>
-                  <th class="w-16">ID</th>
-                  <th class="w-48">Event type</th>
-                  <th>Error</th>
-                  <th class="w-10"></th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr :for={error <- @errors}>
-                  <td class="tabular-nums">{error.id}</td>
-                  <td><code>{error.event_type}</code></td>
-                  <td class="text-sm whitespace-pre-wrap break-all">{error.processing_error}</td>
-                  <td>
-                    <button
-                      phx-click="dismiss_error"
-                      phx-value-id={error.id}
-                      class="btn btn-xs btn-ghost"
-                      title="Dismiss"
-                    >
-                      <.icon name="hero-x-mark" class="size-3" />
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
+
+          <ul class="space-y-3">
+            <li :for={error <- @errors} class="bg-base-100 rounded-lg p-4">
+              <div class="flex items-start justify-between gap-3">
+                <div class="flex-1 min-w-0">
+                  <p class="font-semibold text-sm">{error.friendly.title}</p>
+                  <p class="text-sm text-base-content/70 mt-1">{error.friendly.explanation}</p>
+                  <p class="text-sm text-base-content/50 mt-1 italic">{error.friendly.action}</p>
+                  <div class="flex items-center gap-2 mt-2 flex-wrap">
+                    <code class="badge badge-xs badge-ghost">{error.event_type}</code>
+                    <span :if={error.occurred_at} class="text-xs text-base-content/40">
+                      {Calendar.strftime(error.occurred_at, "%Y-%m-%d %H:%M")}
+                    </span>
+                  </div>
+                  <details class="mt-2">
+                    <summary class="text-xs text-base-content/40 cursor-pointer select-none hover:text-base-content/60">
+                      Technical details
+                    </summary>
+                    <p class="text-xs font-mono text-base-content/50 mt-1 break-all whitespace-pre-wrap">
+                      {error.processing_error}
+                    </p>
+                  </details>
+                </div>
+                <button
+                  phx-click="dismiss_error"
+                  phx-value-id={error.id}
+                  class="btn btn-xs btn-ghost shrink-0"
+                  title="Dismiss"
+                >
+                  <.icon name="hero-x-mark" class="size-3" />
+                </button>
+              </div>
+            </li>
+          </ul>
         </div>
       </section>
 
