@@ -1373,4 +1373,47 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert event.occurred_at == ~U[2026-04-05 19:20:05Z]
     end
   end
+
+  describe "translate/2 — DeckUpsertDeckV3 request" do
+    test "produces a %DeckUpdated{} with deck_id, deck_name, action_type, and card lists" do
+      record = record_from_fixture("deck_upsert_deck_v3_request.log")
+
+      assert {[%DeckUpdated{} = event], []} =
+               IdentifyDomainEvents.translate(record, @self_user_id)
+
+      assert event.deck_id == "27b5d2a9-2ce6-440e-81cd-c809e90e5f14"
+      assert event.deck_name == "North Wind Omni"
+      assert event.action_type == "Updated"
+      assert length(event.main_deck) > 0
+      assert length(event.sideboard) > 0
+    end
+  end
+
+  describe "translate/2 — DeckUpsertDeckV3 response" do
+    test "produces no events (slim response carries no card list)" do
+      record = record_from_fixture("deck_upsert_deck_v3_response.log")
+      assert {[], []} = IdentifyDomainEvents.translate(record, @self_user_id)
+    end
+  end
+
+  describe "translate/2 — EventSetDeckV3 request" do
+    test "produces a %DeckSelected{} with event_name, deck_id, and card lists" do
+      record = record_from_fixture("event_set_deck_v3_request.log")
+
+      assert {[%DeckSelected{} = event], []} =
+               IdentifyDomainEvents.translate(record, @self_user_id)
+
+      assert event.event_name == "Traditional_Ladder"
+      assert event.deck_id == "27b5d2a9-2ce6-440e-81cd-c809e90e5f14"
+      assert event.deck_name == "North Wind Omni"
+      assert length(event.main_deck) > 0
+    end
+  end
+
+  describe "translate/2 — EventSetDeckV3 response" do
+    test "produces no events (request already captured the deck selection)" do
+      record = record_from_fixture("event_set_deck_v3_response.log")
+      assert {[], []} = IdentifyDomainEvents.translate(record, @self_user_id)
+    end
+  end
 end

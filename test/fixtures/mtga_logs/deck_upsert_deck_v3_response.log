@@ -1,0 +1,3 @@
+[UnityCrossThreadLogger]4/14/2026 7:30:57 PM
+<== DeckUpsertDeckV3(2ba37eb5-3e46-4590-8531-9f271648c978)
+{"DeckId":"27b5d2a9-2ce6-440e-81cd-c809e90e5f14","Name":"North Wind Omni","Attributes":[{"name":"Version","value":"11"},{"name":"TileID","value":"100619"},{"name":"LastPlayed","value":"\"2026-04-14T19:30:57.276522+02:00\""},{"name":"LastUpdated","value":"\"2026-04-05T14:25:10.3506689+02:00\""},{"name":"IsFavorite","value":"true"},{"name":"Format","value":"DirectGame"}],"DeckTileId":100619,"DeckArtId":455963,"PreferredCosmetics":{"Avatar":"","Sleeve":"","Pet":"","Title":"","Emotes":[]}}

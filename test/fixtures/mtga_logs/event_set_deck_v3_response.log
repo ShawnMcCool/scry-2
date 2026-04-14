@@ -1,0 +1,3 @@
+[UnityCrossThreadLogger]4/14/2026 7:30:57 PM
+<== EventSetDeckV3(adfa114e-a7ba-4d55-b86e-c8d399e1626e)
+{"CourseId":"8d965b59-a80d-440c-9992-29b99e192011","InternalEventName":"Traditional_Ladder","CurrentModule":"CreateMatch","ModulePayload":"","CourseDeckSummary":{"DeckId":"27b5d2a9-2ce6-440e-81cd-c809e90e5f14","Name":"North Wind Omni","Attributes":[{"name":"Version","value":"11"},{"name":"Format","value":"DirectGame"}],"DeckTileId":100619,"DeckArtId":455963,"PreferredCosmetics":{"Avatar":"","Sleeve":"","Pet":"","Title":"","Emotes":[]}},"CourseDeck":{"MainDeck":[{"cardId":100652,"quantity":1},{"cardId":67810,"quantity":4}],"Sideboard":[{"cardId":92235,"quantity":1}],"CommandZone":[],"Companions":[],"CardSkins":[{"GrpId":98444,"CCV":"DA"}]},"CardPool":[],"CardStyles":[]}
