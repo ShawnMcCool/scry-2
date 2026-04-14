@@ -6,6 +6,11 @@ defmodule Scry2.Events.ProjectorContentHashTest do
   describe "content_hash/0 injected by Projector macro" do
     test "every registered projector exposes content_hash/0" do
       for mod <- ProjectorRegistry.all() do
+        # Ensure the module is loaded before calling function_exported?/3 —
+        # async tests run before the application starts, so modules may not
+        # yet be loaded into the BEAM.
+        Code.ensure_loaded!(mod)
+
         assert function_exported?(mod, :content_hash, 0),
                "#{inspect(mod)} should export content_hash/0"
       end

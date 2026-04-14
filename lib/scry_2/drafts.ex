@@ -124,6 +124,14 @@ defmodule Scry2.Drafts do
     |> Repo.one()
   end
 
+  @doc "Returns the draft with the given event_name and optional player_id, or nil."
+  def get_by_event_name(event_name, player_id \\ nil) when is_binary(event_name) do
+    Draft
+    |> where([d], d.event_name == ^event_name)
+    |> maybe_filter_by_player(player_id)
+    |> Repo.one()
+  end
+
   @doc """
   Upserts a draft session by `(player_id, mtga_draft_id)`. Idempotent per ADR-016.
   """
