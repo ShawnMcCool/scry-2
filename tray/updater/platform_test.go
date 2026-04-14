@@ -19,7 +19,7 @@ func TestArchiveName(t *testing.T) {
 		{"darwin", "arm64", "v0.3.0", "zip", "scry_2-v0.3.0-macos-aarch64.tar.gz", false},
 		{"darwin", "amd64", "v0.3.0", "zip", "scry_2-v0.3.0-macos-x86_64.tar.gz", false},
 		{"windows", "amd64", "v0.3.0", "zip", "scry_2-v0.3.0-windows-x86_64.zip", false},
-		{"windows", "amd64", "v0.3.0", "msi", "Scry2Setup-v0.3.0.exe", false},
+		{"windows", "amd64", "v0.3.0", "msi", "Scry2-0.3.0.msi", false},
 		{"linux", "amd64", "v0.3.0", "msi", "scry_2-v0.3.0-linux-x86_64.tar.gz", false},
 		{"freebsd", "amd64", "v0.3.0", "zip", "", true},
 	}
