@@ -18,16 +18,92 @@ defmodule Scry2.Drafts do
   alias Scry2.Repo
   alias Scry2.Topics
 
-  @doc "Returns the most recent drafts, newest first. Optionally filtered by player_id."
+  @doc "Returns drafts, newest first. Options: :limit, :player_id, :format, :set_code."
   def list_drafts(opts \\ []) do
     limit_count = Keyword.get(opts, :limit, 50)
     player_id = Keyword.get(opts, :player_id)
+    format = Keyword.get(opts, :format)
+    set_code = Keyword.get(opts, :set_code)
 
     Draft
     |> maybe_filter_by_player(player_id)
+    |> maybe_filter_by_format(format)
+    |> maybe_filter_by_set(set_code)
     |> order_by([d], desc: d.started_at)
     |> limit(^limit_count)
     |> Repo.all()
+  end
+
+  @doc """
+  Returns aggregate stats for drafts belonging to `player_id`.
+
+  Keys: `:total`, `:win_rate` (float or nil), `:avg_wins` (float or nil),
+  `:trophies` (count of 7-win drafts), `:by_format` (list of
+  `%{format: string, total: int, win_rate: float}`).
+
+  Only complete drafts (completed_at not nil) contribute to rates and averages.
+  """
+  def draft_stats(opts \\ []) do
+    player_id = Keyword.get(opts, :player_id)
+
+    base =
+      Draft
+      |> maybe_filter_by_player(player_id)
+
+    total = Repo.aggregate(base, :count)
+
+    complete_base = where(base, [d], not is_nil(d.completed_at))
+
+    agg =
+      complete_base
+      |> select([d], %{
+        total_wins: sum(d.wins),
+        total_losses: sum(d.losses),
+        trophies: fragment("COUNT(CASE WHEN ? = 7 THEN 1 END)", d.wins)
+      })
+      |> Repo.one()
+
+    total_wins = agg.total_wins || 0
+    total_losses = agg.total_losses || 0
+    trophies = agg.trophies || 0
+
+    win_rate =
+      if total_wins + total_losses > 0,
+        do: total_wins / (total_wins + total_losses),
+        else: nil
+
+    complete_count = Repo.aggregate(complete_base, :count)
+
+    avg_wins =
+      if complete_count > 0,
+        do: total_wins / complete_count,
+        else: nil
+
+    by_format =
+      complete_base
+      |> group_by([d], d.format)
+      |> select([d], %{
+        format: d.format,
+        total: count(d.id),
+        total_wins: sum(d.wins),
+        total_losses: sum(d.losses)
+      })
+      |> Repo.all()
+      |> Enum.map(fn row ->
+        w = row.total_wins || 0
+        l = row.total_losses || 0
+        rate = if w + l > 0, do: w / (w + l), else: nil
+        Map.merge(row, %{win_rate: rate})
+      end)
+      |> Enum.sort_by(& &1.total, :desc)
+
+    %{
+      total: total,
+      win_rate: win_rate,
+      avg_wins: avg_wins,
+      trophies: trophies,
+      by_format: by_format
+    }
   end
 
   @doc "Returns the draft with its picks preloaded, ordered by pack/pick."
@@ -101,6 +177,12 @@ defmodule Scry2.Drafts do
 
   defp maybe_filter_by_player(query, nil), do: query
   defp maybe_filter_by_player(query, player_id), do: where(query, [d], d.player_id == ^player_id)
+
+  defp maybe_filter_by_format(query, nil), do: query
+  defp maybe_filter_by_format(query, format), do: where(query, [d], d.format == ^format)
+
+  defp maybe_filter_by_set(query, nil), do: query
+  defp maybe_filter_by_set(query, set_code), do: where(query, [d], d.set_code == ^set_code)
 
   defp broadcast_update(draft_id) do
     Topics.broadcast(Topics.drafts_updates(), {:draft_updated, draft_id})
