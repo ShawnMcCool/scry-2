@@ -221,7 +221,9 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "GetFormats",
                          # Startup reconnection probe — always empty in normal sessions;
                          # real match data flows through MatchGameRoomStateChangedEvent
-                         "EventGetActiveMatches"
+                         "EventGetActiveMatches",
+                         # Preconstructed deck catalogue — static reference data, not player activity
+                         "DeckGetAllPreconDecksV3"
                        ])
 
   @deferred_event_types MapSet.new([])

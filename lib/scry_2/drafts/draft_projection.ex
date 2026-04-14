@@ -208,8 +208,8 @@ defmodule Scry2.Drafts.DraftProjection do
 
       draft ->
         matches = Matches.list_matches_for_event(event_name, player_id)
-        wins = Enum.count(matches, & &1.won)
-        losses = Enum.count(matches, &(not &1.won))
+        wins = Enum.count(matches, &(&1.won == true))
+        losses = Enum.count(matches, &(&1.won == false))
 
         Drafts.upsert_draft!(%{
           mtga_draft_id: draft.mtga_draft_id,

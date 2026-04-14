@@ -18,6 +18,19 @@ defmodule Scry2.Drafts do
   alias Scry2.Repo
   alias Scry2.Topics
 
+  @doc "Returns distinct set codes for the player's drafts, most recently played first."
+  def list_set_codes(opts \\ []) do
+    player_id = Keyword.get(opts, :player_id)
+
+    Draft
+    |> maybe_filter_by_player(player_id)
+    |> where([d], not is_nil(d.set_code))
+    |> order_by([d], desc: d.started_at)
+    |> select([d], d.set_code)
+    |> distinct(true)
+    |> Repo.all()
+  end
+
   @doc "Returns drafts, newest first. Options: :limit, :player_id, :format, :set_code."
   def list_drafts(opts \\ []) do
     limit_count = Keyword.get(opts, :limit, 50)

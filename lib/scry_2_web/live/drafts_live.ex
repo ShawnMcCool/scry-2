@@ -83,11 +83,7 @@ defmodule Scry2Web.DraftsLive do
         limit: 50
       )
 
-    set_codes =
-      drafts
-      |> Enum.map(& &1.set_code)
-      |> Enum.uniq()
-      |> Enum.reject(&is_nil/1)
+    set_codes = Drafts.list_set_codes(player_id: player_id)
 
     assign(socket,
       page: :list,
@@ -488,8 +484,8 @@ defmodule Scry2Web.DraftsLive do
           </div>
           <div class="flex gap-1 flex-wrap">
             <.card_image
-              :for={arena_id <- arena_ids}
-              id={"pool-#{@draft.id}-#{arena_id}"}
+              :for={{arena_id, idx} <- Enum.with_index(arena_ids)}
+              id={"pool-#{@draft.id}-#{arena_id}-#{idx}"}
               arena_id={arena_id}
               name={card_name(@cards_by_arena_id, arena_id)}
               class="w-[56px]"
