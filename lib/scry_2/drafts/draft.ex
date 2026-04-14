@@ -12,6 +12,7 @@ defmodule Scry2.Drafts.Draft do
     field :completed_at, :utc_datetime
     field :wins, :integer
     field :losses, :integer
+    field :card_pool_arena_ids, :map
 
     has_many :picks, Scry2.Drafts.Pick
 
@@ -29,7 +30,8 @@ defmodule Scry2.Drafts.Draft do
       :started_at,
       :completed_at,
       :wins,
-      :losses
+      :losses,
+      :card_pool_arena_ids
     ])
     |> validate_required([:mtga_draft_id])
     |> unique_constraint([:player_id, :mtga_draft_id])

@@ -11,6 +11,11 @@ defmodule Scry2.Drafts.Pick do
     field :pack_arena_ids, :map
     field :pool_arena_ids, :map
     field :picked_at, :utc_datetime
+    field :auto_pick, :boolean
+    field :time_remaining, :float
+    # List of arena_ids; multi-element for Pick Two format, single-element
+    # for standard picks. Stored as %{"ids" => [integer]}.
+    field :picked_arena_ids, :map
 
     belongs_to :draft, Scry2.Drafts.Draft
 
@@ -26,9 +31,12 @@ defmodule Scry2.Drafts.Pick do
       :picked_arena_id,
       :pack_arena_ids,
       :pool_arena_ids,
-      :picked_at
+      :picked_at,
+      :auto_pick,
+      :time_remaining,
+      :picked_arena_ids
     ])
-    |> validate_required([:draft_id, :pack_number, :pick_number, :picked_arena_id])
+    |> validate_required([:draft_id, :pack_number, :pick_number])
     |> unique_constraint([:draft_id, :pack_number, :pick_number],
       name: :drafts_picks_draft_id_pack_number_pick_number_index
     )
