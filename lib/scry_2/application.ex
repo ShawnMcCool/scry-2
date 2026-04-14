@@ -84,8 +84,13 @@ defmodule Scry2.Application do
   # downstream consumers are ready.
   defp maybe_add_watcher(children) do
     if Scry2.Config.get(:start_watcher) do
+      # Version check: compare compile-time AST hashes against stored
+      # hashes. If the translator pipeline changed, runs full reingest.
+      # If only specific projectors changed, rebuilds only those.
+      # Must run BEFORE projectors start so they don't process stale data.
       # Stage 09: projectors subscribe first so they never miss an event.
       children ++
+        [Scry2.Events.VersionCheck] ++
         Scry2.Events.ProjectorRegistry.all() ++
         [
           # Stage 08: ingestion worker translates raw events to domain events.

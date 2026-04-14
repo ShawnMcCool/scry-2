@@ -416,6 +416,41 @@ defmodule Scry2.Events do
     )
   end
 
+  @doc """
+  Returns the stored content hash for the named component, or `nil`
+  if the component has never been tracked.
+  """
+  @spec get_content_hash(String.t()) :: String.t() | nil
+  def get_content_hash(component_name) when is_binary(component_name) do
+    case Repo.get_by(ProjectorWatermark, projector_name: component_name) do
+      nil -> nil
+      %{content_hash: hash} -> hash
+    end
+  end
+
+  @doc """
+  Persists the content hash for the named component. Upsert — creates
+  the row on first call, updates on subsequent calls. Does not touch
+  the `last_event_id` watermark if the row already exists.
+  """
+  @spec put_content_hash!(String.t(), String.t()) :: %ProjectorWatermark{}
+  def put_content_hash!(component_name, hash)
+      when is_binary(component_name) and is_binary(hash) do
+    now = DateTime.utc_now(:second)
+
+    %ProjectorWatermark{}
+    |> ProjectorWatermark.changeset(%{
+      projector_name: component_name,
+      last_event_id: 0,
+      content_hash: hash,
+      updated_at: now
+    })
+    |> Repo.insert!(
+      on_conflict: [set: [content_hash: hash, updated_at: now]],
+      conflict_target: :projector_name
+    )
+  end
+
   @doc "Returns all projector watermark rows. Diagnostics / dashboard."
   @spec list_watermarks() :: [%ProjectorWatermark{}]
   def list_watermarks do
