@@ -4,10 +4,10 @@
 # Run from the repo root after building the Elixir release and tray binary.
 #
 # Usage:
-#   installer/scripts/build-msi.ps1 -Version 0.5.0 -TrayExe scry2-tray.exe -VCRedistPath installer/vc_redist.x64.exe
+#   installer/scripts/build-msi.ps1 -Version 0.5.0 -TrayExe scry2-tray.exe
 #
 # Requires: wix CLI (dotnet tool install --global wix)
-# Extensions: WixToolset.UI.wixext, WixToolset.Util.wixext, WixToolset.Firewall.wixext, WixToolset.BootstrapperApplications.wixext
+# Extensions: WixToolset.UI.wixext, WixToolset.Util.wixext, WixToolset.Firewall.wixext
 
 param(
     [Parameter(Mandatory=$true)]
@@ -15,9 +15,6 @@ param(
 
     [Parameter(Mandatory=$true)]
     [string]$TrayExe,
-
-    [Parameter(Mandatory=$true)]
-    [string]$VCRedistPath,
 
     [string]$ReleaseDir = "_build/prod/rel/scry_2",
     [string]$OutputDir = "installer/output"
@@ -29,7 +26,6 @@ $WixDir = "$PSScriptRoot/../wix"
 # Resolve paths to absolute (WiX resolves relative paths from .wxs file location)
 $ReleaseDir = (Resolve-Path $ReleaseDir).Path
 $TrayExe = (Resolve-Path $TrayExe).Path
-$VCRedistPath = (Resolve-Path $VCRedistPath).Path
 
 # Detect ERTS version from the release directory
 $ertsDir = Get-ChildItem "$ReleaseDir/erts-*" -Directory | Select-Object -First 1
@@ -199,24 +195,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Host "MSI built: $msiPath"
-
-# Build the Burn bootstrapper
-Write-Host "Building Burn bootstrapper..."
-$bundlePath = "$OutputDir/Scry2Setup-v$Version.exe"
-
-wix build "$WixDir/Bundle.wxs" `
-    -d "Version=$Version" `
-    -d "MsiPath=$msiPath" `
-    -d "VCRedistPath=$VCRedistPath" `
-    -ext WixToolset.BootstrapperApplications.wixext `
-    -ext WixToolset.Util.wixext `
-    -o $bundlePath
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "Burn bootstrapper build failed"
-    exit 1
-}
-Write-Host "Bootstrapper built: $bundlePath"
 
 # Clean up generated fragments
 Remove-Item "$WixDir/*Fragment.wxs" -Force

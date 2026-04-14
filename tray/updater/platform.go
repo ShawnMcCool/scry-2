@@ -3,14 +3,15 @@ package updater
 import (
 	"fmt"
 	"runtime"
+	"strings"
 )
 
 // ArchiveName returns the release asset filename for the given platform and version.
-// When installerType is "msi" and the platform is Windows, it returns the Burn
-// bootstrapper .exe name instead of the .zip archive.
+// When installerType is "msi" and the platform is Windows, it returns the raw MSI
+// filename (strips the leading "v" from the version tag to match build output).
 func ArchiveName(goos, goarch, version, installerType string) (string, error) {
 	if installerType == "msi" && goos == "windows" {
-		return fmt.Sprintf("Scry2Setup-%s.exe", version), nil
+		return fmt.Sprintf("Scry2-%s.msi", strings.TrimPrefix(version, "v")), nil
 	}
 	suffix, err := archiveSuffix(goos, goarch)
 	if err != nil {

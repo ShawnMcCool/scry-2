@@ -78,6 +78,8 @@ jobs:
           updated = re.sub(r'version: "[^"]+"', f'version: "{version}"', content)
           with open('mix.exs', 'w') as f:
               f.write(updated)
+          with open(os.environ['GITHUB_ENV'], 'a') as f:
+              f.write(f'TRIMMED_VERSION={version}\n')
           print(f"Set version to {version}")
 
       - uses: erlef/setup-beam@v1
@@ -193,14 +195,6 @@ jobs:
           wix extension add WixToolset.UI.wixext/5.0.2
           wix extension add WixToolset.Util.wixext/5.0.2
           wix extension add WixToolset.Firewall.wixext/5.0.2
-          wix extension add WixToolset.BootstrapperApplications.wixext/5.0.2
-
-      - name: Download VC++ Redistributable
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" `
-            -OutFile "installer/vc_redist.x64.exe"
 
       - name: Build MSI installer
         if: matrix.os == 'windows-latest'
@@ -209,8 +203,7 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart("v")
           installer/scripts/build-msi.ps1 `
             -Version $version `
-            -TrayExe scry2-tray-msi.exe `
-            -VCRedistPath installer/vc_redist.x64.exe
+            -TrayExe scry2-tray-msi.exe
 
       - name: Upload release archive
         uses: softprops/action-gh-release@v2
@@ -222,4 +215,4 @@ jobs:
         if: matrix.os == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
-          files: installer/output/Scry2Setup-${{ github.ref_name }}.exe
+          files: installer/output/Scry2-${{ env.TRIMMED_VERSION }}.msi
