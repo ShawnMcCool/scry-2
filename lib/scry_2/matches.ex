@@ -140,6 +140,8 @@ defmodule Scry2.Matches do
     |> where([m], m.event_name == ^event_name and m.player_id == ^player_id)
     |> where([m], not is_nil(m.mtga_deck_id))
     |> group_by([m], m.mtga_deck_id)
+    # max() is used as a stable-value aggregator: deck_name and deck_colors are
+    # invariant per mtga_deck_id within a player's MTGA data, so any aggregate works.
     |> select([m], %{
       mtga_deck_id: m.mtga_deck_id,
       deck_name: max(m.deck_name),

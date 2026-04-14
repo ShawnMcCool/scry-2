@@ -407,5 +407,19 @@ defmodule Scry2.MatchesTest do
       assert hd(results).mtga_deck_id == "deck-abc"
       assert hd(results).deck_name == "UR Control"
     end
+
+    test "excludes matches with nil mtga_deck_id" do
+      player = Scry2.Players.find_or_create!("player-list-decks-nil", "Player List Decks Nil")
+
+      TestFactory.create_match(%{
+        event_name: "QuickDraft_FDN_20260401",
+        player_id: player.id,
+        mtga_deck_id: nil,
+        deck_name: nil
+      })
+
+      results = Matches.list_decks_for_event("QuickDraft_FDN_20260401", player.id)
+      assert results == []
+    end
   end
 end
