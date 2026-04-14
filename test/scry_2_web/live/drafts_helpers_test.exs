@@ -54,6 +54,50 @@ defmodule Scry2Web.DraftsHelpersTest do
       groups = DraftsHelpers.group_pool_by_type([999], %{})
       assert groups == []
     end
+
+    test "classifies Sorcery into Instants & Sorceries" do
+      cards_by_arena_id = %{1 => %{type_line: "Sorcery"}}
+      groups = DraftsHelpers.group_pool_by_type([1], cards_by_arena_id)
+      assert Enum.find(groups, &(elem(&1, 0) == "Instants & Sorceries")) != nil
+    end
+
+    test "classifies Artifact into Artifacts & Enchantments" do
+      cards_by_arena_id = %{1 => %{type_line: "Artifact"}}
+      groups = DraftsHelpers.group_pool_by_type([1], cards_by_arena_id)
+      assert Enum.find(groups, &(elem(&1, 0) == "Artifacts & Enchantments")) != nil
+    end
+
+    test "classifies Enchantment into Artifacts & Enchantments" do
+      cards_by_arena_id = %{1 => %{type_line: "Enchantment — Aura"}}
+      groups = DraftsHelpers.group_pool_by_type([1], cards_by_arena_id)
+      assert Enum.find(groups, &(elem(&1, 0) == "Artifacts & Enchantments")) != nil
+    end
+
+    test "classifies unrecognized type_line into Other" do
+      cards_by_arena_id = %{1 => %{type_line: "Planeswalker — Jace"}}
+      groups = DraftsHelpers.group_pool_by_type([1], cards_by_arena_id)
+      assert Enum.find(groups, &(elem(&1, 0) == "Other")) != nil
+    end
+  end
+
+  describe "win_loss_label/2" do
+    test "formats wins and losses" do
+      assert DraftsHelpers.win_loss_label(7, 2) == "7–2"
+    end
+
+    test "uses 0 for nil values" do
+      assert DraftsHelpers.win_loss_label(nil, nil) == "0–0"
+    end
+  end
+
+  describe "draft_status_label/1" do
+    test "Complete when completed_at is set" do
+      assert DraftsHelpers.draft_status_label(%{completed_at: DateTime.utc_now()}) == "Complete"
+    end
+
+    test "In progress when completed_at is nil" do
+      assert DraftsHelpers.draft_status_label(%{completed_at: nil}) == "In progress"
+    end
   end
 
   describe "record_color_class/1" do

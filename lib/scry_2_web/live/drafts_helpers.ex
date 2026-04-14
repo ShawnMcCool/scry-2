@@ -8,6 +8,8 @@ defmodule Scry2Web.DraftsHelpers do
     {"Instants & Sorceries", ~w(Instant Sorcery)},
     {"Artifacts & Enchantments", ~w(Artifact Enchantment)},
     {"Lands", ~w(Land)},
+    # Empty keywords list is intentional — classify_type/1 catches all unrecognized
+    # type lines and returns "Other" directly, so no keyword matching is needed here.
     {"Other", []}
   ]
 

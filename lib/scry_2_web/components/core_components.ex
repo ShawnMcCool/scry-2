@@ -455,11 +455,12 @@ defmodule Scry2Web.CoreComponents do
   attr :title, :string, required: true
   attr :value, :any, required: true
   attr :class, :string, default: ""
+  attr :rest, :global
   slot :icon
 
   def stat_card(assigns) do
     ~H"""
-    <div class="card bg-base-200">
+    <div class="card bg-base-200" {@rest}>
       <div class="card-body p-4 items-center text-center">
         <p class="text-xs uppercase text-base-content/60 flex items-center gap-1">
           {render_slot(@icon)}

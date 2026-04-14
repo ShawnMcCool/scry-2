@@ -39,6 +39,7 @@ defmodule Scry2Web.CardComponents do
   attr :class, :string, default: "w-[4.5rem]"
   attr :id, :string, default: nil
   attr :cached, :boolean, default: nil
+  attr :rest, :global
 
   def card_image(assigns) do
     assigns =
@@ -58,6 +59,7 @@ defmodule Scry2Web.CardComponents do
       loading="lazy"
       class={["rounded-sm aspect-[488/680]", @class]}
       phx-hook="CardHover"
+      {@rest}
     />
     <div
       :if={!@cached?}
@@ -65,6 +67,7 @@ defmodule Scry2Web.CardComponents do
         "rounded-sm bg-base-300 flex items-center justify-center text-base-content/20 aspect-[488/680]",
         @class
       ]}
+      {@rest}
     >
       <Scry2Web.CoreComponents.icon name="hero-photo" class="size-4" />
     </div>
