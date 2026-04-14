@@ -181,8 +181,10 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "EventEnterPairing",
                          # Deck management
                          "EventSetDeckV2",
+                         "EventSetDeckV3",
                          "DeckGetDeckSummariesV2",
                          "DeckUpsertDeckV2",
+                         "DeckUpsertDeckV3",
                          # Progress tracking
                          "QuestGetQuests",
                          "PeriodicRewardsGetStatus",
@@ -801,12 +803,15 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   # ── Deck management ──────────────────────────────────────────────────
 
-  # EventSetDeckV2 request carries the full deck list for an event.
+  # EventSetDeckV2/V3 request carries the full deck list for an event.
+  # V3 is a protocol upgrade of V2; the request payload structure is identical.
+  # Responses carry a course confirmation payload and are skipped (decode_request_field fails).
   def translate(
-        %EventRecord{event_type: "EventSetDeckV2"} = record,
+        %EventRecord{event_type: type} = record,
         _self_user_id,
         _match_context
-      ) do
+      )
+      when type in ["EventSetDeckV2", "EventSetDeckV3"] do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
@@ -832,13 +837,16 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end
   end
 
-  # DeckUpsertDeckV2 request carries a deck create/edit/clone operation
+  # DeckUpsertDeckV2/V3 request carries a deck create/edit/clone operation
   # with the full deck list and an ActionType discriminator.
+  # V3 is a protocol upgrade of V2; the request payload structure is identical.
+  # Responses carry a slim deck summary (no card list) and are skipped (decode_request_field fails).
   def translate(
-        %EventRecord{event_type: "DeckUpsertDeckV2"} = record,
+        %EventRecord{event_type: type} = record,
         _self_user_id,
         _match_context
-      ) do
+      )
+      when type in ["DeckUpsertDeckV2", "DeckUpsertDeckV3"] do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
