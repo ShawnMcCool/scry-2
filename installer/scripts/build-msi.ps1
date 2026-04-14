@@ -182,6 +182,7 @@ $wxsFiles = @(
 )
 
 $wixArgs = @("build") + $wxsFiles + @(
+    "-arch", "x64",
     "-d", "Version=$Version",
     "-d", "ErtsVersion=$ertsVersion",
     "-d", "InstallSource=$ReleaseDir",
