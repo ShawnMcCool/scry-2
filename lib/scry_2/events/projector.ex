@@ -202,8 +202,11 @@ defmodule Scry2.Events.Projector do
       def init(_opts) do
         Topics.subscribe(Topics.domain_events())
         Topics.subscribe(Topics.domain_control())
+        after_init(_opts)
         {:ok, %{}}
       end
+
+      def after_init(_opts), do: :ok
 
       @impl true
       def handle_info(:full_rebuild, state) do
@@ -313,7 +316,11 @@ defmodule Scry2.Events.Projector do
 
       def handle_info({:domain_event, _id, _type_slug, _event}, state), do: {:noreply, state}
       def handle_info({:domain_event, _id, _type_slug}, state), do: {:noreply, state}
-      def handle_info(_other, state), do: {:noreply, state}
+      def handle_info(msg, state), do: handle_extra_info(msg, state)
+
+      def handle_extra_info(_msg, state), do: {:noreply, state}
+
+      defoverridable after_init: 1, handle_extra_info: 2
     end
   end
 end
