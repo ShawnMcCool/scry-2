@@ -261,6 +261,7 @@ defmodule Scry2Web.DraftsLive do
             <tr
               :for={draft <- @drafts}
               class="hover cursor-pointer"
+              data-format={draft.format}
               phx-click={JS.navigate(~p"/drafts/#{draft.id}")}
             >
               <td>{format_datetime(draft.started_at)}</td>
@@ -587,11 +588,9 @@ defmodule Scry2Web.DraftsLive do
     end
   end
 
-  defp format_bar_color(rate) when is_float(rate) and rate >= 0.55, do: "bg-success"
-  defp format_bar_color(rate) when is_float(rate) and rate >= 0.40, do: "bg-warning"
-  defp format_bar_color(_), do: "bg-error"
+  defp format_bar_color(nil), do: "bg-error"
+  defp format_bar_color(rate), do: "bg-#{DraftsHelpers.win_rate_color(rate)}"
 
-  defp format_win_rate_color(rate) when is_float(rate) and rate >= 0.55, do: "text-success"
-  defp format_win_rate_color(rate) when is_float(rate) and rate >= 0.40, do: "text-warning"
-  defp format_win_rate_color(_), do: "text-error"
+  defp format_win_rate_color(nil), do: "text-error"
+  defp format_win_rate_color(rate), do: "text-#{DraftsHelpers.win_rate_color(rate)}"
 end

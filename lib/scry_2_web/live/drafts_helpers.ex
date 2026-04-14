@@ -3,6 +3,8 @@ defmodule Scry2Web.DraftsHelpers do
   Pure helper functions for `Scry2Web.DraftsLive`. Extracted per ADR-013.
   """
 
+  require Logger
+
   @type_groups [
     {"Creatures", ~w(Creature)},
     {"Instants & Sorceries", ~w(Instant Sorcery)},
@@ -48,8 +50,15 @@ defmodule Scry2Web.DraftsHelpers do
       arena_ids
       |> Enum.flat_map(fn arena_id ->
         case Map.get(cards_by_arena_id, arena_id) do
-          nil -> []
-          card -> [{arena_id, classify_type(card.type_line)}]
+          nil ->
+            Logger.warning(
+              "DraftsHelpers.group_pool_by_type: no card found for arena_id=#{arena_id}"
+            )
+
+            []
+
+          card ->
+            [{arena_id, classify_type(card.type_line)}]
         end
       end)
 
@@ -70,11 +79,15 @@ defmodule Scry2Web.DraftsHelpers do
   def record_color_class(draft) do
     case win_rate(draft) do
       nil -> "text-base-content/50"
-      rate when rate >= 0.55 -> "text-success"
-      rate when rate >= 0.40 -> "text-warning"
-      _ -> "text-error"
+      rate -> "text-#{win_rate_color(rate)}"
     end
   end
+
+  @doc "Returns the daisyUI color name (success/warning/error) for a win rate float."
+  @spec win_rate_color(float()) :: String.t()
+  def win_rate_color(rate) when rate >= 0.55, do: "success"
+  def win_rate_color(rate) when rate >= 0.40, do: "warning"
+  def win_rate_color(_), do: "error"
 
   @doc "Format a win-loss record for display."
   @spec win_loss_label(integer() | nil, integer() | nil) :: String.t()

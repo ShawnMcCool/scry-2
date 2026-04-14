@@ -56,6 +56,31 @@ defmodule Scry2.Drafts.DraftProjectionTest do
       assert pick.picked_arena_id == 91_999
     end
 
+    test "draft_pick_made stores auto_pick and time_remaining on the pick" do
+      player = create_player()
+      draft_id = "test-draft-pick-meta-#{System.unique_integer([:positive])}"
+
+      events = [
+        build_draft_started(%{player_id: player.id, mtga_draft_id: draft_id}),
+        build_draft_pick_made(%{
+          player_id: player.id,
+          mtga_draft_id: draft_id,
+          pack_number: 1,
+          pick_number: 1,
+          picked_arena_id: 91_999,
+          auto_pick: true,
+          time_remaining: 4.5
+        })
+      ]
+
+      project_events(DraftProjection, events)
+
+      draft = Drafts.get_by_mtga_id(draft_id, player.id)
+      pick = Drafts.get_draft_with_picks(draft.id).picks |> hd()
+      assert pick.auto_pick == true
+      assert pick.time_remaining == 4.5
+    end
+
     test "draft_pick_made for unknown draft logs warning" do
       player = create_player()
       event = build_draft_pick_made(%{player_id: player.id, mtga_draft_id: "nonexistent-draft"})

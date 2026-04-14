@@ -81,6 +81,8 @@ defmodule Scry2.Drafts.DraftProjection do
         pack_number: event.pack_number,
         pick_number: event.pick_number,
         picked_arena_id: event.picked_arena_id,
+        auto_pick: event.auto_pick,
+        time_remaining: event.time_remaining,
         picked_at: event.occurred_at
       }
 
@@ -180,6 +182,12 @@ defmodule Scry2.Drafts.DraftProjection do
 
   # Human drafts have no DraftStarted event. Create the draft row on the
   # first HumanDraftPackOffered if it doesn't exist yet.
+  #
+  # event_name is set to mtga_draft_id. For event-name-style IDs
+  # (e.g. "PremierDraft_FDN_20260401") this matches what MTGA uses in match
+  # and ranking events, so match linkage works. For UUID-style draft IDs (seen
+  # in Draft.Notify payloads), MTGA is expected to use the same UUID as the
+  # event_name in subsequent match events — unverified against real log samples.
   defp ensure_human_draft!(event) do
     case Drafts.get_by_mtga_id(event.mtga_draft_id, event.player_id) do
       nil ->

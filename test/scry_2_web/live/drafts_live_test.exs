@@ -62,15 +62,8 @@ defmodule Scry2Web.DraftsLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/drafts?format=quick_draft")
 
-      # The table should only contain the quick draft row
-      assert has_element?(view, "table tbody tr")
-      html = render(view)
-      # Count table rows -- only one draft should appear (the quick_draft one)
-      # The filter chips always show "Premier Draft" as a label, so we check
-      # that the table has exactly one data row by matching the format column
-      assert html =~ "Quick Draft"
-      # Only one table row should exist (the quick draft)
-      refute html =~ ~r/<td class="text-base-content\/60">\s*Premier Draft\s*<\/td>/
+      assert has_element?(view, "tr[data-format='quick_draft']")
+      refute has_element?(view, "tr[data-format='premier_draft']")
     end
   end
 
@@ -143,6 +136,39 @@ defmodule Scry2Web.DraftsLiveTest do
       {:ok, view, _html} = live(conn, ~p"/drafts/#{draft.id}?tab=deck")
 
       assert has_element?(view, "[data-section='draft-pool']")
+    end
+  end
+
+  describe "detail -- tab navigation" do
+    test "each tab renders its own section and not the others", %{conn: conn} do
+      player_id = setup_player(conn)
+
+      draft =
+        Factory.create_draft(%{
+          player_id: player_id,
+          format: "quick_draft",
+          set_code: "FDN"
+        })
+
+      Factory.create_pick(%{
+        draft: draft,
+        pack_number: 1,
+        pick_number: 1,
+        picked_arena_id: 91_234,
+        pack_arena_ids: %{"cards" => [91_234, 91_235]}
+      })
+
+      {:ok, view, _html} = live(conn, ~p"/drafts/#{draft.id}?tab=picks")
+      assert has_element?(view, "[data-pack='1-1']")
+      refute has_element?(view, "[data-section='draft-pool']")
+
+      {:ok, view, _html} = live(conn, ~p"/drafts/#{draft.id}?tab=deck")
+      assert has_element?(view, "[data-section='draft-pool']")
+      refute has_element?(view, "[data-pack='1-1']")
+
+      {:ok, view, _html} = live(conn, ~p"/drafts/#{draft.id}?tab=matches")
+      refute has_element?(view, "[data-section='draft-pool']")
+      refute has_element?(view, "[data-pack='1-1']")
     end
   end
 
