@@ -517,8 +517,8 @@ defmodule Scry2.Events do
   to be regenerated from scratch. Safe to call at any time — raw MTGA
   events are never deleted.
 
-  Requires `IngestRawEvents` to be running (it is in the default
-  supervision tree). Blocks until all raw events have been re-broadcast.
+  Safe to call before `IngestRawEvents` has started — uses the direct
+  retranslation path that runs in the caller's process.
   """
   @spec reingest!() :: :ok
   def reingest! do
@@ -543,7 +543,7 @@ defmodule Scry2.Events do
     #    (one Repo.insert_all + one bulk UPDATE). No per-event DB writes.
     #    No PubSub broadcasts during retranslation — projectors rebuild from
     #    the event store in step 4.
-    Scry2.Events.IngestRawEvents.retranslate_all!()
+    Scry2.Events.IngestRawEvents.retranslate_all_direct!()
 
     Log.info(:ingester, "reingest: retranslation complete, rebuilding projections")
 

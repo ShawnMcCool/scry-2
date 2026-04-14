@@ -112,6 +112,20 @@ defmodule Scry2.Events.IngestRawEvents do
     GenServer.call(name, {:retranslate_all, opts}, :infinity)
   end
 
+  @doc """
+  Retranslates all raw events without requiring this GenServer to be running.
+
+  Used by `Events.reingest!/0` during application startup — VersionCheck
+  calls reingest! before IngestRawEvents has started in the supervision tree.
+  Runs the same DB work as `retranslate_all!/2` but directly in the caller's
+  process.
+  """
+  def retranslate_all_direct!(opts \\ []) do
+    final_ingestion = run_retranslation(opts)
+    IngestionState.persist!(final_ingestion)
+    :ok
+  end
+
   @impl true
   def init(_opts) do
     Topics.subscribe(Topics.mtga_logs_events())
@@ -147,17 +161,20 @@ defmodule Scry2.Events.IngestRawEvents do
 
   @impl true
   def handle_call({:retranslate_all, opts}, _from, state) do
+    final_ingestion = run_retranslation(opts)
+    persisted = IngestionState.persist!(final_ingestion)
+    {:reply, :ok, %{state | ingestion: persisted}}
+  end
+
+  # Shared retranslation logic used by both retranslate_all!/2 (via GenServer call)
+  # and retranslate_all_direct!/1 (direct call during startup).
+  # Caller deleted the IngestionState.Snapshot beforehand so load/1 returns defaults,
+  # ensuring events are replayed from event 1.
+  defp run_retranslation(opts) do
     on_progress = Keyword.get(opts, :on_progress)
     total = MtgaLogIngestion.count_all()
-
-    # Fresh state — caller deleted the IngestionState.Snapshot beforehand so
-    # load/1 returns defaults, ensuring events are replayed from event 1.
     fresh_ingestion = IngestionState.load()
-
-    new_ingestion = do_retranslate_chunk(0, fresh_ingestion, total, 0, on_progress)
-
-    final_ingestion = IngestionState.persist!(new_ingestion)
-    {:reply, :ok, %{state | ingestion: final_ingestion}}
+    do_retranslate_chunk(0, fresh_ingestion, total, 0, on_progress)
   end
 
   defp do_retranslate_chunk(cursor, ingestion, total, processed, on_progress) do
