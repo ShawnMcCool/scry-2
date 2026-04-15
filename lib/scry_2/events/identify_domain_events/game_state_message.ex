@@ -6,6 +6,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   - GameCompleted (MatchState_GameComplete)
   - DieRolled (DieRollResultsResp)
   - MulliganOffered (MulliganReq)
+  - TurnStarted / PhaseChanged (turnInfo delta detection — emitted when turn number or phase changes)
   - Turn actions from annotations (ZoneTransfer, DamageDealt, ModifiedLife, etc.)
 
   Called by the coordinator with pre-decoded `messages` (the inner
@@ -30,6 +31,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
 
   alias Scry2.Events.IdentifyDomainEvents.Helpers
   alias Scry2.Events.Match.{DieRolled, GameCompleted}
+  alias Scry2.Events.Priority.PriorityAssigned
   alias Scry2.Events.Turn.{PhaseChanged, TurnStarted}
 
   @doc """
@@ -45,6 +47,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
       maybe_build_game_completed(messages, match_id, occurred_at, player_seat),
       build_mulligan_offered(messages, match_id, occurred_at, match_context),
       build_turn_structure_events(messages, match_id, occurred_at, match_context),
+      build_priority_assigned_events(messages, match_id, occurred_at, match_context),
       build_turn_actions(messages, match_id, occurred_at, match_context)
     ]
     |> List.flatten()
@@ -275,6 +278,43 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
 
       [turn_event, phase_event] |> Enum.reject(&is_nil/1)
     end
+  end
+
+  # ── PriorityAssigned from turnInfo ────────────────────────────────
+  #
+  # Emits PriorityAssigned for every GameStateMessage that carries a
+  # priorityPlayer in turnInfo. No delta detection — every priority
+  # assignment is a meaningful discrete fact.
+
+  defp build_priority_assigned_events(messages, match_id, occurred_at, match_context) do
+    game_number = match_context[:current_game_number]
+
+    messages
+    |> Enum.flat_map(fn msg ->
+      if Helpers.game_state_message?(msg) do
+        gsm = Helpers.extract_game_state(msg)
+        turn_info = gsm["turnInfo"] || %{}
+        priority_seat = turn_info["priorityPlayer"]
+
+        if priority_seat do
+          [
+            %PriorityAssigned{
+              mtga_match_id: match_id,
+              game_number: game_number,
+              turn_number: turn_info["turnNumber"],
+              phase: turn_info["phase"],
+              step: turn_info["step"],
+              player_seat: priority_seat,
+              occurred_at: occurred_at
+            }
+          ]
+        else
+          []
+        end
+      else
+        []
+      end
+    end)
   end
 
   # ── Turn actions from GameStateMessage annotations ─────────────────

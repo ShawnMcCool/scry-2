@@ -9,6 +9,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
   """
 
   alias Scry2.Events.Gameplay.{GameConceded, MulliganDecided, StartingPlayerChosen}
+  alias Scry2.Events.Priority.PriorityPassed
   alias Scry2.MtgaLogIngestion.EventRecord
 
   @doc """
@@ -63,6 +64,20 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
             %StartingPlayerChosen{
               mtga_match_id: match_id,
               chose_play: chosen_seat == self_seat_id,
+              occurred_at: occurred_at
+            }
+
+          "ClientMessageType_PerformActionResp" ->
+            # Player submitted their action (play a land, cast a spell, or
+            # explicitly pass priority). autoPassPriority signals the pass.
+            turn_phase = match_context[:turn_phase_state] || %{}
+
+            %PriorityPassed{
+              mtga_match_id: match_id,
+              game_number: match_context[:current_game_number],
+              turn_number: turn_phase[:turn],
+              phase: turn_phase[:phase],
+              step: turn_phase[:step],
               occurred_at: occurred_at
             }
 
