@@ -138,8 +138,7 @@ defmodule Scry2.Events.IngestionState do
   end
 
   def apply_event(%__MODULE__{} = state, %Scry2.Events.Turn.TurnStarted{turn_number: turn}) do
-    new_tps = Map.merge(state.match.turn_phase_state, %{turn: turn, phase: nil, step: nil})
-    {put_in(state.match.turn_phase_state, new_tps), []}
+    {put_in(state.match.turn_phase_state, %{turn: turn, phase: nil, step: nil}), []}
   end
 
   def apply_event(%__MODULE__{} = state, %Scry2.Events.Turn.PhaseChanged{phase: phase, step: step}) do
@@ -193,6 +192,8 @@ defmodule Scry2.Events.IngestionState do
           Jason.encode!(%{
             state.match
             | game_objects: %{},
+              # turn_phase_state and game_object_states are volatile delta-tracking maps — not persisted.
+              # They are rebuilt naturally as new GameStateMessage events arrive after restart.
               turn_phase_state: %{},
               game_object_states: %{},
               pending_deck: nil

@@ -112,6 +112,47 @@ defmodule Scry2.Events.IngestionStateTest do
       assert new_state.session == state.session
     end
 
+    test "TurnStarted resets turn_phase_state to turn/nil/nil" do
+      state = %{
+        IngestionState.new()
+        | match: %Match{
+            turn_phase_state: %{turn: 2, phase: "Phase_Main", step: "Step_PreCombatMain"}
+          }
+      }
+
+      event = TestFactory.build_turn_started(%{turn_number: 3})
+      {new_state, []} = IngestionState.apply_event(state, event)
+
+      assert new_state.match.turn_phase_state == %{turn: 3, phase: nil, step: nil}
+    end
+
+    test "PhaseChanged merges phase and step while preserving turn" do
+      state = %{
+        IngestionState.new()
+        | match: %Match{turn_phase_state: %{turn: 5, phase: nil, step: nil}}
+      }
+
+      event = TestFactory.build_phase_changed(%{phase: "Phase_Combat", step: "Step_BeginCombat"})
+      {new_state, []} = IngestionState.apply_event(state, event)
+
+      assert new_state.match.turn_phase_state == %{
+               turn: 5,
+               phase: "Phase_Combat",
+               step: "Step_BeginCombat"
+             }
+    end
+
+    test "PhaseChanged after TurnStarted preserves turn and sets phase" do
+      initial = IngestionState.new()
+      turn_event = TestFactory.build_turn_started(%{turn_number: 4})
+      {after_turn, []} = IngestionState.apply_event(initial, turn_event)
+
+      phase_event = TestFactory.build_phase_changed(%{phase: "Phase_Main", step: nil})
+      {after_phase, []} = IngestionState.apply_event(after_turn, phase_event)
+
+      assert after_phase.match.turn_phase_state == %{turn: 4, phase: "Phase_Main", step: nil}
+    end
+
     test "unknown event is a no-op" do
       {state, []} = IngestionState.apply_event(IngestionState.new(), :whatever)
       assert state == IngestionState.new()

@@ -522,29 +522,50 @@ defmodule Scry2.Events.IngestRawEvents do
 
   # ── Pre-translation state extraction ─────────────────────────────────
 
-  # Accumulate instance_id → arena_id mappings from GreToClientEvent messages.
+  # Accumulate instance_id → arena_id mappings and object states from GreToClientEvent messages.
   # MTGA sends gameObjects across many GameStateMessages; we merge them all into
   # state.match.game_objects so the translator can resolve instance IDs to arena_ids
   # even when a later message (e.g. MulliganReq) omits the full gameObjects list.
+  #
+  # game_object_states tracks per-object tap/power/toughness for delta detection.
+  # power and toughness arrive as nested %{"value" => int} maps on creature objects.
   defp maybe_cache_game_objects(%EventRecord{event_type: "GreToClientEvent"} = record, state) do
     with {:ok, payload} <- Jason.decode(record.raw_json),
          messages when is_list(messages) <-
            get_in(payload, ["greToClientEvent", "greToClientMessages"]) do
-      new_objects =
+      {new_objects, new_object_states} =
         messages
         |> Enum.flat_map(fn msg ->
           case get_in(msg, ["gameStateMessage", "gameObjects"]) do
-            objects when is_list(objects) ->
-              Enum.map(objects, fn obj -> {obj["instanceId"], obj["grpId"]} end)
-
-            _ ->
-              []
+            objects when is_list(objects) -> objects
+            _ -> []
           end
         end)
-        |> Map.new()
+        |> Enum.reduce({%{}, %{}}, fn obj, {acc_objects, acc_states} ->
+          instance_id = obj["instanceId"]
+          grp_id = obj["grpId"]
 
-      merged = Map.merge(state.match.game_objects, new_objects)
-      put_in(state.match.game_objects, merged)
+          object_state = %{
+            tapped: obj["isTapped"],
+            power: get_in(obj, ["power", "value"]),
+            toughness: get_in(obj, ["toughness", "value"])
+          }
+
+          {
+            Map.put(acc_objects, instance_id, grp_id),
+            Map.put(acc_states, instance_id, object_state)
+          }
+        end)
+
+      state
+      |> put_in(
+        [Access.key(:match), Access.key(:game_objects)],
+        Map.merge(state.match.game_objects, new_objects)
+      )
+      |> put_in(
+        [Access.key(:match), Access.key(:game_object_states)],
+        Map.merge(state.match.game_object_states, new_object_states)
+      )
     else
       _ -> state
     end
