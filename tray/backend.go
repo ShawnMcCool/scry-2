@@ -58,6 +58,7 @@ func (b *RealBackend) cmd(args ...string) *exec.Cmd {
 	if len(b.extraEnv) > 0 {
 		c.Env = append(os.Environ(), b.extraEnv...)
 	}
+	setCmdAttrs(c)
 	return c
 }
 
