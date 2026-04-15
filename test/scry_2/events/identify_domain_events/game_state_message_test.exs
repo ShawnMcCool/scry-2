@@ -109,15 +109,19 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessageTest do
   end
 
   describe "PriorityAssigned" do
-    test "emits PriorityAssigned when priorityPlayer is present in turnInfo" do
+    test "emits PriorityAssigned for each GameStateMessage with priorityPlayer" do
       record = record_from_fixture("gre_game_state_priority_assigned.log")
       {events, []} = IdentifyDomainEvents.translate(record, @self_user_id, %{})
 
-      assert Enum.any?(events, &match?(%Scry2.Events.Priority.PriorityAssigned{}, &1)),
-             "Expected PriorityAssigned, got: #{inspect(Enum.map(events, & &1.__struct__))}"
+      priority_events =
+        Enum.filter(events, &match?(%Scry2.Events.Priority.PriorityAssigned{}, &1))
 
-      pa = Enum.find(events, &match?(%Scry2.Events.Priority.PriorityAssigned{}, &1))
-      assert is_integer(pa.player_seat)
+      # No delta detection — every priority assignment emits an event
+      assert length(priority_events) >= 1,
+             "Expected at least one PriorityAssigned per GSM message with priorityPlayer"
+
+      # All events have a valid player seat
+      assert Enum.all?(priority_events, fn pa -> is_integer(pa.player_seat) end)
     end
   end
 

@@ -24,7 +24,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGreTest do
   end
 
   describe "PriorityPassed" do
-    test "emits PriorityPassed from ClientMessageType_PerformActionResp" do
+    test "emits PriorityPassed when all actions are ActionType_Pass" do
       record = record_from_fixture("client_to_gre_pass_priority.log")
 
       match_ctx = %{
@@ -41,6 +41,21 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGreTest do
       pp = Enum.find(events, &match?(%PriorityPassed{}, &1))
       assert pp.turn_number == 3
       assert pp.phase == "Phase_Main1"
+    end
+
+    test "does NOT emit PriorityPassed when actions include ActionType_Play (land play)" do
+      record = record_from_fixture("client_to_gre_land_play.log")
+
+      match_ctx = %{
+        current_match_id: "test-match-id",
+        current_game_number: 1,
+        turn_phase_state: %{turn: 1, phase: "Phase_Main1", step: nil}
+      }
+
+      {events, []} = IdentifyDomainEvents.translate(record, @self_user_id, match_ctx)
+
+      refute Enum.any?(events, &match?(%PriorityPassed{}, &1)),
+             "Should NOT emit PriorityPassed for ActionType_Play (land play)"
     end
   end
 end
