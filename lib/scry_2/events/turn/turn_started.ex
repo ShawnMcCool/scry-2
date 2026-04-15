@@ -5,14 +5,20 @@ defmodule Scry2.Events.Turn.TurnStarted do
   Event type: :state_change
 
   ## Source
+
   Produced by `IdentifyDomainEvents.GameStateMessage` from `turnInfo.turnNumber`
   changing between consecutive `GREMessageType_GameStateMessage` messages.
 
   ## Fields
+
   - `mtga_match_id` — match this turn belongs to
   - `game_number` — game within the match (1-indexed)
   - `turn_number` — MTGA turn number (increments each time active player changes)
   - `active_player_seat` — seat ID of the player whose turn it is
+
+  ## Slug
+
+  `"turn_started"` — stable, do not rename.
   """
   @behaviour Scry2.Events.DomainEvent
   alias Scry2.Events.Payload

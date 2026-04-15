@@ -3,7 +3,18 @@ defmodule Scry2.Events.Stack.TriggerCreated do
   A triggered ability was added to the stack.
 
   ## Source
+
   Produced from `AnnotationType_TriggeredAbility` in `GameStateMessage`.
+
+  ## Fields
+
+  - `source_arena_id` — arena_id of the permanent that triggered
+  - `source_instance_id` — GRE instance ID of the triggering permanent
+  - `trigger_type` — MTGA trigger type string from the annotation
+
+  ## Slug
+
+  `"trigger_created"` — stable, do not rename.
   """
   @behaviour Scry2.Events.DomainEvent
   alias Scry2.Events.Payload

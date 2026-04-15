@@ -2,11 +2,18 @@ defmodule Scry2.Events.Combat.AttackersDeclared do
   @moduledoc """
   Attackers were declared for this combat step.
 
+  ## Source
+
   Produced from `ClientToGremessage` (our attack) or from `GameStateMessage`
   annotations (opponent's attack — inferred from game state).
 
   ## Fields
+
   - `attackers` — list of `%{arena_id: integer, instance_id: integer}` maps
+
+  ## Slug
+
+  `"attackers_declared"` — stable, do not rename.
   """
   @behaviour Scry2.Events.DomainEvent
   alias Scry2.Events.Payload

@@ -3,12 +3,18 @@ defmodule Scry2.Events.Turn.PhaseChanged do
   The game phase or step changed.
 
   ## Source
+
   Produced by `IdentifyDomainEvents.GameStateMessage` from `turnInfo.phase`
   changing between consecutive `GREMessageType_GameStateMessage` messages.
 
   ## Fields
+
   - `phase` — MTGA phase string (e.g. `"Phase_Main"`, `"Phase_Combat"`)
   - `step` — MTGA step string within phase (e.g. `"Step_BeginCombat"`)
+
+  ## Slug
+
+  `"phase_changed"` — stable, do not rename.
   """
   @behaviour Scry2.Events.DomainEvent
   alias Scry2.Events.Payload

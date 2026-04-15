@@ -3,8 +3,19 @@ defmodule Scry2.Events.Priority.PriorityAssigned do
   Priority was assigned to a player.
 
   ## Source
+
   Produced by `IdentifyDomainEvents.GameStateMessage` when the GRE assigns
   priority to a seat (server → client). Emitted on change only.
+
+  ## Fields
+
+  - `player_seat` — seat ID of the player who received priority
+  - `phase` — game phase when priority was assigned
+  - `step` — game step when priority was assigned
+
+  ## Slug
+
+  `"priority_assigned"` — stable, do not rename.
   """
   @behaviour Scry2.Events.DomainEvent
   alias Scry2.Events.Payload

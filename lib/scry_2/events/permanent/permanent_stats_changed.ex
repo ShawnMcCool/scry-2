@@ -3,15 +3,38 @@ defmodule Scry2.Events.Permanent.PermanentStatsChanged do
   A permanent's power or toughness changed (continuous effect applied or removed).
 
   ## Source
+
   Produced by `IdentifyDomainEvents.GameStateMessage` when a game object's
   `power` or `toughness` value changes between consecutive `GameStateMessage`
   messages. Captures effects like Giant Growth that are not modelled as counters.
+
+  ## Fields
+
+  - `arena_id` — arena_id of the permanent whose stats changed
+  - `instance_id` — GRE instance ID of the permanent on the battlefield
+  - `power` — new power value
+  - `toughness` — new toughness value
+  - `phase` — game phase when the stat change was detected
+
+  ## Slug
+
+  `"permanent_stats_changed"` — stable, do not rename.
   """
   @behaviour Scry2.Events.DomainEvent
   alias Scry2.Events.Payload
   @enforce_keys [:occurred_at]
-  defstruct [:player_id, :mtga_match_id, :game_number, :turn_number, :phase,
-             :arena_id, :instance_id, :power, :toughness, :occurred_at]
+  defstruct [
+    :player_id,
+    :mtga_match_id,
+    :game_number,
+    :turn_number,
+    :phase,
+    :arena_id,
+    :instance_id,
+    :power,
+    :toughness,
+    :occurred_at
+  ]
 
   @type t :: %__MODULE__{
           player_id: integer() | nil,
