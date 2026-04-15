@@ -50,6 +50,77 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessageTest do
     end
   end
 
+  describe "turn structure suppression" do
+    test "does NOT emit TurnStarted or PhaseChanged when batch has no turnInfo" do
+      raw_json =
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_GameStateMessage",
+                "systemSeatIds" => [1],
+                "gameStateMessage" => %{
+                  "type" => "GameStateType_Diff",
+                  "gameObjects" => []
+                  # No turnInfo key
+                }
+              }
+            ]
+          }
+        })
+
+      record = %Scry2.MtgaLogIngestion.EventRecord{
+        id: 1,
+        event_type: "GreToClientEvent",
+        mtga_timestamp: DateTime.utc_now(:second),
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: raw_json,
+        processed: false
+      }
+
+      {events, _} = IdentifyDomainEvents.translate(record, @self_user_id, %{})
+
+      refute Enum.any?(events, &match?(%TurnStarted{}, &1)),
+             "Should not emit TurnStarted when no turnInfo present"
+
+      refute Enum.any?(events, &match?(%PhaseChanged{}, &1)),
+             "Should not emit PhaseChanged when no turnInfo present"
+    end
+
+    test "re-emits PhaseChanged after TurnStarted resets phase to nil" do
+      record = record_from_fixture("gre_game_state_turn_started.log")
+      {events_first, []} = IdentifyDomainEvents.translate(record, @self_user_id, %{})
+      first_turn = Enum.find(events_first, &match?(%TurnStarted{}, &1))
+
+      # Simulate state after TurnStarted fired: phase reset to nil for the new turn
+      post_turn_context = %{
+        turn_phase_state: %{turn: first_turn.turn_number + 1, phase: nil, step: nil}
+      }
+
+      # Same fixture with a context where the turn advanced but phase was reset.
+      # The fixture has a phase — PhaseChanged should re-emit because context phase is nil.
+      {events_second, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, post_turn_context)
+
+      assert Enum.any?(events_second, &match?(%PhaseChanged{}, &1)),
+             "Should emit PhaseChanged when context phase is nil (after turn boundary reset)"
+    end
+  end
+
+  describe "PriorityAssigned" do
+    test "emits PriorityAssigned when priorityPlayer is present in turnInfo" do
+      record = record_from_fixture("gre_game_state_priority_assigned.log")
+      {events, []} = IdentifyDomainEvents.translate(record, @self_user_id, %{})
+
+      assert Enum.any?(events, &match?(%Scry2.Events.Priority.PriorityAssigned{}, &1)),
+             "Expected PriorityAssigned, got: #{inspect(Enum.map(events, & &1.__struct__))}"
+
+      pa = Enum.find(events, &match?(%Scry2.Events.Priority.PriorityAssigned{}, &1))
+      assert is_integer(pa.player_seat)
+    end
+  end
+
   describe "PhaseChanged" do
     test "emits PhaseChanged when phase changes from nil (first message)" do
       record = record_from_fixture("gre_game_state_turn_started.log")
