@@ -7,6 +7,19 @@ set RELEASE_ROOT=%cd%
 popd
 popd
 
+rem Clear all path-dependent RELEASE_* variables inherited from the environment.
+rem Old Scry2 installations may have left stale values (wrong version, embedded
+rem quotes) via setx or leaked cmd.exe sessions. Every "if not defined" guard
+rem below would trust them, pointing at a non-existent version directory and
+rem producing "path specified" or syntax errors. Always derive from RELEASE_ROOT.
+set RELEASE_VSN=
+set ERTS_VSN=
+set RELEASE_COOKIE=
+set RELEASE_TMP=
+set RELEASE_VM_ARGS=
+set RELEASE_REMOTE_VM_ARGS=
+set RELEASE_SYS_CONFIG=
+
 if defined SCRY_DEBUG (echo [scry_debug] RELEASE_ROOT=!RELEASE_ROOT! 1>&2)
 if defined SCRY_DEBUG (
   echo [scry_debug] start_erl.data content: 1>&2
