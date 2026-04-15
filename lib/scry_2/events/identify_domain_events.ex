@@ -254,7 +254,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           optional(:current_match_id) => String.t() | nil,
           optional(:current_game_number) => non_neg_integer() | nil,
           optional(:self_seat_id) => non_neg_integer() | nil,
-          optional(:last_hand_game_objects) => map() | {integer(), list()}
+          optional(:game_objects) => map() | {integer(), list()}
         }
 
   @doc """
@@ -1428,7 +1428,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # seat to capture the actual opening hand.
   defp build_mulligan_offered(messages, match_id, occurred_at, match_context) do
     game_state = extract_game_state_for_mulligans(messages)
-    cached_objects = match_context[:last_hand_game_objects] || %{}
+    cached_objects = match_context[:game_objects] || %{}
 
     messages
     |> Enum.filter(&(&1["type"] == "GREMessageType_MulliganReq"))
@@ -1462,41 +1462,6 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end)
   end
 
-  @doc """
-  Extracts the player's hand as a resolved `{seat_id, [arena_id, ...]}`
-  tuple from a GreToClientEvent's GRE messages. Called by IngestRawEvents
-  to cache the most recently seen hand across sequential events.
-
-  Only returns a result when the GameStateMessage contains both a
-  ZoneType_Hand zone and gameObjects to resolve instance IDs. Returns
-  nil otherwise.
-  """
-  def extract_resolved_hand(messages) when is_list(messages) do
-    gsm =
-      Enum.find_value(messages, fn msg ->
-        if game_state_message?(msg), do: extract_game_state(msg)
-      end)
-
-    with %{"zones" => zones, "gameObjects" => objects}
-         when is_list(zones) and is_list(objects) and objects != [] <- gsm do
-      instance_to_grp = Map.new(objects, fn obj -> {obj["instanceId"], obj["grpId"]} end)
-
-      Enum.find_value(zones, fn
-        %{"type" => "ZoneType_Hand", "ownerSeatId" => seat_id, "objectInstanceIds" => ids}
-        when is_list(ids) ->
-          resolved = Enum.map(ids, &Map.get(instance_to_grp, &1)) |> Enum.reject(&is_nil/1)
-          if resolved != [], do: {seat_id, resolved}
-
-        _ ->
-          nil
-      end)
-    else
-      _ -> nil
-    end
-  end
-
-  def extract_resolved_hand(_), do: nil
-
   defp extract_hand_arena_ids(nil, _seat_id, _cached_hand), do: nil
 
   defp extract_hand_arena_ids(game_state, seat_id, cached_hand) do
@@ -1522,18 +1487,24 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     case {hand_instance_ids, instance_to_grp} do
       {ids, mapping} when is_list(ids) and map_size(mapping) > 0 ->
         resolved = Enum.map(ids, &Map.get(mapping, &1)) |> Enum.reject(&is_nil/1)
-        if resolved != [], do: resolved, else: use_cached_hand(cached_hand, seat_id)
+        if resolved != [], do: resolved, else: use_cached_hand(cached_hand, hand_instance_ids)
+
+      {ids, _} when is_list(ids) ->
+        # No gameObjects in this message — fall back to accumulated game_objects map.
+        use_cached_hand(cached_hand, hand_instance_ids)
 
       _ ->
-        # No resolvable hand in this message — fall back to cached hand
-        # from a preceding GameStateMessage.
-        use_cached_hand(cached_hand, seat_id)
+        nil
     end
   end
 
-  # The cached hand is `{seat_id, [arena_id, ...]}` from the most recent
-  # GameStateMessage that had gameObjects. Only use it if the seat matches.
-  defp use_cached_hand({cached_seat, hand}, seat_id) when cached_seat == seat_id, do: hand
+  # Resolve hand instance IDs against the accumulated game_objects map.
+  defp use_cached_hand(game_objects, hand_instance_ids)
+       when is_map(game_objects) and is_list(hand_instance_ids) do
+    resolved = Enum.map(hand_instance_ids, &Map.get(game_objects, &1)) |> Enum.reject(&is_nil/1)
+    if resolved != [], do: resolved, else: nil
+  end
+
   defp use_cached_hand(_, _), do: nil
 
   # ── Turn actions from GameStateMessage annotations ─────────────────
@@ -1544,7 +1515,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # (phase changes, ability bookkeeping) are ignored.
 
   defp build_turn_actions(messages, match_id, occurred_at, match_context) do
-    cached_objects = match_context[:last_hand_game_objects] || %{}
+    cached_objects = match_context[:game_objects] || %{}
     game_number = match_context[:current_game_number]
 
     messages
@@ -1571,7 +1542,6 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end)
   end
 
-  defp cached_objects_to_map({_seat, _hand}), do: %{}
   defp cached_objects_to_map(map) when is_map(map), do: map
   defp cached_objects_to_map(_), do: %{}
 
