@@ -3,8 +3,18 @@ defmodule Scry2.Events.Stack.AbilityActivated do
   A player activated an activated ability (cost: effect).
 
   ## Source
+
   Produced by `IdentifyDomainEvents.GameStateMessage` from
   `AnnotationType_ActivatedAbility` annotations in `GameStateMessage`.
+
+  ## Fields
+
+  - `source_arena_id` — arena_id of the permanent whose ability was activated
+  - `source_instance_id` — GRE instance ID of the permanent on the battlefield
+
+  ## Slug
+
+  `"ability_activated"` — stable, do not rename.
   """
   @behaviour Scry2.Events.DomainEvent
   alias Scry2.Events.Payload

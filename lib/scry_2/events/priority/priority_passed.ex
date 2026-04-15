@@ -3,10 +3,20 @@ defmodule Scry2.Events.Priority.PriorityPassed do
   The local player explicitly passed priority.
 
   ## Source
+
   Produced by `IdentifyDomainEvents.ClientToGre` from
   `ClientToGremessage` with `ClientMessageType_PerformActionResp` carrying
   an empty or pass action. Only fires for the local player — opponent passes
   are implicit (see `PriorityAssigned` switching back to us).
+
+  ## Fields
+
+  - `phase` — game phase when priority was passed
+  - `step` — game step when priority was passed
+
+  ## Slug
+
+  `"priority_passed"` — stable, do not rename.
   """
   @behaviour Scry2.Events.DomainEvent
   alias Scry2.Events.Payload

@@ -3,12 +3,18 @@ defmodule Scry2.Events.Stack.TargetsDeclared do
   The local player submitted targets for a spell or ability.
 
   ## Source
+
   Produced by `IdentifyDomainEvents.ClientToGre` from
   `ClientMessageType_SubmitTargets` with a non-empty targets list.
 
   ## Fields
+
   - `spell_instance_id` — GRE instance ID of the spell/ability on the stack
   - `targets` — list of `%{instance_id: integer, arena_id: integer}` maps
+
+  ## Slug
+
+  `"targets_declared"` — stable, do not rename.
   """
   @behaviour Scry2.Events.DomainEvent
   alias Scry2.Events.Payload

@@ -737,6 +737,18 @@ defmodule Scry2.Events do
     "spell_resolved" => Scry2.Events.Gameplay.SpellResolved,
     "starting_player_chosen" => Scry2.Events.Gameplay.StartingPlayerChosen,
     "token_created" => Scry2.Events.Gameplay.TokenCreated,
+    "turn_started" => Scry2.Events.Turn.TurnStarted,
+    "phase_changed" => Scry2.Events.Turn.PhaseChanged,
+    "priority_assigned" => Scry2.Events.Priority.PriorityAssigned,
+    "priority_passed" => Scry2.Events.Priority.PriorityPassed,
+    "ability_activated" => Scry2.Events.Stack.AbilityActivated,
+    "trigger_created" => Scry2.Events.Stack.TriggerCreated,
+    "targets_declared" => Scry2.Events.Stack.TargetsDeclared,
+    "attackers_declared" => Scry2.Events.Combat.AttackersDeclared,
+    "blockers_declared" => Scry2.Events.Combat.BlockersDeclared,
+    "permanent_tapped" => Scry2.Events.Permanent.PermanentTapped,
+    "permanent_untapped" => Scry2.Events.Permanent.PermanentUntapped,
+    "permanent_stats_changed" => Scry2.Events.Permanent.PermanentStatsChanged,
     "weekly_win_earned" => Scry2.Events.Progression.WeeklyWinEarned,
     "zone_changed" => Scry2.Events.Gameplay.ZoneChanged
   }
