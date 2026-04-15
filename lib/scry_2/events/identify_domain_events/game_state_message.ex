@@ -30,6 +30,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
 
   alias Scry2.Events.IdentifyDomainEvents.Helpers
   alias Scry2.Events.Match.{DieRolled, GameCompleted}
+  alias Scry2.Events.Turn.{PhaseChanged, TurnStarted}
 
   @doc """
   Builds all GameStateMessage-derived domain events from a GRE message batch.
@@ -43,6 +44,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
       maybe_build_die_roll_completed(messages, match_id, occurred_at, player_seat),
       maybe_build_game_completed(messages, match_id, occurred_at, player_seat),
       build_mulligan_offered(messages, match_id, occurred_at, match_context),
+      build_turn_structure_events(messages, match_id, occurred_at, match_context),
       build_turn_actions(messages, match_id, occurred_at, match_context)
     ]
     |> List.flatten()
@@ -219,6 +221,61 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   end
 
   defp use_cached_hand(_, _), do: nil
+
+  # ── Turn structure events from turnInfo ───────────────────────────
+  #
+  # Emits TurnStarted when turnNumber changes and PhaseChanged when phase
+  # changes. Delta detection is done against match_context[:turn_phase_state].
+  # Only the first GameStateMessage in a batch that carries new turnInfo is
+  # checked — we emit at most one TurnStarted and one PhaseChanged per batch.
+
+  defp build_turn_structure_events(messages, match_id, occurred_at, match_context) do
+    game_number = match_context[:current_game_number]
+    prev = match_context[:turn_phase_state] || %{}
+
+    # Find the first GameStateMessage that carries a turnInfo map.
+    turn_info =
+      Enum.find_value(messages, fn msg ->
+        if Helpers.game_state_message?(msg) do
+          gsm = Helpers.extract_game_state(msg)
+          info = gsm["turnInfo"] || %{}
+          if map_size(info) > 0, do: info
+        end
+      end)
+
+    if is_nil(turn_info) do
+      []
+    else
+      current_turn = turn_info["turnNumber"]
+      current_phase = turn_info["phase"]
+      current_step = turn_info["step"]
+
+      turn_event =
+        if current_turn && current_turn != prev[:turn] do
+          %TurnStarted{
+            mtga_match_id: match_id,
+            game_number: game_number,
+            turn_number: current_turn,
+            active_player_seat: turn_info["activePlayer"],
+            occurred_at: occurred_at
+          }
+        end
+
+      phase_event =
+        if current_phase && current_phase != prev[:phase] do
+          %PhaseChanged{
+            mtga_match_id: match_id,
+            game_number: game_number,
+            turn_number: current_turn,
+            phase: current_phase,
+            step: current_step,
+            occurred_at: occurred_at
+          }
+        end
+
+      [turn_event, phase_event] |> Enum.reject(&is_nil/1)
+    end
+  end
 
   # ── Turn actions from GameStateMessage annotations ─────────────────
   #
