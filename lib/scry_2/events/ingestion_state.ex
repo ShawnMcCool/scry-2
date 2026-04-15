@@ -137,6 +137,16 @@ defmodule Scry2.Events.IngestionState do
     {%{state | match: %Match{}}, []}
   end
 
+  def apply_event(%__MODULE__{} = state, %Scry2.Events.Turn.TurnStarted{turn_number: turn}) do
+    new_tps = Map.merge(state.match.turn_phase_state, %{turn: turn, phase: nil, step: nil})
+    {put_in(state.match.turn_phase_state, new_tps), []}
+  end
+
+  def apply_event(%__MODULE__{} = state, %Scry2.Events.Turn.PhaseChanged{phase: phase, step: step}) do
+    new_tps = Map.merge(state.match.turn_phase_state, %{phase: phase, step: step})
+    {put_in(state.match.turn_phase_state, new_tps), []}
+  end
+
   def apply_event(%__MODULE__{} = state, _event), do: {state, []}
 
   # -- Diagnostics -----------------------------------------------------------
@@ -144,7 +154,7 @@ defmodule Scry2.Events.IngestionState do
   @doc """
   Pure projection of the state into a friendly map for display in the
   diagnostics panel. Excludes verbose fields like
-  `last_hand_game_objects` and replaces `pending_deck` with a boolean
+  `game_objects`, `turn_phase_state`, `game_object_states` and replaces `pending_deck` with a boolean
   `pending_deck?` so the UI stays readable.
   """
   @spec project(t()) :: map()
@@ -180,7 +190,13 @@ defmodule Scry2.Events.IngestionState do
       session: Jason.decode!(Jason.encode!(state.session)),
       match:
         Jason.decode!(
-          Jason.encode!(%{state.match | last_hand_game_objects: %{}, pending_deck: nil})
+          Jason.encode!(%{
+            state.match
+            | game_objects: %{},
+              turn_phase_state: %{},
+              game_object_states: %{},
+              pending_deck: nil
+          })
         )
     }
 
@@ -238,7 +254,7 @@ defmodule Scry2.Events.IngestionState do
         last_deck_name: match_map["last_deck_name"],
         on_play_for_current_game: match_map["on_play_for_current_game"],
         pending_deck: match_map["pending_deck"],
-        last_hand_game_objects: match_map["last_hand_game_objects"] || %{}
+        game_objects: match_map["game_objects"] || %{}
       }
     }
   end

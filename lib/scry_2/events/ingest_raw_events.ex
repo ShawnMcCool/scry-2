@@ -522,18 +522,29 @@ defmodule Scry2.Events.IngestRawEvents do
 
   # ── Pre-translation state extraction ─────────────────────────────────
 
-  # Cache the player's resolved hand from GreToClientEvent messages.
-  # MTGA sends the hand (zone + gameObjects) in a GameStateMessage that
-  # often precedes the MulliganReq by several events. The translator
-  # uses this cached hand as fallback when the MulliganReq's own
-  # GameStateMessage lacks gameObjects or the player's hand zone.
+  # Accumulate instance_id → arena_id mappings from GreToClientEvent messages.
+  # MTGA sends gameObjects across many GameStateMessages; we merge them all into
+  # state.match.game_objects so the translator can resolve instance IDs to arena_ids
+  # even when a later message (e.g. MulliganReq) omits the full gameObjects list.
   defp maybe_cache_game_objects(%EventRecord{event_type: "GreToClientEvent"} = record, state) do
     with {:ok, payload} <- Jason.decode(record.raw_json),
          messages when is_list(messages) <-
-           get_in(payload, ["greToClientEvent", "greToClientMessages"]),
-         {_seat_id, _hand} = resolved <-
-           IdentifyDomainEvents.extract_resolved_hand(messages) do
-      put_in(state.match.last_hand_game_objects, resolved)
+           get_in(payload, ["greToClientEvent", "greToClientMessages"]) do
+      new_objects =
+        messages
+        |> Enum.flat_map(fn msg ->
+          case get_in(msg, ["gameStateMessage", "gameObjects"]) do
+            objects when is_list(objects) ->
+              Enum.map(objects, fn obj -> {obj["instanceId"], obj["grpId"]} end)
+
+            _ ->
+              []
+          end
+        end)
+        |> Map.new()
+
+      merged = Map.merge(state.match.game_objects, new_objects)
+      put_in(state.match.game_objects, merged)
     else
       _ -> state
     end

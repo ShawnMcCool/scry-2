@@ -121,7 +121,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       # calling translate/3, so match_context is always an atom-keyed map.
       match_context = %{
         current_match_id: "008b1926-09a8-40b4-872d-fa987588740c",
-        last_hand_game_objects: %{}
+        game_objects: %{}
       }
 
       {events, []} = IdentifyDomainEvents.translate(record, @self_user_id, match_context)
