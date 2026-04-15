@@ -71,6 +71,7 @@ defmodule Scry2.TestFactory do
   }
 
   alias Scry2.Events.Session.{SessionDisconnected, SessionStarted}
+  alias Scry2.Events.Turn.{PhaseChanged, TurnStarted}
   alias Scry2.Matches
   alias Scry2.Matches.{DeckSubmission, Game, Match}
   alias Scry2.MtgaLogIngestion
@@ -549,6 +550,33 @@ defmodule Scry2.TestFactory do
     }
 
     struct(DeckSelected, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_turn_started(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      game_number: 1,
+      turn_number: 1,
+      active_player_seat: 1,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(TurnStarted, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_phase_changed(attrs \\ %{}) do
+    defaults = %{
+      player_id: nil,
+      mtga_match_id: "test-match-" <> random_suffix(),
+      game_number: 1,
+      turn_number: 1,
+      phase: "Phase_Main",
+      step: nil,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(PhaseChanged, Map.merge(defaults, Map.new(attrs)))
   end
 
   def build_rank_snapshot(attrs \\ %{}) do

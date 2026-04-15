@@ -254,7 +254,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           optional(:current_match_id) => String.t() | nil,
           optional(:current_game_number) => non_neg_integer() | nil,
           optional(:self_seat_id) => non_neg_integer() | nil,
-          optional(:game_objects) => map() | {integer(), list()}
+          optional(:game_objects) => %{optional(integer()) => integer()}
         }
 
   @doc """
