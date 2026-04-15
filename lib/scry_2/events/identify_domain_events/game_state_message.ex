@@ -31,6 +31,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
 
   alias Scry2.Events.IdentifyDomainEvents.Helpers
   alias Scry2.Events.Match.{DieRolled, GameCompleted}
+  alias Scry2.Events.Permanent.{PermanentStatsChanged, PermanentTapped, PermanentUntapped}
   alias Scry2.Events.Priority.PriorityAssigned
   alias Scry2.Events.Turn.{PhaseChanged, TurnStarted}
 
@@ -48,6 +49,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
       build_mulligan_offered(messages, match_id, occurred_at, match_context),
       build_turn_structure_events(messages, match_id, occurred_at, match_context),
       build_priority_assigned_events(messages, match_id, occurred_at, match_context),
+      build_permanent_state_events(messages, match_id, occurred_at, match_context),
       build_turn_actions(messages, match_id, occurred_at, match_context)
     ]
     |> List.flatten()
@@ -311,6 +313,101 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
         else
           []
         end
+      else
+        []
+      end
+    end)
+  end
+
+  # ── Permanent state events from game object snapshots ────────────────
+  #
+  # Emits PermanentTapped, PermanentUntapped, and PermanentStatsChanged by
+  # comparing each game object's current state against the prior state stored
+  # in match_context[:game_object_states]. Called for every GameStateMessage
+  # in the batch so delta detection fires on the first message that carries
+  # a changed object.
+  #
+  # isTapped is only present (as true) when the object is tapped; absent
+  # means untapped. power/toughness are nested %{"value" => N} on creatures
+  # and absent on non-creatures.
+
+  defp build_permanent_state_events(messages, match_id, occurred_at, match_context) do
+    game_number = match_context[:current_game_number]
+    prior_states = match_context[:game_object_states] || %{}
+    arena_ids = match_context[:game_objects] || %{}
+
+    messages
+    |> Enum.flat_map(fn msg ->
+      if Helpers.game_state_message?(msg) do
+        gsm = Helpers.extract_game_state(msg)
+        turn_info = gsm["turnInfo"] || %{}
+        game_objects = gsm["gameObjects"] || []
+        turn_number = turn_info["turnNumber"]
+        phase = turn_info["phase"]
+
+        Enum.flat_map(game_objects, fn obj ->
+          instance_id = obj["instanceId"]
+          prior = Map.get(prior_states, instance_id, %{})
+
+          current_tapped = obj["isTapped"] == true
+          current_power = get_in(obj, ["power", "value"])
+          current_toughness = get_in(obj, ["toughness", "value"])
+          arena_id = Map.get(arena_ids, instance_id)
+
+          tap_events =
+            cond do
+              current_tapped == true and prior[:tapped] != true ->
+                [
+                  %PermanentTapped{
+                    mtga_match_id: match_id,
+                    game_number: game_number,
+                    turn_number: turn_number,
+                    phase: phase,
+                    arena_id: arena_id,
+                    instance_id: instance_id,
+                    occurred_at: occurred_at
+                  }
+                ]
+
+              current_tapped == false and prior[:tapped] == true ->
+                [
+                  %PermanentUntapped{
+                    mtga_match_id: match_id,
+                    game_number: game_number,
+                    turn_number: turn_number,
+                    phase: phase,
+                    arena_id: arena_id,
+                    instance_id: instance_id,
+                    occurred_at: occurred_at
+                  }
+                ]
+
+              true ->
+                []
+            end
+
+          stats_events =
+            if (current_power != nil or current_toughness != nil) and
+                 (current_power != prior[:power] or current_toughness != prior[:toughness]) do
+              [
+                %PermanentStatsChanged{
+                  mtga_match_id: match_id,
+                  game_number: game_number,
+                  turn_number: turn_number,
+                  phase: phase,
+                  arena_id: arena_id,
+                  instance_id: instance_id,
+                  power: current_power,
+                  toughness: current_toughness,
+                  occurred_at: occurred_at
+                }
+              ]
+            else
+              []
+            end
+
+          tap_events ++ stats_events
+        end)
       else
         []
       end
