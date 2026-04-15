@@ -1,0 +1,2 @@
+[UnityCrossThreadLogger]4/15/2026 8:14:12 PM: D0FECB2AF1E7FE24 to Match: ClientToGremessage
+{"requestId": 582, "clientToMatchServiceMessageType": "ClientToMatchServiceMessageType_ClientToGREMessage", "timestamp": "639118736524059265", "transactionId": "21deaa2e-b7ed-48ca-8fb7-bb5ae1c7be4e", "payload": {"type": "ClientMessageType_DeclareBlockersResp", "gameStateId": 508, "respId": 681, "declareBlockersResp": {"selectedBlockers": [{"blockerInstanceId": 853, "attackerInstanceIds": [956], "selectedAttackerInstanceIds": [956], "maxAttackers": 1}]}}}

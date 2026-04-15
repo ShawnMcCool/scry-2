@@ -2,6 +2,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGreTest do
   use ExUnit.Case, async: true
 
   alias Scry2.Events.IdentifyDomainEvents
+  alias Scry2.Events.Combat.{AttackersDeclared, BlockersDeclared}
   alias Scry2.Events.Priority.PriorityPassed
   alias Scry2.MtgaLogIngestion.{Event, EventRecord, ExtractEventsFromLog}
 
@@ -56,6 +57,61 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGreTest do
 
       refute Enum.any?(events, &match?(%PriorityPassed{}, &1)),
              "Should NOT emit PriorityPassed for ActionType_Play (land play)"
+    end
+  end
+
+  describe "AttackersDeclared" do
+    test "emits AttackersDeclared from DeclareAttackersResp with autoDeclare" do
+      record = record_from_fixture("client_to_gre_declare_attackers.log")
+
+      match_ctx = %{
+        current_match_id: "test-match-id",
+        current_game_number: 2,
+        game_objects: %{},
+        turn_phase_state: %{turn: 5}
+      }
+
+      {events, []} = IdentifyDomainEvents.translate(record, @self_user_id, match_ctx)
+
+      assert Enum.any?(events, &match?(%AttackersDeclared{}, &1)),
+             "Expected AttackersDeclared, got: #{inspect(Enum.map(events, & &1.__struct__))}"
+
+      declared = Enum.find(events, &match?(%AttackersDeclared{}, &1))
+      assert declared.mtga_match_id == "test-match-id"
+      assert declared.game_number == 2
+      assert declared.turn_number == 5
+      # autoDeclare with no explicit attackers array → empty list
+      assert declared.attackers == []
+    end
+  end
+
+  describe "BlockersDeclared" do
+    test "emits BlockersDeclared from DeclareBlockersResp with explicit blockers" do
+      record = record_from_fixture("client_to_gre_declare_blockers.log")
+
+      match_ctx = %{
+        current_match_id: "test-match-id",
+        current_game_number: 1,
+        game_objects: %{853 => 12345},
+        turn_phase_state: %{turn: 8}
+      }
+
+      {events, []} = IdentifyDomainEvents.translate(record, @self_user_id, match_ctx)
+
+      assert Enum.any?(events, &match?(%BlockersDeclared{}, &1)),
+             "Expected BlockersDeclared, got: #{inspect(Enum.map(events, & &1.__struct__))}"
+
+      declared = Enum.find(events, &match?(%BlockersDeclared{}, &1))
+      assert declared.mtga_match_id == "test-match-id"
+      assert declared.game_number == 1
+      assert declared.turn_number == 8
+      assert length(declared.blockers) == 1
+
+      [blocker] = declared.blockers
+      assert blocker.instance_id == 853
+      assert blocker.blocking_instance_id == 956
+      # arena_id resolved from game_objects
+      assert blocker.arena_id == 12345
     end
   end
 end

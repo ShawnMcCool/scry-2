@@ -11,12 +11,15 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
   | `ClientMessageType_MulliganResp` | `MulliganDecided` |
   | `ClientMessageType_ChooseStartingPlayerResp` | `StartingPlayerChosen` |
   | `ClientMessageType_PerformActionResp` (empty or all-pass actions) | `PriorityPassed` |
+  | `ClientMessageType_DeclareAttackersResp` | `AttackersDeclared` |
+  | `ClientMessageType_DeclareBlockersResp` | `BlockersDeclared` |
 
   `PerformActionResp` messages with `ActionType_Play` or `ActionType_Cast`
   actions are NOT priority passes — those actions are captured as
   `LandPlayed` / `SpellCast` events from GRE game state messages.
   """
 
+  alias Scry2.Events.Combat.{AttackersDeclared, BlockersDeclared}
   alias Scry2.Events.Gameplay.{GameConceded, MulliganDecided, StartingPlayerChosen}
   alias Scry2.Events.Priority.PriorityPassed
   alias Scry2.MtgaLogIngestion.EventRecord
@@ -100,6 +103,57 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
                 occurred_at: occurred_at
               }
             end
+
+          "ClientMessageType_DeclareAttackersResp" ->
+            # autoDeclare=true means the player had no legal attackers (or
+            # auto-passed combat). The event is still meaningful — it marks
+            # the declare-attackers step. Emit with an empty attackers list
+            # when the payload omits explicit attacker entries.
+            raw_attackers = get_in(gre_payload, ["declareAttackersResp", "attackers"]) || []
+            game_objects = match_context[:game_objects] || %{}
+            turn_phase = match_context[:turn_phase_state] || %{}
+
+            attackers =
+              Enum.map(raw_attackers, fn attacker ->
+                instance_id = attacker["instanceId"]
+                %{instance_id: instance_id, arena_id: Map.get(game_objects, instance_id)}
+              end)
+
+            %AttackersDeclared{
+              mtga_match_id: match_id,
+              game_number: match_context[:current_game_number],
+              turn_number: turn_phase[:turn],
+              attackers: attackers,
+              occurred_at: occurred_at
+            }
+
+          "ClientMessageType_DeclareBlockersResp" ->
+            # selectedBlockers is a list of {blockerInstanceId, attackerInstanceIds}.
+            # We take the first attackerInstanceId as the single creature being blocked
+            # (MTGA shows one blocker ↔ one attacker assignment per entry).
+            raw_blockers = get_in(gre_payload, ["declareBlockersResp", "selectedBlockers"]) || []
+            game_objects = match_context[:game_objects] || %{}
+            turn_phase = match_context[:turn_phase_state] || %{}
+
+            blockers =
+              Enum.map(raw_blockers, fn blocker ->
+                instance_id = blocker["blockerInstanceId"]
+                blocking_instance_id = blocker["attackerInstanceIds"] |> List.first()
+
+                %{
+                  instance_id: instance_id,
+                  arena_id: Map.get(game_objects, instance_id),
+                  blocking_instance_id: blocking_instance_id
+                }
+              end)
+
+            %BlockersDeclared{
+              mtga_match_id: match_id,
+              game_number: match_context[:current_game_number],
+              turn_number: turn_phase[:turn],
+              blockers: blockers,
+              occurred_at: occurred_at
+            }
 
           _ ->
             nil
