@@ -16,7 +16,12 @@ if defined SCRY_DEBUG (
 )
 
 if not defined RELEASE_NAME (set RELEASE_NAME=scry_2)
-if not defined RELEASE_VSN (for /f "tokens=1,2" %%K in ('type "!RELEASE_ROOT!\releases\start_erl.data"') do (set ERTS_VSN=%%K) && (set RELEASE_VSN=%%L))
+rem Always read ERTS_VSN and RELEASE_VSN from start_erl.data — never trust an
+rem inherited environment value. A stale RELEASE_VSN (e.g. from an old install's
+rem setx call or a leaked cmd.exe variable) will point scry_2.bat at a non-existent
+rem releases\OLD_VERSION\ directory and cause "path specified" errors at startup.
+if defined SCRY_DEBUG (if defined RELEASE_VSN (echo [scry_debug] WARNING: RELEASE_VSN was pre-set to [!RELEASE_VSN!] in environment -- ignoring, reading from start_erl.data 1>&2))
+for /f "tokens=1,2" %%K in ('type "!RELEASE_ROOT!\releases\start_erl.data"') do (set ERTS_VSN=%%K) && (set RELEASE_VSN=%%L)
 if not defined RELEASE_PROG (set RELEASE_PROG=%~nx0)
 set RELEASE_COMMAND=%~1
 set REL_VSN_DIR=!RELEASE_ROOT!\releases\!RELEASE_VSN!
