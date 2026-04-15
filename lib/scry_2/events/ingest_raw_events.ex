@@ -537,8 +537,14 @@ defmodule Scry2.Events.IngestRawEvents do
         messages
         |> Enum.flat_map(fn msg ->
           case get_in(msg, ["gameStateMessage", "gameObjects"]) do
-            objects when is_list(objects) -> objects
-            _ -> []
+            objects when is_list(objects) ->
+              objects
+
+            _ ->
+              case get_in(msg, ["queuedGameStateMessage", "gameObjects"]) do
+                objects when is_list(objects) -> objects
+                _ -> []
+              end
           end
         end)
         |> Enum.reduce({%{}, %{}}, fn obj, {acc_objects, acc_states} ->
