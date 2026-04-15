@@ -479,6 +479,56 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessageTest do
       assert tc.source_instance_id == 77
       assert tc.turn_number == 4
       assert tc.phase == "Phase_Beginning"
+      # trigger_type is nil when details is empty (no real fixture available yet)
+      assert is_nil(tc.trigger_type) or is_binary(tc.trigger_type)
+    end
+
+    test "extracts trigger_type from details when present" do
+      raw_json =
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_GameStateMessage",
+                "systemSeatIds" => [1],
+                "gameStateMessage" => %{
+                  "type" => "GameStateType_Diff",
+                  "turnInfo" => %{"turnNumber" => 2, "phase" => "Phase_Main1"},
+                  "annotations" => [
+                    %{
+                      "id" => 61,
+                      "affectorId" => 88,
+                      "affectedIds" => [88],
+                      "type" => ["AnnotationType_TriggeredAbility"],
+                      "details" => [
+                        %{
+                          "key" => "trigger_type",
+                          "valueString" => ["EnteredBattlefield"]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        })
+
+      record = %Scry2.MtgaLogIngestion.EventRecord{
+        id: 5,
+        event_type: "GreToClientEvent",
+        mtga_timestamp: DateTime.utc_now(:second),
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: raw_json,
+        processed: false
+      }
+
+      {events, []} = IdentifyDomainEvents.translate(record, "test-user", %{game_objects: %{}})
+
+      tc = Enum.find(events, &match?(%Scry2.Events.Stack.TriggerCreated{}, &1))
+      assert tc != nil
+      assert tc.trigger_type == "EnteredBattlefield"
     end
   end
 end
