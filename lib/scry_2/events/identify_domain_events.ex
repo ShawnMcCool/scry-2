@@ -298,6 +298,11 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       # are addressed to all seats. See "MTGA protocol pitfalls" in @moduledoc.
       player_seat = Helpers.resolve_player_seat(messages)
 
+      # GreToClientEvent is a container that wraps multiple GRE message types.
+      # We decode the outer envelope once and pass the inner `messages` list to
+      # both sub-translators. ConnectResp and GameStateMessage use build/5 (pre-decoded
+      # data) rather than translate/3 (raw EventRecord) for this reason — the envelope
+      # is shared, so decoding must happen at this level.
       events =
         [
           ConnectResp.build(messages, context_match_id, occurred_at, player_seat, match_context),

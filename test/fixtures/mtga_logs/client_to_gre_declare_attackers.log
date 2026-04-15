@@ -1,0 +1,2 @@
+[UnityCrossThreadLogger]4/15/2026 8:21:14 PM: D0FECB2AF1E7FE24 to Match: ClientToGremessage
+{"requestId": 770, "clientToMatchServiceMessageType": "ClientToMatchServiceMessageType_ClientToGREMessage", "timestamp": "639118740746670171", "transactionId": "08dafec3-2488-457d-ab64-a2257b8e0baa", "payload": {"type": "ClientMessageType_DeclareAttackersResp", "gameStateId": 233, "respId": 304, "declareAttackersResp": {"autoDeclare": true, "autoDeclareDamageRecipient": {"type": "DamageRecType_Player", "playerSystemSeatId": 2}}}}

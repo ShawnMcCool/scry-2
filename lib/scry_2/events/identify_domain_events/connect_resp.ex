@@ -4,6 +4,10 @@ defmodule Scry2.Events.IdentifyDomainEvents.ConnectResp do
 
   ConnectResp carries the deck list submitted by the player at the start of
   a match. Produces a DeckSubmitted domain event.
+
+  Called by the coordinator with pre-decoded `messages` (the inner
+  `greToClientMessages` list), not a raw `EventRecord`. See
+  `IdentifyDomainEvents` for the envelope decoding.
   """
 
   alias Scry2.Events.Deck.DeckSubmitted
