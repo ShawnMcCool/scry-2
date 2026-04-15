@@ -262,4 +262,223 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessageTest do
       assert is_integer(phase_event.turn_number)
     end
   end
+
+  describe "TargetsDeclared" do
+    test "emits TargetsDeclared from AnnotationType_TargetSpec persistent annotation" do
+      # AnnotationType_TargetSpec lives in persistentAnnotations (confirmed from Player.log)
+      raw_json =
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_GameStateMessage",
+                "systemSeatIds" => [1],
+                "gameStateMessage" => %{
+                  "type" => "GameStateType_Diff",
+                  "turnInfo" => %{
+                    "turnNumber" => 13,
+                    "phase" => "Phase_Main2",
+                    "activePlayer" => 1
+                  },
+                  "persistentAnnotations" => [
+                    %{
+                      "id" => 971,
+                      "affectorId" => 855,
+                      "affectedIds" => [789, 837],
+                      "type" => ["AnnotationType_TargetSpec"],
+                      "details" => []
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        })
+
+      record = %Scry2.MtgaLogIngestion.EventRecord{
+        id: 1,
+        event_type: "GreToClientEvent",
+        mtga_timestamp: DateTime.utc_now(:second),
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: raw_json,
+        processed: false
+      }
+
+      match_ctx = %{
+        current_game_number: 1,
+        game_objects: %{789 => 12345, 837 => 67890}
+      }
+
+      {events, []} = IdentifyDomainEvents.translate(record, "test-user", match_ctx)
+
+      td = Enum.find(events, &match?(%Scry2.Events.Stack.TargetsDeclared{}, &1))
+
+      assert td != nil,
+             "Expected TargetsDeclared, got: #{inspect(Enum.map(events, & &1.__struct__))}"
+
+      assert td.spell_instance_id == 855
+      assert td.turn_number == 13
+      assert length(td.targets) == 2
+
+      [t1, t2] = td.targets
+      assert t1.instance_id == 789
+      assert t1.arena_id == 12345
+      assert t2.instance_id == 837
+      assert t2.arena_id == 67890
+    end
+
+    test "TargetsDeclared resolves arena_id as nil when instance not in game_objects" do
+      raw_json =
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_GameStateMessage",
+                "systemSeatIds" => [1],
+                "gameStateMessage" => %{
+                  "type" => "GameStateType_Diff",
+                  "turnInfo" => %{"turnNumber" => 5, "phase" => "Phase_Combat"},
+                  "persistentAnnotations" => [
+                    %{
+                      "id" => 100,
+                      "affectorId" => 200,
+                      "affectedIds" => [300],
+                      "type" => ["AnnotationType_TargetSpec"],
+                      "details" => []
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        })
+
+      record = %Scry2.MtgaLogIngestion.EventRecord{
+        id: 2,
+        event_type: "GreToClientEvent",
+        mtga_timestamp: DateTime.utc_now(:second),
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: raw_json,
+        processed: false
+      }
+
+      # game_objects is empty — arena_id should be nil
+      {events, []} = IdentifyDomainEvents.translate(record, "test-user", %{game_objects: %{}})
+
+      td = Enum.find(events, &match?(%Scry2.Events.Stack.TargetsDeclared{}, &1))
+      assert td != nil
+      assert [%{instance_id: 300, arena_id: nil}] = td.targets
+    end
+  end
+
+  describe "AbilityActivated" do
+    test "emits AbilityActivated from AnnotationType_ActivatedAbility annotation" do
+      raw_json =
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_GameStateMessage",
+                "systemSeatIds" => [1],
+                "gameStateMessage" => %{
+                  "type" => "GameStateType_Diff",
+                  "turnInfo" => %{
+                    "turnNumber" => 7,
+                    "phase" => "Phase_Main1",
+                    "activePlayer" => 1
+                  },
+                  "annotations" => [
+                    %{
+                      "id" => 50,
+                      "affectorId" => 42,
+                      "affectedIds" => [42],
+                      "type" => ["AnnotationType_ActivatedAbility"]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        })
+
+      record = %Scry2.MtgaLogIngestion.EventRecord{
+        id: 3,
+        event_type: "GreToClientEvent",
+        mtga_timestamp: DateTime.utc_now(:second),
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: raw_json,
+        processed: false
+      }
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, "test-user", %{game_objects: %{42 => 99999}})
+
+      aa = Enum.find(events, &match?(%Scry2.Events.Stack.AbilityActivated{}, &1))
+
+      assert aa != nil,
+             "Expected AbilityActivated, got: #{inspect(Enum.map(events, & &1.__struct__))}"
+
+      assert aa.source_instance_id == 42
+      assert aa.source_arena_id == 99999
+      assert aa.turn_number == 7
+      assert aa.phase == "Phase_Main1"
+    end
+  end
+
+  describe "TriggerCreated" do
+    test "emits TriggerCreated from AnnotationType_TriggeredAbility annotation" do
+      raw_json =
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_GameStateMessage",
+                "systemSeatIds" => [1],
+                "gameStateMessage" => %{
+                  "type" => "GameStateType_Diff",
+                  "turnInfo" => %{
+                    "turnNumber" => 4,
+                    "phase" => "Phase_Beginning",
+                    "activePlayer" => 2
+                  },
+                  "annotations" => [
+                    %{
+                      "id" => 60,
+                      "affectorId" => 77,
+                      "affectedIds" => [77],
+                      "type" => ["AnnotationType_TriggeredAbility"],
+                      "details" => []
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        })
+
+      record = %Scry2.MtgaLogIngestion.EventRecord{
+        id: 4,
+        event_type: "GreToClientEvent",
+        mtga_timestamp: DateTime.utc_now(:second),
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: raw_json,
+        processed: false
+      }
+
+      {events, []} = IdentifyDomainEvents.translate(record, "test-user", %{game_objects: %{}})
+
+      tc = Enum.find(events, &match?(%Scry2.Events.Stack.TriggerCreated{}, &1))
+
+      assert tc != nil,
+             "Expected TriggerCreated, got: #{inspect(Enum.map(events, & &1.__struct__))}"
+
+      assert tc.source_instance_id == 77
+      assert tc.turn_number == 4
+      assert tc.phase == "Phase_Beginning"
+    end
+  end
 end
