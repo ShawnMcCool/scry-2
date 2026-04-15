@@ -8,8 +8,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   - MulliganOffered (MulliganReq)
   - Turn actions from annotations (ZoneTransfer, DamageDealt, ModifiedLife, etc.)
 
-  Called via `build/5` which takes the full GRE message list and returns
-  a flat list of domain events.
+  Called by the coordinator with pre-decoded `messages` (the inner
+  `greToClientMessages` list), not a raw `EventRecord`. See
+  `IdentifyDomainEvents` for the envelope decoding.
   """
 
   alias Scry2.Events.Gameplay.{
