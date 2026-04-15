@@ -40,9 +40,9 @@
                   BinaryRef="Wix4UtilCA_X64"
                   DllEntry="WixShellExec"
                   Execute="immediate"
-                  Return="asyncNoWait" />
+                  Return="ignore" />
     <InstallExecuteSequence>
-      <Custom Action="LaunchTray" After="InstallFinalize">NOT REMOVE</Custom>
+      <Custom Action="LaunchTray" After="InstallFinalize" Condition="NOT REMOVE" />
     </InstallExecuteSequence>
 
   </Package>
