@@ -8,15 +8,32 @@ popd
 popd
 
 if defined SCRY_DEBUG (echo [scry_debug] RELEASE_ROOT=!RELEASE_ROOT! 1>&2)
+if defined SCRY_DEBUG (
+  echo [scry_debug] start_erl.data content: 1>&2
+  type "!RELEASE_ROOT!\releases\start_erl.data" 1>&2
+  echo [scry_debug] releases\ directory listing: 1>&2
+  dir /b "!RELEASE_ROOT!\releases\" 1>&2
+)
 
 if not defined RELEASE_NAME (set RELEASE_NAME=scry_2)
 if not defined RELEASE_VSN (for /f "tokens=1,2" %%K in ('type "!RELEASE_ROOT!\releases\start_erl.data"') do (set ERTS_VSN=%%K) && (set RELEASE_VSN=%%L))
 if not defined RELEASE_PROG (set RELEASE_PROG=%~nx0)
 set RELEASE_COMMAND=%~1
 set REL_VSN_DIR=!RELEASE_ROOT!\releases\!RELEASE_VSN!
+
+if defined SCRY_DEBUG (echo [scry_debug] ERTS_VSN=!ERTS_VSN! 1>&2)
+if defined SCRY_DEBUG (echo [scry_debug] RELEASE_VSN=!RELEASE_VSN! 1>&2)
+if defined SCRY_DEBUG (echo [scry_debug] REL_VSN_DIR=!REL_VSN_DIR! 1>&2)
+if defined SCRY_DEBUG (
+  if exist "!REL_VSN_DIR!\env.bat" (
+    echo [scry_debug] env.bat EXISTS at !REL_VSN_DIR!\env.bat 1>&2
+  ) else (
+    echo [scry_debug] env.bat MISSING at !REL_VSN_DIR!\env.bat 1>&2
+  )
+)
+
 call "!REL_VSN_DIR!\env.bat" %*
 
-if defined SCRY_DEBUG (echo [scry_debug] REL_VSN_DIR=!REL_VSN_DIR! 1>&2)
 if defined SCRY_DEBUG (echo [scry_debug] RELEASE_COOKIE after env.bat=[!RELEASE_COOKIE!] 1>&2)
 
 rem FIXED: The original generated line uses an unquoted redirect:

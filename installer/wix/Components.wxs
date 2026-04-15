@@ -5,6 +5,24 @@
        Release files (ERTS, lib, releases, bin) are in generated fragment files. -->
 
   <Fragment>
+    <!-- Force-remove start_erl.data before InstallFiles so the MSI always wins,
+         even when a prior zip install or failed upgrade left a stale copy on disk.
+         Windows Installer won't overwrite an unversioned text file whose on-disk
+         timestamp is newer than the source; deleting it first removes that check. -->
+    <DirectoryRef Id="ReleasesDir">
+      <Component Id="CleanStartErlData" Guid="91f3c2d4-8b5e-4a1f-9c3d-2e7f6a8b4c0e">
+        <RemoveFile Id="RemoveStartErlData" Name="start_erl.data" On="install" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\Scry2"
+                       Name="CleanStartErlData"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+
+  <Fragment>
     <DirectoryRef Id="INSTALLFOLDER">
       <!-- The system tray binary — main entry point for users -->
       <Component Id="TrayExecutable" Guid="*">

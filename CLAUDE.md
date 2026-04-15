@@ -1,5 +1,16 @@
 Read `AGENTS.md` for Elixir, Phoenix, LiveView, Ecto, and CSS/JS guidelines.
 
+## Troubleshooting Philosophy
+
+**Maximum observability before guessing.** When something goes wrong — especially on a remote platform like Windows — gather real data before proposing a fix. Guessing wastes everyone's time.
+
+- **Add debug flags first.** For any system that can fail silently, build in a `SCRY_DEBUG=1` or equivalent escape hatch that emits full runtime state to stderr. This costs nothing in production and is invaluable when things break.
+- **Echo every assumption.** If a script depends on a path, a file's content, or an environment variable, echo it under the debug flag so failures are self-explaining: what was expected vs. what was found.
+- **Instrument before releasing.** If a bug is hard to reproduce, add diagnostic output as part of the fix — not as a follow-up. The fix and the evidence that the fix works ship together.
+- **Never strip observability.** Diagnostic echoes to stderr do not affect normal operation. Leave them in. A flag that is never set costs nothing.
+
+Applied to Windows batch scripts: when a path operation or env var read might fail, emit the resolved path and existence check under `SCRY_DEBUG`. Show directory listings of key dirs. Show file contents. Show before/after variable values.
+
 ## Automation Philosophy
 
 **Prefer scripts over AI workflows for repeatable tasks.** When the steps are known and mechanical, write a shell script — don't reach for subagents, hooks, or AI-driven loops. Scripts are auditable, fast, version-controlled, and token-free. Reserve AI workflows for tasks that require judgment or adaptation at runtime.
