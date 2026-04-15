@@ -6,6 +6,7 @@
   <Fragment>
     <Feature Id="Complete" Title="Scry2" Level="1">
       <!-- Manually authored -->
+      <ComponentRef Id="CleanStartErlData" />
       <ComponentRef Id="TrayExecutable" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="AutoStartRegistry" />
