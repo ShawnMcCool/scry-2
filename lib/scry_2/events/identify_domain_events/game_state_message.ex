@@ -33,6 +33,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   alias Scry2.Events.Match.{DieRolled, GameCompleted}
   alias Scry2.Events.Permanent.{PermanentStatsChanged, PermanentTapped, PermanentUntapped}
   alias Scry2.Events.Priority.PriorityAssigned
+  alias Scry2.Events.Stack.{AbilityActivated, TargetsDeclared, TriggerCreated}
   alias Scry2.Events.Turn.{PhaseChanged, TurnStarted}
 
   @doc """
@@ -431,6 +432,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
         gsm = Helpers.extract_game_state(msg)
         turn_info = gsm["turnInfo"] || %{}
         annotations = gsm["annotations"] || []
+        persistent_annotations = gsm["persistentAnnotations"] || []
         game_objects = gsm["gameObjects"] || []
 
         # Build instance → grpId map from this message's objects
@@ -439,7 +441,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
         # Merge with cached objects for resolution
         objects = Map.merge(Helpers.cached_objects_to_map(cached_objects), local_objects)
 
-        annotations
+        all_annotations = annotations ++ persistent_annotations
+
+        all_annotations
         |> Enum.flat_map(
           &annotation_to_turn_actions(&1, turn_info, match_id, occurred_at, objects, game_number)
         )
@@ -643,6 +647,85 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
         active_player: turn_info["activePlayer"],
         card_arena_id: grp_id,
         amount: amount,
+        occurred_at: occurred_at
+      }
+    ]
+  end
+
+  defp annotation_to_turn_actions(
+         %{"type" => ["AnnotationType_TargetSpec"]} = ann,
+         turn_info,
+         match_id,
+         occurred_at,
+         objects,
+         game_number
+       ) do
+    spell_instance_id = ann["affectorId"]
+    target_instance_ids = ann["affectedIds"] || []
+
+    targets =
+      Enum.map(target_instance_ids, fn instance_id ->
+        %{instance_id: instance_id, arena_id: Map.get(objects, instance_id)}
+      end)
+
+    [
+      %TargetsDeclared{
+        mtga_match_id: match_id,
+        game_number: game_number,
+        turn_number: turn_info["turnNumber"],
+        spell_instance_id: spell_instance_id,
+        targets: targets,
+        occurred_at: occurred_at
+      }
+    ]
+  end
+
+  defp annotation_to_turn_actions(
+         %{"type" => ["AnnotationType_ActivatedAbility"]} = ann,
+         turn_info,
+         match_id,
+         occurred_at,
+         objects,
+         game_number
+       ) do
+    source_instance_id = ann["affectorId"]
+    source_arena_id = Map.get(objects, source_instance_id)
+
+    [
+      %AbilityActivated{
+        mtga_match_id: match_id,
+        game_number: game_number,
+        turn_number: turn_info["turnNumber"],
+        phase: turn_info["phase"],
+        source_instance_id: source_instance_id,
+        source_arena_id: source_arena_id,
+        occurred_at: occurred_at
+      }
+    ]
+  end
+
+  defp annotation_to_turn_actions(
+         %{"type" => ["AnnotationType_TriggeredAbility"]} = ann,
+         turn_info,
+         match_id,
+         occurred_at,
+         objects,
+         game_number
+       ) do
+    details = ann["details"] || []
+    source_instance_id = ann["affectorId"]
+    source_arena_id = Map.get(objects, source_instance_id)
+    trigger_type = Helpers.find_detail_string(details, "trigger_type")
+
+    [
+      %TriggerCreated{
+        mtga_match_id: match_id,
+        game_number: game_number,
+        turn_number: turn_info["turnNumber"],
+        phase: turn_info["phase"],
+        source_instance_id: source_instance_id,
+        source_arena_id: source_arena_id,
+        trigger_type: trigger_type,
         occurred_at: occurred_at
       }
     ]
