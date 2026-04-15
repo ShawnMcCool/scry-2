@@ -128,9 +128,29 @@ defmodule Scry2.Config do
 
     case File.read(path) do
       {:ok, contents} ->
-        case Toml.decode(contents) do
-          {:ok, toml} -> merge_toml(defaults, toml)
-          {:error, _} -> defaults
+        # Toml.decode/1 runs a linked Lexer process internally. Malformed input
+        # (e.g. Windows paths with unescaped backslashes in double-quoted strings)
+        # can crash the Lexer process rather than returning {:error, _}, so we
+        # catch exits too. Fall back to defaults and log the problem.
+        result =
+          try do
+            Toml.decode(contents)
+          catch
+            :exit, reason -> {:error, {:toml_crashed, reason}}
+          end
+
+        case result do
+          {:ok, toml} ->
+            merge_toml(defaults, toml)
+
+          {:error, reason} ->
+            require Logger
+
+            Logger.warning(
+              "Config at #{path} failed to parse (#{inspect(reason)}). Using defaults. Fix the file or delete it to regenerate."
+            )
+
+            defaults
         end
 
       {:error, _} ->
