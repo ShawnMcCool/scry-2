@@ -27,6 +27,7 @@ defmodule Scry2.Decks.GameDraw do
     field :card_name, :string
     field :turn_number, :integer
     field :match_won, :boolean
+    field :is_self_draw, :boolean
     field :occurred_at, :utc_datetime
 
     timestamps(type: :utc_datetime)
@@ -42,6 +43,7 @@ defmodule Scry2.Decks.GameDraw do
       :card_name,
       :turn_number,
       :match_won,
+      :is_self_draw,
       :occurred_at
     ])
     |> validate_required([:mtga_match_id, :occurred_at])

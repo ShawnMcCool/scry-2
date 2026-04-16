@@ -329,6 +329,7 @@ defmodule Scry2.Decks.DeckProjection do
         card_arena_id: event.card_arena_id,
         card_name: event.card_name,
         turn_number: event.turn_number,
+        is_self_draw: event.is_self_draw,
         occurred_at: event.occurred_at
       })
     end
