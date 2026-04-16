@@ -113,5 +113,30 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGreTest do
       # arena_id resolved from game_objects
       assert blocker.arena_id == 12345
     end
+
+    test "emits BlockersDeclared when selectedBlockers omits attackerInstanceIds (maxAttackers-only variant)" do
+      record = record_from_fixture("client_to_gre_declare_blockers_no_attacker_ids.log")
+
+      match_ctx = %{
+        current_match_id: "test-match-id",
+        current_game_number: 1,
+        game_objects: %{386 => 99999},
+        turn_phase_state: %{turn: 4}
+      }
+
+      {events, []} = IdentifyDomainEvents.translate(record, @self_user_id, match_ctx)
+
+      assert Enum.any?(events, &match?(%BlockersDeclared{}, &1)),
+             "Expected BlockersDeclared, got: #{inspect(Enum.map(events, & &1.__struct__))}"
+
+      declared = Enum.find(events, &match?(%BlockersDeclared{}, &1))
+      assert length(declared.blockers) == 1
+
+      [blocker] = declared.blockers
+      assert blocker.instance_id == 386
+      assert blocker.arena_id == 99999
+      # No attackerInstanceIds in payload → blocking_instance_id is nil
+      assert blocker.blocking_instance_id == nil
+    end
   end
 end

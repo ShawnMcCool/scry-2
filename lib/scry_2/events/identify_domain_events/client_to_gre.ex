@@ -138,7 +138,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
             blockers =
               Enum.map(raw_blockers, fn blocker ->
                 instance_id = blocker["blockerInstanceId"]
-                blocking_instance_id = blocker["attackerInstanceIds"] |> List.first()
+                blocking_instance_id = List.first(blocker["attackerInstanceIds"] || [])
 
                 %{
                   instance_id: instance_id,
