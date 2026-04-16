@@ -457,11 +457,24 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
         # Merge with cached objects for resolution
         objects = Map.merge(Helpers.cached_objects_to_map(cached_objects), local_objects)
 
+        # Build zone_id → ownerSeatId map for draw attribution
+        zone_owners = Map.new(gsm["zones"] || [], &{&1["id"], &1["ownerSeatId"]})
+        self_seat_id = match_context[:self_seat_id]
+
         all_annotations = annotations ++ persistent_annotations
 
         all_annotations
         |> Enum.flat_map(
-          &annotation_to_turn_actions(&1, turn_info, match_id, occurred_at, objects, game_number)
+          &annotation_to_turn_actions(
+            &1,
+            turn_info,
+            match_id,
+            occurred_at,
+            objects,
+            game_number,
+            zone_owners,
+            self_seat_id
+          )
         )
       else
         []
@@ -475,7 +488,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         game_number
+         game_number,
+         zone_owners,
+         self_seat_id
        ) do
     details = ann["details"] || []
     category = Helpers.find_detail_string(details, "category")
@@ -507,7 +522,14 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
           struct(SpellResolved, common)
 
         "Draw" ->
-          struct(CardDrawn, common)
+          drawer_seat_id = Map.get(zone_owners, zone_to)
+
+          is_self_draw =
+            if is_integer(drawer_seat_id) && is_integer(self_seat_id) do
+              drawer_seat_id == self_seat_id
+            end
+
+          struct(CardDrawn, Map.put(common, :is_self_draw, is_self_draw))
 
         "Destroy" ->
           struct(PermanentDestroyed, common)
@@ -574,7 +596,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         game_number
+         game_number,
+         _zone_owners,
+         _self_seat_id
        ) do
     details = ann["details"] || []
     damage = Helpers.find_detail_int(details, "damage")
@@ -601,7 +625,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          _objects,
-         game_number
+         game_number,
+         _zone_owners,
+         _self_seat_id
        ) do
     details = ann["details"] || []
     life_change = Helpers.find_detail_int(details, "life")
@@ -627,7 +653,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         game_number
+         game_number,
+         _zone_owners,
+         _self_seat_id
        ) do
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
     grp_id = Map.get(objects, instance_id)
@@ -651,7 +679,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         game_number
+         game_number,
+         _zone_owners,
+         _self_seat_id
        ) do
     details = ann["details"] || []
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
@@ -678,7 +708,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         game_number
+         game_number,
+         _zone_owners,
+         _self_seat_id
        ) do
     spell_instance_id = ann["affectorId"]
     target_instance_ids = ann["affectedIds"] || []
@@ -706,7 +738,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         game_number
+         game_number,
+         _zone_owners,
+         _self_seat_id
        ) do
     source_instance_id = ann["affectorId"]
     source_arena_id = Map.get(objects, source_instance_id)
@@ -730,7 +764,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         game_number
+         game_number,
+         _zone_owners,
+         _self_seat_id
        ) do
     details = ann["details"] || []
     source_instance_id = ann["affectorId"]
@@ -758,7 +794,9 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          _match_id,
          _occurred_at,
          _objects,
-         _game_number
+         _game_number,
+         _zone_owners,
+         _self_seat_id
        ),
        do: []
 end

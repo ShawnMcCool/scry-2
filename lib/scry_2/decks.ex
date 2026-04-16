@@ -15,6 +15,7 @@ defmodule Scry2.Decks do
 
   import Ecto.Query
 
+  alias Scry2.Cards.MtgaCard
   alias Scry2.Decks.{Deck, DeckVersion, GameDraw, GameSubmission, MatchResult, MulliganHand}
   alias Scry2.Repo
   alias Scry2.Topics
@@ -478,8 +479,23 @@ defmodule Scry2.Decks do
     deck = get_deck(mtga_deck_id)
     deck_cards = deck_card_counts(deck)
 
-    # Resolve card names from the Cards table
     all_arena_ids = presence |> Map.keys() |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+
+    # Filter out tokens — MTGA emits draw annotations when tokens are created during play.
+    # Tokens are not deck cards and their performance metrics are meaningless.
+    token_ids =
+      MtgaCard
+      |> where([c], c.arena_id in ^all_arena_ids and c.is_token)
+      |> select([c], c.arena_id)
+      |> Repo.all()
+      |> MapSet.new()
+
+    presence =
+      Map.reject(presence, fn {{arena_id, _}, _} -> MapSet.member?(token_ids, arena_id) end)
+
+    all_arena_ids = Enum.reject(all_arena_ids, &MapSet.member?(token_ids, &1))
+
+    # Resolve card names from the Cards table
     card_names = Scry2.Cards.names_by_arena_ids(all_arena_ids)
 
     # Aggregate per card
@@ -531,6 +547,9 @@ defmodule Scry2.Decks do
       }
     end)
     |> Enum.sort_by(& &1.iwd, &((&1 || -999) >= (&2 || -999)))
+    # Exclude unknown arena_ids — cards not in any card table produce nil card_name
+    # and have no meaningful data to display.
+    |> Enum.reject(&is_nil(&1.card_name))
   end
 
   # ── Writes ────────────────────────────────────────────────────────────────
@@ -904,10 +923,13 @@ defmodule Scry2.Decks do
         end)
       end)
 
-    # Mid-game draw entries
+    # Mid-game draw entries — self draws only (opponent draws are stored for future analysis)
     draw_entries =
       GameDraw
-      |> where([d], d.mtga_deck_id == ^mtga_deck_id and not is_nil(d.match_won))
+      |> where(
+        [d],
+        d.mtga_deck_id == ^mtga_deck_id and not is_nil(d.match_won) and d.is_self_draw == true
+      )
       |> select([d], {d.card_arena_id, d.mtga_match_id, d.match_won})
       |> Repo.all()
       |> Enum.uniq_by(fn {arena_id, match_id, _} -> {arena_id, match_id} end)

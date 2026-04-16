@@ -39,6 +39,7 @@ defmodule Scry2.Events.Gameplay.CardDrawn do
     :active_player,
     :card_arena_id,
     :card_name,
+    :is_self_draw,
     :occurred_at
   ]
 
@@ -51,6 +52,7 @@ defmodule Scry2.Events.Gameplay.CardDrawn do
           active_player: integer() | nil,
           card_arena_id: integer() | nil,
           card_name: String.t() | nil,
+          is_self_draw: boolean() | nil,
           occurred_at: DateTime.t()
         }
 
@@ -64,6 +66,7 @@ defmodule Scry2.Events.Gameplay.CardDrawn do
       active_player: payload["active_player"],
       card_arena_id: payload["card_arena_id"],
       card_name: payload["card_name"],
+      is_self_draw: payload["is_self_draw"],
       occurred_at: Payload.parse_datetime(payload["occurred_at"])
     }
   end

@@ -1,6 +1,7 @@
 defmodule Scry2.DecksTest do
   use Scry2.DataCase
 
+  alias Scry2.Cards
   alias Scry2.Decks
   alias Scry2.Decks.{Deck, GameSubmission, MatchResult}
   alias Scry2.TestFactory
@@ -379,6 +380,123 @@ defmodule Scry2.DecksTest do
       })
 
       assert Decks.match_counts_by_format(deck.mtga_deck_id) == %{bo1: 1, bo3: 0}
+    end
+  end
+
+  describe "card_performance/1" do
+    test "excludes opponent draws (is_self_draw: false)" do
+      deck = TestFactory.create_deck()
+      match_id = "m-opponent-#{System.unique_integer([:positive])}"
+      opponent_arena_id = System.unique_integer([:positive])
+
+      Decks.upsert_match_result!(%{
+        mtga_deck_id: deck.mtga_deck_id,
+        mtga_match_id: match_id,
+        won: true,
+        format_type: "Standard"
+      })
+
+      Cards.upsert_mtga_card!(%{arena_id: opponent_arena_id, name: "Opponent Spell", rarity: 3})
+
+      Decks.upsert_game_draw!(%{
+        mtga_deck_id: deck.mtga_deck_id,
+        mtga_match_id: match_id,
+        game_number: 1,
+        card_arena_id: opponent_arena_id,
+        match_won: true,
+        is_self_draw: false,
+        occurred_at: ~U[2026-01-01 00:00:00Z]
+      })
+
+      result_ids = deck.mtga_deck_id |> Decks.card_performance() |> Enum.map(& &1.card_arena_id)
+      refute opponent_arena_id in result_ids
+    end
+
+    test "excludes token cards (is_token: true in MtgaCard)" do
+      deck = TestFactory.create_deck()
+      match_id = "m-token-#{System.unique_integer([:positive])}"
+      token_arena_id = System.unique_integer([:positive])
+
+      Decks.upsert_match_result!(%{
+        mtga_deck_id: deck.mtga_deck_id,
+        mtga_match_id: match_id,
+        won: true,
+        format_type: "Standard"
+      })
+
+      Cards.upsert_mtga_card!(%{
+        arena_id: token_arena_id,
+        name: "Treasure",
+        is_token: true,
+        rarity: 0
+      })
+
+      Decks.upsert_game_draw!(%{
+        mtga_deck_id: deck.mtga_deck_id,
+        mtga_match_id: match_id,
+        game_number: 1,
+        card_arena_id: token_arena_id,
+        match_won: true,
+        is_self_draw: true,
+        occurred_at: ~U[2026-01-01 00:00:00Z]
+      })
+
+      result_ids = deck.mtga_deck_id |> Decks.card_performance() |> Enum.map(& &1.card_arena_id)
+      refute token_arena_id in result_ids
+    end
+
+    test "excludes arena_ids with no card table entry (nil card_name)" do
+      deck = TestFactory.create_deck()
+      match_id = "m-unknown-#{System.unique_integer([:positive])}"
+      unknown_arena_id = System.unique_integer([:positive])
+
+      Decks.upsert_match_result!(%{
+        mtga_deck_id: deck.mtga_deck_id,
+        mtga_match_id: match_id,
+        won: true,
+        format_type: "Standard"
+      })
+
+      Decks.upsert_game_draw!(%{
+        mtga_deck_id: deck.mtga_deck_id,
+        mtga_match_id: match_id,
+        game_number: 1,
+        card_arena_id: unknown_arena_id,
+        match_won: true,
+        is_self_draw: true,
+        occurred_at: ~U[2026-01-01 00:00:00Z]
+      })
+
+      result_ids = deck.mtga_deck_id |> Decks.card_performance() |> Enum.map(& &1.card_arena_id)
+      refute unknown_arena_id in result_ids
+    end
+
+    test "includes self draws of known non-token cards" do
+      deck = TestFactory.create_deck()
+      match_id = "m-self-#{System.unique_integer([:positive])}"
+      card_arena_id = System.unique_integer([:positive])
+
+      Decks.upsert_match_result!(%{
+        mtga_deck_id: deck.mtga_deck_id,
+        mtga_match_id: match_id,
+        won: true,
+        format_type: "Standard"
+      })
+
+      Cards.upsert_mtga_card!(%{arena_id: card_arena_id, name: "Lightning Bolt", rarity: 2})
+
+      Decks.upsert_game_draw!(%{
+        mtga_deck_id: deck.mtga_deck_id,
+        mtga_match_id: match_id,
+        game_number: 1,
+        card_arena_id: card_arena_id,
+        match_won: true,
+        is_self_draw: true,
+        occurred_at: ~U[2026-01-01 00:00:00Z]
+      })
+
+      result_ids = deck.mtga_deck_id |> Decks.card_performance() |> Enum.map(& &1.card_arena_id)
+      assert card_arena_id in result_ids
     end
   end
 end
