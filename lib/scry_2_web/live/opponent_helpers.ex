@@ -32,16 +32,20 @@ defmodule Scry2Web.OpponentHelpers do
   end
 
   @doc """
-  Returns the opponent's rank string from the most recent match in the history,
-  or `nil` if the history is empty or no match carries a rank.
+  Returns the most recent known rank string from the history (the rank from the
+  most recent match that has a non-nil `opponent_rank`), or `nil` if no match
+  in the history carries a rank.
   """
   @spec latest_rank(list()) :: String.t() | nil
   def latest_rank([]), do: nil
 
   def latest_rank(history) do
     history
-    |> Enum.max_by(& &1.started_at, DateTime)
-    |> Map.get(:opponent_rank)
+    |> Enum.filter(&(not is_nil(&1.opponent_rank)))
+    |> case do
+      [] -> nil
+      ranked -> Enum.max_by(ranked, & &1.started_at, DateTime) |> Map.get(:opponent_rank)
+    end
   end
 
   @doc """
