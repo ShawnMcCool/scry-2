@@ -66,6 +66,13 @@ defmodule Scry2Web.OpponentHelpersTest do
       # pass in reverse order to verify it selects by timestamp, not list position
       assert OpponentHelpers.latest_rank([later, earlier]) == "Platinum 1"
     end
+
+    test "returns most recent known rank, skipping matches with nil rank" do
+      earlier = build_match(opponent_rank: "Gold 2", started_at: ~U[2026-01-01 10:00:00Z])
+      latest_no_rank = build_match(opponent_rank: nil, started_at: ~U[2026-01-02 10:00:00Z])
+
+      assert OpponentHelpers.latest_rank([earlier, latest_no_rank]) == "Gold 2"
+    end
   end
 
   describe "chart_series/1" do
