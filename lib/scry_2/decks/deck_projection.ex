@@ -110,78 +110,89 @@ defmodule Scry2.Decks.DeckProjection do
           resolve_deck_id_for_draft(match_created_attrs) ||
           event.mtga_deck_id
 
-      # Upsert game submission row for sideboard diff analysis
-      Decks.upsert_game_submission!(%{
-        mtga_deck_id: mtga_deck_id,
-        mtga_match_id: event.mtga_match_id,
-        game_number: event.game_number || 1,
-        main_deck: %{"cards" => event.main_deck || []},
-        sideboard: %{"cards" => event.sideboard || []},
-        submitted_at: event.occurred_at
-      })
-
-      # Update first_seen_at / last_played_at / deck_colors on the deck row.
-      # For draft decks, also seed the display name and format.
-      existing = Decks.get_deck(mtga_deck_id)
-
-      deck_attrs =
-        if existing do
-          updates = %{
-            mtga_deck_id: mtga_deck_id,
-            last_played_at: event.occurred_at,
-            deck_colors: event.deck_colors || existing.deck_colors || ""
-          }
-
-          if is_nil(existing.first_seen_at) or
-               DateTime.compare(event.occurred_at, existing.first_seen_at) == :lt do
-            Map.put(updates, :first_seen_at, event.occurred_at)
-          else
-            updates
-          end
-        else
-          base = %{
-            mtga_deck_id: mtga_deck_id,
-            first_seen_at: event.occurred_at,
-            last_played_at: event.occurred_at,
-            deck_colors: event.deck_colors || ""
-          }
-
-          maybe_add_draft_name(base, match_created_attrs)
-        end
-
-      deck = Decks.upsert_deck!(deck_attrs)
-
-      # Backfill nil format from the match's event_name. DeckUpdated sometimes
-      # carries event-type strings ("DirectGame") that normalize_deck_format/1
-      # filters to nil. The match's event_name reliably identifies the format.
-      if is_nil(deck.format) do
-        event_name = match_created_attrs[:event_name]
-        inferred = EnrichEvents.infer_deck_format(event_name)
-
-        if inferred do
-          Decks.upsert_deck!(%{mtga_deck_id: mtga_deck_id, format: inferred})
-        end
-      end
-
-      # Seed match result row. MatchCreated fires before DeckSubmitted in the
-      # MTGA event stream, so retroactively apply any already-persisted
-      # MatchCreated data to avoid leaving format_type nil.
-      Decks.upsert_match_result!(
-        Map.merge(match_created_attrs, %{
+      # If all resolution attempts failed, mtga_deck_id is still the synthetic
+      # "{match_id}:seat{n}" fallback. This happens for formats like Momir that
+      # have no real deck identity. Skip deck tracking entirely — the Matches
+      # context still records these matches.
+      if String.match?(mtga_deck_id, ~r/:seat\d+$/) do
+        Log.warning(
+          :ingester,
+          "no deck identity resolved for match=#{event.mtga_match_id} seat=#{event.self_seat_id} — skipping deck tracking"
+        )
+      else
+        # Upsert game submission row for sideboard diff analysis
+        Decks.upsert_game_submission!(%{
           mtga_deck_id: mtga_deck_id,
-          mtga_match_id: event.mtga_match_id
+          mtga_match_id: event.mtga_match_id,
+          game_number: event.game_number || 1,
+          main_deck: %{"cards" => event.main_deck || []},
+          sideboard: %{"cards" => event.sideboard || []},
+          submitted_at: event.occurred_at
         })
-      )
 
-      # Backfill deck_id on mulligan hands and game draws that arrived
-      # before this DeckSubmitted (MulliganOffered fires before deck context)
-      Decks.stamp_deck_id_on_mulligan_hands!(event.mtga_match_id, mtga_deck_id)
-      Decks.stamp_deck_id_on_game_draws!(event.mtga_match_id, mtga_deck_id)
+        # Update first_seen_at / last_played_at / deck_colors on the deck row.
+        # For draft decks, also seed the display name and format.
+        existing = Decks.get_deck(mtga_deck_id)
 
-      Log.info(
-        :ingester,
-        "projected DeckSubmitted deck_id=#{mtga_deck_id} match=#{event.mtga_match_id} game=#{event.game_number}"
-      )
+        deck_attrs =
+          if existing do
+            updates = %{
+              mtga_deck_id: mtga_deck_id,
+              last_played_at: event.occurred_at,
+              deck_colors: event.deck_colors || existing.deck_colors || ""
+            }
+
+            if is_nil(existing.first_seen_at) or
+                 DateTime.compare(event.occurred_at, existing.first_seen_at) == :lt do
+              Map.put(updates, :first_seen_at, event.occurred_at)
+            else
+              updates
+            end
+          else
+            base = %{
+              mtga_deck_id: mtga_deck_id,
+              first_seen_at: event.occurred_at,
+              last_played_at: event.occurred_at,
+              deck_colors: event.deck_colors || ""
+            }
+
+            maybe_add_draft_name(base, match_created_attrs)
+          end
+
+        deck = Decks.upsert_deck!(deck_attrs)
+
+        # Backfill nil format from the match's event_name. DeckUpdated sometimes
+        # carries event-type strings ("DirectGame") that normalize_deck_format/1
+        # filters to nil. The match's event_name reliably identifies the format.
+        if is_nil(deck.format) do
+          event_name = match_created_attrs[:event_name]
+          inferred = EnrichEvents.infer_deck_format(event_name)
+
+          if inferred do
+            Decks.upsert_deck!(%{mtga_deck_id: mtga_deck_id, format: inferred})
+          end
+        end
+
+        # Seed match result row. MatchCreated fires before DeckSubmitted in the
+        # MTGA event stream, so retroactively apply any already-persisted
+        # MatchCreated data to avoid leaving format_type nil.
+        Decks.upsert_match_result!(
+          Map.merge(match_created_attrs, %{
+            mtga_deck_id: mtga_deck_id,
+            mtga_match_id: event.mtga_match_id
+          })
+        )
+
+        # Backfill deck_id on mulligan hands and game draws that arrived
+        # before this DeckSubmitted (MulliganOffered fires before deck context)
+        Decks.stamp_deck_id_on_mulligan_hands!(event.mtga_match_id, mtga_deck_id)
+        Decks.stamp_deck_id_on_game_draws!(event.mtga_match_id, mtga_deck_id)
+
+        Log.info(
+          :ingester,
+          "projected DeckSubmitted deck_id=#{mtga_deck_id} match=#{event.mtga_match_id} game=#{event.game_number}"
+        )
+      end
     end
 
     :ok
