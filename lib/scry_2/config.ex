@@ -63,7 +63,7 @@ defmodule Scry2.Config do
       # Scry2 bootstrap configuration — generated on first run.
       # To customize settings, use the in-app Settings page.
       # For all available options, see:
-      # https://github.com/shawnmccool/scry_2/blob/main/defaults/scry_2.toml
+      # https://github.com/ShawnMcCool/scry-2/blob/main/defaults/scry_2.toml
 
       secret_key_base = "#{secret_key_base}"
 

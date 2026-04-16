@@ -134,7 +134,7 @@ The release workflow:
 
 The CI build is authoritative for multi-platform releases. `scripts/release` and `scripts/install` are for local development and testing only. Platform-specific package installers live at `scripts/install-linux` and `scripts/install-macos` — these are copied into the release package and run *from inside* it, not from the repo root.
 
-Migrations in a release: `bin/scry_2 eval "Scry2.Release.migrate()"`.
+Migrations run automatically at startup via `Ecto.Migrator` in the application supervisor — no manual step is needed.
 
 > Note: When compiling, always use the environment variable `MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8` to parallelize and speed up compilation.
 
@@ -234,7 +234,7 @@ re-exposed. See `Scry2.Cards.SeventeenLands`.
 
 ## Data Model
 
-See `decisions/architecture/2026-04-05-014-arena-id-as-stable-key.md` and the schema modules under `lib/scry_2/cards/`, `lib/scry_2/match_listing/`, `lib/scry_2/draft_listing/` for the data model. Type-specific tables, no polymorphic entity table.
+See `decisions/architecture/2026-04-05-014-arena-id-as-stable-key.md` and the schema modules under `lib/scry_2/cards/`, `lib/scry_2/matches/`, `lib/scry_2/drafts/` for the data model. Type-specific tables, no polymorphic entity table.
 
 ## Bounded Contexts
 
@@ -247,6 +247,10 @@ Each context owns its tables and communicates only via PubSub events. No context
 | **Matches** | `matches_` | matches, games, deck submissions (projection) | Subscribes `domain:events` via `Matches.Match`; broadcasts `matches:updates` |
 | **Drafts** | `drafts_` | drafts, draft picks (projection) | Subscribes `domain:events` via `Drafts.Draft`; broadcasts `drafts:updates` |
 | **Cards** | `cards_` | cards, sets (from 17lands) | Broadcasts `cards:updates` |
+| **Decks** | `decks_` | decks, deck versions, game submissions, match results, mulligan hands, cards drawn (projection) | Subscribes `domain:events` via `Decks.DeckProjection`; broadcasts `decks:updates` |
+| **Economy** | `economy_` | event entries, inventory snapshots, transactions (projection) | Subscribes `domain:events` via `Economy.EconomyProjection`; broadcasts `economy:updates` |
+| **Ranks** | `ranks_` | rank snapshots (projection) | Subscribes `domain:events` via `Ranks.RankProjection`; broadcasts `ranks:updates` |
+| **Players** | — | players (discovered from domain events) | Called directly from `IngestRawEvents`; broadcasts `players:updates` |
 | **Settings** | `settings_` | runtime config entries | Broadcasts `settings:updates` |
 | **Console** | — | in-memory log ring buffer (dev observability) | Broadcasts `console:logs` |
 
