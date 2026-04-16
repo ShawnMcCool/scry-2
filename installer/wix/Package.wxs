@@ -49,7 +49,11 @@
            1. SetProperty (immediate) captures [INSTALLFOLDER] into CustomActionData
               while the property is still defined.
            2. WixQuietExec64 (deferred, elevated) runs cmd.exe /c rmdir /s /q
-              against the captured path after RemoveFiles has finished. -->
+              against the captured path after RemoveFiles has finished.
+         Return="ignore" because rmdir may fail when user processes hold
+         files open; the MSI should still successfully uninstall the
+         manifest. The workflow's Verify-cleanup step enforces the
+         directory deletion contract. -->
     <SetProperty Id="DeleteInstallDir"
                  Before="DeleteInstallDir"
                  Sequence="execute"

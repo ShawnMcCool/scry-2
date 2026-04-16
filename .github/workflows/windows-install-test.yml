@@ -273,6 +273,33 @@ jobs:
               $r = $view2.Fetch()
               Write-Host "Component count: $($r.IntegerData(1))"
           } catch { Write-Host "Could not query Component table: $_" }
+          # Dump CustomAction table to verify DeleteInstallDir is present
+          Write-Host ""
+          Write-Host "=== CustomAction table ==="
+          try {
+              $view3 = $db.OpenView("SELECT Action, Type, Source, Target FROM CustomAction")
+              $view3.Execute()
+              while ($r = $view3.Fetch()) {
+                  $action = $r.StringData(1)
+                  $type   = $r.IntegerData(2)
+                  $source = $r.StringData(3)
+                  $target = $r.StringData(4)
+                  Write-Host "  $action | type=$type | source=$source | target=$target"
+              }
+          } catch { Write-Host "Could not query CustomAction table: $_" }
+          # Dump InstallExecuteSequence entries around RemoveFiles
+          Write-Host ""
+          Write-Host "=== InstallExecuteSequence (Action | Condition | Sequence) ==="
+          try {
+              $view4 = $db.OpenView("SELECT Action, Condition, Sequence FROM InstallExecuteSequence ORDER BY Sequence")
+              $view4.Execute()
+              while ($r = $view4.Fetch()) {
+                  $action = $r.StringData(1)
+                  $cond   = $r.StringData(2)
+                  $seq    = $r.IntegerData(3)
+                  Write-Host "  [$seq] $action  ${cond}"
+              }
+          } catch { Write-Host "Could not query InstallExecuteSequence table: $_" }
 
       - name: Install MSI directly
         shell: pwsh
@@ -334,6 +361,24 @@ jobs:
           if (Test-Path "$env:TEMP\eval-err.txt") { Get-Content "$env:TEMP\eval-err.txt" -Tail 10 }
           Write-Host "Eval exit code: $($proc.ExitCode)"
 
+      - name: Kill processes under install dir before uninstall
+        shell: pwsh
+        run: |
+          # The Verify-runtime-eval step starts erl.exe/beam.smp under $installDir.
+          # Those processes may linger past the eval command's exit and hold files
+          # open — which would cause rmdir /s /q to fail silently during uninstall.
+          # Mirrors the defensive kill the zip install test does.
+          $installDir = $env:SCRY2_MSI_DIR
+          Write-Host "Killing processes rooted under $installDir"
+          $killed = Get-Process | Where-Object {
+              $_.Path -and $_.Path.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase)
+          }
+          foreach ($p in $killed) {
+              Write-Host "  killing $($p.Name) (pid $($p.Id)) — $($p.Path)"
+              try { Stop-Process -Id $p.Id -Force -ErrorAction Stop } catch { Write-Host "    failed: $_" }
+          }
+          Start-Sleep -Seconds 2
+
       - name: Uninstall MSI
         shell: pwsh
         run: |
@@ -346,6 +391,14 @@ jobs:
               throw "msiexec uninstall exited with code $($proc.ExitCode)"
           }
           Write-Host "Uninstall completed"
+          # Always echo diagnostic lines for our custom action so we can confirm
+          # it ran regardless of success. This stays on (not just on failure)
+          # because it's fast and will become a baseline observability check.
+          if (Test-Path $logFile) {
+              Write-Host ""
+              Write-Host "=== DeleteInstallDir custom action log lines ==="
+              Select-String -Path $logFile -Pattern "DeleteInstallDir|WixQuietExec|INSTALLFOLDER|rmdir" | ForEach-Object { Write-Host $_.Line }
+          }
 
       - name: Verify cleanup
         shell: pwsh
@@ -355,13 +408,35 @@ jobs:
           if ($autostart) { throw "Autostart registry key not removed" }
           Write-Host "Cleanup OK: install dir gone, registry key removed"
 
-      - name: Upload MSI log on failure
+      - name: Dump uninstall log on failure
         if: failure()
         shell: pwsh
         run: |
-          $logFile = "$env:TEMP\scry2-msi-install.log"
+          $logFile = "$env:TEMP\scry2-msi-uninstall.log"
           if (Test-Path $logFile) {
-              Copy-Item $logFile "D:\a\scry-2\scry-2\msi-install.log"
+              Write-Host "=== Lines referencing DeleteInstallDir / INSTALLFOLDER / rmdir / WixQuietExec ==="
+              Select-String -Path $logFile -Pattern "DeleteInstallDir|INSTALLFOLDER|rmdir|WixQuietExec|WixRemove|CustomAction|Custom Action" | ForEach-Object { Write-Host $_.Line }
+              Write-Host ""
+              Write-Host "=== Full action sequence (Doing action / Action start) ==="
+              Select-String -Path $logFile -Pattern "Doing action|Action start|return value" | ForEach-Object { Write-Host $_.Line }
+              Write-Host ""
+              Write-Host "=== Last 80 lines of uninstall log ==="
+              Get-Content $logFile -Tail 80 | ForEach-Object { Write-Host $_ }
+          } else {
+              Write-Host "No uninstall log found at $logFile"
+          }
+
+      - name: Copy MSI logs for artifact upload
+        if: failure()
+        shell: pwsh
+        run: |
+          $installLog = "$env:TEMP\scry2-msi-install.log"
+          $uninstallLog = "$env:TEMP\scry2-msi-uninstall.log"
+          if (Test-Path $installLog) {
+              Copy-Item $installLog "D:\a\scry-2\scry-2\msi-install.log"
+          }
+          if (Test-Path $uninstallLog) {
+              Copy-Item $uninstallLog "D:\a\scry-2\scry-2\msi-uninstall.log"
           }
 
       - name: Upload logs on failure
@@ -371,5 +446,6 @@ jobs:
           name: scry2-logs-msi
           path: |
             msi-install.log
+            msi-uninstall.log
             ${{ env.APPDATA }}\scry_2\log\
           if-no-files-found: ignore
