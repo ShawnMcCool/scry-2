@@ -6,6 +6,38 @@ defmodule Scry2Web.DecksAnalysisHelpers do
   and metric definitions for tooltips.
   """
 
+  alias Scry2Web.DecksHelpers
+
+  @doc """
+  Collects all arena_ids needed to render the deck page — current deck,
+  all version snapshots/diffs, and any cards that appear in card_performance
+  (which may include cards from older deck versions no longer in the current list).
+
+  Returns a deduplicated list of integers.
+  """
+  def arena_ids_for_page(deck, versions, card_performance) do
+    deck_ids =
+      extract_card_ids(deck.current_main_deck) ++ extract_card_ids(deck.current_sideboard)
+
+    version_ids =
+      Enum.flat_map(versions, fn version ->
+        DecksHelpers.diff_arena_ids(version) ++ DecksHelpers.version_arena_ids(version)
+      end)
+
+    performance_ids = Enum.map(card_performance, & &1.card_arena_id)
+
+    (deck_ids ++ version_ids ++ performance_ids)
+    |> Enum.uniq()
+    |> Enum.filter(&is_integer/1)
+  end
+
+  defp extract_card_ids(%{"cards" => cards}), do: Enum.map(cards, &card_arena_id/1)
+  defp extract_card_ids(_), do: []
+
+  defp card_arena_id(%{"arena_id" => id}), do: id
+  defp card_arena_id(%{arena_id: id}), do: id
+  defp card_arena_id(_), do: nil
+
   @doc """
   Returns the CSS class for a win rate value in the heatmap.
   Green for > 55%, yellow for 45-55%, red for < 45%.

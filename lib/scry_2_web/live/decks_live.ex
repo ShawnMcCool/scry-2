@@ -18,6 +18,7 @@ defmodule Scry2Web.DecksLive do
   alias Scry2.Cards.ImageCache
   alias Scry2.Decks
   alias Scry2.Topics
+  alias Scry2Web.DecksAnalysisHelpers
   alias Scry2Web.DecksHelpers
 
   @impl true
@@ -1463,7 +1464,7 @@ defmodule Scry2Web.DecksLive do
         {nil, [], []}
       end
 
-    arena_ids = collect_arena_ids(deck, versions)
+    arena_ids = DecksAnalysisHelpers.arena_ids_for_page(deck, versions, card_performance)
     cards_by_arena_id = Cards.list_by_arena_ids(arena_ids)
 
     if connected?(socket) do
@@ -1497,27 +1498,6 @@ defmodule Scry2Web.DecksLive do
 
   defp bar_height(_count, 0), do: 2
   defp bar_height(count, max_val), do: max(2, round(count / max_val * 24))
-
-  defp collect_arena_ids(deck, versions) do
-    deck_ids =
-      extract_card_ids(deck.current_main_deck) ++ extract_card_ids(deck.current_sideboard)
-
-    version_ids =
-      Enum.flat_map(versions, fn version ->
-        DecksHelpers.diff_arena_ids(version) ++ DecksHelpers.version_arena_ids(version)
-      end)
-
-    (deck_ids ++ version_ids)
-    |> Enum.uniq()
-    |> Enum.filter(&is_integer/1)
-  end
-
-  defp extract_card_ids(%{"cards" => cards}), do: Enum.map(cards, &card_arena_id/1)
-  defp extract_card_ids(_), do: []
-
-  defp card_arena_id(%{"arena_id" => id}), do: id
-  defp card_arena_id(%{arena_id: id}), do: id
-  defp card_arena_id(_), do: nil
 
   defp parse_tab("analysis"), do: :analysis
   defp parse_tab("matches"), do: :matches
