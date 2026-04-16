@@ -64,8 +64,8 @@ defmodule Scry2.Matches do
   """
   def upsert_match!(attrs) do
     attrs = Map.new(attrs)
-    mtga_id = attrs[:mtga_match_id] || attrs["mtga_match_id"]
-    player_id = attrs[:player_id] || attrs["player_id"]
+    mtga_id = attrs[:mtga_match_id]
+    player_id = attrs[:player_id]
 
     match =
       case get_by_mtga_id(mtga_id, player_id) do
@@ -86,8 +86,8 @@ defmodule Scry2.Matches do
   """
   def upsert_game!(attrs) do
     attrs = Map.new(attrs)
-    match_id = attrs[:match_id] || attrs["match_id"]
-    game_number = attrs[:game_number] || attrs["game_number"]
+    match_id = attrs[:match_id]
+    game_number = attrs[:game_number]
 
     game =
       case Repo.get_by(Game, match_id: match_id, game_number: game_number) do
@@ -106,7 +106,7 @@ defmodule Scry2.Matches do
   """
   def upsert_deck_submission!(attrs) do
     attrs = Map.new(attrs)
-    mtga_id = attrs[:mtga_deck_id] || attrs["mtga_deck_id"]
+    mtga_id = attrs[:mtga_deck_id]
 
     submission =
       case Repo.get_by(DeckSubmission, mtga_deck_id: mtga_id) do

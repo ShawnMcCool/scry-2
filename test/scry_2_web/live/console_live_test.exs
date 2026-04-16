@@ -28,13 +28,13 @@ defmodule Scry2Web.ConsoleLiveTest do
 
   describe "sticky drawer embedded in parent LiveViews" do
     test "dashboard embeds the console sticky root", %{conn: conn} do
-      {:ok, _view, html} = live(conn, ~p"/")
-      assert html =~ "console-sticky-root"
+      {:ok, view, _html} = live(conn, ~p"/")
+      assert has_element?(view, "#console-sticky-root")
     end
 
     test "matches page embeds the console sticky root", %{conn: conn} do
-      {:ok, _view, html} = live(conn, ~p"/matches")
-      assert html =~ "console-sticky-root"
+      {:ok, view, _html} = live(conn, ~p"/matches")
+      assert has_element?(view, "#console-sticky-root")
     end
   end
 

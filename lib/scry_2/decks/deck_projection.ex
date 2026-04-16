@@ -396,7 +396,9 @@ defmodule Scry2.Decks.DeckProjection do
       end)
       |> Enum.sort()
 
-    Scry2.Repo.all(Scry2.Decks.Deck)
+    Decks.Deck
+    |> select([d], %{mtga_deck_id: d.mtga_deck_id, current_main_deck: d.current_main_deck})
+    |> Repo.all()
     |> Enum.find_value(fn deck ->
       known_sorted =
         ((deck.current_main_deck && deck.current_main_deck["cards"]) || [])

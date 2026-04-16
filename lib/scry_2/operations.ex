@@ -23,6 +23,8 @@ defmodule Scry2.Operations do
   | **Nature** | Spawns background tasks; never blocks the caller |
   """
 
+  import Ecto.Query, only: [from: 2]
+
   require Scry2.Log, as: Log
 
   alias Scry2.Events
@@ -144,6 +146,16 @@ defmodule Scry2.Operations do
           broadcast_failed(:catch_up, inspect(error))
       end
     end)
+  end
+
+  @doc "Returns true if an Oban worker is currently queued or running."
+  def oban_running?(worker) do
+    worker_name = to_string(worker)
+
+    Scry2.Repo.exists?(
+      from j in Oban.Job,
+        where: j.worker == ^worker_name and j.state in ["available", "executing", "scheduled"]
+    )
   end
 
   @doc "Returns a status snapshot for the operations page."

@@ -30,12 +30,11 @@ defmodule Scry2Web.SettingsLiveTest do
 
       open_edit(view, "player_log_path")
 
-      html =
-        view
-        |> form("form[phx-submit='save_player_log_path']", value: missing)
-        |> render_submit()
+      view
+      |> form("form[phx-submit='save_player_log_path']", value: missing)
+      |> render_submit()
 
-      assert html =~ "No file exists"
+      assert has_element?(view, "p.text-error", "No file exists")
       refute Settings.get("mtga_logs_player_log_path") == missing
     end
 
@@ -73,12 +72,11 @@ defmodule Scry2Web.SettingsLiveTest do
 
       open_edit(view, "data_dir")
 
-      html =
-        view
-        |> form("form[phx-submit='save_data_dir']", value: missing)
-        |> render_submit()
+      view
+      |> form("form[phx-submit='save_data_dir']", value: missing)
+      |> render_submit()
 
-      assert html =~ "No directory"
+      assert has_element?(view, "p.text-error", "No directory")
     end
   end
 
@@ -96,23 +94,21 @@ defmodule Scry2Web.SettingsLiveTest do
     test "shows an error for out-of-range values", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings")
 
-      html =
-        view
-        |> form("form[phx-submit='save_poll_interval_ms']", value: "50")
-        |> render_submit()
+      view
+      |> form("form[phx-submit='save_poll_interval_ms']", value: "50")
+      |> render_submit()
 
-      assert html =~ "at least 100"
+      assert has_element?(view, "p.text-error", "at least 100")
     end
 
     test "shows an error for garbage input", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings")
 
-      html =
-        view
-        |> form("form[phx-submit='save_poll_interval_ms']", value: "lots")
-        |> render_submit()
+      view
+      |> form("form[phx-submit='save_poll_interval_ms']", value: "lots")
+      |> render_submit()
 
-      assert html =~ "whole number"
+      assert has_element?(view, "p.text-error", "whole number")
     end
   end
 
@@ -134,12 +130,11 @@ defmodule Scry2Web.SettingsLiveTest do
 
       open_edit(view, "refresh_cron")
 
-      html =
-        view
-        |> form("form[phx-submit='save_refresh_cron']", value: "not a cron")
-        |> render_submit()
+      view
+      |> form("form[phx-submit='save_refresh_cron']", value: "not a cron")
+      |> render_submit()
 
-      assert html =~ "Invalid cron"
+      assert has_element?(view, "p.text-error", "Invalid cron")
     end
   end
 

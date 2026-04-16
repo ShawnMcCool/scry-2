@@ -296,11 +296,11 @@ defmodule Scry2.DecksTest do
     end
   end
 
-  describe "most_recent_format/1" do
+  describe "latest_format/1" do
     test "returns :bo3 when no matches exist" do
       deck = TestFactory.create_deck()
 
-      assert Decks.most_recent_format(deck.mtga_deck_id) == :bo3
+      assert Decks.latest_format(deck.mtga_deck_id) == :bo3
     end
 
     test "returns :bo3 when most recent match is Traditional" do
@@ -323,7 +323,7 @@ defmodule Scry2.DecksTest do
         started_at: now
       })
 
-      assert Decks.most_recent_format(deck.mtga_deck_id) == :bo3
+      assert Decks.latest_format(deck.mtga_deck_id) == :bo3
     end
 
     test "returns :bo1 when most recent match is Standard" do
@@ -346,7 +346,7 @@ defmodule Scry2.DecksTest do
         started_at: now
       })
 
-      assert Decks.most_recent_format(deck.mtga_deck_id) == :bo1
+      assert Decks.latest_format(deck.mtga_deck_id) == :bo1
     end
   end
 

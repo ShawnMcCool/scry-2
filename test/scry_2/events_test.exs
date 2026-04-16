@@ -566,14 +566,9 @@ defmodule Scry2.EventsTest do
     end
 
     test "returns nil when row exists but hash was never set" do
-      # Create a watermark row without a content_hash (legacy row)
-      %ProjectorWatermark{}
-      |> ProjectorWatermark.changeset(%{
-        projector_name: "legacy_projector",
-        last_event_id: 42,
-        updated_at: DateTime.utc_now(:second)
-      })
-      |> Repo.insert!()
+      # Create a watermark row without a content_hash (legacy row).
+      # put_watermark!/2 doesn't set content_hash, so this is a direct equivalent.
+      Events.put_watermark!("legacy_projector", 42)
 
       assert is_nil(Events.get_content_hash("legacy_projector"))
     end

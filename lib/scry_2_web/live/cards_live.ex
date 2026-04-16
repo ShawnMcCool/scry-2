@@ -12,9 +12,7 @@ defmodule Scry2Web.CardsLive do
 
   use Scry2Web, :live_view
 
-  import Ecto.Query, only: [from: 2]
-
-  alias Scry2.{Cards, Console, Repo, Topics}
+  alias Scry2.{Cards, Console, Topics}
   alias Scry2.Cards.ImageCache
   alias Scry2.Workers.{PeriodicallyBackfillArenaIds, PeriodicallyUpdateCards}
   alias Scry2Web.CardsHelpers, as: Helpers
@@ -675,15 +673,7 @@ defmodule Scry2Web.CardsLive do
     }
   end
 
-  defp oban_running?(worker) do
-    worker_name = to_string(worker)
-
-    Repo.exists?(
-      from(j in Oban.Job,
-        where: j.worker == ^worker_name and j.state in ["available", "executing", "scheduled"]
-      )
-    )
-  end
+  defp oban_running?(worker), do: Scry2.Operations.oban_running?(worker)
 
   defp color_symbol("W"), do: "w"
   defp color_symbol("U"), do: "u"

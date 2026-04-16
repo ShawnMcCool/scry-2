@@ -150,8 +150,8 @@ defmodule Scry2.Drafts do
   """
   def upsert_draft!(attrs) do
     attrs = Map.new(attrs)
-    mtga_id = attrs[:mtga_draft_id] || attrs["mtga_draft_id"]
-    player_id = attrs[:player_id] || attrs["player_id"]
+    mtga_id = attrs[:mtga_draft_id]
+    player_id = attrs[:player_id]
 
     draft =
       case get_by_mtga_id(mtga_id, player_id) do
@@ -184,9 +184,9 @@ defmodule Scry2.Drafts do
   end
 
   defp find_pick(attrs) do
-    draft_id = attrs[:draft_id] || attrs["draft_id"]
-    pack_number = attrs[:pack_number] || attrs["pack_number"]
-    pick_number = attrs[:pick_number] || attrs["pick_number"]
+    draft_id = attrs[:draft_id]
+    pack_number = attrs[:pack_number]
+    pick_number = attrs[:pick_number]
     Repo.get_by(Pick, draft_id: draft_id, pack_number: pack_number, pick_number: pick_number)
   end
 

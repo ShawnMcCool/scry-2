@@ -248,7 +248,7 @@ defmodule Scry2.Decks do
   Returns the format (`:bo1` or `:bo3`) that was most recently played for a deck.
   Returns `:bo3` if no matches exist.
   """
-  def most_recent_format(mtga_deck_id) when is_binary(mtga_deck_id) do
+  def latest_format(mtga_deck_id) when is_binary(mtga_deck_id) do
     latest =
       MatchResult
       |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
@@ -581,7 +581,7 @@ defmodule Scry2.Decks do
   """
   def upsert_deck!(attrs) do
     attrs = Map.new(attrs)
-    mtga_deck_id = attrs[:mtga_deck_id] || attrs["mtga_deck_id"]
+    mtga_deck_id = attrs[:mtga_deck_id]
 
     deck =
       case Repo.get_by(Deck, mtga_deck_id: mtga_deck_id) do
@@ -600,8 +600,8 @@ defmodule Scry2.Decks do
   """
   def upsert_match_result!(attrs) do
     attrs = Map.new(attrs)
-    mtga_deck_id = attrs[:mtga_deck_id] || attrs["mtga_deck_id"]
-    mtga_match_id = attrs[:mtga_match_id] || attrs["mtga_match_id"]
+    mtga_deck_id = attrs[:mtga_deck_id]
+    mtga_match_id = attrs[:mtga_match_id]
 
     result =
       case Repo.get_by(MatchResult, mtga_deck_id: mtga_deck_id, mtga_match_id: mtga_match_id) do
@@ -670,9 +670,9 @@ defmodule Scry2.Decks do
   """
   def upsert_game_submission!(attrs) do
     attrs = Map.new(attrs)
-    mtga_deck_id = attrs[:mtga_deck_id] || attrs["mtga_deck_id"]
-    mtga_match_id = attrs[:mtga_match_id] || attrs["mtga_match_id"]
-    game_number = attrs[:game_number] || attrs["game_number"]
+    mtga_deck_id = attrs[:mtga_deck_id]
+    mtga_match_id = attrs[:mtga_match_id]
+    game_number = attrs[:game_number]
 
     submission =
       case Repo.get_by(GameSubmission,

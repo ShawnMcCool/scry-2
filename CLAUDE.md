@@ -301,7 +301,7 @@ All non-trivial logic in LiveViews and function components must be extracted int
 
 ### What We Never Test
 
-- **GenServer message protocols** — never use `:sys.get_state`, `:sys.replace_state`, or direct `GenServer.call/cast` in tests. Always test through the module's public API ([ADR-009](decisions/architecture/2026-04-05-009-genserver-api-encapsulation.md)). GenServers with testable public logic should be tested. GenServers that are thin wrappers around external systems requiring real connections (Watcher → inotify on `Player.log`) are not worth mocking.
+- **GenServer message protocols** — never use `:sys.replace_state` or direct `GenServer.call/cast` in tests to inspect or manipulate internal state. Always test through the module's public API ([ADR-009](decisions/architecture/2026-04-05-009-genserver-api-encapsulation.md)). Exception: `:sys.get_state/1` is acceptable as a **mailbox drain** — a synchronous no-op that ensures all pending casts have been processed before asserting. Use it only for that purpose, never to inspect returned state. GenServers with testable public logic should be tested. GenServers that are thin wrappers around external systems requiring real connections (Watcher → inotify on `Player.log`) are not worth mocking.
 - **Rendered HTML** — never assert on HTML output (`render_component`, `=~` on markup). LiveView integration tests (mount, patch, event handling) are acceptable — they test navigation and data flow, not DOM structure.
 - **External API calls** in normal runs — tag `@tag :external` and exclude from default `mix test`.
 

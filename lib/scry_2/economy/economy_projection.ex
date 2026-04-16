@@ -39,7 +39,14 @@ defmodule Scry2.Economy.EconomyProjection do
     :ok
   end
 
-  defp project(%EventJoined{}), do: :ok
+  defp project(%EventJoined{} = event) do
+    Log.warning(
+      :ingester,
+      "skipped EventJoined with zero/non-integer fee: event=#{event.event_name} fee=#{inspect(event.entry_fee)}"
+    )
+
+    :ok
+  end
 
   defp project(%EventRewardClaimed{} = event) do
     Economy.enrich_with_reward!(event.player_id, event.event_name, %{

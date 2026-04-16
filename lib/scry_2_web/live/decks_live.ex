@@ -1430,7 +1430,7 @@ defmodule Scry2Web.DecksLive do
     {matches, matches_total, format_counts, active_format} =
       if tab == :matches do
         counts = Decks.match_counts_by_format(deck.mtga_deck_id)
-        active_format = format || Decks.most_recent_format(deck.mtga_deck_id)
+        active_format = format || Decks.latest_format(deck.mtga_deck_id)
         offset = (page - 1) * 20
 
         {matches, total} =
