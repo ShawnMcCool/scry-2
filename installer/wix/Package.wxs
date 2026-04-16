@@ -41,8 +41,29 @@
                   DllEntry="WixShellExec"
                   Execute="immediate"
                   Return="ignore" />
+
+    <!-- Recursively delete INSTALLFOLDER after RemoveFiles on uninstall.
+         WixRemoveFoldersEx cannot be used here — it runs before directory
+         properties are established in the MSI session (timing issue).
+         Instead we use a two-step pattern:
+           1. SetProperty (immediate) captures [INSTALLFOLDER] into CustomActionData
+              while the property is still defined.
+           2. WixQuietExec64 (deferred, elevated) runs cmd.exe /c rmdir /s /q
+              against the captured path after RemoveFiles has finished. -->
+    <SetProperty Id="DeleteInstallDir"
+                 Before="DeleteInstallDir"
+                 Sequence="execute"
+                 Value="cmd.exe /c rmdir /s /q &quot;[INSTALLFOLDER]&quot;" />
+    <CustomAction Id="DeleteInstallDir"
+                  BinaryRef="Wix4UtilCA_X64"
+                  DllEntry="WixQuietExec64"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="ignore" />
+
     <InstallExecuteSequence>
       <Custom Action="LaunchTray" After="InstallFinalize" Condition="NOT REMOVE" />
+      <Custom Action="DeleteInstallDir" After="RemoveFiles" Condition="Installed AND REMOVE~=&quot;ALL&quot;" />
     </InstallExecuteSequence>
 
   </Package>
