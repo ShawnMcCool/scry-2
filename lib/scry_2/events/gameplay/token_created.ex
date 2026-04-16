@@ -34,6 +34,7 @@ defmodule Scry2.Events.Gameplay.TokenCreated do
   defstruct [
     :player_id,
     :mtga_match_id,
+    :game_number,
     :turn_number,
     :phase,
     :active_player,
@@ -45,6 +46,7 @@ defmodule Scry2.Events.Gameplay.TokenCreated do
   @type t :: %__MODULE__{
           player_id: integer() | nil,
           mtga_match_id: String.t() | nil,
+          game_number: integer() | nil,
           turn_number: non_neg_integer() | nil,
           phase: String.t() | nil,
           active_player: integer() | nil,
@@ -57,6 +59,7 @@ defmodule Scry2.Events.Gameplay.TokenCreated do
     %__MODULE__{
       player_id: payload["player_id"],
       mtga_match_id: payload["mtga_match_id"],
+      game_number: payload["game_number"],
       turn_number: payload["turn_number"],
       phase: payload["phase"],
       active_player: payload["active_player"],

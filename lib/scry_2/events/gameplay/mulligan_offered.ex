@@ -42,6 +42,7 @@ defmodule Scry2.Events.Gameplay.MulliganOffered do
   defstruct [
     :player_id,
     :mtga_match_id,
+    :game_number,
     :seat_id,
     :hand_size,
     :hand_arena_ids,
@@ -58,6 +59,7 @@ defmodule Scry2.Events.Gameplay.MulliganOffered do
   @type t :: %__MODULE__{
           player_id: String.t() | nil,
           mtga_match_id: String.t() | nil,
+          game_number: integer() | nil,
           seat_id: integer(),
           hand_size: integer(),
           hand_arena_ids: [integer()] | nil,
@@ -74,6 +76,7 @@ defmodule Scry2.Events.Gameplay.MulliganOffered do
     %__MODULE__{
       player_id: payload["player_id"],
       mtga_match_id: payload["mtga_match_id"],
+      game_number: payload["game_number"],
       seat_id: payload["seat_id"],
       hand_size: payload["hand_size"],
       hand_arena_ids: payload["hand_arena_ids"],

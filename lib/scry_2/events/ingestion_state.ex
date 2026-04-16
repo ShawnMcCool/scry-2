@@ -96,10 +96,18 @@ defmodule Scry2.Events.IngestionState do
         completed_deck = %{
           deck
           | mtga_match_id: event.mtga_match_id,
-            mtga_deck_id: "#{event.mtga_match_id}:seat1"
+            mtga_deck_id: "#{event.mtga_match_id}:seat#{deck.self_seat_id}"
         }
 
-        {put_in(new_state.match.pending_deck, nil), [completed_deck]}
+        # Increment game_number here because the resolved DeckSubmitted side-effect
+        # is persisted as a domain event but its apply_event is never called by
+        # apply_events_to_state (side-effects are added to the event list but not
+        # re-fed through the reduce). This is the only place current_game_number
+        # gets incremented for game 1 in the ConnectResp-before-MatchCreated ordering.
+        current_game = (new_state.match.current_game_number || 0) + 1
+
+        updated_match = %{new_state.match | pending_deck: nil, current_game_number: current_game}
+        {%{new_state | match: updated_match}, [completed_deck]}
     end
   end
 
@@ -115,7 +123,8 @@ defmodule Scry2.Events.IngestionState do
         %__MODULE__{} = state,
         %Scry2.Events.Deck.DeckSubmitted{mtga_match_id: nil} = event
       ) do
-    {put_in(state.match.pending_deck, event), []}
+    match = %{state.match | pending_deck: event, self_seat_id: event.self_seat_id}
+    {%{state | match: match}, []}
   end
 
   def apply_event(%__MODULE__{} = state, %Scry2.Events.Deck.DeckSubmitted{} = event) do

@@ -28,11 +28,12 @@ defmodule Scry2.Events.Gameplay.MulliganDecided do
   alias Scry2.Events.Payload
 
   @enforce_keys [:decision, :occurred_at]
-  defstruct [:player_id, :mtga_match_id, :decision, :occurred_at]
+  defstruct [:player_id, :mtga_match_id, :game_number, :decision, :occurred_at]
 
   @type t :: %__MODULE__{
           player_id: integer() | nil,
           mtga_match_id: String.t() | nil,
+          game_number: integer() | nil,
           decision: String.t(),
           occurred_at: DateTime.t()
         }
@@ -41,6 +42,7 @@ defmodule Scry2.Events.Gameplay.MulliganDecided do
     %__MODULE__{
       player_id: payload["player_id"],
       mtga_match_id: payload["mtga_match_id"],
+      game_number: payload["game_number"],
       decision: payload["decision"],
       occurred_at: Payload.parse_datetime(payload["occurred_at"])
     }

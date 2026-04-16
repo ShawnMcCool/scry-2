@@ -39,6 +39,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
          %{"type" => msg_type} = gre_payload <- payload["payload"] || payload do
+      game_number = match_context[:current_game_number]
+
       event =
         case msg_type do
           "ClientMessageType_ConcedeReq" ->
@@ -46,6 +48,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
 
             %GameConceded{
               mtga_match_id: match_id,
+              game_number: game_number,
               scope: scope,
               occurred_at: occurred_at
             }
@@ -62,6 +65,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
 
             %MulliganDecided{
               mtga_match_id: match_id,
+              game_number: game_number,
               decision: decision,
               occurred_at: occurred_at
             }
@@ -75,6 +79,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
 
             %StartingPlayerChosen{
               mtga_match_id: match_id,
+              game_number: game_number,
               chose_play: chosen_seat == self_seat_id,
               occurred_at: occurred_at
             }

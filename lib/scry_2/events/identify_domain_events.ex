@@ -102,7 +102,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   team IDs are internally consistent.
   """
 
-  alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckUpdated}
+  alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
   alias Scry2.Events.EventName
 
   alias Scry2.Events.IdentifyDomainEvents.{
@@ -303,18 +303,35 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       # both sub-translators. ConnectResp and GameStateMessage use build/5 (pre-decoded
       # data) rather than translate/3 (raw EventRecord) for this reason — the envelope
       # is shared, so decoding must happen at this level.
-      events =
-        [
-          ConnectResp.build(messages, context_match_id, occurred_at, player_seat, match_context),
-          GameStateMessage.build(
-            messages,
-            context_match_id,
-            occurred_at,
-            player_seat,
-            match_context
+      connect_resp_events =
+        ConnectResp.build(messages, context_match_id, occurred_at, player_seat, match_context)
+
+      # When ConnectResp produces a DeckSubmitted, game_number will be incremented
+      # by apply_event *after* this batch is processed. Anticipate the increment so
+      # GameStateMessage events in the same batch get the correct game_number rather
+      # than the stale (pre-increment) value from match_context.
+      game_state_context =
+        if Enum.any?(connect_resp_events, &is_struct(&1, DeckSubmitted)) do
+          Map.put(
+            match_context,
+            :current_game_number,
+            (match_context[:current_game_number] || 0) + 1
           )
-        ]
-        |> List.flatten()
+        else
+          match_context
+        end
+
+      game_state_events =
+        GameStateMessage.build(
+          messages,
+          context_match_id,
+          occurred_at,
+          player_seat,
+          game_state_context
+        )
+
+      events =
+        List.flatten([connect_resp_events, game_state_events])
         |> Enum.reject(&is_nil/1)
 
       {events, []}

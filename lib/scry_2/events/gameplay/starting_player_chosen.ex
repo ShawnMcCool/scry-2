@@ -26,11 +26,12 @@ defmodule Scry2.Events.Gameplay.StartingPlayerChosen do
   alias Scry2.Events.Payload
 
   @enforce_keys [:occurred_at]
-  defstruct [:player_id, :mtga_match_id, :chose_play, :occurred_at]
+  defstruct [:player_id, :mtga_match_id, :game_number, :chose_play, :occurred_at]
 
   @type t :: %__MODULE__{
           player_id: integer() | nil,
           mtga_match_id: String.t() | nil,
+          game_number: integer() | nil,
           chose_play: boolean() | nil,
           occurred_at: DateTime.t()
         }
@@ -39,6 +40,7 @@ defmodule Scry2.Events.Gameplay.StartingPlayerChosen do
     %__MODULE__{
       player_id: payload["player_id"],
       mtga_match_id: payload["mtga_match_id"],
+      game_number: payload["game_number"],
       chose_play: payload["chose_play"],
       occurred_at: Payload.parse_datetime(payload["occurred_at"])
     }
