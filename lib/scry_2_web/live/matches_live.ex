@@ -243,8 +243,9 @@ defmodule Scry2Web.MatchesLive do
       />
 
       <%!-- Opponent history --%>
-      <.opponent_history
+      <.opponent_panel
         :if={@match.opponent_screen_name}
+        id="match-opponent"
         opponent={@match.opponent_screen_name}
         history={@opponent_history}
       />
@@ -670,45 +671,6 @@ defmodule Scry2Web.MatchesLive do
               <span class="truncate">{name}</span>
             </div>
           </div>
-        </div>
-      </div>
-    </section>
-    """
-  end
-
-  defp opponent_history(assigns) do
-    wins = Enum.count(assigns.history, & &1.won)
-    losses = Enum.count(assigns.history, &(&1.won == false))
-
-    assigns = assign(assigns, wins: wins, losses: losses)
-
-    ~H"""
-    <section class="mb-8">
-      <h2 class="text-lg font-semibold mb-3 font-beleren">vs {@opponent}</h2>
-      <p :if={@history == []} class="text-sm text-base-content/50">
-        First time playing this opponent.
-      </p>
-      <div :if={@history != []}>
-        <p class="text-sm text-base-content/60 mb-3">
-          Overall record: <span class="font-semibold">{record_str(@wins, @losses)}</span>
-        </p>
-        <div class="flex flex-col divide-y divide-base-content/5">
-          <.link
-            :for={prev <- @history}
-            navigate={~p"/matches/#{prev.id}"}
-            class="flex items-center gap-4 py-2 hover:bg-base-content/3 rounded px-2 -mx-2 transition-colors"
-          >
-            <span class={["font-bold w-6 text-center", MatchesHelpers.result_letter_class(prev.won)]}>
-              {MatchesHelpers.result_letter(prev.won)}
-            </span>
-            <span class="text-sm text-base-content/60 inline-flex items-center gap-1">
-              <.set_icon :if={prev.set_code} code={prev.set_code} />
-              {format_label(prev.format)}
-            </span>
-            <span class="text-xs text-base-content/40 tabular-nums">
-              {MatchesHelpers.format_match_datetime(prev.started_at)}
-            </span>
-          </.link>
         </div>
       </div>
     </section>
