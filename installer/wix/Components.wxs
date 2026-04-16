@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
 
   <!-- Top-level components authored manually.
        Release files (ERTS, lib, releases, bin) are in generated fragment files. -->
@@ -30,6 +31,21 @@
               Source="$(var.TrayExe)"
               Name="scry2-tray.exe"
               KeyPath="yes" />
+      </Component>
+
+      <!-- Recursively remove the install directory on uninstall.
+           A plain RemoveFolder only removes the single directory if empty, and
+           would need entries at every nested level of the Elixir release tree.
+           RemoveFolderEx schedules a recursive delete, handling the full
+           lib/, erts-*, releases/ subtree in one step. -->
+      <Component Id="RemoveInstallFolder" Guid="*">
+        <util:RemoveFolderEx On="uninstall" Property="INSTALLFOLDER" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\Scry2"
+                       Name="RemoveInstallFolder"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
       </Component>
     </DirectoryRef>
 

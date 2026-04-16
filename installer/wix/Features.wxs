@@ -8,6 +8,7 @@
       <!-- Manually authored -->
       <ComponentRef Id="CleanStartErlData" />
       <ComponentRef Id="TrayExecutable" />
+      <ComponentRef Id="RemoveInstallFolder" />
       <ComponentRef Id="StartMenuShortcut" />
       <ComponentRef Id="AutoStartRegistry" />
       <ComponentRef Id="EpmdFirewall" />
