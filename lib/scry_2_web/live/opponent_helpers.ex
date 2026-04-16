@@ -56,7 +56,9 @@ defmodule Scry2Web.OpponentHelpers do
   matches are present — the panel suppresses the chart at that threshold.
   """
   @spec chart_series(list()) :: String.t()
-  def chart_series(history) when length(history) < 3, do: "[]"
+  def chart_series([]), do: "[]"
+  def chart_series([_]), do: "[]"
+  def chart_series([_, _]), do: "[]"
 
   def chart_series(history) do
     history

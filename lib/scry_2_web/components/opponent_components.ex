@@ -45,7 +45,8 @@ defmodule Scry2Web.OpponentComponents do
         wins: wins,
         losses: losses,
         win_rate: OpponentHelpers.win_rate(wins, losses),
-        latest_rank: OpponentHelpers.latest_rank(assigns.history)
+        latest_rank: OpponentHelpers.latest_rank(assigns.history),
+        chart_series: OpponentHelpers.chart_series(assigns.history)
       )
 
     ~H"""
@@ -70,11 +71,11 @@ defmodule Scry2Web.OpponentComponents do
         </div>
 
         <div
-          :if={length(@history) > 2}
+          :if={@chart_series != "[]"}
           id={"#{@id}-chart"}
           phx-hook="Chart"
           data-chart-type="cumulative_winrate"
-          data-series={OpponentHelpers.chart_series(@history)}
+          data-series={@chart_series}
           class="min-h-[10rem] rounded-lg bg-base-300/40 mb-4"
         />
 
