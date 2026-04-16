@@ -41,34 +41,21 @@
                   DllEntry="WixShellExec"
                   Execute="immediate"
                   Return="ignore" />
-
-    <!-- Recursively delete INSTALLFOLDER after RemoveFiles on uninstall.
-         WixRemoveFoldersEx cannot be used here — it runs before directory
-         properties are established in the MSI session (timing issue).
-         Instead we use a two-step pattern:
-           1. SetProperty (immediate) captures [INSTALLFOLDER] into CustomActionData
-              while the property is still defined.
-           2. WixQuietExec64 (deferred, elevated) runs cmd.exe /c rmdir /s /q
-              against the captured path after RemoveFiles has finished.
-         Return="ignore" because rmdir may fail when user processes hold
-         files open; the MSI should still successfully uninstall the
-         manifest. The workflow's Verify-cleanup step enforces the
-         directory deletion contract. -->
-    <SetProperty Id="DeleteInstallDir"
-                 Before="DeleteInstallDir"
-                 Sequence="execute"
-                 Value="cmd.exe /c rmdir /s /q &quot;[INSTALLFOLDER]&quot;" />
-    <CustomAction Id="DeleteInstallDir"
-                  BinaryRef="Wix4UtilCA_X64"
-                  DllEntry="WixQuietExec64"
-                  Execute="deferred"
-                  Impersonate="no"
-                  Return="ignore" />
-
     <InstallExecuteSequence>
       <Custom Action="LaunchTray" After="InstallFinalize" Condition="NOT REMOVE" />
-      <Custom Action="DeleteInstallDir" After="RemoveFiles" Condition="Installed AND REMOVE~=&quot;ALL&quot;" />
     </InstallExecuteSequence>
+
+    <!-- INSTALLFOLDER cleanup on uninstall:
+         MSI's standard RemoveFiles removes every file and directory tracked
+         by the Component table, including INSTALLFOLDER itself (because
+         TrayExecutable has it as its directory). No custom action is needed.
+         The only failure mode is locked files — if erl.exe/beam.smp from a
+         prior eval or the tray are still running, rmdir blocks. The tray's
+         shutdown handler stops the backend gracefully on normal uninstall;
+         the util:CloseApplication above terminates the tray itself.
+         (Earlier attempts with util:RemoveFolderEx and a WixQuietExec64
+         rmdir CA were both blocked by this — they added no value over
+         RemoveFiles and introduced their own timing/quoting bugs.) -->
 
   </Package>
 </Wix>

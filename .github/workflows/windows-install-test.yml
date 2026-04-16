@@ -391,14 +391,6 @@ jobs:
               throw "msiexec uninstall exited with code $($proc.ExitCode)"
           }
           Write-Host "Uninstall completed"
-          # Always echo diagnostic lines for our custom action so we can confirm
-          # it ran regardless of success. This stays on (not just on failure)
-          # because it's fast and will become a baseline observability check.
-          if (Test-Path $logFile) {
-              Write-Host ""
-              Write-Host "=== DeleteInstallDir custom action log lines ==="
-              Select-String -Path $logFile -Pattern "DeleteInstallDir|WixQuietExec|INSTALLFOLDER|rmdir" | ForEach-Object { Write-Host $_.Line }
-          }
 
       - name: Verify cleanup
         shell: pwsh
