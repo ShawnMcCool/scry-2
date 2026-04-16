@@ -18,6 +18,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   alias Scry2.Events.Progression.{DailyWinsStatus, MasteryProgress, QuestStatus, RankSnapshot}
   alias Scry2.Events.Gameplay.MulliganDecided
   alias Scry2.Events.Session.{SessionDisconnected, SessionStarted}
+  alias Scry2.Events.Turn.TurnStarted
   alias Scry2.Events.TranslationWarning
 
   alias Scry2.MtgaLogIngestion.{Event, ExtractEventsFromLog, EventRecord}
@@ -183,6 +184,109 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       }
 
       assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+  end
+
+  # Helper to build a minimal GreToClientEvent record with ConnectResp + GameStateMessage.
+  # Used to test that GameStateMessage events in the same batch as ConnectResp get the
+  # anticipated game_number (Bug 2 fix).
+  defp gre_batch_with_connect_resp_and_turn(seat, turn_number) do
+    %EventRecord{
+      id: 99,
+      event_type: "GreToClientEvent",
+      mtga_timestamp: ~U[2026-04-05 19:18:40Z],
+      file_offset: 0,
+      source_file: "Player.log",
+      raw_json:
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_ConnectResp",
+                "systemSeatIds" => [seat],
+                "connectResp" => %{
+                  "deckMessage" => %{"deckCards" => [91_234, 91_234], "sideboardCards" => []}
+                }
+              },
+              %{
+                "type" => "GREMessageType_GameStateMessage",
+                "systemSeatIds" => [seat],
+                "gameStateMessage" => %{
+                  "gameInfo" => %{"matchID" => "match-abc"},
+                  "turnInfo" => %{
+                    "turnNumber" => turn_number,
+                    "phase" => "Phase_Main1",
+                    "activePlayer" => seat
+                  }
+                }
+              }
+            ]
+          }
+        }),
+      processed: false
+    }
+  end
+
+  describe "translate/3 — GreToClientEvent — game_number anticipation for ConnectResp batch" do
+    test "GameStateMessage events in ConnectResp batch get game_number=1 for the first game" do
+      record = gre_batch_with_connect_resp_and_turn(1, 1)
+      match_context = %{current_match_id: "match-abc", current_game_number: nil}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      turn_started = Enum.find(events, &match?(%TurnStarted{}, &1))
+      assert turn_started != nil, "expected TurnStarted in events: #{inspect(events)}"
+      assert turn_started.game_number == 1
+    end
+
+    test "GameStateMessage events in ConnectResp batch get anticipated game_number for game 2" do
+      record = gre_batch_with_connect_resp_and_turn(1, 1)
+      match_context = %{current_match_id: "match-abc", current_game_number: 1}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      turn_started = Enum.find(events, &match?(%TurnStarted{}, &1))
+      assert turn_started != nil
+      assert turn_started.game_number == 2
+    end
+
+    test "GameStateMessage events without ConnectResp keep current_game_number unchanged" do
+      # A GRE batch without ConnectResp should NOT anticipate a new game number.
+      record = %EventRecord{
+        id: 99,
+        event_type: "GreToClientEvent",
+        mtga_timestamp: ~U[2026-04-05 19:18:40Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "greToClientEvent" => %{
+              "greToClientMessages" => [
+                %{
+                  "type" => "GREMessageType_GameStateMessage",
+                  "systemSeatIds" => [1],
+                  "gameStateMessage" => %{
+                    "gameInfo" => %{"matchID" => "match-abc"},
+                    "turnInfo" => %{
+                      "turnNumber" => 3,
+                      "phase" => "Phase_Main1",
+                      "activePlayer" => 1
+                    }
+                  }
+                }
+              ]
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{current_match_id: "match-abc", current_game_number: 1}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      turn_started = Enum.find(events, &match?(%TurnStarted{}, &1))
+      assert turn_started != nil
+      assert turn_started.game_number == 1
     end
   end
 
@@ -1415,5 +1519,290 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       record = record_from_fixture("event_set_deck_v3_response.log")
       assert {[], []} = IdentifyDomainEvents.translate(record, @self_user_id)
     end
+  end
+
+  # ── game_number on annotation-derived events (Bug 3) ────────────────
+  #
+  # CombatDamageDealt, LifeTotalChanged, TokenCreated, and CounterAdded are
+  # produced from GameStateMessage annotations. They previously lacked the
+  # game_number field entirely — the annotation_to_turn_actions clauses
+  # received _game_number (unused). This describe block asserts that each
+  # event type now carries game_number from match_context.
+
+  describe "translate/3 — GreToClientEvent — game_number on annotation events" do
+    test "CombatDamageDealt carries game_number from match_context" do
+      record = gre_batch_with_damage_annotation(1)
+      match_context = %{current_match_id: "match-abc", current_game_number: 2}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      damage = Enum.find(events, &match?(%Scry2.Events.Gameplay.CombatDamageDealt{}, &1))
+      assert damage != nil, "expected CombatDamageDealt in events: #{inspect(events)}"
+      assert damage.game_number == 2
+    end
+
+    test "LifeTotalChanged carries game_number from match_context" do
+      record = gre_batch_with_life_annotation(1)
+      match_context = %{current_match_id: "match-abc", current_game_number: 1}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      life = Enum.find(events, &match?(%Scry2.Events.Gameplay.LifeTotalChanged{}, &1))
+      assert life != nil, "expected LifeTotalChanged in events: #{inspect(events)}"
+      assert life.game_number == 1
+    end
+
+    test "TokenCreated carries game_number from match_context" do
+      record = gre_batch_with_token_annotation(1)
+      match_context = %{current_match_id: "match-abc", current_game_number: 3}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      token = Enum.find(events, &match?(%Scry2.Events.Gameplay.TokenCreated{}, &1))
+      assert token != nil, "expected TokenCreated in events: #{inspect(events)}"
+      assert token.game_number == 3
+    end
+
+    test "CounterAdded carries game_number from match_context" do
+      record = gre_batch_with_counter_annotation(1)
+      match_context = %{current_match_id: "match-abc", current_game_number: 2}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      counter = Enum.find(events, &match?(%Scry2.Events.Gameplay.CounterAdded{}, &1))
+      assert counter != nil, "expected CounterAdded in events: #{inspect(events)}"
+      assert counter.game_number == 2
+    end
+  end
+
+  # ── game_number on game-scoped events (Bug 4) ────────────────────────
+  #
+  # MulliganOffered, DieRolled (from GreToClientEvent) and MulliganDecided,
+  # StartingPlayerChosen, GameConceded (from ClientToGremessage) all occur
+  # within a specific game but previously had no game_number field.
+
+  describe "translate/3 — GreToClientEvent — game_number on MulliganOffered" do
+    test "MulliganOffered carries game_number from match_context" do
+      record = gre_batch_with_mulligan_req(1)
+      match_context = %{current_match_id: "match-abc", current_game_number: 1}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      mulligan = Enum.find(events, &match?(%Scry2.Events.Gameplay.MulliganOffered{}, &1))
+      assert mulligan != nil, "expected MulliganOffered in events: #{inspect(events)}"
+      assert mulligan.game_number == 1
+    end
+  end
+
+  describe "translate/3 — GreToClientEvent — game_number on DieRolled" do
+    test "DieRolled carries game_number from match_context" do
+      record = gre_batch_with_die_roll(1)
+      match_context = %{current_match_id: "match-abc", current_game_number: 1}
+
+      {events, []} = IdentifyDomainEvents.translate(record, nil, match_context)
+
+      die_roll = Enum.find(events, &match?(%Scry2.Events.Match.DieRolled{}, &1))
+      assert die_roll != nil, "expected DieRolled in events: #{inspect(events)}"
+      assert die_roll.game_number == 1
+    end
+  end
+
+  describe "translate/3 — ClientToGremessage — game_number on game-scoped events" do
+    test "MulliganDecided carries game_number from match_context" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "ClientToGremessage",
+        mtga_timestamp: ~U[2026-04-05 19:20:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "type" => "ClientMessageType_MulliganResp",
+            "payload" => %{
+              "type" => "ClientMessageType_MulliganResp",
+              "mulliganResp" => %{"decision" => "MulliganOption_AcceptHand"}
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{current_match_id: "match-abc", current_game_number: 2}
+
+      {[%MulliganDecided{} = event], []} =
+        IdentifyDomainEvents.translate(record, nil, match_context)
+
+      assert event.game_number == 2
+    end
+
+    test "StartingPlayerChosen carries game_number from match_context" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "ClientToGremessage",
+        mtga_timestamp: ~U[2026-04-05 19:20:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "type" => "ClientMessageType_ChooseStartingPlayerResp",
+            "payload" => %{
+              "type" => "ClientMessageType_ChooseStartingPlayerResp",
+              "chooseStartingPlayerResp" => %{"systemSeatId" => 1}
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{current_match_id: "match-abc", current_game_number: 1, self_seat_id: 1}
+
+      {[%Scry2.Events.Gameplay.StartingPlayerChosen{} = event], []} =
+        IdentifyDomainEvents.translate(record, nil, match_context)
+
+      assert event.game_number == 1
+    end
+
+    test "GameConceded carries game_number from match_context" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "ClientToGremessage",
+        mtga_timestamp: ~U[2026-04-05 19:25:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "type" => "ClientMessageType_ConcedeReq",
+            "payload" => %{
+              "type" => "ClientMessageType_ConcedeReq",
+              "concedeReq" => %{"scope" => "game"}
+            }
+          }),
+        processed: false
+      }
+
+      match_context = %{current_match_id: "match-abc", current_game_number: 2}
+
+      {[%Scry2.Events.Gameplay.GameConceded{} = event], []} =
+        IdentifyDomainEvents.translate(record, nil, match_context)
+
+      assert event.game_number == 2
+    end
+  end
+
+  # ── Helpers for Bug 3/4 tests ────────────────────────────────────────
+
+  defp gre_batch_with_damage_annotation(seat) do
+    gre_batch_with_annotation(seat, %{
+      "type" => ["AnnotationType_DamageDealt"],
+      "affectorId" => 100,
+      "details" => [%{"key" => "damage", "valueInt32" => [3]}]
+    })
+  end
+
+  defp gre_batch_with_life_annotation(seat) do
+    gre_batch_with_annotation(seat, %{
+      "type" => ["AnnotationType_ModifiedLife"],
+      "affectedIds" => [1],
+      "details" => [%{"key" => "life", "valueInt32" => [-2]}]
+    })
+  end
+
+  defp gre_batch_with_token_annotation(seat) do
+    gre_batch_with_annotation(seat, %{
+      "type" => ["AnnotationType_TokenCreated"],
+      "affectedIds" => [200]
+    })
+  end
+
+  defp gre_batch_with_counter_annotation(seat) do
+    gre_batch_with_annotation(seat, %{
+      "type" => ["AnnotationType_CounterAdded"],
+      "affectedIds" => [300],
+      "details" => [%{"key" => "transaction_amount", "valueInt32" => [1]}]
+    })
+  end
+
+  defp gre_batch_with_annotation(seat, annotation) do
+    %EventRecord{
+      id: 99,
+      event_type: "GreToClientEvent",
+      mtga_timestamp: ~U[2026-04-05 19:18:40Z],
+      file_offset: 0,
+      source_file: "Player.log",
+      raw_json:
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_GameStateMessage",
+                "systemSeatIds" => [seat],
+                "gameStateMessage" => %{
+                  "gameInfo" => %{"matchID" => "match-abc"},
+                  "turnInfo" => %{
+                    "turnNumber" => 5,
+                    "phase" => "Phase_Combat",
+                    "activePlayer" => seat
+                  },
+                  "annotations" => [annotation]
+                }
+              }
+            ]
+          }
+        }),
+      processed: false
+    }
+  end
+
+  defp gre_batch_with_mulligan_req(seat) do
+    %EventRecord{
+      id: 99,
+      event_type: "GreToClientEvent",
+      mtga_timestamp: ~U[2026-04-05 19:18:40Z],
+      file_offset: 0,
+      source_file: "Player.log",
+      raw_json:
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_MulliganReq",
+                "systemSeatIds" => [seat],
+                "prompt" => %{
+                  "parameters" => [%{"parameterName" => "NumberOfCards", "numberValue" => 7}]
+                }
+              }
+            ]
+          }
+        }),
+      processed: false
+    }
+  end
+
+  defp gre_batch_with_die_roll(seat) do
+    other_seat = if seat == 1, do: 2, else: 1
+
+    %EventRecord{
+      id: 99,
+      event_type: "GreToClientEvent",
+      mtga_timestamp: ~U[2026-04-05 19:18:40Z],
+      file_offset: 0,
+      source_file: "Player.log",
+      raw_json:
+        Jason.encode!(%{
+          "greToClientEvent" => %{
+            "greToClientMessages" => [
+              %{
+                "type" => "GREMessageType_DieRollResultsResp",
+                "systemSeatIds" => [seat],
+                "dieRollResultsResp" => %{
+                  "playerDieRolls" => [
+                    %{"systemSeatId" => seat, "rollValue" => 6},
+                    %{"systemSeatId" => other_seat, "rollValue" => 3}
+                  ]
+                }
+              }
+            ]
+          }
+        }),
+      processed: false
+    }
   end
 end

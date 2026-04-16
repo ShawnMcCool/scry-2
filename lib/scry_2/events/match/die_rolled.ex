@@ -33,6 +33,7 @@ defmodule Scry2.Events.Match.DieRolled do
   defstruct [
     :player_id,
     :mtga_match_id,
+    :game_number,
     :self_roll,
     :opponent_roll,
     :self_goes_first,
@@ -42,6 +43,7 @@ defmodule Scry2.Events.Match.DieRolled do
   @type t :: %__MODULE__{
           player_id: String.t() | nil,
           mtga_match_id: String.t(),
+          game_number: integer() | nil,
           self_roll: integer(),
           opponent_roll: integer(),
           self_goes_first: boolean(),
@@ -52,6 +54,7 @@ defmodule Scry2.Events.Match.DieRolled do
     %__MODULE__{
       player_id: payload["player_id"],
       mtga_match_id: payload["mtga_match_id"],
+      game_number: payload["game_number"],
       self_roll: payload["self_roll"],
       opponent_roll: payload["opponent_roll"],
       self_goes_first: payload["self_goes_first"],

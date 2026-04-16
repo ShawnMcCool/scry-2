@@ -45,7 +45,13 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   """
   def build(messages, match_id, occurred_at, player_seat, match_context) do
     [
-      maybe_build_die_roll_completed(messages, match_id, occurred_at, player_seat),
+      maybe_build_die_roll_completed(
+        messages,
+        match_id,
+        occurred_at,
+        player_seat,
+        match_context[:current_game_number]
+      ),
       maybe_build_game_completed(messages, match_id, occurred_at, player_seat),
       build_mulligan_offered(messages, match_id, occurred_at, match_context),
       build_turn_structure_events(messages, match_id, occurred_at, match_context),
@@ -110,7 +116,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   # DieRollResultsResp carries both players' roll values. The higher
   # roll wins and chooses to play first (virtually always chooses play).
   # `player_seat` is resolved once per GRE batch by the caller.
-  defp maybe_build_die_roll_completed(messages, match_id, occurred_at, player_seat)
+  defp maybe_build_die_roll_completed(messages, match_id, occurred_at, player_seat, game_number)
        when is_binary(match_id) do
     case Helpers.find_gre_message(messages, "GREMessageType_DieRollResultsResp") do
       %{"dieRollResultsResp" => %{"playerDieRolls" => rolls}} ->
@@ -123,6 +129,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
 
           %DieRolled{
             mtga_match_id: match_id,
+            game_number: game_number,
             self_roll: self_roll,
             opponent_roll: opponent_roll,
             self_goes_first: self_roll > opponent_roll,
@@ -135,7 +142,14 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     end
   end
 
-  defp maybe_build_die_roll_completed(_messages, _match_id, _occurred_at, _player_seat), do: nil
+  defp maybe_build_die_roll_completed(
+         _messages,
+         _match_id,
+         _occurred_at,
+         _player_seat,
+         _game_number
+       ),
+       do: nil
 
   # ── MulliganOffered ───────────────────────────────────────────────────
 
@@ -150,6 +164,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   defp build_mulligan_offered(messages, match_id, occurred_at, match_context) do
     game_state = extract_game_state_for_mulligans(messages)
     cached_objects = match_context[:game_objects] || %{}
+    game_number = match_context[:current_game_number]
 
     messages
     |> Enum.filter(&(&1["type"] == "GREMessageType_MulliganReq"))
@@ -168,6 +183,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
 
       %MulliganOffered{
         mtga_match_id: match_id,
+        game_number: game_number,
         seat_id: seat_id,
         hand_size: hand_size || 7,
         hand_arena_ids: hand_arena_ids,
@@ -558,7 +574,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         _game_number
+         game_number
        ) do
     details = ann["details"] || []
     damage = Helpers.find_detail_int(details, "damage")
@@ -568,6 +584,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     [
       %CombatDamageDealt{
         mtga_match_id: match_id,
+        game_number: game_number,
         turn_number: turn_info["turnNumber"],
         phase: turn_info["phase"],
         active_player: turn_info["activePlayer"],
@@ -584,7 +601,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          _objects,
-         _game_number
+         game_number
        ) do
     details = ann["details"] || []
     life_change = Helpers.find_detail_int(details, "life")
@@ -593,6 +610,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     [
       %LifeTotalChanged{
         mtga_match_id: match_id,
+        game_number: game_number,
         turn_number: turn_info["turnNumber"],
         phase: turn_info["phase"],
         active_player: turn_info["activePlayer"],
@@ -609,7 +627,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         _game_number
+         game_number
        ) do
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
     grp_id = Map.get(objects, instance_id)
@@ -617,6 +635,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     [
       %TokenCreated{
         mtga_match_id: match_id,
+        game_number: game_number,
         turn_number: turn_info["turnNumber"],
         phase: turn_info["phase"],
         active_player: turn_info["activePlayer"],
@@ -632,7 +651,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          match_id,
          occurred_at,
          objects,
-         _game_number
+         game_number
        ) do
     details = ann["details"] || []
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
@@ -642,6 +661,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     [
       %CounterAdded{
         mtga_match_id: match_id,
+        game_number: game_number,
         turn_number: turn_info["turnNumber"],
         phase: turn_info["phase"],
         active_player: turn_info["activePlayer"],

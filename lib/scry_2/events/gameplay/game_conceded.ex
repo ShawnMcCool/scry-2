@@ -27,11 +27,12 @@ defmodule Scry2.Events.Gameplay.GameConceded do
   alias Scry2.Events.Payload
 
   @enforce_keys [:occurred_at]
-  defstruct [:player_id, :mtga_match_id, :scope, :occurred_at]
+  defstruct [:player_id, :mtga_match_id, :game_number, :scope, :occurred_at]
 
   @type t :: %__MODULE__{
           player_id: integer() | nil,
           mtga_match_id: String.t() | nil,
+          game_number: integer() | nil,
           scope: String.t() | nil,
           occurred_at: DateTime.t()
         }
@@ -40,6 +41,7 @@ defmodule Scry2.Events.Gameplay.GameConceded do
     %__MODULE__{
       player_id: payload["player_id"],
       mtga_match_id: payload["mtga_match_id"],
+      game_number: payload["game_number"],
       scope: payload["scope"],
       occurred_at: Payload.parse_datetime(payload["occurred_at"])
     }

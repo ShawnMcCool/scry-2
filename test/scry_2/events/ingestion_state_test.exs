@@ -51,11 +51,12 @@ defmodule Scry2.Events.IngestionStateTest do
       assert state.match.current_match_id == "match-1"
     end
 
-    test "MatchCreated emits pending_deck as side effect" do
+    test "MatchCreated emits pending_deck as side effect, preserving seat1" do
       pending =
         TestFactory.build_deck_submitted(%{
           mtga_match_id: nil,
           mtga_deck_id: "pending:seat1",
+          self_seat_id: 1,
           main_deck: [],
           sideboard: []
         })
@@ -67,6 +68,66 @@ defmodule Scry2.Events.IngestionStateTest do
       assert deck.mtga_match_id == "match-1"
       assert deck.mtga_deck_id == "match-1:seat1"
       assert new_state.match.pending_deck == nil
+    end
+
+    test "MatchCreated with pending_deck increments current_game_number to 1" do
+      pending =
+        TestFactory.build_deck_submitted(%{
+          mtga_match_id: nil,
+          self_seat_id: 1,
+          main_deck: [],
+          sideboard: []
+        })
+
+      state = %{
+        IngestionState.new()
+        | match: %Match{pending_deck: pending, current_game_number: nil}
+      }
+
+      event = TestFactory.build_match_created(%{mtga_match_id: "match-1"})
+      {new_state, [_deck]} = IngestionState.apply_event(state, event)
+
+      assert new_state.match.current_game_number == 1
+    end
+
+    test "MatchCreated without pending_deck does not set current_game_number" do
+      state = IngestionState.new()
+      event = TestFactory.build_match_created(%{mtga_match_id: "match-1"})
+      {new_state, []} = IngestionState.apply_event(state, event)
+
+      assert new_state.match.current_game_number == nil
+    end
+
+    test "MatchCreated resolves pending deck using its actual seat_id for seat 2 players" do
+      pending =
+        TestFactory.build_deck_submitted(%{
+          mtga_match_id: nil,
+          mtga_deck_id: "pending:seat2",
+          self_seat_id: 2,
+          main_deck: [],
+          sideboard: []
+        })
+
+      state = %{IngestionState.new() | match: %Match{pending_deck: pending}}
+      event = TestFactory.build_match_created(%{mtga_match_id: "match-1"})
+      {_new_state, [deck]} = IngestionState.apply_event(state, event)
+
+      assert deck.mtga_match_id == "match-1"
+      assert deck.mtga_deck_id == "match-1:seat2"
+      assert deck.self_seat_id == 2
+    end
+
+    test "pending DeckSubmitted stores self_seat_id in match state" do
+      event =
+        TestFactory.build_deck_submitted(%{
+          mtga_match_id: nil,
+          self_seat_id: 2
+        })
+
+      {state, []} = IngestionState.apply_event(IngestionState.new(), event)
+
+      assert state.match.pending_deck == event
+      assert state.match.self_seat_id == 2
     end
 
     test "DeckSelected sets last_deck_name" do
