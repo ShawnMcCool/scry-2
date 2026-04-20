@@ -84,6 +84,22 @@ defmodule Scry2.Settings do
     entry
   end
 
+  @doc """
+  Deletes a setting by key. No-op if the key does not exist.
+  """
+  @spec delete(String.t()) :: :ok
+  def delete(key) when is_binary(key) do
+    case Repo.get(Entry, key) do
+      nil ->
+        :ok
+
+      entry ->
+        Repo.delete(entry)
+        Topics.broadcast(Topics.settings_updates(), {:setting_changed, key})
+        :ok
+    end
+  end
+
   defp encode(value), do: Jason.encode!(value)
 
   defp decode(value) do

@@ -15,8 +15,11 @@ defmodule Scry2Web.SettingsLive do
   alias Scry2.Events
   alias Scry2.MtgaLogIngestion.LocateLogFile
   alias Scry2.MtgaLogIngestion.Watcher
+  alias Scry2.SelfUpdate
   alias Scry2.Settings
   alias Scry2Web.SettingsLive.Form
+  alias Scry2Web.SettingsLive.UpdatesCard
+  alias Scry2Web.SettingsLive.UpdatesHelpers
 
   @diagnostics_refresh_interval 2_000
 
@@ -29,7 +32,19 @@ defmodule Scry2Web.SettingsLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Process.send_after(self(), :refresh_diagnostics, @diagnostics_refresh_interval)
+      SelfUpdate.subscribe_status()
+      SelfUpdate.subscribe_progress()
     end
+
+    current_version = SelfUpdate.current_version()
+    current_status = SelfUpdate.current_status()
+
+    updates_summary =
+      UpdatesHelpers.summarize(
+        SelfUpdate.cached_release(),
+        current_version,
+        current_status.phase
+      )
 
     {:ok,
      socket
@@ -40,7 +55,10 @@ defmodule Scry2Web.SettingsLive do
      |> assign(:field_values, %{})
      |> assign(:field_errors, %{})
      |> assign(:editing, %{})
-     |> assign(:diagnostics, empty_diagnostics())}
+     |> assign(:diagnostics, empty_diagnostics())
+     |> assign(:updates_current_version, current_version)
+     |> assign(:updates_last_check_at, SelfUpdate.last_check_at())
+     |> assign(:updates_summary, updates_summary)}
   end
 
   @impl true
@@ -81,6 +99,40 @@ defmodule Scry2Web.SettingsLive do
   def handle_info(:refresh_diagnostics, socket) do
     Process.send_after(self(), :refresh_diagnostics, @diagnostics_refresh_interval)
     {:noreply, assign(socket, :diagnostics, Events.inspect_ingestion_state())}
+  end
+
+  def handle_info(:check_started, socket), do: {:noreply, socket}
+
+  def handle_info({:check_complete, _result}, socket) do
+    {:noreply,
+     socket
+     |> assign(
+       :updates_summary,
+       UpdatesHelpers.summarize(
+         SelfUpdate.cached_release(),
+         socket.assigns.updates_current_version,
+         socket.assigns.updates_summary[:applying]
+       )
+     )
+     |> assign(:updates_last_check_at, SelfUpdate.last_check_at())}
+  end
+
+  def handle_info({:phase, :failed, _reason}, socket) do
+    {:noreply,
+     assign(
+       socket,
+       :updates_summary,
+       Map.put(socket.assigns.updates_summary, :applying, :failed)
+     )}
+  end
+
+  def handle_info({:phase, phase}, socket) do
+    {:noreply,
+     assign(
+       socket,
+       :updates_summary,
+       Map.put(socket.assigns.updates_summary, :applying, phase)
+     )}
   end
 
   @impl true
@@ -204,6 +256,16 @@ defmodule Scry2Web.SettingsLive do
     end
   end
 
+  def handle_event("updates_check_now", _params, socket) do
+    _ = SelfUpdate.check_now()
+    {:noreply, socket}
+  end
+
+  def handle_event("updates_apply", _params, socket) do
+    _ = SelfUpdate.apply_pending()
+    {:noreply, socket}
+  end
+
   defp empty_diagnostics do
     %{
       last_raw_event_id: 0,
@@ -272,6 +334,12 @@ defmodule Scry2Web.SettingsLive do
     >
       <div class="max-w-3xl space-y-6">
         <h1 class="text-2xl font-semibold font-beleren">Settings</h1>
+
+        <UpdatesCard.updates_card
+          summary={@updates_summary}
+          current_version={@updates_current_version}
+          last_check_at={@updates_last_check_at}
+        />
 
         <section class="card bg-base-200">
           <div class="card-body">

@@ -131,17 +131,12 @@ jobs:
 
       - name: Build tray binary (Linux/macOS)
         if: matrix.os != 'windows-latest'
-        run: cd tray && go build -ldflags="-X 'scry2/tray/updater.CurrentVersion=${{ github.ref_name }}'" -o ../scry2-tray .
+        run: cd tray && go build -o ../scry2-tray .
 
-      - name: Build tray binary (Windows — zip)
+      - name: Build tray binary (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
-        run: cd tray && go build -ldflags="-H windowsgui -X 'scry2/tray/updater.CurrentVersion=${{ github.ref_name }}'" -o ../scry2-tray.exe .
-
-      - name: Build tray binary (Windows — MSI)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: cd tray && go build -ldflags="-H windowsgui -X 'scry2/tray/updater.CurrentVersion=${{ github.ref_name }}' -X 'scry2/tray/updater.InstallerType=msi'" -o ../scry2-tray-msi.exe .
+        run: cd tray && go build -ldflags="-H windowsgui" -o ../scry2-tray.exe .
 
       - name: Package release (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -204,12 +199,36 @@ jobs:
           $version = "${{ github.ref_name }}".TrimStart("v")
           installer/scripts/build-msi.ps1 `
             -Version $version `
-            -TrayExe scry2-tray-msi.exe
+            -TrayExe scry2-tray.exe
+
+      - name: Generate SHA256SUMS (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          sha256sum scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }} \
+            > scry_2-${{ github.ref_name }}-${{ matrix.platform }}-x86_64-SHA256SUMS
+
+      - name: Generate SHA256SUMS (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $archive = "scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }}"
+          $sumsFile = "scry_2-${{ github.ref_name }}-${{ matrix.platform }}-x86_64-SHA256SUMS"
+          $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
+          "$hash  $archive" | Out-File -Encoding ascii $sumsFile
+
+          $msiPath = "installer/output/Scry2-${{ env.TRIMMED_VERSION }}.msi"
+          if (Test-Path $msiPath) {
+            $msiName = "Scry2-${{ env.TRIMMED_VERSION }}.msi"
+            $msiHash = (Get-FileHash -Algorithm SHA256 $msiPath).Hash.ToLower()
+            "$msiHash  $msiName" | Out-File -Encoding ascii -Append $sumsFile
+          }
 
       - name: Upload release archive
         uses: softprops/action-gh-release@v2
         with:
-          files: scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }}
+          files: |
+            scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }}
+            scry_2-${{ github.ref_name }}-${{ matrix.platform }}-x86_64-SHA256SUMS
           generate_release_notes: true
 
       - name: Upload MSI installer

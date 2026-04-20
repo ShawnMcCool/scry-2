@@ -33,6 +33,9 @@ Constructed-first.
   log of record
 - **Zero-config install** — the Elixir runtime is bundled; no BEAM, no
   dependencies, no database server to set up
+- **Automatic updates** — the app checks GitHub Releases hourly and offers
+  one-click apply from the **Settings → Updates** page; archives are
+  SHA256-verified before install
 
 ---
 

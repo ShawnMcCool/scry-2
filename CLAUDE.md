@@ -169,18 +169,32 @@ Both paths register autostart via `HKCU\Software\Microsoft\Windows\CurrentVersio
 
 ### Tray Binary
 
-The system tray binary (`tray/`, Go) is the user-facing entry point on all platforms. It:
+The system tray binary (`tray/`, Go) is a **thin desktop launcher** on all platforms. It:
 
 - Starts and stops the Elixir backend (`bin/scry_2 start/stop`)
-- Provides a system tray icon with menu (open browser, quit)
+- Provides a system tray icon with menu (**Open**, **Open Settings**, **Auto-start on login**, **Quit**)
 - Opens the browser to `http://localhost:6015` on first launch
-- Handles self-update: downloads new releases and runs the appropriate installer
+- Runs a watchdog that restarts the backend if it crashes — but **respects the apply-lock file** (see [ADR-033]) and skips restart while an update is in progress
 
-Two Windows variants are built with different `-ldflags`:
-- **Zip variant** (`scry2-tray.exe`): updater downloads `.zip` and runs `install.bat`
-- **MSI variant** (`scry2-tray-msi.exe`): updater downloads and runs the Burn bootstrapper `.exe`
+The tray has **no update logic**. Self-update is entirely in Elixir (see Self-Update below). The same `scry2-tray` / `scry2-tray.exe` binary is used on every platform and by both the zip and MSI install paths on Windows — no build-time variants, no `-X` ldflags for versioning or installer type.
 
-The version and installer type are stamped at build time via `-X 'scry2/tray/updater.CurrentVersion=...'` and `-X 'scry2/tray/updater.InstallerType=msi'`.
+### Self-Update
+
+`Scry2.SelfUpdate` is a cross-cutting infrastructure subsystem (not a bounded context). It runs the entire update pipeline inside Elixir:
+
+1. **`CheckerJob`** — Oban cron worker fires hourly (cron `"17 * * * *"`), hits GitHub Releases API, caches the latest release in `:persistent_term` for 1h and persists via `Settings.Entry`.
+2. **`UpdateChecker`** — strict tag regex validation (`^v\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$`), URL template construction (never from API response fields), version classification (`:update_available | :up_to_date | :ahead_of_release`).
+3. **`Updater`** (GenServer) — state machine `idle → preparing → downloading → extracting → handing_off → done/failed`, serializes applies, trap-exit.
+4. **`Downloader`** — streams archive + fetches `scry_2-<tag>-<platform>-x86_64-SHA256SUMS`, verifies with `Plug.Crypto.secure_compare/2`.
+5. **`Stager`** — pre-extraction per-entry validation (rejects `..`, absolute paths, symlinks, oversize) before any `:erl_tar`/`:zip` extract call.
+6. **`Handoff`** — platform-dispatched detached spawn: `setsid sh install-linux` / `nohup install-macos` / `cmd /c install.bat` / `cmd /c Scry2Setup-*.exe /quiet /norestart`.
+7. **`ApplyLock`** — writes `$DATA_DIR/apply.lock` (JSON with pid, version, phase, started_at) before handoff; tray watchdog reads this and skips restart while fresh (<15 min). Installer script removes the lock before relaunching the tray.
+
+User surface: **Settings → Updates** card in the LiveView UI (version, last check, "Check now", "Apply update", live phase progress via `updates:progress` PubSub).
+
+Security posture: strict tag regex at every interpolation boundary; download URLs are built from a fixed template and never extracted from API response fields; archives are SHA256-verified with constant-time comparison before extraction; detached installer spawn uses minimal env (`env -i`, whitelist keys).
+
+Gated on `Mix.env() == :prod` at compile time (`@enabled` in `Scry2.SelfUpdate`). In dev/test the subsystem is inert — no cron firings.
 
 ### CI Workflows
 
@@ -188,7 +202,7 @@ The version and installer type are stamped at build time via `-X 'scry2/tray/upd
 |----------|---------|-------------|
 | `ci.yml` | Push to `main`, PRs | Format check, compile (warnings-as-errors), test suite (Ubuntu) |
 | `tray-ci.yml` | Push to `main`, PRs | Go tray unit tests on Ubuntu, macOS, and Windows |
-| `release.yml` | Version tags (`v*`) | Test gate → build release archives + MSI for all 3 platforms → publish to GitHub Releases |
+| `release.yml` | Version tags (`v*`) | Test gate → build release archives + MSI for all 3 platforms → generate per-platform `SHA256SUMS` (required by the Elixir self-updater for integrity verification) → publish to GitHub Releases |
 | `windows-install-test.yml` | Changes to `installer/`, `rel/overlays/`, `tray/`, `mix.exs`; manual dispatch | Builds Windows artifacts, then tests both zip and MSI install/uninstall on a real Windows runner (file layout, registry, runtime eval, HTTP health check, cleanup) |
 
 Run `mix precommit` before finishing any set of changes and fix all issues it reports.

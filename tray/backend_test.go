@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -143,5 +144,47 @@ func TestWatchdogRestarts(t *testing.T) {
 
 	if !b.IsRunning() {
 		t.Fatal("expected watchdog to have restarted the backend after crash")
+	}
+}
+
+func TestWatchdogSkipsRestartDuringApply(t *testing.T) {
+	tmp := t.TempDir()
+	lockPath := filepath.Join(tmp, "apply.lock")
+	pidFile := filepath.Join(tmp, "backend.pid")
+
+	// Write an active lock before the watchdog spins up.
+	payload := map[string]interface{}{
+		"pid":        os.Getpid(),
+		"version":    "0.15.0",
+		"phase":      "downloading",
+		"started_at": time.Now().UTC().Format(time.RFC3339),
+	}
+	raw, _ := json.Marshal(payload)
+	if err := os.WriteFile(lockPath, raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Setenv("SCRY2_APPLY_LOCK_PATH_OVERRIDE", lockPath)
+
+	b := &RealBackend{
+		binPath:          fakeBackendBin,
+		extraEnv:         []string{"FAKE_BACKEND_PIDFILE=" + pidFile},
+		WatchdogInterval: 50 * time.Millisecond,
+		GracePeriod:      50 * time.Millisecond,
+		RestartDelay:     50 * time.Millisecond,
+	}
+
+	// Do NOT call b.Start(); pid file absent → IsRunning() is false every tick.
+	// If the watchdog calls Start(), the pid file will be written.
+	quit := make(chan struct{})
+	defer close(quit)
+	b.StartWatchdog(quit)
+
+	// Allow several watchdog ticks so, absent the lock, b.Start() would have
+	// been called multiple times.
+	time.Sleep(1 * time.Second)
+
+	if _, err := os.Stat(pidFile); err == nil {
+		t.Fatal("expected watchdog to skip Start() while apply lock is active, but pid file was created")
 	}
 }

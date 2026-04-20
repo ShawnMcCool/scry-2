@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/getlantern/systray"
-	"scry2/tray/updater"
 )
 
 //go:embed assets/icon.png
@@ -30,7 +29,7 @@ func onReady() {
 	mNotResponding := systray.AddMenuItem("⚠ Backend not responding — click for help", "Open the operations page")
 	mNotResponding.Hide()
 	systray.AddSeparator()
-	mUpdate := systray.AddMenuItem("Check for Updates", "Check for a newer version of Scry2")
+	mSettings := systray.AddMenuItem("Open Settings", "Open update & config settings")
 	systray.AddSeparator()
 	mQuit := systray.AddMenuItem("Quit", "Stop Scry2 and quit")
 
@@ -57,16 +56,6 @@ func onReady() {
 		}()
 	}
 
-	u := updater.New(
-		updater.CurrentVersion,
-		updater.NewGitHubChecker("https://api.github.com/repos/shawnmccool/scry_2/releases/latest"),
-		updater.NewHTTPDownloader(),
-		updater.NewArchiveExtractor(),
-		updater.NewRealInstaller(),
-		&systrayMenuItem{mUpdate},
-	)
-	u.Start()
-
 	go func() {
 		for {
 			select {
@@ -84,10 +73,9 @@ func onReady() {
 						mAutoStart.Check()
 					}
 				}
-			case <-mUpdate.ClickedCh:
-				u.ApplyUpdate()
+			case <-mSettings.ClickedCh:
+				openBrowser(DashboardURL + "/settings")
 			case <-mQuit.ClickedCh:
-				u.Stop()
 				close(quitCh)
 				backend.Stop()
 				systray.Quit()

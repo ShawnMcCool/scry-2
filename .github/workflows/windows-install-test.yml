@@ -79,17 +79,11 @@ jobs:
           go-version: '1.22'
           cache-dependency-path: tray/go.sum
 
-      - name: Build tray binary (zip variant)
+      - name: Build tray binary
         shell: pwsh
         run: |
           cd tray
-          go build -ldflags="-H windowsgui -X 'scry2/tray/updater.CurrentVersion=v0.0.0'" -o ../scry2-tray.exe .
-
-      - name: Build tray binary (MSI variant)
-        shell: pwsh
-        run: |
-          cd tray
-          go build -ldflags="-H windowsgui -X 'scry2/tray/updater.CurrentVersion=v0.0.0' -X 'scry2/tray/updater.InstallerType=msi'" -o ../scry2-tray-msi.exe .
+          go build -ldflags="-H windowsgui" -o ../scry2-tray.exe .
 
       - name: Package zip
         shell: pwsh
@@ -118,7 +112,7 @@ jobs:
         run: |
           installer/scripts/build-msi.ps1 `
             -Version "0.0.0" `
-            -TrayExe scry2-tray-msi.exe
+            -TrayExe scry2-tray.exe
 
       - name: Upload zip artifact
         uses: actions/upload-artifact@v4

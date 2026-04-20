@@ -60,6 +60,9 @@ echo Registering autostart...
 reg add "HKCU\Software\Microsoft\Windows\CurrentVersion\Run" /v "Scry2" /t REG_SZ /d "\"%INSTALL_DIR%\scry2-tray.exe\"" /f
 echo Registry returned errorlevel: %errorlevel%
 
+REM Clear any stale update lock from previous crash or successful apply
+if exist "%APPDATA%\scry_2\apply.lock" del /q "%APPDATA%\scry_2\apply.lock"
+
 REM Start the tray (it will launch the backend and open the browser)
 echo Starting Scry2...
 start "" /B "%INSTALL_DIR%\scry2-tray.exe"

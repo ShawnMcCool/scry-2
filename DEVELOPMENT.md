@@ -36,13 +36,19 @@ and Windows. It lives in `tray/` as a separate Go module (`scry2/tray`, Go 1.22)
 
 ### What it does
 
-- Displays a tray icon with three menu items: **Open**, **Auto-start on login**, **Quit**
+- Displays a tray icon with four menu items: **Open**, **Open Settings**, **Auto-start on login**, **Quit**
 - Starts the Elixir backend subprocess on launch and opens the dashboard URL in the
-  default browser when the user clicks **Open**
+  default browser when the user clicks **Open** (or the Settings page via **Open Settings**)
 - Runs a watchdog goroutine that polls the backend every 10 seconds and restarts it
-  if it has crashed
+  if it has crashed — with one exception: if `$DATA_DIR/apply.lock` is present and
+  fresh, the watchdog skips the restart. This coordinates with the Elixir self-updater
+  (see `Scry2.SelfUpdate` and ADR-033), which takes the backend down intentionally
+  during an apply.
 - Manages login persistence on each platform (XDG `.desktop` on Linux, `LaunchAgent`
   plist on macOS, Registry key on Windows)
+
+**The tray has no update logic.** Self-update orchestration lives in the Elixir
+backend (`Scry2.SelfUpdate`) and is surfaced in the Settings LiveView.
 
 The tray binary is the **single entry point** for all platforms in a release install.
 Users never call `bin/scry_2` directly — the tray starts and supervises it.
@@ -239,6 +245,42 @@ b := &RealBackend{
   (`//go:build linux`, `//go:build darwin`, `//go:build windows`) so they only
   compile and run on the matching CI runner.
 
+## Self-Update
+
+`Scry2.SelfUpdate` owns the end-to-end update pipeline: hourly Oban cron check
+against GitHub Releases → `:persistent_term` cache (1h TTL) + durable storage
+via `Settings.Entry` → on "Apply update", the `Scry2.SelfUpdate.Updater`
+GenServer runs a state machine (`preparing → downloading → extracting → handing_off`)
+that downloads the archive, verifies against `SHA256SUMS`, extracts with
+per-entry validation (rejects `..` traversal, symlinks, absolute paths), writes
+`$DATA_DIR/apply.lock`, spawns the detached installer, and calls
+`System.stop/0`. The installer replaces files, removes the apply lock, and
+relaunches the tray.
+
+UI lives in Settings (`/settings` → Updates card). Live phase rendering is
+driven by PubSub broadcasts on `updates:progress`.
+
+The subsystem is compile-time gated on `:prod` — dev and test runs are inert.
+See ADR-033 and `specs/2026-04-20-elixir-self-update-design.md` for the full
+design, and `lib/scry_2/self_update/` for the modules.
+
+**To dev-test the UI flow:** populate the cache manually in an IEx session,
+then visit `/settings`:
+
+```elixir
+Scry2.SelfUpdate.UpdateChecker.put_cache(%{
+  tag: "v99.0.0",
+  version: "99.0.0",
+  published_at: "2026-04-20T12:00:00Z",
+  html_url: "https://github.com/shawnmccool/scry_2/releases/tag/v99.0.0",
+  body: "Test release"
+})
+```
+
+The Updates card will show `99.0.0 available`. Clicking "Apply update" will
+attempt a real download against GitHub Releases — do this only with a valid
+tag in prod.
+
 ## Releasing
 
 Releases are built automatically by GitHub Actions when a version tag is pushed.
@@ -256,8 +298,9 @@ This will:
 5. Push the bookmark and tag to the remote
 
 GitHub Actions then builds Linux, macOS, and Windows release archives (including
-the tray binary for each platform) and publishes them to the
-[Releases page](../../releases).
+the tray binary for each platform), generates per-platform
+`scry_2-<tag>-<platform>-x86_64-SHA256SUMS` files consumed by the in-app
+updater, and publishes everything to the [Releases page](../../releases).
 
 To build a release locally (without publishing):
 

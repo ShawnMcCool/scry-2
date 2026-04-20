@@ -115,6 +115,13 @@ func (b *RealBackend) watchdog(quitCh <-chan struct{}) {
 			case <-quitCh:
 				return
 			}
+
+			if ApplyLockActive(ApplyLockPath()) {
+				// An apply is in progress; the installer will stop and relaunch
+				// the tray. Skip restart — we'd only fight the installer.
+				continue
+			}
+
 			b.Start()
 			select {
 			case <-time.After(b.GracePeriod):

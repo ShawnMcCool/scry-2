@@ -48,6 +48,13 @@ defmodule Scry2.Topics do
   @doc "Runtime configuration changed."
   def settings_updates, do: "settings:updates"
 
+  # ── Updates (self-update) ────────────────────────────────────────────────
+  @doc "Topic for self-update check results (broadcast by CheckerJob)."
+  def updates_status, do: "updates:status"
+
+  @doc "Topic for self-update apply progress (broadcast by Updater)."
+  def updates_progress, do: "updates:progress"
+
   # ── Console ──────────────────────────────────────────────────────────────
   @doc """
   Console log events. Subscribers (ConsoleLive, ConsolePageLive) receive:

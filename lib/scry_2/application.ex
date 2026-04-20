@@ -36,12 +36,23 @@ defmodule Scry2.Application do
           restart: :temporary
         ),
         {Task.Supervisor, name: Scry2.TaskSupervisor},
+        {Scry2.SelfUpdate.Updater,
+         lock_path: Scry2.SelfUpdate.apply_lock_path(),
+         staging_root: Scry2.SelfUpdate.staging_root()},
         Scry2Web.Endpoint
       ]
       |> maybe_add_watcher()
 
     opts = [strategy: :one_for_one, name: Scry2.Supervisor]
-    Supervisor.start_link(children, opts)
+
+    case Supervisor.start_link(children, opts) do
+      {:ok, pid} ->
+        :ok = Scry2.SelfUpdate.boot!()
+        {:ok, pid}
+
+      other ->
+        other
+    end
   end
 
   # Install the Erlang :logger handler that funnels all log events into

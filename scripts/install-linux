@@ -37,6 +37,10 @@ NoDisplay=false
 X-GNOME-Autostart-enabled=true
 EOF
 
+# Clear any stale update lock from previous crash or successful apply
+DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/scry_2"
+rm -f "$DATA_DIR/apply.lock"
+
 # Launch tray (which will start the backend)
 echo "Starting Scry2..."
 "$INSTALL_DIR/scry2-tray" &

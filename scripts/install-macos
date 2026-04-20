@@ -45,6 +45,10 @@ cat > "$PLIST_FILE" << EOF
 </plist>
 EOF
 
+# Clear any stale update lock from previous crash or successful apply
+DATA_DIR="$HOME/Library/Application Support/scry_2"
+rm -f "$DATA_DIR/apply.lock"
+
 # Load the agent (tray will start and launch the backend)
 launchctl load "$PLIST_FILE"
 

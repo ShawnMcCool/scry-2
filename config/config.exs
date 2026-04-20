@@ -22,14 +22,17 @@ config :scry_2, Scry2.Repo, log: :info
 config :scry_2, Oban,
   engine: Oban.Engines.Lite,
   repo: Scry2.Repo,
-  queues: [default: 5, imports: 1],
+  queues: [default: 5, imports: 1, self_update: 1],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
        # Daily 04:00 UTC — refresh 17lands card reference data.
        {"0 4 * * *", Scry2.Workers.PeriodicallyUpdateCards},
        # Weekly Sunday 05:00 UTC — backfill arena_id from Scryfall bulk data.
-       {"0 5 * * 0", Scry2.Workers.PeriodicallyBackfillArenaIds}
+       {"0 5 * * 0", Scry2.Workers.PeriodicallyBackfillArenaIds},
+       # Hourly at :17 — check GitHub Releases for a new Scry2 version.
+       # Offset from the :00 slots above so the cron firings don't pile up.
+       {"17 * * * *", Scry2.SelfUpdate.CheckerJob, args: %{"trigger" => "cron"}}
      ]}
   ]
 
