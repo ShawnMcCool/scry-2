@@ -70,9 +70,9 @@ defmodule Scry2.MixProject do
       {:req, "~> 0.5"},
       {:nimble_csv, "~> 1.2"},
       {:toml, "~> 0.7"},
-      # Dev-only tooling
       {:tidewave, "~> 0.5", only: :dev},
-      {:visualizer, path: "../visualizer", only: :dev}
+      {:local_dependency, path: "../ex_code_view/"}
+      # {:ex_code_view, "~> 0.1"}
     ]
   end
 

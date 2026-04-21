@@ -93,8 +93,8 @@ config :phoenix, :stacktrace_depth, 20
 # Initialize plugs at runtime for faster development compilation
 config :phoenix, :plug_init_mode, :runtime
 
-# Visualizer output directory (dev tool — see `mix visualize --help`)
-config :visualizer, output_dir: "tmp"
+# ex_code_view output directory (dev tool — see `mix view --help`)
+config :ex_code_view, output_dir: "tmp"
 
 config :phoenix_live_view,
   # Include debug annotations and locations in rendered markup.

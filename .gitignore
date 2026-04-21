@@ -42,3 +42,6 @@ npm-debug.log
 scry2-tray
 .superpowers/
 docs/superpowers/
+
+# Local planning / research notes (not for commit)
+/todo.md

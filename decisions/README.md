@@ -13,3 +13,7 @@ System design, data model, integration patterns, and engineering standards. Thes
 ### User Interface (`user-interface/`)
 
 Component conventions, styling rules, and visual design decisions. These decisions govern how the UI looks and behaves — badge styles, button hierarchy, shared components, and layout patterns.
+
+### Research (`research/`)
+
+Multi-avenue investigations that inform — but do not yet commit to — an architectural decision. Status is `exploratory`. A research record's job is to put a shortlist of viable options on the table; a subsequent architecture ADR picks one.
