@@ -23,6 +23,8 @@ jobs:
           elixir-version: '1.19'
           otp-version: '28'
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Cache Mix deps
         uses: actions/cache@v4
         with:
@@ -31,6 +33,16 @@ jobs:
             _build
           key: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-${{ hashFiles('**/mix.lock') }}
           restore-keys: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/scry2_collection_reader/target
+          key: ubuntu-latest-cargo-${{ hashFiles('native/scry2_collection_reader/Cargo.lock') }}
+          restore-keys: ubuntu-latest-cargo-
 
       - name: Install system dependencies
         run: sudo apt-get install -y inotify-tools
@@ -87,6 +99,10 @@ jobs:
           elixir-version: '1.19'
           otp-version: '28'
 
+      # Rust toolchain for the Scry2.Collection NIF (ADR 034). Pinned to
+      # stable on every matrix runner so release builds stay reproducible.
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Cache Mix deps and build
         uses: actions/cache@v4
         with:
@@ -96,6 +112,16 @@ jobs:
             _build/prod/consolidated
           key: ${{ runner.os }}-mix-1.19-28-${{ hashFiles('**/mix.lock') }}
           restore-keys: ${{ runner.os }}-mix-1.19-28-
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/scry2_collection_reader/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('native/scry2_collection_reader/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
 
       - name: Install dependencies
         run: mix deps.get --only prod

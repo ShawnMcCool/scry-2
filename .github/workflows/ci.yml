@@ -20,6 +20,9 @@ jobs:
           elixir-version: '1.19'
           otp-version: '28'
 
+      # Required by the Scry2.Collection Rustler NIF (ADR 034).
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Cache Mix deps
         uses: actions/cache@v4
         with:
@@ -28,6 +31,16 @@ jobs:
             _build
           key: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-${{ hashFiles('**/mix.lock') }}
           restore-keys: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-
+
+      - name: Cache cargo build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            native/scry2_collection_reader/target
+          key: ubuntu-latest-cargo-${{ hashFiles('native/scry2_collection_reader/Cargo.lock') }}
+          restore-keys: ubuntu-latest-cargo-
 
       - name: Install system dependencies
         run: sudo apt-get install -y inotify-tools
