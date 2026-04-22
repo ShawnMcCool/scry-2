@@ -76,6 +76,8 @@ defmodule Scry2.TestFactory do
   alias Scry2.Matches.{DeckSubmission, Game, Match}
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
+  alias Scry2.Collection
+  alias Scry2.Collection.Snapshot
   alias Scry2.Players
   alias Scry2.Players.Player
 
@@ -997,11 +999,68 @@ defmodule Scry2.TestFactory do
 
   # ── helpers ─────────────────────────────────────────────────────────────
 
+  # ── Collection snapshots (ADR 034) ──────────────────────────────────────
+
+  @doc """
+  Builds a `Scry2.Collection.Snapshot` struct with sensible defaults.
+  Pass `:entries` to override the three-card default; `cards_json`,
+  `card_count`, and `total_copies` are derived from entries unless
+  explicitly supplied.
+  """
+  def build_collection_snapshot(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    entries = Map.get(attrs, :entries, [{30_001, 1}, {30_002, 2}, {30_003, 3}])
+
+    defaults = %{
+      snapshot_ts: DateTime.utc_now(),
+      reader_version: "test-#{random_suffix()}",
+      reader_confidence: "fallback_scan",
+      mtga_build_hint: nil,
+      card_count: length(entries),
+      total_copies: Enum.reduce(entries, 0, fn {_, count}, acc -> acc + count end),
+      cards_json: Snapshot.encode_entries(entries),
+      wildcards_common: nil,
+      wildcards_uncommon: nil,
+      wildcards_rare: nil,
+      wildcards_mythic: nil,
+      gold: nil,
+      gems: nil,
+      vault_progress: nil
+    }
+
+    struct(Snapshot, Map.merge(defaults, Map.delete(attrs, :entries)))
+  end
+
+  @doc """
+  Persists a `Scry2.Collection.Snapshot` via the changeset path and
+  returns the loaded row.
+  """
+  def create_collection_snapshot(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    entries = Map.get(attrs, :entries, [{30_001, 1}, {30_002, 2}, {30_003, 3}])
+
+    full =
+      attrs
+      |> Map.put_new(:snapshot_ts, DateTime.utc_now())
+      |> Map.put_new(:reader_version, "test-#{random_suffix()}")
+      |> Map.put_new(:reader_confidence, "fallback_scan")
+      |> Map.put(:entries, entries)
+
+    {:ok, snapshot} =
+      %Snapshot{}
+      |> Snapshot.changeset(full)
+      |> Scry2.Repo.insert()
+
+    snapshot
+  end
+
   defp random_suffix, do: Integer.to_string(:rand.uniform(1_000_000_000), 36)
 
   # Silence unused-alias warnings for test support code.
   @compile {:no_warn_unused,
             [
+              Collection,
               CardsAcquired,
               CardsRemoved,
               Cursor,

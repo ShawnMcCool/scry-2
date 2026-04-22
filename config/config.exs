@@ -27,7 +27,7 @@ config :scry_2, Scry2.Repo, log: :info
 config :scry_2, Oban,
   engine: Oban.Engines.Lite,
   repo: Scry2.Repo,
-  queues: [default: 5, imports: 1, self_update: 1],
+  queues: [default: 5, imports: 1, self_update: 1, collection: 1],
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [

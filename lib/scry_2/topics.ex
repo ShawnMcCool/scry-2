@@ -44,6 +44,17 @@ defmodule Scry2.Topics do
   @doc "Card reference data refreshed (17lands import ran)."
   def cards_updates, do: "cards:updates"
 
+  # ── Collection (memory-read snapshots, ADR 034) ────────────────────────
+  @doc """
+  Collection snapshot events. Subscribers (`CollectionLive`) receive:
+
+    * `{:snapshot_saved, %Scry2.Collection.Snapshot{}}` — a new snapshot
+      persisted via `Scry2.Collection.RefreshJob`.
+    * `{:refresh_failed, reason}` — the scheduled or manual refresh
+      failed (missing MTGA, self-check, no cards found).
+  """
+  def collection_snapshots, do: "collection:snapshots"
+
   # ── Settings ─────────────────────────────────────────────────────────────
   @doc "Runtime configuration changed."
   def settings_updates, do: "settings:updates"
