@@ -11,6 +11,11 @@ config :scry_2,
   ecto_repos: [Scry2.Repo],
   generators: [timestamp_type: :utc_datetime]
 
+# Scry2.Collection reads MTGA process memory through a pluggable backend.
+# Dev/prod use the Rustler NIF; tests swap in TestBackend via config/test.exs.
+# See ADR 034.
+config :scry_2, Scry2.Collection, mem: Scry2.Collection.Mem.Nif
+
 # Log Ecto queries at :info (not the Ecto default of :debug). Scry2 is a
 # single-user desktop app — query visibility is a diagnostic feature, not
 # production noise. This applies in dev AND prod so the user can flip the
