@@ -40,6 +40,7 @@ defmodule Scry2Web.Router do
       live "/player", PlayerLive, :index
       live "/ranks", RanksLive, :index
       live "/economy", EconomyLive, :index
+      live "/collection", CollectionLive, :index
       live "/matches", MatchesLive, :index
       live "/matches/:id", MatchesLive, :show
       live "/cards", CardsLive, :index
