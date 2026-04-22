@@ -1,0 +1,13 @@
+[package]
+name = "scry2_collection_reader"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "scry2_collection_reader"
+path = "src/lib.rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+rustler = "0.37"

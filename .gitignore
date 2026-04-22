@@ -45,3 +45,9 @@ docs/superpowers/
 
 # Local planning / research notes (not for commit)
 /todo.md
+
+# Rust crates under native/ build into their own target/ dirs.
+/native/**/target/
+
+# Compiled NIF artifacts (platform-specific, rebuilt by mix compile).
+/priv/native/

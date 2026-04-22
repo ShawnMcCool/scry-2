@@ -71,8 +71,8 @@ defmodule Scry2.MixProject do
       {:nimble_csv, "~> 1.2"},
       {:toml, "~> 0.7"},
       {:tidewave, "~> 0.5", only: :dev},
-      {:local_dependency, path: "../ex_code_view/"}
-      # {:ex_code_view, "~> 0.1"}
+      {:ex_code_view, "~> 0.1"},
+      {:rustler, "~> 0.37"}
     ]
   end
 

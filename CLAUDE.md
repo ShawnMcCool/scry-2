@@ -100,6 +100,13 @@ mix test               # run tests (creates and migrates test DB automatically)
 mix precommit          # compile --warning-as-errors, unlock unused deps, format, test
 ```
 
+### Rust toolchain
+
+The `Scry2.Collection` context (ADR 034) links a Rustler NIF crate under
+`native/scry2_collection_reader/`. The repo-pinned toolchain lives in
+`.mise.toml`; run `mise install` to get the matching `rustc`/`cargo`.
+`mix compile` builds the crate automatically.
+
 ### Dev service
 
 ```bash
@@ -268,6 +275,7 @@ Each context owns its tables and communicates only via PubSub events. No context
 | **Players** | — | players (discovered from domain events) | Called directly from `IngestRawEvents`; broadcasts `players:updates` |
 | **Settings** | `settings_` | runtime config entries | Broadcasts `settings:updates` |
 | **Console** | — | in-memory log ring buffer (dev observability) | Broadcasts `console:logs` |
+| **Collection** | `collection_` | memory-read collection snapshots (ADR 034) — public API TBD Phase 6 | Broadcasts `collection:snapshots` (TBD) |
 
 **Key rule:** Only `Scry2.Events.IngestRawEvents` subscribes to `mtga_logs:events`. Every other consumer subscribes to `domain:events` and works with typed `%Scry2.Events.*{}` structs. See ADR-018 for the anti-corruption boundary.
 
