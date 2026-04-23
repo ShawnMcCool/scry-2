@@ -228,6 +228,29 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLogTest do
       assert is_list(get_in(connect_resp, ["connectResp", "deckMessage", "deckCards"]))
     end
 
+    test "Format B: MatchGameRoomStateChangedEvent with non-ASCII opponent name (multi-byte UTF-8 in payload)" do
+      chunk = fixture("match_game_room_state_changed_playing_nonascii_opponent.log")
+
+      {[event], []} = ExtractEventsFromLog.parse_chunk(chunk, "Player.log", 0)
+
+      assert event.type == "MatchGameRoomStateChangedEvent"
+
+      # The whole payload must round-trip through Jason — proves the
+      # parser preserves every byte of multi-byte UTF-8 characters.
+      assert {:ok, _} = Jason.decode(event.raw_json)
+
+      reserved_players =
+        get_in(event.payload, [
+          "matchGameRoomStateChangedEvent",
+          "gameRoomInfo",
+          "gameRoomConfig",
+          "reservedPlayers"
+        ])
+
+      player_names = Enum.map(reserved_players, & &1["playerName"])
+      assert "こたつ" in player_names
+    end
+
     test "Format A response: RankGetCombinedRankInfo three-line pattern (timestamp + bare <== + JSON)" do
       chunk = fixture("rank_get_combined_rank_info_response.log")
 

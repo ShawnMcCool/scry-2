@@ -327,10 +327,12 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
     scan_json(rest, pos + 1, depth, true, true)
   end
 
-  defp scan_json(<<_byte::utf8, rest::binary>>, pos, depth, in_string, _) do
-    scan_json(rest, pos + 1, depth, in_string, false)
-  end
-
+  # Generic byte. We intentionally consume one byte at a time (no `::utf8`)
+  # so `pos` tracks bytes, not codepoints — `grab_json_block/1` slices the
+  # result with `binary_part/3`, which is byte-based. The brace/quote/escape
+  # discriminators above are all ASCII (0x00–0x7F) and cannot collide with
+  # UTF-8 continuation bytes (0x80–0xBF) or lead bytes (0xC0–0xFF), so byte
+  # walking is safe.
   defp scan_json(<<_byte, rest::binary>>, pos, depth, in_string, _) do
     scan_json(rest, pos + 1, depth, in_string, false)
   end
