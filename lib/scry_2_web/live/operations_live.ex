@@ -4,6 +4,7 @@ defmodule Scry2Web.OperationsLive do
   alias Scry2.{Events, MtgaLogIngestion, Operations, Topics}
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.ProjectorRegistry
+  alias Scry2.MtgaLogIngestion.GitHubIssueReport
 
   @impl true
   def mount(_params, _session, socket) do
@@ -23,7 +24,8 @@ defmodule Scry2Web.OperationsLive do
      |> assign(:steps, [])
      |> assign(:projector_progress, %{})
      |> assign(:pending_rebuilds, nil)
-     |> assign(:reload_timer, nil)}
+     |> assign(:reload_timer, nil)
+     |> assign(:report_modal, nil)}
   end
 
   @impl true
@@ -129,6 +131,15 @@ defmodule Scry2Web.OperationsLive do
   def handle_event("dismiss_all_errors", _params, socket) do
     MtgaLogIngestion.dismiss_all_errors!()
     {:noreply, load_status(socket)}
+  end
+
+  def handle_event("open_report_modal", _params, socket) do
+    report = GitHubIssueReport.build(MtgaLogIngestion.export_errors())
+    {:noreply, assign(socket, :report_modal, report)}
+  end
+
+  def handle_event("close_report_modal", _params, socket) do
+    {:noreply, assign(socket, :report_modal, nil)}
   end
 
   def handle_event("dismiss_operation", _params, socket) do
@@ -628,11 +639,18 @@ defmodule Scry2Web.OperationsLive do
             </div>
             <div class="flex gap-2 shrink-0">
               <button
-                phx-click="export_errors"
+                phx-click="open_report_modal"
                 class="btn btn-xs btn-soft btn-primary"
+                title="Review and send these errors as a GitHub issue"
+              >
+                <.icon name="hero-megaphone" class="size-3" /> Report to developer
+              </button>
+              <button
+                phx-click="export_errors"
+                class="btn btn-xs btn-soft"
                 title="Download a JSON report to send to the developer"
               >
-                <.icon name="hero-arrow-down-tray" class="size-3" /> Export Report
+                <.icon name="hero-arrow-down-tray" class="size-3" /> Export JSON
               </button>
               <button phx-click="dismiss_all_errors" class="btn btn-xs btn-ghost">
                 Dismiss all
@@ -741,6 +759,73 @@ defmodule Scry2Web.OperationsLive do
           </table>
         </div>
       </section>
+
+      <%!-- Report-to-developer modal --%>
+      <%= if @report_modal do %>
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div
+            class="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl bg-base-100 shadow-2xl border border-base-300"
+            phx-click-away="close_report_modal"
+            phx-window-keydown="close_report_modal"
+            phx-key="Escape"
+          >
+            <div class="p-6 space-y-4">
+              <div class="space-y-1">
+                <h2 class="text-xl font-semibold font-beleren">
+                  Report these errors to the developer
+                </h2>
+                <p class="text-sm text-base-content/70">
+                  This opens a pre-filled GitHub issue. Review the data below — when you confirm, your browser will navigate to GitHub. Nothing is sent without your action.
+                </p>
+              </div>
+
+              <div class="space-y-2">
+                <p class="text-xs uppercase tracking-wide text-base-content/50">Issue title</p>
+                <div class="rounded-lg bg-base-200/60 px-3 py-2 font-mono text-sm break-words">
+                  {@report_modal.title}
+                </div>
+              </div>
+
+              <div class="space-y-2">
+                <p class="text-xs uppercase tracking-wide text-base-content/50">
+                  Issue body (preview)
+                </p>
+                <pre class="rounded-lg bg-base-200/60 p-3 text-xs leading-relaxed whitespace-pre-wrap break-words max-h-72 overflow-y-auto">{@report_modal.body}</pre>
+              </div>
+
+              <div class="space-y-1">
+                <p class="text-xs uppercase tracking-wide text-base-content/50">Signatures</p>
+                <ul class="text-xs space-y-1">
+                  <li :for={sig <- @report_modal.signatures} class="font-mono text-base-content/70">
+                    <span class="badge badge-xs badge-ghost mr-2">×{sig.count}</span>
+                    {elem(sig.signature, 0)}
+                    <span class="text-base-content/40">— {elem(sig.signature, 1)}</span>
+                  </li>
+                </ul>
+              </div>
+
+              <div class="flex items-center justify-end gap-4 pt-2">
+                <button
+                  phx-click="close_report_modal"
+                  type="button"
+                  class="link link-hover text-sm text-base-content/60"
+                >
+                  no, I don't agree
+                </button>
+                <a
+                  href={@report_modal.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  phx-click="close_report_modal"
+                  class="btn btn-primary btn-sm gap-2"
+                >
+                  <.icon name="hero-arrow-top-right-on-square" class="size-4" /> Send to GitHub
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      <% end %>
     </Layouts.app>
     """
   end
