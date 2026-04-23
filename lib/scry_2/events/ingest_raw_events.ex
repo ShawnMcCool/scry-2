@@ -155,9 +155,14 @@ defmodule Scry2.Events.IngestRawEvents do
   #
   # append_batch! (in Events) transparently splits inserts at 3,000 rows to stay
   # under SQLite's MAX_VARIABLE_NUMBER=32766 limit, so this chunk size is not
-  # constrained by that ceiling. Increase freely if profiling shows it helps;
-  # the only trade-off is peak memory (~1 MB per 1_000 raw events processed).
-  @retranslate_chunk_size 5_000
+  # constrained by that ceiling. The actual ceiling is Ecto's pool checkout
+  # timeout (15s default): a chunk that takes longer than that to commit will
+  # cause the connection to be returned to the pool mid-transaction and crash
+  # with "client timed out because it queued and checked out the connection
+  # for longer than 15000ms". 1,000 events per chunk keeps the typical
+  # transaction well under 5s, with headroom for slow projectors.
+  # Trade-off: peak memory (~1 MB per 1_000 raw events processed).
+  @retranslate_chunk_size 1_000
 
   @impl true
   def handle_call({:retranslate_all, opts}, _from, state) do

@@ -168,6 +168,45 @@ defmodule Scry2.CardsTest do
     end
   end
 
+  describe "refresh timestamps" do
+    test "import_timestamps/0 returns nil for both sources when never stamped" do
+      # Clean slate: no-op if nothing has ever written the keys.
+      Scry2.Settings.delete("cards_lands17_last_refresh_at")
+      Scry2.Settings.delete("cards_scryfall_last_refresh_at")
+
+      %{lands17_updated_at: lands17, scryfall_updated_at: scryfall} = Cards.import_timestamps()
+      assert is_nil(lands17)
+      assert is_nil(scryfall)
+    end
+
+    test "record_lands17_refresh!/1 writes a retrievable DateTime" do
+      now = ~U[2026-04-24 12:00:00Z]
+      :ok = Cards.record_lands17_refresh!(now)
+
+      assert %{lands17_updated_at: ^now} = Cards.import_timestamps()
+    end
+
+    test "record_scryfall_refresh!/1 writes a retrievable DateTime" do
+      now = ~U[2026-04-24 12:00:00Z]
+      :ok = Cards.record_scryfall_refresh!(now)
+
+      assert %{scryfall_updated_at: ^now} = Cards.import_timestamps()
+    end
+
+    test "timestamps survive through Settings (not derived from card updated_at)" do
+      # Regression: before this change, freshness was derived from
+      # `max(cards.updated_at)`, which never advanced when the CSV
+      # import produced no-op changeset updates. Now the Settings-
+      # backed stamp advances independently of row changes.
+      stamp = ~U[2026-04-24 14:00:00Z]
+      :ok = Cards.record_lands17_refresh!(stamp)
+
+      # No card rows created — pure Settings read.
+      assert Cards.count() == 0
+      assert Cards.import_timestamps().lands17_updated_at == stamp
+    end
+  end
+
   describe "upsert_mtga_card!/1" do
     test "creates a new MTGA card" do
       card =

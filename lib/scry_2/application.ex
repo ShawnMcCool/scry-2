@@ -25,7 +25,17 @@ defmodule Scry2.Application do
         # Buffer.append/2's Process.whereis guard.
         Scry2.Console.RecentEntries,
         # Card image cache — ensures cache directory exists on startup.
-        Scry2.Cards.ImageCache,
+        Scry2.Cards.ImageCache
+      ]
+      |> maybe_add_version_check()
+      |> Kernel.++([
+        # Oban must come AFTER VersionCheck. If a reingest is needed,
+        # VersionCheck holds the SQLite write lock for many chunks; if
+        # Oban is already running, its housekeeping queries (job state
+        # transitions, beat heartbeats) compete for write transactions
+        # on the same connection pool and trip Ecto's checkout timeout.
+        # See https://www.sqlite.org/lockingv3.html — only one RESERVED
+        # writer at a time, even with WAL.
         {Oban, Application.fetch_env!(:scry_2, Oban)},
         # One-shot task: check for missing/stale card reference data and enqueue
         # refresh jobs immediately rather than waiting for the daily cron window.
@@ -40,7 +50,7 @@ defmodule Scry2.Application do
          lock_path: Scry2.SelfUpdate.apply_lock_path(),
          staging_root: Scry2.SelfUpdate.staging_root()},
         Scry2Web.Endpoint
-      ]
+      ])
       |> maybe_add_watcher()
 
     opts = [strategy: :one_for_one, name: Scry2.Supervisor]
@@ -84,6 +94,21 @@ defmodule Scry2.Application do
     System.get_env("RELEASE_NAME") == nil
   end
 
+  # Run the event-pipeline VersionCheck BEFORE Oban and Cards.Bootstrap.
+  # `init/1` returns `:ignore` so this never appears in the running
+  # supervision tree — but it BLOCKS startup until the reingest finishes,
+  # which is exactly what we want: a single SQLite writer with no
+  # competition for `BEGIN IMMEDIATE` from job housekeeping or import
+  # workers. Gated on `:start_watcher` so the test env (which builds
+  # the pipeline ad-hoc per test) skips it.
+  defp maybe_add_version_check(children) do
+    if Scry2.Config.get(:start_watcher) do
+      children ++ [Scry2.Events.VersionCheck]
+    else
+      children
+    end
+  end
+
   # Only add the MTGA log watcher + event-sourced pipeline if configuration
   # says so. Off by default in the test env (see config/test.exs) so tests
   # can start pieces of the pipeline explicitly via the public API when
@@ -95,13 +120,11 @@ defmodule Scry2.Application do
   # downstream consumers are ready.
   defp maybe_add_watcher(children) do
     if Scry2.Config.get(:start_watcher) do
-      # Version check: compare compile-time AST hashes against stored
-      # hashes. If the translator pipeline changed, runs full reingest.
-      # If only specific projectors changed, rebuilds only those.
-      # Must run BEFORE projectors start so they don't process stale data.
+      # VersionCheck has already run (see maybe_add_version_check) — by
+      # the time we get here, raw events have been retranslated and any
+      # stale projector tables rebuilt, so projectors can start clean.
       # Stage 09: projectors subscribe first so they never miss an event.
       children ++
-        [Scry2.Events.VersionCheck] ++
         Scry2.Events.ProjectorRegistry.all() ++
         [
           # Stage 08: ingestion worker translates raw events to domain events.

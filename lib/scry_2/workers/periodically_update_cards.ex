@@ -14,6 +14,7 @@ defmodule Scry2.Workers.PeriodicallyUpdateCards do
     max_attempts: 3,
     unique: [period: 60]
 
+  alias Scry2.Cards
   alias Scry2.Cards.SeventeenLands
 
   require Scry2.Log, as: Log
@@ -28,6 +29,11 @@ defmodule Scry2.Workers.PeriodicallyUpdateCards do
 
     case SeventeenLands.run(opts) do
       {:ok, %{imported: count}} ->
+        # Stamp the Settings-backed refresh timestamp even when all rows
+        # were no-op upserts. Row-level `updated_at` only advances on
+        # actual content changes, but Health wants to know "we verified
+        # freshness," which is what completing this worker proves.
+        :ok = Cards.record_lands17_refresh!()
         Log.info(:importer, "cards refresh imported #{count} rows")
         :ok
 

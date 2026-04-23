@@ -14,6 +14,10 @@ defmodule Scry2.Cards do
 
   alias Scry2.Cards.{Card, MtgaCard, ScryfallCard, Set}
   alias Scry2.Repo
+  alias Scry2.Settings
+
+  @lands17_refresh_key "cards_lands17_last_refresh_at"
+  @scryfall_refresh_key "cards_scryfall_last_refresh_at"
 
   # ── Sets ────────────────────────────────────────────────────────────────
 
@@ -123,15 +127,63 @@ defmodule Scry2.Cards do
   end
 
   @doc """
-  Returns the last `updated_at` for each card data source.
+  Returns the last **successful refresh** timestamp for each card data
+  source.
 
-  Keys: `:lands17_updated_at`, `:scryfall_updated_at` (both may be nil).
+  This intentionally tracks refresh *runs*, not `updated_at` on the card
+  rows. When the upstream CSV/bulk data hasn't changed between imports,
+  Ecto's changeset comparison produces zero-change updates and row
+  `updated_at` doesn't advance — but "we verified the data is still
+  current" is exactly what the Health freshness check needs.
+
+  Stored via `Scry2.Settings` (SQLite JSON blob). Keys are
+  `cards_lands17_last_refresh_at` and `cards_scryfall_last_refresh_at`.
+
+  Keys in the returned map: `:lands17_updated_at`, `:scryfall_updated_at`
+  (both may be nil). Name is preserved for consumer stability even
+  though "updated_at" is now a soft alias for "last refresh".
   """
   def import_timestamps do
     %{
-      lands17_updated_at: from(c in Card, select: max(c.updated_at)) |> Repo.one(),
-      scryfall_updated_at: from(c in ScryfallCard, select: max(c.updated_at)) |> Repo.one()
+      lands17_updated_at: read_refresh_timestamp(@lands17_refresh_key),
+      scryfall_updated_at: read_refresh_timestamp(@scryfall_refresh_key)
     }
+  end
+
+  @doc """
+  Records a successful 17lands import at the current UTC time. Called
+  from `Scry2.Workers.PeriodicallyUpdateCards` after a successful run.
+  """
+  @spec record_lands17_refresh!(DateTime.t()) :: :ok
+  def record_lands17_refresh!(now \\ DateTime.utc_now()) do
+    Settings.put!(@lands17_refresh_key, DateTime.to_iso8601(now))
+    :ok
+  end
+
+  @doc """
+  Records a successful Scryfall backfill at the current UTC time. Called
+  from `Scry2.Workers.PeriodicallyBackfillArenaIds` after a successful run.
+  """
+  @spec record_scryfall_refresh!(DateTime.t()) :: :ok
+  def record_scryfall_refresh!(now \\ DateTime.utc_now()) do
+    Settings.put!(@scryfall_refresh_key, DateTime.to_iso8601(now))
+    :ok
+  end
+
+  defp read_refresh_timestamp(key) do
+    case Settings.get(key) do
+      nil ->
+        nil
+
+      value when is_binary(value) ->
+        case DateTime.from_iso8601(value) do
+          {:ok, dt, _offset} -> dt
+          _ -> nil
+        end
+
+      _ ->
+        nil
+    end
   end
 
   defp image_cache_stats(nil), do: {0, 0}

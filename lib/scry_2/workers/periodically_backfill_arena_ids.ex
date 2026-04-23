@@ -31,6 +31,9 @@ defmodule Scry2.Workers.PeriodicallyBackfillArenaIds do
         Log.info(:importer, "client data backfill — #{client_count} arena_ids set")
       end
 
+      # Settings-backed refresh stamp — see Cards.record_scryfall_refresh!/1.
+      :ok = Cards.record_scryfall_refresh!()
+
       :ok
     end
   end
