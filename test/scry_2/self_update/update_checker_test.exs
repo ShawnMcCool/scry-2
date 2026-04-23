@@ -123,16 +123,73 @@ defmodule Scry2.SelfUpdate.UpdateCheckerTest do
                UpdateChecker.latest_release(req_options: [plug: {Req.Test, UpdateChecker}])
     end
 
-    test "surfaces rate-limit errors distinctly" do
+    test "surfaces rate-limit errors with reset DateTime" do
+      reset_epoch = DateTime.utc_now() |> DateTime.add(3600, :second) |> DateTime.to_unix()
+
       Req.Test.stub(UpdateChecker, fn conn ->
         conn
         |> Plug.Conn.put_resp_header("x-ratelimit-remaining", "0")
-        |> Plug.Conn.put_resp_header("x-ratelimit-reset", "9999999999")
+        |> Plug.Conn.put_resp_header("x-ratelimit-reset", Integer.to_string(reset_epoch))
         |> Plug.Conn.resp(403, ~s|{"message":"rate limit"}|)
       end)
 
-      assert {:error, {:rate_limited, _reset_epoch}} =
+      assert {:error, {:rate_limited, %DateTime{} = reset_at}} =
                UpdateChecker.latest_release(req_options: [plug: {Req.Test, UpdateChecker}])
+
+      assert abs(DateTime.diff(reset_at, DateTime.from_unix!(reset_epoch))) <= 2
+    end
+
+    test "rate-limit reset is nil when the reset header is absent" do
+      Req.Test.stub(UpdateChecker, fn conn ->
+        conn
+        |> Plug.Conn.put_resp_header("x-ratelimit-remaining", "0")
+        |> Plug.Conn.resp(403, ~s|{"message":"rate limit"}|)
+      end)
+
+      assert {:error, {:rate_limited, nil}} =
+               UpdateChecker.latest_release(req_options: [plug: {Req.Test, UpdateChecker}])
+    end
+
+    test "non-rate-limit 403 falls through to {:http_status, 403}" do
+      Req.Test.stub(UpdateChecker, fn conn ->
+        Plug.Conn.resp(conn, 403, "forbidden")
+      end)
+
+      assert {:error, {:http_status, 403}} =
+               UpdateChecker.latest_release(req_options: [plug: {Req.Test, UpdateChecker}])
+    end
+
+    test "replaces an html_url pointing at an unexpected host" do
+      Req.Test.stub(UpdateChecker, fn conn ->
+        Req.Test.json(conn, %{
+          "tag_name" => "v1.0.0",
+          "published_at" => "2026-04-20T12:00:00Z",
+          "html_url" => "https://evil.example.com/fake",
+          "body" => ""
+        })
+      end)
+
+      assert {:ok, release} =
+               UpdateChecker.latest_release(req_options: [plug: {Req.Test, UpdateChecker}])
+
+      assert release.html_url ==
+               "https://github.com/shawnmccool/scry_2/releases/tag/v1.0.0"
+    end
+
+    test "replaces a missing html_url with a tag-based URL" do
+      Req.Test.stub(UpdateChecker, fn conn ->
+        Req.Test.json(conn, %{
+          "tag_name" => "v1.0.0",
+          "published_at" => nil,
+          "body" => ""
+        })
+      end)
+
+      assert {:ok, release} =
+               UpdateChecker.latest_release(req_options: [plug: {Req.Test, UpdateChecker}])
+
+      assert release.html_url ==
+               "https://github.com/shawnmccool/scry_2/releases/tag/v1.0.0"
     end
 
     test "populates the cache on success" do

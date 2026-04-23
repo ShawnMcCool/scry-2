@@ -127,7 +127,7 @@ defmodule Scry2.SelfUpdate.UpdateChecker do
   """
   @spec latest_release(keyword()) ::
           {:ok, release()}
-          | {:error, :invalid_tag | {:rate_limited, integer() | nil} | term()}
+          | {:error, :invalid_tag | {:rate_limited, DateTime.t() | nil} | term()}
   def latest_release(opts \\ []) do
     req_options = Keyword.get(opts, :req_options, [])
 
@@ -142,7 +142,7 @@ defmodule Scry2.SelfUpdate.UpdateChecker do
       {:ok, %Req.Response{status: status, headers: headers}}
       when status in 401..499 ->
         if rate_limited?(headers) do
-          {:error, {:rate_limited, reset_epoch(headers)}}
+          {:error, {:rate_limited, reset_at(headers)}}
         else
           {:error, {:http_status, status}}
         end
@@ -162,7 +162,7 @@ defmodule Scry2.SelfUpdate.UpdateChecker do
         tag: tag,
         version: version,
         published_at: body["published_at"],
-        html_url: body["html_url"] || "",
+        html_url: validated_html_url(body["html_url"], tag),
         body: (body["body"] || "") |> String.slice(0, 20_000)
       }
 
@@ -173,6 +173,21 @@ defmodule Scry2.SelfUpdate.UpdateChecker do
 
   defp parse_response(_), do: {:error, :invalid_response}
 
+  # Only accept an `html_url` that points at the expected releases path on
+  # GitHub. Any other value (missing, wrong host, wrong repo) is replaced
+  # with a constructed URL from the validated tag, so the UI link cannot
+  # navigate to an attacker-controlled host.
+  @releases_prefix "https://github.com/#{@github_owner}/#{@github_repo}/releases/"
+  defp validated_html_url(url, tag) when is_binary(url) do
+    if String.starts_with?(url, @releases_prefix) do
+      url
+    else
+      "#{@releases_prefix}tag/#{tag}"
+    end
+  end
+
+  defp validated_html_url(_url, tag), do: "#{@releases_prefix}tag/#{tag}"
+
   defp rate_limited?(headers) do
     case header_value(headers, "x-ratelimit-remaining") do
       "0" -> true
@@ -180,10 +195,11 @@ defmodule Scry2.SelfUpdate.UpdateChecker do
     end
   end
 
-  defp reset_epoch(headers) do
+  defp reset_at(headers) do
     with value when is_binary(value) <- header_value(headers, "x-ratelimit-reset"),
-         {int, ""} <- Integer.parse(value) do
-      int
+         {epoch, ""} <- Integer.parse(value),
+         {:ok, datetime} <- DateTime.from_unix(epoch) do
+      datetime
     else
       _ -> nil
     end

@@ -233,10 +233,32 @@ defmodule Scry2.SelfUpdate.Updater do
 
   defp default_extract(archive, dest) do
     cond do
-      String.ends_with?(archive, ".tar.gz") -> DefaultStager.extract_tar(archive, dest)
-      String.ends_with?(archive, ".zip") -> DefaultStager.extract_zip(archive, dest)
-      String.ends_with?(archive, ".exe") -> {:ok, Path.dirname(archive)}
-      true -> {:error, {:unknown_archive, archive}}
+      String.ends_with?(archive, ".tar.gz") ->
+        DefaultStager.extract_tar(archive, dest, required: required_files(archive))
+
+      String.ends_with?(archive, ".zip") ->
+        DefaultStager.extract_zip(archive, dest, required: required_files(archive))
+
+      # Burn bootstrappers (.exe / .msi) are single-file installers — there is
+      # nothing to extract or validate, the spawned bootstrapper handles its
+      # own integrity.
+      String.ends_with?(archive, ".exe") ->
+        {:ok, Path.dirname(archive)}
+
+      true ->
+        {:error, {:unknown_archive, archive}}
+    end
+  end
+
+  # Members the release archive must contain for handoff to be safe. A
+  # truncated or malformed release fails fast at the Stager rather than
+  # spawning an installer that can't migrate.
+  defp required_files(archive) do
+    cond do
+      String.contains?(archive, "-linux-") -> ["install-linux", "bin/scry_2"]
+      String.contains?(archive, "-macos-") -> ["install-macos", "bin/scry_2"]
+      String.contains?(archive, "-windows-") -> ["install.bat", "bin/scry_2.bat"]
+      true -> []
     end
   end
 end

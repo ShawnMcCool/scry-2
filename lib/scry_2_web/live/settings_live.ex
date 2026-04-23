@@ -16,8 +16,10 @@ defmodule Scry2Web.SettingsLive do
   alias Scry2.MtgaLogIngestion.LocateLogFile
   alias Scry2.MtgaLogIngestion.Watcher
   alias Scry2.SelfUpdate
+  alias Scry2.Service
   alias Scry2.Settings
   alias Scry2Web.SettingsLive.Form
+  alias Scry2Web.SettingsLive.ServiceCard
   alias Scry2Web.SettingsLive.UpdatesCard
   alias Scry2Web.SettingsLive.UpdatesHelpers
 
@@ -43,7 +45,8 @@ defmodule Scry2Web.SettingsLive do
       UpdatesHelpers.summarize(
         SelfUpdate.cached_release(),
         current_version,
-        current_status.phase
+        current_status.phase,
+        nil
       )
 
     {:ok,
@@ -58,7 +61,16 @@ defmodule Scry2Web.SettingsLive do
      |> assign(:diagnostics, empty_diagnostics())
      |> assign(:updates_current_version, current_version)
      |> assign(:updates_last_check_at, SelfUpdate.last_check_at())
-     |> assign(:updates_summary, updates_summary)}
+     |> assign(:updates_summary, updates_summary)
+     |> assign_service()
+     |> assign(:service_error, nil)}
+  end
+
+  defp assign_service(socket) do
+    socket
+    |> assign(:service_name, Service.name())
+    |> assign(:service_state, Service.state())
+    |> assign(:service_capabilities, Service.capabilities())
   end
 
   @impl true
@@ -103,7 +115,16 @@ defmodule Scry2Web.SettingsLive do
 
   def handle_info(:check_started, socket), do: {:noreply, socket}
 
-  def handle_info({:check_complete, _result}, socket) do
+  def handle_info({:check_complete, result}, socket) do
+    last_error =
+      case result do
+        {:ok, _} ->
+          nil
+
+        {:error, reason} ->
+          UpdatesHelpers.format_error(reason, DateTime.utc_now())
+      end
+
     {:noreply,
      socket
      |> assign(
@@ -111,7 +132,8 @@ defmodule Scry2Web.SettingsLive do
        UpdatesHelpers.summarize(
          SelfUpdate.cached_release(),
          socket.assigns.updates_current_version,
-         socket.assigns.updates_summary[:applying]
+         socket.assigns.updates_summary[:applying],
+         last_error
        )
      )
      |> assign(:updates_last_check_at, SelfUpdate.last_check_at())}
@@ -266,6 +288,29 @@ defmodule Scry2Web.SettingsLive do
     {:noreply, socket}
   end
 
+  def handle_event("service_restart", _params, socket) do
+    {:noreply, run_service_action(socket, &Service.restart/0, "Restarting backend…")}
+  end
+
+  def handle_event("service_stop", _params, socket) do
+    {:noreply, run_service_action(socket, &Service.stop/0, "Stopping backend…")}
+  end
+
+  defp run_service_action(socket, action, info_message) do
+    case action.() do
+      :ok ->
+        socket
+        |> assign(:service_error, nil)
+        |> put_flash(:info, info_message)
+
+      :not_supported ->
+        assign(socket, :service_error, "This action is not supported by the current supervisor.")
+
+      {:error, reason} ->
+        assign(socket, :service_error, "Service action failed: #{inspect(reason)}")
+    end
+  end
+
   defp empty_diagnostics do
     %{
       last_raw_event_id: 0,
@@ -339,6 +384,13 @@ defmodule Scry2Web.SettingsLive do
           summary={@updates_summary}
           current_version={@updates_current_version}
           last_check_at={@updates_last_check_at}
+        />
+
+        <ServiceCard.service_card
+          name={@service_name}
+          state={@service_state}
+          capabilities={@service_capabilities}
+          error={@service_error}
         />
 
         <section class="card bg-base-200">

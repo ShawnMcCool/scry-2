@@ -143,4 +143,102 @@ defmodule Scry2.SelfUpdate.UpdaterTest do
     assert_receive :download_blocked, 500
     assert {:error, :already_running} = Updater.apply_pending(name)
   end
+
+  test "apply_pending/1 with cached release whose tag is invalid returns :invalid_tag", ctx do
+    # An invalid tag should never reach the cache (UpdateChecker's parse
+    # path validates first), but defense in depth: even if the cache is
+    # poisoned we refuse to apply.
+    UpdateChecker.put_cache(%{
+      tag: "not-a-valid-tag",
+      version: "0.15.0",
+      published_at: nil,
+      html_url: "",
+      body: ""
+    })
+
+    name = start_updater(ctx)
+    assert {:error, :invalid_tag} = Updater.apply_pending(name)
+  end
+
+  test "apply_pending/1 with ahead_of_release returns :ahead_of_release", ctx do
+    # Local is newer than the cached release (e.g. running a dev build
+    # against an older published tag).
+    UpdateChecker.put_cache(%{
+      tag: "v0.13.0",
+      version: "0.13.0",
+      published_at: nil,
+      html_url: "",
+      body: ""
+    })
+
+    name = start_updater(ctx, current_version_fn: fn -> "0.14.0" end)
+    assert {:error, :ahead_of_release} = Updater.apply_pending(name)
+  end
+
+  test "stager failure broadcasts :failed and releases the apply lock", ctx do
+    UpdateChecker.put_cache(%{
+      tag: "v0.15.0",
+      version: "0.15.0",
+      published_at: nil,
+      html_url: "",
+      body: ""
+    })
+
+    Phoenix.PubSub.subscribe(Scry2.PubSub, Topics.updates_progress())
+
+    name =
+      start_updater(ctx,
+        stager: fn _archive, _dest -> {:error, :path_traversal} end
+      )
+
+    assert :ok = Updater.apply_pending(name)
+    assert_receive {:phase, :failed, :path_traversal}, 1_000
+    refute File.exists?(ctx.lock_path)
+  end
+
+  test "handoff failure broadcasts :failed and releases the apply lock", ctx do
+    UpdateChecker.put_cache(%{
+      tag: "v0.15.0",
+      version: "0.15.0",
+      published_at: nil,
+      html_url: "",
+      body: ""
+    })
+
+    Phoenix.PubSub.subscribe(Scry2.PubSub, Topics.updates_progress())
+
+    name =
+      start_updater(ctx,
+        handoff: fn _args, _opts -> {:error, :spawn_failed} end
+      )
+
+    assert :ok = Updater.apply_pending(name)
+    assert_receive {:phase, :failed, :spawn_failed}, 1_000
+    refute File.exists?(ctx.lock_path)
+  end
+
+  test "after a failure, a new apply_pending can start a fresh run", ctx do
+    UpdateChecker.put_cache(%{
+      tag: "v0.15.0",
+      version: "0.15.0",
+      published_at: nil,
+      html_url: "",
+      body: ""
+    })
+
+    Phoenix.PubSub.subscribe(Scry2.PubSub, Topics.updates_progress())
+
+    name =
+      start_updater(ctx,
+        downloader: fn _args, _opts -> {:error, :checksum_mismatch} end
+      )
+
+    assert :ok = Updater.apply_pending(name)
+    assert_receive {:phase, :failed, :checksum_mismatch}, 1_000
+
+    # The state machine must accept a new apply after :failed (not stay
+    # stuck in :already_running forever).
+    assert :ok = Updater.apply_pending(name)
+    assert_receive {:phase, :failed, :checksum_mismatch}, 1_000
+  end
 end

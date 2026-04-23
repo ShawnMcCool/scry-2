@@ -5,9 +5,26 @@ defmodule Scry2.SelfUpdate.Handoff do
   installer is responsible for replacing files, removing the apply lock,
   and relaunching the tray binary.
 
-  **Testability:** both `:os_type` and `:spawner` can be injected via
-  options, so the module is covered by pure argv/env assertions without
-  ever spawning a real process.
+  ## Security posture
+
+    * On Unix, the installer and log paths are passed as **positional**
+      argv entries (`$1`, `$2`), never interpolated into the `sh -c`
+      command string. A path containing `;`, `&&`, `$()`, quotes, or
+      newlines is just a (nonsensical) argv value; it is never parsed
+      as shell.
+    * On Windows, paths flow through `cmd /c start "" /B "<path>"`. We
+      always control the path (`Platform.data_dir() ++ install.bat` or
+      the bootstrapper basename validated against the archive), so the
+      attack surface is internal. The double-quoted `start ""` builtin
+      treats the title arg as the first quoted token, so a stray `"` in
+      the path is the only way to break framing — and our path source
+      never produces that.
+
+  ## Testability
+
+  Both `:os_type` and `:spawner` can be injected via options, so the
+  module is covered by pure argv/env assertions without ever spawning a
+  real process.
   """
 
   @type args :: %{
@@ -20,6 +37,28 @@ defmodule Scry2.SelfUpdate.Handoff do
   @minimal_unix_env_keys ~w(HOME XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XDG_DATA_DIRS XDG_CONFIG_DIRS)
   @minimal_windows_env_keys ~w(APPDATA LOCALAPPDATA USERPROFILE SystemRoot Path)
 
+  # Linux script body — runs the installer in the background and returns
+  # immediately. `setsid` (in the spawned argv) detaches from the BEAM's
+  # session so SIGHUP cannot reach the child. `exec >>"$2" 2>&1` redirects
+  # this shell's own stdio to the handoff log before any other command,
+  # so every trace line plus the installer's output lands in the log.
+  @linux_script ~S"""
+  exec >>"$2" 2>&1
+  printf 'handoff: started at %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'handoff: launching %s\n' "$1"
+  "$1" </dev/null &
+  """
+
+  # macOS uses `nohup` because `setsid` is not available on every
+  # supported macOS version. `nohup` ignores SIGHUP in the child; the
+  # `&` puts it in background and the parent sh exits immediately.
+  @macos_script ~S"""
+  exec >>"$2" 2>&1
+  printf 'handoff: started at %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'handoff: launching %s\n' "$1"
+  nohup "$1" </dev/null >/dev/null 2>&1 &
+  """
+
   @spec spawn_detached(args(), keyword()) :: :ok | {:error, term()}
   def spawn_detached(args, opts \\ []) do
     os_type = Keyword.get(opts, :os_type, :os.type())
@@ -29,32 +68,25 @@ defmodule Scry2.SelfUpdate.Handoff do
   end
 
   defp do_spawn({:unix, :linux}, %{staged_root: root}, spawner) do
-    script = Path.join(root, "install-linux")
+    installer = Path.join(root, "install-linux")
     log = Path.join(root, "handoff.log")
     env = take_env(@minimal_unix_env_keys) ++ [{"PATH", "/usr/local/bin:/usr/bin:/bin"}]
 
     spawner.(
       "setsid",
-      [
-        "sh",
-        "-c",
-        "#{shell_quote(script)} >> #{shell_quote(log)} 2>&1 </dev/null &"
-      ],
+      ["sh", "-c", @linux_script, "--", installer, log],
       env
     )
   end
 
   defp do_spawn({:unix, :darwin}, %{staged_root: root}, spawner) do
-    script = Path.join(root, "install-macos")
+    installer = Path.join(root, "install-macos")
     log = Path.join(root, "handoff.log")
     env = take_env(@minimal_unix_env_keys) ++ [{"PATH", "/usr/local/bin:/usr/bin:/bin"}]
 
     spawner.(
       "/bin/sh",
-      [
-        "-c",
-        "nohup #{shell_quote(script)} >> #{shell_quote(log)} 2>&1 </dev/null &"
-      ],
+      ["-c", @macos_script, "--", installer, log],
       env
     )
   end
@@ -101,6 +133,4 @@ defmodule Scry2.SelfUpdate.Handoff do
   defp take_env(keys) do
     for key <- keys, val = System.get_env(key), is_binary(val), do: {key, val}
   end
-
-  defp shell_quote(path), do: ~s|'#{String.replace(path, "'", ~S|'\\''|)}'|
 end

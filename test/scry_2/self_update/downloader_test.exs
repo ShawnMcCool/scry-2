@@ -106,4 +106,130 @@ defmodule Scry2.SelfUpdate.DownloaderTest do
                )
     end
   end
+
+  describe "size cap enforcement" do
+    setup do
+      # Stub returns a tarball larger than the test cap and a SHA that
+      # would match if the body ever made it through.
+      Req.Test.stub(Scry2.SelfUpdate.Downloader, fn conn ->
+        case conn.request_path do
+          "/SHA256SUMS" ->
+            sha = String.duplicate("0", 64)
+            Plug.Conn.resp(conn, 200, "#{sha}  big.tar.gz\n")
+
+          "/big-with-content-length.tar.gz" ->
+            # Server advertises a huge body via Content-Length; pre-flight
+            # check should abort before any disk writes happen.
+            big = :crypto.strong_rand_bytes(4096)
+
+            conn
+            |> Plug.Conn.put_resp_header("content-length", "999999999")
+            |> Plug.Conn.resp(200, big)
+
+          "/big-no-content-length.tar.gz" ->
+            # No Content-Length — observed-bytes counter is the only cap.
+            big = :crypto.strong_rand_bytes(4096)
+            Plug.Conn.resp(conn, 200, big)
+        end
+      end)
+
+      :ok
+    end
+
+    test "rejects download when Content-Length exceeds max_bytes", %{dir: dir} do
+      assert {:error, :too_large} =
+               Downloader.run(
+                 %{
+                   archive_url: "http://x/big-with-content-length.tar.gz",
+                   archive_filename: "big.tar.gz",
+                   sha256sums_url: "http://x/SHA256SUMS",
+                   dest_dir: dir
+                 },
+                 req_options: [plug: {Req.Test, Scry2.SelfUpdate.Downloader}],
+                 max_bytes: 1024
+               )
+
+      # No partial file left behind on disk.
+      refute File.exists?(Path.join(dir, "big.tar.gz"))
+    end
+
+    test "rejects download when streamed bytes exceed max_bytes (no Content-Length)", %{dir: dir} do
+      assert {:error, :too_large} =
+               Downloader.run(
+                 %{
+                   archive_url: "http://x/big-no-content-length.tar.gz",
+                   archive_filename: "big.tar.gz",
+                   sha256sums_url: "http://x/SHA256SUMS",
+                   dest_dir: dir
+                 },
+                 req_options: [plug: {Req.Test, Scry2.SelfUpdate.Downloader}],
+                 max_bytes: 1024
+               )
+
+      refute File.exists?(Path.join(dir, "big.tar.gz"))
+    end
+  end
+
+  describe "progress reporting" do
+    test "calls progress_fn with final size on success", %{dir: dir} do
+      Req.Test.stub(Scry2.SelfUpdate.Downloader, fn conn ->
+        case conn.request_path do
+          "/SHA256SUMS" ->
+            body = "my body"
+
+            sha =
+              :crypto.hash(:sha256, body)
+              |> Base.encode16(case: :lower)
+
+            Plug.Conn.resp(conn, 200, "#{sha}  body.tar.gz\n")
+
+          "/body.tar.gz" ->
+            body = "my body"
+
+            conn
+            |> Plug.Conn.put_resp_header("content-length", Integer.to_string(byte_size(body)))
+            |> Plug.Conn.resp(200, body)
+        end
+      end)
+
+      test_pid = self()
+
+      progress_fn = fn downloaded, total ->
+        send(test_pid, {:progress, downloaded, total})
+        :ok
+      end
+
+      assert {:ok, _} =
+               Downloader.run(
+                 %{
+                   archive_url: "http://x/body.tar.gz",
+                   archive_filename: "body.tar.gz",
+                   sha256sums_url: "http://x/SHA256SUMS",
+                   dest_dir: dir
+                 },
+                 req_options: [plug: {Req.Test, Scry2.SelfUpdate.Downloader}],
+                 progress_fn: progress_fn
+               )
+
+      # At least one progress tick reached the final size.
+      assert_receive {:progress, _, _}
+      bytes = byte_size("my body")
+      assert_received_progress_with_total(bytes)
+    end
+  end
+
+  defp assert_received_progress_with_total(expected_total) do
+    received_messages =
+      Stream.repeatedly(fn -> :foo end)
+      |> Enum.reduce_while([], fn _, acc ->
+        receive do
+          {:progress, downloaded, total} -> {:cont, [{downloaded, total} | acc]}
+        after
+          0 -> {:halt, acc}
+        end
+      end)
+
+    assert Enum.any?(received_messages, fn {_d, t} -> t == expected_total end),
+           "expected at least one progress tick with total=#{expected_total}, got: #{inspect(received_messages)}"
+  end
 end

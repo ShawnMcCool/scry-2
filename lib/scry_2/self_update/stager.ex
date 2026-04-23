@@ -12,13 +12,23 @@ defmodule Scry2.SelfUpdate.Stager do
   This module is security-critical. Any change here must preserve the
   "validate first, extract second" invariant — an attacker must never be
   able to write a byte outside the staging root.
+
+  ## Required-file check
+
+  After extraction, every path in the `:required` opt is checked for
+  existence under the extracted root. A truncated or malformed release
+  fails fast with `{:error, {:missing_required, [...]}}` — preferable to
+  handing off to an installer binary that won't know how to migrate.
   """
 
   @max_cumulative_bytes 1_024 * 1024 * 1024
 
-  @spec extract_tar(Path.t(), Path.t()) ::
-          {:ok, Path.t()} | {:error, :path_traversal | :symlink | :oversized | term()}
-  def extract_tar(archive, dest_dir) do
+  @spec extract_tar(Path.t(), Path.t(), keyword()) ::
+          {:ok, Path.t()}
+          | {:error,
+             :path_traversal | :symlink | :oversized | {:missing_required, [String.t()]} | term()}
+  def extract_tar(archive, dest_dir, opts \\ []) do
+    required = Keyword.get(opts, :required, [])
     archive_c = String.to_charlist(archive)
 
     with {:ok, entries} <- :erl_tar.table(archive_c, [:compressed, :verbose]),
@@ -27,15 +37,21 @@ defmodule Scry2.SelfUpdate.Stager do
       root = Path.join(dest_dir, "extracted")
       File.mkdir_p!(root)
 
-      case :erl_tar.extract(archive_c, [:compressed, {:cwd, String.to_charlist(root)}]) do
-        :ok -> {:ok, root}
-        {:error, reason} -> {:error, reason}
+      with :ok <-
+             (case :erl_tar.extract(archive_c, [:compressed, {:cwd, String.to_charlist(root)}]) do
+                :ok -> :ok
+                {:error, reason} -> {:error, reason}
+              end),
+           :ok <- check_required(root, required) do
+        {:ok, root}
       end
     end
   end
 
-  @spec extract_zip(Path.t(), Path.t()) :: {:ok, Path.t()} | {:error, term()}
-  def extract_zip(archive, dest_dir) do
+  @spec extract_zip(Path.t(), Path.t(), keyword()) ::
+          {:ok, Path.t()} | {:error, {:missing_required, [String.t()]} | term()}
+  def extract_zip(archive, dest_dir, opts \\ []) do
+    required = Keyword.get(opts, :required, [])
     archive_c = String.to_charlist(archive)
 
     with {:ok, entries} <- :zip.list_dir(archive_c),
@@ -44,10 +60,25 @@ defmodule Scry2.SelfUpdate.Stager do
       root = Path.join(dest_dir, "extracted")
       File.mkdir_p!(root)
 
-      case :zip.extract(archive_c, [{:cwd, String.to_charlist(root)}]) do
-        {:ok, _files} -> {:ok, root}
+      with {:ok, _files} <- :zip.extract(archive_c, [{:cwd, String.to_charlist(root)}]),
+           :ok <- check_required(root, required) do
+        {:ok, root}
+      else
         {:error, reason} -> {:error, reason}
       end
+    end
+  end
+
+  @spec check_required(Path.t(), [String.t()]) ::
+          :ok | {:error, {:missing_required, [String.t()]}}
+  def check_required(_root, []), do: :ok
+
+  def check_required(root, required) when is_list(required) do
+    missing = Enum.reject(required, fn rel -> root |> Path.join(rel) |> File.exists?() end)
+
+    case missing do
+      [] -> :ok
+      _ -> {:error, {:missing_required, missing}}
     end
   end
 

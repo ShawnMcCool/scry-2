@@ -58,6 +58,10 @@ defmodule Scry2Web.SettingsLive.UpdatesCard do
           </div>
         <% end %>
 
+        <%= if @summary[:last_error] do %>
+          <p class="mt-3 text-xs text-warning">{@summary.last_error}</p>
+        <% end %>
+
         <div class="card-actions mt-3 flex gap-2">
           <button
             class="btn btn-sm btn-ghost"

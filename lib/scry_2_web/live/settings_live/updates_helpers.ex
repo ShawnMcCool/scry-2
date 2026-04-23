@@ -12,7 +12,8 @@ defmodule Scry2Web.SettingsLive.UpdatesHelpers do
           optional(:version) => String.t(),
           optional(:published_at) => String.t() | nil,
           optional(:html_url) => String.t(),
-          optional(:applying) => atom() | nil
+          optional(:applying) => atom() | nil,
+          optional(:last_error) => String.t() | nil
         }
 
   @spec summarize(
@@ -20,10 +21,12 @@ defmodule Scry2Web.SettingsLive.UpdatesHelpers do
           String.t(),
           atom() | nil
         ) :: summary()
-  def summarize(:none, _current, applying),
-    do: %{status: :no_data, applying: applying}
+  def summarize(cached, current, applying, last_error \\ nil)
 
-  def summarize({:ok, release}, current, applying) do
+  def summarize(:none, _current, applying, last_error),
+    do: %{status: :no_data, applying: applying, last_error: last_error}
+
+  def summarize({:ok, release}, current, applying, last_error) do
     status = UpdateChecker.classify(release.version, current)
 
     %{
@@ -31,7 +34,8 @@ defmodule Scry2Web.SettingsLive.UpdatesHelpers do
       version: release.version,
       published_at: release.published_at,
       html_url: release.html_url,
-      applying: applying
+      applying: applying,
+      last_error: last_error
     }
   end
 
@@ -43,4 +47,42 @@ defmodule Scry2Web.SettingsLive.UpdatesHelpers do
   def phase_label(:done), do: "Complete"
   def phase_label(:failed), do: "Failed"
   def phase_label(_), do: ""
+
+  @doc """
+  Render an UpdateChecker error tuple as a UI-friendly string.
+
+  - Rate limit errors include the local time at which the limit resets,
+    so the user can see whether to wait 5 minutes or an hour.
+  - Other tagged errors get short, human-readable labels.
+  - Anything unrecognised falls through to `inspect/1`.
+  """
+  @spec format_error(any(), DateTime.t()) :: String.t() | nil
+  def format_error(nil, _now), do: nil
+  def format_error(:invalid_response, _now), do: "GitHub returned a malformed response."
+  def format_error(:invalid_tag, _now), do: "Release tag failed validation."
+
+  def format_error({:rate_limited, %DateTime{} = reset_at}, now) do
+    "GitHub API rate-limited. Retries after #{format_reset(reset_at, now)}."
+  end
+
+  def format_error({:rate_limited, _}, _now),
+    do: "GitHub API rate-limited. Try again later."
+
+  def format_error({:http_status, status}, _now),
+    do: "GitHub returned HTTP #{status}."
+
+  def format_error({:transport, reason}, _now),
+    do: "Network error reaching GitHub: #{inspect(reason)}."
+
+  def format_error(other, _now), do: "Update check failed: #{inspect(other)}"
+
+  defp format_reset(%DateTime{} = reset_at, %DateTime{} = now) do
+    seconds_remaining = max(0, DateTime.diff(reset_at, now))
+
+    cond do
+      seconds_remaining < 60 -> "#{seconds_remaining}s"
+      seconds_remaining < 3600 -> "#{div(seconds_remaining, 60)}m"
+      true -> "#{div(seconds_remaining, 3600)}h #{div(rem(seconds_remaining, 3600), 60)}m"
+    end
+  end
 end
