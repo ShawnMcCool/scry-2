@@ -558,6 +558,144 @@ function economyWildcardsOption(data) {
   }
 }
 
+function reconciliationActivityOption(data) {
+  const {acquired = [], removed = []} = data
+  // Render removals as negative bars below the axis so additions push up
+  // and removals push down — visually intuitive for an acquisition ledger.
+  const removedBelow = removed.map(([ts, count]) => [ts, count > 0 ? -count : 0])
+
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 50, right: 20, top: 36, bottom: 40},
+    legend: {
+      top: 0,
+      textStyle: {color: "#9ca3af", fontSize: 11},
+      itemWidth: 12,
+      itemHeight: 8,
+    },
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        if (!params.length) return ""
+        const date = new Date(params[0].value[0]).toLocaleString()
+        const lines = params.map(p => {
+          const v = Math.abs(p.value[1])
+          return `${p.marker} ${p.seriesName}: <b>${v}</b>`
+        })
+        return `${date}<br/>${lines.join("<br/>")}`
+      },
+    },
+    xAxis: {
+      type: "time",
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: {color: "#9ca3af", fontSize: 11, formatter: v => Math.abs(v)},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {lineStyle: {color: "#1f2937"}},
+    },
+    series: [
+      {
+        name: "Acquired",
+        type: "bar",
+        data: acquired,
+        barMaxWidth: 14,
+        itemStyle: {color: "#22c55e"},
+        emphasis: {itemStyle: {color: "#16a34a"}},
+      },
+      {
+        name: "Removed",
+        type: "bar",
+        data: removedBelow,
+        barMaxWidth: 14,
+        itemStyle: {color: "#f97316"},
+        emphasis: {itemStyle: {color: "#ea580c"}},
+      },
+    ],
+  }
+}
+
+function reconciliationGrowthOption(data) {
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 70, right: 20, top: 16, bottom: 40},
+    tooltip: {
+      trigger: "axis",
+      formatter(params) {
+        if (!params.length) return ""
+        const date = new Date(params[0].value[0]).toLocaleString()
+        const v = params[0].value[1].toLocaleString()
+        return `${date}<br/>${params[0].marker} Total copies: <b>${v}</b>`
+      },
+    },
+    xAxis: {
+      type: "time",
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: {
+      type: "value",
+      axisLabel: {color: "#9ca3af", fontSize: 11, formatter: v => v.toLocaleString()},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {lineStyle: {color: "#1f2937"}},
+    },
+    series: [
+      {
+        name: "Total copies",
+        type: "line",
+        step: "end",
+        data: data,
+        symbol: "circle",
+        symbolSize: 5,
+        lineStyle: {color: "#6366f1", width: 2},
+        itemStyle: {color: "#6366f1"},
+        areaStyle: {color: "rgba(99,102,241,0.08)"},
+      },
+    ],
+  }
+}
+
+function reconciliationRefreshDotsOption(dots) {
+  // Color each refresh attempt by reader confidence so the user can see at
+  // a glance how often the high-confidence "walker" path was used vs the
+  // structural fallback scan.
+  const points = dots.map(d => ({
+    value: [d.ts, 1],
+    itemStyle: {color: d.confidence === "walker" ? "#22c55e" : "#f59e0b"},
+  }))
+
+  return {
+    backgroundColor: "transparent",
+    grid: {left: 30, right: 20, top: 12, bottom: 30},
+    tooltip: {
+      trigger: "item",
+      formatter(p) {
+        const date = new Date(p.value[0]).toLocaleString()
+        const confidence = p.color === "#22c55e" ? "walker" : "fallback scan"
+        return `${date}<br/>Reader: <b>${confidence}</b>`
+      },
+    },
+    xAxis: {
+      type: "time",
+      axisLabel: {color: "#9ca3af", fontSize: 11},
+      axisLine: {lineStyle: {color: "#374151"}},
+      splitLine: {show: false},
+    },
+    yAxis: {type: "value", show: false, min: 0, max: 2},
+    series: [
+      {
+        type: "scatter",
+        data: points,
+        symbolSize: 8,
+      },
+    ],
+  }
+}
+
 function buildOption(el) {
   const type = el.dataset.chartType
   const parsed = JSON.parse(el.dataset.series || "[]")
@@ -582,6 +720,12 @@ function buildOption(el) {
     return economyCurrencyOption(parsed)
   } else if (type === "economy_wildcards") {
     return economyWildcardsOption(parsed)
+  } else if (type === "reconciliation_activity") {
+    return reconciliationActivityOption(parsed)
+  } else if (type === "reconciliation_growth") {
+    return reconciliationGrowthOption(parsed)
+  } else if (type === "reconciliation_refresh_dots") {
+    return reconciliationRefreshDotsOption(parsed)
   } else {
     const [wins, losses] = parsed
     return momentumOption(wins || [], losses || [])

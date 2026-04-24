@@ -194,6 +194,9 @@ defmodule Scry2Web.CollectionLive do
         <button class="btn btn-ghost btn-sm" phx-click="disable_reader">
           Disable reader
         </button>
+        <.link navigate={~p"/collection/diagnostics"} class="btn btn-ghost btn-sm">
+          Diagnostics
+        </.link>
       </div>
 
       <div

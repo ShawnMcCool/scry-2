@@ -192,6 +192,58 @@ defmodule Scry2.Collection do
     end
   end
 
+  @doc "Total number of `Snapshot` rows persisted."
+  @spec count_snapshots() :: non_neg_integer()
+  def count_snapshots, do: Repo.aggregate(Snapshot, :count, :id)
+
+  @doc "Total number of `Diff` rows persisted."
+  @spec count_diffs() :: non_neg_integer()
+  def count_diffs, do: Repo.aggregate(Diff, :count, :id)
+
+  @doc """
+  Number of diffs where neither side recorded a change. High empty-diff
+  ratio = the reader is being polled more often than the collection
+  changes. Used by the diagnostics page as a noise/signal indicator.
+  """
+  @spec count_empty_diffs() :: non_neg_integer()
+  def count_empty_diffs do
+    Diff
+    |> where([d], d.total_acquired == 0 and d.total_removed == 0)
+    |> Repo.aggregate(:count, :id)
+  end
+
+  @doc """
+  Returns the `n` largest diffs by `total_acquired`, newest-first within
+  ties. Useful for spotting set releases, vault opens, big draft pools.
+  """
+  @spec top_diffs_by_acquired(pos_integer()) :: [Diff.t()]
+  def top_diffs_by_acquired(n \\ 5) when is_integer(n) and n > 0 do
+    Diff
+    |> order_by([d], desc: d.total_acquired, desc: d.inserted_at)
+    |> limit(^n)
+    |> Repo.all()
+  end
+
+  @doc """
+  Counts snapshots grouped by `reader_confidence` (`"walker"` or
+  `"fallback_scan"`). Returns `%{walker: n, fallback_scan: m}` with
+  zero defaults so the UI can render percentages safely.
+  """
+  @spec reader_path_breakdown() :: %{walker: non_neg_integer(), fallback_scan: non_neg_integer()}
+  def reader_path_breakdown do
+    counts =
+      Snapshot
+      |> group_by([s], s.reader_confidence)
+      |> select([s], {s.reader_confidence, count(s.id)})
+      |> Repo.all()
+      |> Map.new()
+
+    %{
+      walker: Map.get(counts, "walker", 0),
+      fallback_scan: Map.get(counts, "fallback_scan", 0)
+    }
+  end
+
   defp walker_fields(result) do
     result
     |> Map.take([

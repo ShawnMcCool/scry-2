@@ -198,6 +198,69 @@ defmodule Scry2.CollectionTest do
     end
   end
 
+  describe "diagnostics queries" do
+    test "count_snapshots/0 and count_diffs/0 are zero on an empty repo" do
+      assert Collection.count_snapshots() == 0
+      assert Collection.count_diffs() == 0
+      assert Collection.count_empty_diffs() == 0
+      assert Collection.top_diffs_by_acquired(5) == []
+      assert Collection.reader_path_breakdown() == %{walker: 0, fallback_scan: 0}
+    end
+
+    test "count_snapshots and count_diffs grow with each save" do
+      {:ok, _} = save(entries: [{30_001, 1}])
+      assert Collection.count_snapshots() == 1
+      assert Collection.count_diffs() == 1
+
+      {:ok, _} = save(entries: [{30_001, 2}])
+      assert Collection.count_snapshots() == 2
+      assert Collection.count_diffs() == 2
+    end
+
+    test "count_empty_diffs counts diffs where neither side recorded a change" do
+      {:ok, _} = save(entries: [{30_001, 1}])
+      {:ok, _} = save(entries: [{30_001, 1}])
+      {:ok, _} = save(entries: [{30_001, 2}])
+
+      assert Collection.count_empty_diffs() == 1
+    end
+
+    test "top_diffs_by_acquired returns biggest acquisitions first" do
+      {:ok, _} = save(entries: [{30_001, 1}])
+      {:ok, _} = save(entries: [{30_001, 1}, {30_002, 4}])
+      {:ok, _} = save(entries: [{30_001, 1}, {30_002, 4}, {30_003, 2}])
+
+      [biggest, second | _] = Collection.top_diffs_by_acquired(3)
+      assert biggest.total_acquired == 4
+      assert second.total_acquired == 2
+    end
+
+    test "reader_path_breakdown groups by reader_confidence" do
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "walker"
+      })
+
+      Collection.save_snapshot(%{
+        entries: [{30_001, 2}],
+        card_count: 1,
+        total_copies: 2,
+        reader_confidence: "fallback_scan"
+      })
+
+      Collection.save_snapshot(%{
+        entries: [{30_001, 3}],
+        card_count: 1,
+        total_copies: 3,
+        reader_confidence: "fallback_scan"
+      })
+
+      assert Collection.reader_path_breakdown() == %{walker: 1, fallback_scan: 2}
+    end
+  end
+
   defp save(opts) do
     entries = Keyword.fetch!(opts, :entries)
 
