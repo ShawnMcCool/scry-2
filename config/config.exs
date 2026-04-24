@@ -41,6 +41,12 @@ config :scry_2, Oban,
      ]}
   ]
 
+# Trigger a background update check when a LiveView mounts and the
+# persistent_term cache is stale. Kept true in dev/prod so the
+# System tab always shows current release info without a user click;
+# overridden to false in test to avoid hitting the GitHub API.
+config :scry_2, :auto_check_updates_on_mount, true
+
 # Configure the endpoint
 config :scry_2, Scry2Web.Endpoint,
   url: [host: "localhost"],

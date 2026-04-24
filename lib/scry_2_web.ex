@@ -83,6 +83,7 @@ defmodule Scry2Web do
       import Scry2Web.CoreComponents
       import Scry2Web.CardComponents
       import Scry2Web.OpponentComponents
+      import Scry2Web.SettingsTabs
 
       # Shared LiveView helpers (debounce, formatting)
       import Scry2Web.LiveHelpers

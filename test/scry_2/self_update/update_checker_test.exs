@@ -48,7 +48,7 @@ defmodule Scry2.SelfUpdate.UpdateCheckerTest do
   describe "download_url/2" do
     test "builds URL from validated tag and archive" do
       assert UpdateChecker.download_url("v0.14.0", "scry_2-v0.14.0-linux-x86_64.tar.gz") ==
-               "https://github.com/shawnmccool/scry_2/releases/download/v0.14.0/scry_2-v0.14.0-linux-x86_64.tar.gz"
+               "https://github.com/ShawnMcCool/scry-2/releases/download/v0.14.0/scry_2-v0.14.0-linux-x86_64.tar.gz"
     end
   end
 
@@ -90,12 +90,12 @@ defmodule Scry2.SelfUpdate.UpdateCheckerTest do
 
     test "parses a successful API response into a release map" do
       Req.Test.stub(UpdateChecker, fn conn ->
-        assert conn.request_path == "/repos/shawnmccool/scry_2/releases/latest"
+        assert conn.request_path == "/repos/ShawnMcCool/scry-2/releases/latest"
 
         Req.Test.json(conn, %{
           "tag_name" => "v0.15.0",
           "published_at" => "2026-04-20T12:00:00Z",
-          "html_url" => "https://github.com/shawnmccool/scry_2/releases/tag/v0.15.0",
+          "html_url" => "https://github.com/ShawnMcCool/scry-2/releases/tag/v0.15.0",
           "body" => "Release notes"
         })
       end)
@@ -173,7 +173,7 @@ defmodule Scry2.SelfUpdate.UpdateCheckerTest do
                UpdateChecker.latest_release(req_options: [plug: {Req.Test, UpdateChecker}])
 
       assert release.html_url ==
-               "https://github.com/shawnmccool/scry_2/releases/tag/v1.0.0"
+               "https://github.com/ShawnMcCool/scry-2/releases/tag/v1.0.0"
     end
 
     test "replaces a missing html_url with a tag-based URL" do
@@ -189,7 +189,7 @@ defmodule Scry2.SelfUpdate.UpdateCheckerTest do
                UpdateChecker.latest_release(req_options: [plug: {Req.Test, UpdateChecker}])
 
       assert release.html_url ==
-               "https://github.com/shawnmccool/scry_2/releases/tag/v1.0.0"
+               "https://github.com/ShawnMcCool/scry-2/releases/tag/v1.0.0"
     end
 
     test "populates the cache on success" do

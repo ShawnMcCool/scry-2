@@ -16,8 +16,8 @@ defmodule Scry2.SelfUpdate.UpdateChecker do
 
   @tag_regex ~r/^v\d+\.\d+\.\d+(-[A-Za-z0-9.]+)?$/
 
-  @github_owner "shawnmccool"
-  @github_repo "scry_2"
+  @github_owner "ShawnMcCool"
+  @github_repo "scry-2"
   @api_url "https://api.github.com/repos/#{@github_owner}/#{@github_repo}/releases/latest"
   @download_base "https://github.com/#{@github_owner}/#{@github_repo}/releases/download"
 
@@ -102,6 +102,36 @@ defmodule Scry2.SelfUpdate.UpdateChecker do
 
       :none ->
         :none
+    end
+  end
+
+  @doc """
+  Returns the most recent release known to this node, regardless of the
+  TTL. Hydrated from `Storage` at boot, updated by each successful
+  `Storage.record_check_result/1`. Used by the UI so the card can show
+  the last-known release even when the TTL has expired — freshness is
+  handled separately via `cache_fresh?/0` and an auto-triggered check.
+  """
+  @spec last_known_release() :: {:ok, release()} | :none
+  def last_known_release do
+    case :persistent_term.get(@cache_key, :none) do
+      {release, _stored_at_ms} -> {:ok, release}
+      :none -> :none
+    end
+  end
+
+  @doc """
+  Returns `true` when the cache was populated within the TTL window.
+  A `false` result means callers should trigger a background refresh.
+  """
+  @spec cache_fresh?() :: boolean()
+  def cache_fresh? do
+    case :persistent_term.get(@cache_key, :none) do
+      {_release, stored_at_ms} ->
+        System.monotonic_time(:millisecond) - stored_at_ms < @cache_ttl_ms
+
+      :none ->
+        false
     end
   end
 

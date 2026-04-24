@@ -32,7 +32,7 @@ defmodule Scry2.MtgaLogIngestion.GitHubIssueReport do
   breakdown even when individual payloads are dropped.
   """
 
-  @issue_url_base "https://github.com/shawnmccool/scry_2/issues/new"
+  @issue_url_base "https://github.com/ShawnMcCool/scry-2/issues/new"
   @samples_per_signature 2
   @payload_truncate_bytes 1_500
   @body_max_bytes 6_000

@@ -46,6 +46,12 @@ defmodule Scry2.SelfUpdate do
   @spec cached_release() :: {:ok, UpdateChecker.release()} | :none
   def cached_release, do: UpdateChecker.cached_latest_release()
 
+  @spec last_known_release() :: {:ok, UpdateChecker.release()} | :none
+  def last_known_release, do: UpdateChecker.last_known_release()
+
+  @spec cache_fresh?() :: boolean()
+  def cache_fresh?, do: UpdateChecker.cache_fresh?()
+
   @spec subscribe_status() :: :ok | {:error, term()}
   def subscribe_status, do: Topics.subscribe(Topics.updates_status())
 

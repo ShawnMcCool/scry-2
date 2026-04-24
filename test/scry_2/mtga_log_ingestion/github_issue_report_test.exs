@@ -165,7 +165,7 @@ defmodule Scry2.MtgaLogIngestion.GitHubIssueReportTest do
 
       assert String.starts_with?(
                result.url,
-               "https://github.com/shawnmccool/scry_2/issues/new?"
+               "https://github.com/ShawnMcCool/scry-2/issues/new?"
              )
 
       assert result.url =~ "title="

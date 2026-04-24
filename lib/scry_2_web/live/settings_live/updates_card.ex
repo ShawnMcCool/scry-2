@@ -30,7 +30,11 @@ defmodule Scry2Web.SettingsLive.UpdatesCard do
         <div class="mt-3">
           <%= case @summary.status do %>
             <% :no_data -> %>
-              <p class="text-sm opacity-70">No release info yet. Click check to fetch.</p>
+              <p class="text-sm opacity-70">
+                {if @summary[:checking],
+                  do: "Checking GitHub for the latest release…",
+                  else: "No release info yet."}
+              </p>
             <% :up_to_date -> %>
               <p class="text-sm">You are on the latest release.</p>
             <% :update_available -> %>
@@ -51,7 +55,7 @@ defmodule Scry2Web.SettingsLive.UpdatesCard do
           <% end %>
         </div>
 
-        <%= if @summary[:applying] do %>
+        <%= if @summary[:applying] in [:preparing, :downloading, :extracting, :handing_off] do %>
           <div class="mt-3 flex items-center gap-2">
             <progress class="progress progress-primary w-48"></progress>
             <span class="text-sm">{UpdatesHelpers.phase_label(@summary.applying)}</span>
@@ -66,9 +70,12 @@ defmodule Scry2Web.SettingsLive.UpdatesCard do
           <button
             class="btn btn-sm btn-ghost"
             phx-click="updates_check_now"
-            disabled={@summary[:applying] not in [nil, :idle, :done, :failed]}
+            disabled={
+              @summary[:checking] or
+                @summary[:applying] not in [nil, :idle, :done, :failed]
+            }
           >
-            Check now
+            {if @summary[:checking], do: "Checking…", else: "Check now"}
           </button>
 
           <%= if @summary.status == :update_available and @summary[:applying] in [nil, :idle, :failed] do %>

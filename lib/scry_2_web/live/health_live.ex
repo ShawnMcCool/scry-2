@@ -1,12 +1,15 @@
 defmodule Scry2Web.HealthLive do
   @moduledoc """
-  Landing page LiveView — the scry_2 health screen.
+  System tab of the Settings group — the scry_2 health screen plus
+  the self-update status card.
 
-  Mounted at `/` as the permanent landing page. Runs a full
-  `Scry2.Health.run_all/0`
-  snapshot on every mount/patch and subscribes to PubSub for live
-  updates as the watcher reports status changes, cards refresh, and
-  domain events flow.
+  Mounted at `/` as the permanent landing page and first tab of the
+  Settings group (System | Operations | Settings). Runs a full
+  `Scry2.Health.run_all/0` snapshot on every mount/patch and subscribes
+  to PubSub for live updates as the watcher reports status changes,
+  cards refresh, and domain events flow. Also owns the Updates card —
+  subscribes to `Scry2.SelfUpdate` status/progress topics and renders
+  version/release info at the top of the page.
 
   All non-trivial rendering logic lives in `Scry2Web.HealthHelpers`
   (ADR-013) so the LiveView stays thin wiring.
@@ -14,9 +17,12 @@ defmodule Scry2Web.HealthLive do
   use Scry2Web, :live_view
 
   alias Scry2.Health
+  alias Scry2.SelfUpdate
   alias Scry2.SetupFlow
   alias Scry2.Topics
   alias Scry2Web.HealthHelpers
+  alias Scry2Web.SettingsLive.UpdatesCard
+  alias Scry2Web.SettingsLive.UpdatesHelpers
 
   @impl true
   def mount(_params, _session, socket) do
@@ -25,12 +31,43 @@ defmodule Scry2Web.HealthLive do
       Topics.subscribe(Topics.cards_updates())
       Topics.subscribe(Topics.domain_events())
       Topics.subscribe(Topics.operations())
+      SelfUpdate.subscribe_status()
+      SelfUpdate.subscribe_progress()
+      maybe_auto_check_updates()
     end
+
+    current_version = SelfUpdate.current_version()
+    current_status = SelfUpdate.current_status()
+    checking? = connected?(socket) and not SelfUpdate.cache_fresh?()
+
+    updates_summary =
+      UpdatesHelpers.summarize(
+        SelfUpdate.last_known_release(),
+        current_version,
+        current_status.phase,
+        nil,
+        checking?
+      )
 
     {:ok,
      socket
-     |> assign(:page_title, "Health")
-     |> assign(:report, nil)}
+     |> assign(:page_title, "System")
+     |> assign(:report, nil)
+     |> assign(:updates_current_version, current_version)
+     |> assign(:updates_last_check_at, SelfUpdate.last_check_at())
+     |> assign(:updates_summary, updates_summary)}
+  end
+
+  # Oban's unique constraint on the CheckerJob worker+args deduplicates
+  # repeated manual triggers within 55 minutes, so firing on every mount
+  # is safe — at most one real HTTP call per user per window.
+  defp maybe_auto_check_updates do
+    if Application.get_env(:scry_2, :auto_check_updates_on_mount, true) and
+         not SelfUpdate.cache_fresh?() do
+      _ = SelfUpdate.check_now()
+    end
+
+    :ok
   end
 
   @impl true
@@ -39,8 +76,60 @@ defmodule Scry2Web.HealthLive do
   end
 
   @impl true
+  def handle_info(:check_started, socket) do
+    {:noreply,
+     assign(
+       socket,
+       :updates_summary,
+       Map.put(socket.assigns.updates_summary, :checking, true)
+     )}
+  end
+
+  def handle_info({:check_complete, result}, socket) do
+    last_error =
+      case result do
+        {:ok, _} ->
+          nil
+
+        {:error, reason} ->
+          UpdatesHelpers.format_error(reason, DateTime.utc_now())
+      end
+
+    {:noreply,
+     socket
+     |> assign(
+       :updates_summary,
+       UpdatesHelpers.summarize(
+         SelfUpdate.last_known_release(),
+         socket.assigns.updates_current_version,
+         socket.assigns.updates_summary[:applying],
+         last_error,
+         false
+       )
+     )
+     |> assign(:updates_last_check_at, SelfUpdate.last_check_at())}
+  end
+
+  def handle_info({:phase, :failed, _reason}, socket) do
+    {:noreply,
+     assign(
+       socket,
+       :updates_summary,
+       Map.put(socket.assigns.updates_summary, :applying, :failed)
+     )}
+  end
+
+  def handle_info({:phase, phase}, socket) do
+    {:noreply,
+     assign(
+       socket,
+       :updates_summary,
+       Map.put(socket.assigns.updates_summary, :applying, phase)
+     )}
+  end
+
   def handle_info(_msg, socket) do
-    # Any PubSub update triggers a full re-read of the health report.
+    # Any other PubSub update triggers a full re-read of the health report.
     # The report is cheap (no heavy queries) and keeping a single data
     # source is simpler than tracking deltas per message type.
     {:noreply, assign(socket, :report, Health.run_all())}
@@ -58,6 +147,16 @@ defmodule Scry2Web.HealthLive do
     {:noreply, push_navigate(socket, to: ~p"/setup")}
   end
 
+  def handle_event("updates_check_now", _params, socket) do
+    _ = SelfUpdate.check_now()
+    {:noreply, socket}
+  end
+
+  def handle_event("updates_apply", _params, socket) do
+    _ = SelfUpdate.apply_pending()
+    {:noreply, socket}
+  end
+
   @impl true
   def render(assigns) do
     ~H"""
@@ -69,11 +168,19 @@ defmodule Scry2Web.HealthLive do
       current_path={@player_scope_uri}
     >
       <div class="flex items-center justify-between">
-        <h1 class="text-2xl font-semibold font-beleren">Health</h1>
+        <h1 class="text-2xl font-semibold font-beleren">Settings</h1>
         <button phx-click="reset_setup" class="btn btn-ghost btn-xs">
           Run setup tour again
         </button>
       </div>
+
+      <.settings_tabs current_path={@player_scope_uri} />
+
+      <UpdatesCard.updates_card
+        summary={@updates_summary}
+        current_version={@updates_current_version}
+        last_check_at={@updates_last_check_at}
+      />
 
       <.overall_banner :if={@report} report={@report} />
 

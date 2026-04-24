@@ -26,6 +26,12 @@ config :scry_2, start_watcher: false, start_importer: false
 # synchronously in the calling process when enqueued via `Oban.insert`.
 config :scry_2, Oban, testing: :inline
 
+# LiveViews normally kick off a background GitHub check on mount so the
+# Updates card is always populated. Tests don't set up a Req stub, so
+# disable the auto-trigger globally — tests that exercise the update
+# flow enqueue CheckerJob directly with a stub.
+config :scry_2, :auto_check_updates_on_mount, false
+
 # Skip TOML user-config lookup during tests — use only built-in defaults
 # unless a test explicitly opts in via Application.put_env/3.
 config :scry_2, skip_user_config: true

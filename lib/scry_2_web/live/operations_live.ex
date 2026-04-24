@@ -1,10 +1,11 @@
 defmodule Scry2Web.OperationsLive do
   use Scry2Web, :live_view
 
-  alias Scry2.{Events, MtgaLogIngestion, Operations, Topics}
+  alias Scry2.{Events, MtgaLogIngestion, Operations, Service, Topics}
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.ProjectorRegistry
   alias Scry2.MtgaLogIngestion.GitHubIssueReport
+  alias Scry2Web.SettingsLive.ServiceCard
 
   @impl true
   def mount(_params, _session, socket) do
@@ -25,7 +26,16 @@ defmodule Scry2Web.OperationsLive do
      |> assign(:projector_progress, %{})
      |> assign(:pending_rebuilds, nil)
      |> assign(:reload_timer, nil)
-     |> assign(:report_modal, nil)}
+     |> assign(:report_modal, nil)
+     |> assign_service()
+     |> assign(:service_error, nil)}
+  end
+
+  defp assign_service(socket) do
+    socket
+    |> assign(:service_name, Service.name())
+    |> assign(:service_state, Service.state())
+    |> assign(:service_capabilities, Service.capabilities())
   end
 
   @impl true
@@ -163,6 +173,29 @@ defmodule Scry2Web.OperationsLive do
     mod = find_projector_module(module_string)
     if mod, do: Operations.start_catch_up!([mod])
     {:noreply, socket}
+  end
+
+  def handle_event("service_restart", _params, socket) do
+    {:noreply, run_service_action(socket, &Service.restart/0, "Restarting backend…")}
+  end
+
+  def handle_event("service_stop", _params, socket) do
+    {:noreply, run_service_action(socket, &Service.stop/0, "Stopping backend…")}
+  end
+
+  defp run_service_action(socket, action, info_message) do
+    case action.() do
+      :ok ->
+        socket
+        |> assign(:service_error, nil)
+        |> put_flash(:info, info_message)
+
+      :not_supported ->
+        assign(socket, :service_error, "This action is not supported by the current supervisor.")
+
+      {:error, reason} ->
+        assign(socket, :service_error, "Service action failed: #{inspect(reason)}")
+    end
   end
 
   defp find_projector_module(name) do
@@ -433,7 +466,8 @@ defmodule Scry2Web.OperationsLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <h1 class="text-2xl font-semibold font-beleren">Operations</h1>
+      <h1 class="text-2xl font-semibold font-beleren">Settings</h1>
+      <.settings_tabs current_path={@player_scope_uri} />
 
       <%!-- Pipeline overview --%>
       <section class="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -511,6 +545,14 @@ defmodule Scry2Web.OperationsLive do
           </ul>
         </div>
       </section>
+
+      <%!-- Service controls --%>
+      <ServiceCard.service_card
+        name={@service_name}
+        state={@service_state}
+        capabilities={@service_capabilities}
+        error={@service_error}
+      />
 
       <%!-- Action cards --%>
       <section class="grid grid-cols-1 gap-4 md:grid-cols-2">

@@ -9,6 +9,7 @@ defmodule Scry2Web.SettingsLive.UpdatesHelpers do
   @type summary :: %{
           required(:status) =>
             :no_data | :up_to_date | :update_available | :ahead_of_release | :invalid,
+          required(:checking) => boolean(),
           optional(:version) => String.t(),
           optional(:published_at) => String.t() | nil,
           optional(:html_url) => String.t(),
@@ -19,18 +20,26 @@ defmodule Scry2Web.SettingsLive.UpdatesHelpers do
   @spec summarize(
           {:ok, UpdateChecker.release()} | :none,
           String.t(),
-          atom() | nil
+          atom() | nil,
+          String.t() | nil,
+          boolean()
         ) :: summary()
-  def summarize(cached, current, applying, last_error \\ nil)
+  def summarize(known, current, applying, last_error \\ nil, checking? \\ false)
 
-  def summarize(:none, _current, applying, last_error),
-    do: %{status: :no_data, applying: applying, last_error: last_error}
+  def summarize(:none, _current, applying, last_error, checking?),
+    do: %{
+      status: :no_data,
+      checking: checking?,
+      applying: applying,
+      last_error: last_error
+    }
 
-  def summarize({:ok, release}, current, applying, last_error) do
+  def summarize({:ok, release}, current, applying, last_error, checking?) do
     status = UpdateChecker.classify(release.version, current)
 
     %{
       status: status,
+      checking: checking?,
       version: release.version,
       published_at: release.published_at,
       html_url: release.html_url,

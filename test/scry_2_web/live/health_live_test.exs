@@ -3,10 +3,10 @@ defmodule Scry2Web.HealthLiveTest do
   import Phoenix.LiveViewTest
 
   describe "mount" do
-    test "renders the Health title and at least one category section", %{conn: conn} do
+    test "renders the Settings title and at least one category section", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/")
 
-      assert has_element?(view, "h1", "Health")
+      assert has_element?(view, "h1", "Settings")
       # Every report has at least one ingestion check; category label
       # should render.
       assert has_element?(view, "h2", "Ingestion")

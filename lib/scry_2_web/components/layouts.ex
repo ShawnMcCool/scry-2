@@ -62,7 +62,7 @@ defmodule Scry2Web.Layouts do
           active_player_id={@active_player_id}
           current_path={@current_path}
         />
-        <.gear_dropdown current_path={@current_path} />
+        <.gear_link current_path={@current_path} />
       </div>
     </header>
 
@@ -163,50 +163,30 @@ defmodule Scry2Web.Layouts do
 
   attr :current_path, :string, required: true
 
-  defp gear_dropdown(assigns) do
+  defp gear_link(assigns) do
+    assigns = assign(assigns, :active, settings_group?(assigns.current_path))
+
     ~H"""
-    <details
-      id="gear-dropdown"
-      class="dropdown dropdown-end"
-      phx-click-away={close_dropdown("gear-dropdown")}
+    <.link
+      navigate={~p"/"}
+      class={[
+        "btn btn-ghost btn-sm btn-square border border-base-300",
+        @active && "text-primary"
+      ]}
     >
-      <summary
-        class="btn btn-ghost btn-sm btn-square border border-base-300"
-        phx-click={close_dropdown("profile-dropdown")}
-      >
-        <.icon name="hero-cog-6-tooth" class="size-4 text-base-content/50" />
-      </summary>
-      <ul class="dropdown-content z-50 mt-2 menu menu-sm w-48 rounded-lg border border-base-300 bg-base-200 shadow-xl p-2">
-        <li>
-          <.link navigate={~p"/settings"} class={dropdown_link_class(@current_path, "/settings")}>
-            <.icon name="hero-cog-6-tooth" class="size-4" /> Settings
-          </.link>
-        </li>
-        <li>
-          <.link navigate={~p"/operations"} class={dropdown_link_class(@current_path, "/operations")}>
-            <.icon name="hero-wrench-screwdriver" class="size-4" /> Operations
-          </.link>
-        </li>
-        <li>
-          <.link navigate={~p"/"} class={dropdown_link_class(@current_path, "/health")}>
-            <.icon name="hero-heart" class="size-4" /> Health
-          </.link>
-        </li>
-      </ul>
-    </details>
+      <.icon name="hero-cog-6-tooth" class="size-4 text-base-content/50" />
+    </.link>
     """
   end
 
+  defp settings_group?(nil), do: false
+  defp settings_group?("/"), do: true
+  defp settings_group?("/operations" <> _), do: true
+  defp settings_group?("/settings" <> _), do: true
+  defp settings_group?(_), do: false
+
   defp close_dropdown(id) do
     JS.remove_attribute("open", to: "##{id}")
-  end
-
-  defp dropdown_link_class(current_path, link_path) do
-    if String.starts_with?(current_path, link_path) do
-      "text-primary"
-    else
-      ""
-    end
   end
 
   @doc """

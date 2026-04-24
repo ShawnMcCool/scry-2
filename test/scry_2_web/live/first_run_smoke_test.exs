@@ -48,7 +48,7 @@ defmodule Scry2Web.FirstRunSmokeTest do
     refute SetupFlow.required?()
 
     {:ok, health_view, _html} = live(conn, ~p"/")
-    assert has_element?(health_view, "h1", "Health")
+    assert has_element?(health_view, "h1", "Settings")
 
     # "Run setup tour again" loops back to the tour
     assert {:error, {:live_redirect, %{to: "/setup"}}} =
