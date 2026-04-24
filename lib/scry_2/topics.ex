@@ -55,6 +55,15 @@ defmodule Scry2.Topics do
   """
   def collection_snapshots, do: "collection:snapshots"
 
+  @doc """
+  Collection diff events (memory-vs-memory acquisition ledger). Subscribers
+  receive:
+
+    * `{:diff_saved, %Scry2.Collection.Diff{}}` — a new per-card delta
+      computed when a snapshot is persisted alongside an existing one.
+  """
+  def collection_diffs, do: "collection:diffs"
+
   # ── Settings ─────────────────────────────────────────────────────────────
   @doc "Runtime configuration changed."
   def settings_updates, do: "settings:updates"

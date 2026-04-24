@@ -2,6 +2,7 @@ defmodule Scry2.CollectionTest do
   use Scry2.DataCase, async: false
 
   alias Scry2.Collection
+  alias Scry2.Collection.Diff
   alias Scry2.Collection.Snapshot
   alias Scry2.TestFactory
 
@@ -93,5 +94,118 @@ defmodule Scry2.CollectionTest do
       assert snapshot.gold == 12_345
       assert snapshot.mtga_build_hint == "2026.03.01.12345"
     end
+
+    test "creates a baseline diff (from_snapshot_id=nil) on the first snapshot" do
+      Scry2.Topics.subscribe(Scry2.Topics.collection_diffs())
+
+      assert {:ok, snapshot} =
+               Collection.save_snapshot(%{
+                 entries: [{30_001, 4}, {30_002, 1}],
+                 card_count: 2,
+                 total_copies: 5,
+                 reader_confidence: "fallback_scan"
+               })
+
+      assert_receive {:diff_saved, %Diff{} = diff}
+      assert diff.from_snapshot_id == nil
+      assert diff.to_snapshot_id == snapshot.id
+      assert diff.total_acquired == 5
+      assert diff.total_removed == 0
+      assert Diff.decode_counts(diff.cards_added_json) == %{30_001 => 4, 30_002 => 1}
+      assert Diff.decode_counts(diff.cards_removed_json) == %{}
+    end
+
+    test "second snapshot diffs against the first" do
+      {:ok, first} =
+        Collection.save_snapshot(%{
+          entries: [{30_001, 4}, {30_002, 2}],
+          card_count: 2,
+          total_copies: 6,
+          reader_confidence: "fallback_scan"
+        })
+
+      Scry2.Topics.subscribe(Scry2.Topics.collection_diffs())
+
+      {:ok, second} =
+        Collection.save_snapshot(%{
+          entries: [{30_001, 4}, {30_002, 1}, {30_003, 3}],
+          card_count: 3,
+          total_copies: 8,
+          reader_confidence: "fallback_scan"
+        })
+
+      assert_receive {:diff_saved, %Diff{} = diff}
+      assert diff.from_snapshot_id == first.id
+      assert diff.to_snapshot_id == second.id
+      assert Diff.decode_counts(diff.cards_added_json) == %{30_003 => 3}
+      assert Diff.decode_counts(diff.cards_removed_json) == %{30_002 => 1}
+      assert diff.total_acquired == 3
+      assert diff.total_removed == 1
+    end
+
+    test "save_snapshot rolls back when the diff would violate uniqueness" do
+      assert {:ok, _first} =
+               Collection.save_snapshot(%{
+                 entries: [{30_001, 1}],
+                 card_count: 1,
+                 total_copies: 1,
+                 reader_confidence: "fallback_scan"
+               })
+
+      assert is_struct(Collection.latest_diff(), Diff)
+    end
+  end
+
+  describe "latest_diff/0 and list_diffs/1" do
+    test "returns nil when no diffs exist" do
+      assert Collection.latest_diff() == nil
+      assert Collection.list_diffs() == []
+    end
+
+    test "returns the most recent diff first" do
+      {:ok, _} = save(entries: [{30_001, 1}])
+      {:ok, _} = save(entries: [{30_001, 2}])
+      {:ok, _} = save(entries: [{30_001, 3}])
+
+      [latest, middle, _baseline] = Collection.list_diffs(limit: 3)
+
+      assert latest.inserted_at >= middle.inserted_at
+      assert Collection.latest_diff().id == latest.id
+    end
+
+    test "list_diffs/1 honors :limit" do
+      for count <- 1..3 do
+        {:ok, _} = save(entries: [{30_001, count}])
+      end
+
+      assert length(Collection.list_diffs(limit: 2)) == 2
+    end
+  end
+
+  describe "diff_between/2" do
+    test "computes a fresh diff between two existing snapshots" do
+      a = TestFactory.create_collection_snapshot(entries: [{30_001, 1}])
+      b = TestFactory.create_collection_snapshot(entries: [{30_001, 4}, {30_002, 1}])
+
+      assert Collection.diff_between(a.id, b.id) == %{
+               acquired: %{30_001 => 3, 30_002 => 1},
+               removed: %{}
+             }
+    end
+
+    test "returns nil when either snapshot is missing" do
+      assert Collection.diff_between(999_998, 999_999) == nil
+    end
+  end
+
+  defp save(opts) do
+    entries = Keyword.fetch!(opts, :entries)
+
+    Collection.save_snapshot(%{
+      entries: entries,
+      card_count: length(entries),
+      total_copies: Enum.reduce(entries, 0, fn {_, c}, acc -> acc + c end),
+      reader_confidence: "fallback_scan"
+    })
   end
 end

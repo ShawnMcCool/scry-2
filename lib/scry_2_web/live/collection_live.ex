@@ -10,25 +10,37 @@ defmodule Scry2Web.CollectionLive do
     * **enabled, no snapshot** — reader enabled but no collection has
       been captured yet; shows a refresh CTA.
     * **enabled, with snapshot** — shows the latest snapshot summary
-      (card count, total copies, reader confidence, last refresh).
+      (card count, total copies, reader confidence, last refresh) and,
+      when a previous snapshot exists, a "Recent acquisitions" panel
+      derived from the latest `Scry2.Collection.Diff` row.
 
-  Subscribes to `Scry2.Topics.collection_snapshots/0` so a successful
-  refresh updates the view in-place.
+  Subscribes to `Scry2.Topics.collection_snapshots/0` and
+  `Scry2.Topics.collection_diffs/0` so a successful refresh and its
+  computed delta both update the view in-place.
   """
 
   use Scry2Web, :live_view
 
+  alias Scry2.Cards
   alias Scry2.Collection
+  alias Scry2.Collection.DiffView
   alias Scry2.Topics
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Topics.subscribe(Topics.collection_snapshots())
+    if connected?(socket) do
+      Topics.subscribe(Topics.collection_snapshots())
+      Topics.subscribe(Topics.collection_diffs())
+    end
+
+    diff = Collection.latest_diff()
 
     {:ok,
      assign(socket,
        reader_enabled: Collection.reader_enabled?(),
        snapshot: Collection.current(),
+       latest_diff: diff,
+       diff_cards: cards_for(diff),
        refreshing: false,
        last_error: nil
      )}
@@ -73,11 +85,21 @@ defmodule Scry2Web.CollectionLive do
      |> put_flash(:info, "Collection refreshed (#{snapshot.card_count} cards).")}
   end
 
+  def handle_info({:diff_saved, diff}, socket) do
+    {:noreply, assign(socket, latest_diff: diff, diff_cards: cards_for(diff))}
+  end
+
   def handle_info({:refresh_failed, reason}, socket) do
     {:noreply, assign(socket, refreshing: false, last_error: friendly_error(reason))}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  defp cards_for(nil), do: %{}
+
+  defp cards_for(diff) do
+    diff |> DiffView.arena_ids() |> Cards.list_by_arena_ids()
+  end
 
   defp friendly_error(:mtga_not_running),
     do: "MTGA is not running. Start the game, then click Refresh now."
@@ -109,7 +131,13 @@ defmodule Scry2Web.CollectionLive do
       <h1 class="text-2xl font-semibold mb-6 font-beleren">Collection</h1>
 
       <%= if @reader_enabled do %>
-        <.enabled_view snapshot={@snapshot} refreshing={@refreshing} last_error={@last_error} />
+        <.enabled_view
+          snapshot={@snapshot}
+          latest_diff={@latest_diff}
+          diff_cards={@diff_cards}
+          refreshing={@refreshing}
+          last_error={@last_error}
+        />
       <% else %>
         <.disabled_view />
       <% end %>
@@ -146,6 +174,8 @@ defmodule Scry2Web.CollectionLive do
   end
 
   attr :snapshot, :any, required: true
+  attr :latest_diff, :any, required: true
+  attr :diff_cards, :map, required: true
   attr :refreshing, :boolean, required: true
   attr :last_error, :any, required: true
 
@@ -185,6 +215,61 @@ defmodule Scry2Web.CollectionLive do
           </div>
         </div>
       <% end %>
+
+      <.diff_card :if={@latest_diff} diff={@latest_diff} cards={@diff_cards} />
+    </div>
+    """
+  end
+
+  attr :diff, :any, required: true
+  attr :cards, :map, required: true
+
+  defp diff_card(assigns) do
+    assigns =
+      assign(assigns,
+        acquired: DiffView.entries(assigns.diff.cards_added_json, assigns.cards),
+        removed: DiffView.entries(assigns.diff.cards_removed_json, assigns.cards)
+      )
+
+    ~H"""
+    <div class="card bg-base-200 border border-base-300 max-w-3xl" data-role="diff-card">
+      <div class="card-body">
+        <h2 class="card-title">Recent acquisitions</h2>
+        <p
+          class="text-xs text-base-content/60"
+          title={Calendar.strftime(@diff.inserted_at, "%Y-%m-%d %H:%M UTC")}
+        >
+          {relative_time(@diff.inserted_at)} · +{@diff.total_acquired} · −{@diff.total_removed}
+        </p>
+
+        <div :if={@acquired != []} class="mt-3">
+          <div class="text-xs uppercase tracking-wide text-base-content/60 mb-1">Acquired</div>
+          <ul class="space-y-1" data-role="diff-acquired">
+            <li :for={entry <- @acquired} class="flex items-center gap-2 text-sm">
+              <span class="badge badge-soft badge-success badge-sm tabular-nums">
+                +{entry.count}
+              </span>
+              <span class="truncate">{entry.name}</span>
+            </li>
+          </ul>
+        </div>
+
+        <div :if={@removed != []} class="mt-3">
+          <div class="text-xs uppercase tracking-wide text-base-content/60 mb-1">Removed</div>
+          <ul class="space-y-1" data-role="diff-removed">
+            <li :for={entry <- @removed} class="flex items-center gap-2 text-sm">
+              <span class="badge badge-soft badge-warning badge-sm tabular-nums">
+                −{entry.count}
+              </span>
+              <span class="truncate">{entry.name}</span>
+            </li>
+          </ul>
+        </div>
+
+        <div :if={@acquired == [] and @removed == []} class="mt-3 text-sm text-base-content/60">
+          No card changes since the previous snapshot.
+        </div>
+      </div>
     </div>
     """
   end
@@ -197,13 +282,24 @@ defmodule Scry2Web.CollectionLive do
       <div class="card-body">
         <h2 class="card-title">Latest snapshot</h2>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-          <.stat label="Cards" value={@snapshot.card_count} key="card-count" />
-          <.stat label="Total copies" value={@snapshot.total_copies} key="total-copies" />
-          <.stat label="Reader path" value={@snapshot.reader_confidence} key="confidence" />
+          <.stat label="Cards" value={format_number(@snapshot.card_count)} key="card-count" />
+          <.stat
+            label="Total copies"
+            value={format_number(@snapshot.total_copies)}
+            key="total-copies"
+          />
+          <.stat
+            label="Reader path"
+            value={humanize_reader(@snapshot.reader_confidence)}
+            key="confidence"
+            tone={:muted}
+          />
           <.stat
             label="Captured"
-            value={Calendar.strftime(@snapshot.snapshot_ts, "%Y-%m-%d %H:%M UTC")}
+            value={relative_time(@snapshot.snapshot_ts)}
+            title={Calendar.strftime(@snapshot.snapshot_ts, "%Y-%m-%d %H:%M UTC")}
             key="captured-at"
+            tone={:muted}
           />
         </div>
       </div>
@@ -214,13 +310,37 @@ defmodule Scry2Web.CollectionLive do
   attr :label, :string, required: true
   attr :value, :any, required: true
   attr :key, :string, required: true
+  attr :title, :string, default: nil
+  attr :tone, :atom, default: :numeric, values: [:numeric, :muted]
 
   defp stat(assigns) do
     ~H"""
-    <div class="stat bg-base-100 rounded-lg p-4" data-stat={@key}>
-      <div class="stat-title text-xs opacity-70">{@label}</div>
-      <div class="stat-value text-xl">{@value}</div>
+    <div class="bg-base-100 rounded-lg p-4 min-w-0" data-stat={@key}>
+      <div class="text-xs text-base-content/60">{@label}</div>
+      <div class={["mt-1 truncate", stat_value_class(@tone)]} title={@title}>
+        {@value}
+      </div>
     </div>
     """
   end
+
+  defp stat_value_class(:numeric), do: "text-2xl font-semibold tabular-nums"
+  defp stat_value_class(:muted), do: "text-sm text-base-content/80"
+
+  defp humanize_reader("walker"), do: "Direct read"
+  defp humanize_reader("fallback_scan"), do: "Fallback scan"
+  defp humanize_reader(other) when is_binary(other), do: String.replace(other, "_", " ")
+  defp humanize_reader(_), do: "—"
+
+  defp format_number(n) when is_integer(n) do
+    n
+    |> Integer.to_string()
+    |> String.graphemes()
+    |> Enum.reverse()
+    |> Enum.chunk_every(3)
+    |> Enum.join(",")
+    |> String.reverse()
+  end
+
+  defp format_number(other), do: to_string(other)
 end
