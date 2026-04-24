@@ -27,7 +27,6 @@ This is a brainstorm tracker, not a commitment. Order is not priority.
 
 ## B. Reconciliation (memory-vs-log truth diffing)  ← FOCUS
 
-- Card-acquisition ledger (memory snapshot diff over time) — **today**
 - Currency reconciliation (memory wildcards/gold/gems vs log `InventoryUpdated`) — **walker**
 - Booster-count reconciliation (memory pack inventory vs log pack events) — **walker** + **reader+**
 - Log-gap detector (currency change observed in memory but no matching log event) — **walker**

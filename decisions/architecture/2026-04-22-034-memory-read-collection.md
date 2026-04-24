@@ -6,7 +6,7 @@ date: 2026-04-22
 
 ## Status
 
-Accepted
+Accepted (revised 2026-04-25 — see [Revision 2026-04-25](#revision-2026-04-25--walker-in-rust))
 
 ## Context and Problem Statement
 
@@ -75,6 +75,13 @@ primitives — read bytes, list memory mappings, find a process by
 predicate — and build the entire walker, scanner, and fallback logic in
 Elixir, dispatched from a new `Scry2.Collection` bounded context.
 
+> **Revised 2026-04-25:** the walker has been moved into the Rust crate.
+> The NIF now exposes memory primitives *plus* a `walk_collection`
+> function that performs the full pointer-chain walk internally and
+> returns a decoded result map. Elixir retains orchestration, self-check,
+> fallback-to-scanner, and all read-side integration. The structural
+> scanner remains in Elixir. See [Revision 2026-04-25](#revision-2026-04-25--walker-in-rust).
+
 ### Architecture summary
 
 ```
@@ -86,16 +93,19 @@ Elixir, dispatched from a new `Scry2.Collection` bounded context.
 │    Collection.refresh/0 ─── enqueues RefreshJob                 │
 │                                                                 │
 │    ┌────────────────────────────────────────────────────┐       │
-│    │  Reader (pure Elixir logic)                        │       │
+│    │  Reader (Elixir orchestration)                     │       │
 │    │    - find MTGA, list maps                          │       │
-│    │    - walk Mono (walker path, primary)              │       │
-│    │    - structural scan (fallback)                    │       │
+│    │    - invoke Rust walker (primary)                  │       │
+│    │    - structural scan in Elixir (fallback)          │       │
 │    │    - self-check gate (Spike 13's 7 checks)         │       │
 │    └────────┬───────────────────────────────────────────┘       │
-│             │ behaviour: read_bytes / list_maps / find_process  │
+│             │ behaviour: primitives + walk_collection           │
 │    ┌────────▼──────────┐      ┌────────────────────────┐        │
 │    │  Mem.Nif (prod)   │      │  Mem.TestBackend (test)│        │
 │    │  via Rustler      │      │  in-memory fixture     │        │
+│    │  - primitives     │      │  (primitives only —    │        │
+│    │  - walk_collection│      │   walker tested in     │        │
+│    │                   │      │   Rust w/ byte fixt.)  │        │
 │    └────────┬──────────┘      └────────────────────────┘        │
 └─────────────┼───────────────────────────────────────────────────┘
               │
@@ -569,3 +579,75 @@ Oban worker. Phases 8–10 close it off.
 - [`mtga-duress/experiments/notes/log-vs-memory-authority.md`](../../../mtga-duress/experiments/notes/log-vs-memory-authority.md)
 - [`mtga-duress/experiments/notes/windows-platform.md`](../../../mtga-duress/experiments/notes/windows-platform.md)
 - [`mtga-duress/experiments/notes/rust-integration.md`](../../../mtga-duress/experiments/notes/rust-integration.md)
+
+## Revision 2026-04-25 — walker in Rust
+
+### What changed
+
+The original "thin NIF (three primitives) + Elixir walker" decision has
+been revised. The walker now lives in the Rust crate and is exposed
+through the NIF as a fourth function:
+
+```
+walk_collection(pid) ::
+  {:ok, %{
+    cards:           [{arena_id :: integer, count :: integer}, ...],
+    wildcards:       %{common: integer, uncommon: integer, rare: integer, mythic: integer},
+    gold:            integer,
+    gems:            integer,
+    vault_progress:  integer,
+    build_hint:      String.t() | nil,
+    reader_version:  String.t()
+  }} | {:error, atom}
+```
+
+Elixir retains: `Scry2.Collection.Reader` orchestration (find pid, list
+maps, invoke walker, fall back to scanner on failure), the self-check
+gate (plausibility validation on the returned map), snapshot
+persistence, the scanner fallback (kept in Elixir — it processes bulk
+heap regions in a single pass, a workload Elixir handles cleanly), and
+the LiveView surface.
+
+### Why
+
+- Mono exposes ~10 C structs on the pointer chain (`MonoDomain`,
+  `MonoAssembly`, `MonoImage`, `MonoClass`, `MonoClassField`,
+  `MonoVTable`, `MonoObject`, `MonoArray`, and the generic dictionary
+  internals). Each has 5–15 offset-addressed fields.
+- Decoding these in Elixir means hand-rolled bitstring pattern matches
+  for every field, with offset constants as module attributes. Error
+  prone — one wrong offset produces silent garbage data with no compile
+  time signal.
+- Rust handles this natively with `#[repr(C)]` struct casts; the
+  compiler enforces field layouts and errors show up at build time, not
+  as cryptic runtime values.
+- Performance was **not** the driver. The walker reads < 1 MB total in
+  small targeted chunks — an Elixir port would be fast enough. The
+  3.7 s vs 1.4 s figure from research 002 measured the structural
+  **scan** (megabytes of heap), not the walker.
+
+### Consequences of the revision
+
+- **Good**: Mono struct decoding is compiler enforced; offset mistakes
+  fail at build time, not as silent garbage. The walker lives where its
+  data naturally lives.
+- **Good**: One NIF boundary crossing per walk instead of ~20–50. Not a
+  runtime issue for one-shot reads, but a cleaner contract.
+- **Neutral**: the "95% Elixir logic" design value is relaxed for the
+  Collection subsystem specifically. It still holds for every other
+  context — Collection is an explicit exception where the natural shape
+  of the work is C struct decoding.
+- **Bad**: more Rust surface (estimated +300–500 LoC). Walker changes
+  require rebuilding the NIF; attribute edits in Elixir no longer
+  suffice.
+- **Neutral**: walker unit tests live in Rust with byte fixtures
+  (`#[cfg(test)] mod tests`). The planned `Mem.TestBackend` in Elixir
+  remains — it still tests the primitives path and the reader's
+  orchestration with a stubbed walker result.
+
+### Phases affected
+
+- **Phase 2/3** (Elixir Mem behaviour + Elixir walker) contract. The
+  TestBackend still exists, but its walker test scope moves to Rust.
+- **Phase 4** (Rust NIF) grows to include the walker plus its tests.
+- **Phase 5 onward** unchanged: schema, facade, Oban worker, LiveView.
