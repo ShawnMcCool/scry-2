@@ -126,19 +126,32 @@ Disconnect the REPL with `Ctrl+\` (leaves the server running).
 
 ### Install (end users)
 
-End users install scry_2 via the bootstrap shell installer checked in at
-`installer/install.sh`. This is the **default, blessed path** for Linux
-and macOS — no Git clone, no build toolchain required:
+Platform tiers:
+
+- **Linux x86_64 (glibc)** — primary deployment target, fully supported.
+- **Windows 10/11 x86_64** — experimental. MSI works end-to-end; rough edges.
+- **macOS (Apple Silicon)** — planned, **not yet supported**. Release
+  archives are produced by CI, but there is no installer, no shell
+  bootstrap path, and no autostart wiring yet. Do not point end users at
+  the macOS tarball.
+
+The blessed install path for Linux is the bootstrap shell installer at
+`installer/install.sh`:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ShawnMcCool/scry-2/main/installer/install.sh | sh
 ```
 
-The bootstrap script: validates the platform (rejects musl/non-x86_64),
-resolves the latest GitHub Release tag, downloads the matching tarball +
-`SHA256SUMS` file, verifies the checksum, extracts to a temp dir, then
+The bootstrap: validates the platform (rejects musl, non-x86_64, and
+non-Linux-non-macOS OSes), resolves the latest GitHub Release tag,
+downloads the tarball + `SHA256SUMS` file, verifies the checksum, then
 exec's the bundled `./install` script from inside the archive. Pin a
-specific version with `curl … | sh -s -- --version v0.18.0`.
+specific version with `curl … | sh -s -- --version v0.20.0`.
+
+The bootstrap also accepts macOS today — it resolves `macos-aarch64`
+archives fine — but the bundled installer inside the macOS tarball is
+still minimal. Don't advertise macOS as supported until the installer,
+LaunchAgent, and first-run story are actually in place.
 
 Windows has no shell installer — users download the MSI from the
 Releases page (see **Windows Installation** below).
