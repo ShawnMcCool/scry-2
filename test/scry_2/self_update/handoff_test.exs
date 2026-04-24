@@ -50,7 +50,7 @@ defmodule Scry2.SelfUpdate.HandoffTest do
     test "spawns /bin/sh -c <script> -- <installer> <log> with nohup" do
       :ok =
         Handoff.spawn_detached(
-          %{staged_root: "/tmp/staged", archive_filename: "scry_2-v0.15.0-macos-x86_64.tar.gz"},
+          %{staged_root: "/tmp/staged", archive_filename: "scry_2-v0.15.0-macos-aarch64.tar.gz"},
           os_type: {:unix, :darwin},
           spawner: capture_spawner()
         )
@@ -105,7 +105,7 @@ defmodule Scry2.SelfUpdate.HandoffTest do
 
       :ok =
         Handoff.spawn_detached(
-          %{staged_root: staged, archive_filename: "scry_2-v0.15.0-macos-x86_64.tar.gz"},
+          %{staged_root: staged, archive_filename: "scry_2-v0.15.0-macos-aarch64.tar.gz"},
           os_type: {:unix, :darwin},
           spawner: capture_spawner()
         )

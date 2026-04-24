@@ -231,14 +231,14 @@ jobs:
         if: matrix.os != 'windows-latest'
         run: |
           sha256sum scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }} \
-            > scry_2-${{ github.ref_name }}-${{ matrix.platform }}-x86_64-SHA256SUMS
+            > scry_2-${{ github.ref_name }}-${{ matrix.platform }}-SHA256SUMS
 
       - name: Generate SHA256SUMS (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         run: |
           $archive = "scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }}"
-          $sumsFile = "scry_2-${{ github.ref_name }}-${{ matrix.platform }}-x86_64-SHA256SUMS"
+          $sumsFile = "scry_2-${{ github.ref_name }}-${{ matrix.platform }}-SHA256SUMS"
           $hash = (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLower()
           "$hash  $archive" | Out-File -Encoding ascii $sumsFile
 
@@ -254,7 +254,7 @@ jobs:
         with:
           files: |
             scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }}
-            scry_2-${{ github.ref_name }}-${{ matrix.platform }}-x86_64-SHA256SUMS
+            scry_2-${{ github.ref_name }}-${{ matrix.platform }}-SHA256SUMS
           generate_release_notes: true
 
       - name: Upload MSI installer

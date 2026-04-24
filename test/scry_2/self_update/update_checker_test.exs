@@ -36,7 +36,7 @@ defmodule Scry2.SelfUpdate.UpdateCheckerTest do
 
     test "macos tarball" do
       assert UpdateChecker.archive_name("v0.14.0", {:unix, :darwin}) ==
-               "scry_2-v0.14.0-macos-x86_64.tar.gz"
+               "scry_2-v0.14.0-macos-aarch64.tar.gz"
     end
 
     test "windows zip" do

@@ -122,11 +122,7 @@ fi
 validate_tag "$tag" || die "Rejected malformed tag: $tag"
 
 tarball="scry_2-${tag}-${os_arch}.tar.gz"
-
-# The CI release pipeline appends an extra "-x86_64" suffix to the
-# SHA256SUMS filename (even for aarch64 archives). Keep this in lockstep
-# with the matrix step in .github/workflows/release.yml.
-sha_file="scry_2-${tag}-${os_arch}-x86_64-SHA256SUMS"
+sha_file="scry_2-${tag}-${os_arch}-SHA256SUMS"
 base_url="https://github.com/$GITHUB_REPO/releases/download/$tag"
 
 # ---- download + verify ----------------------------------------------------

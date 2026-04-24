@@ -44,7 +44,7 @@ defmodule Scry2.SelfUpdate.UpdateChecker do
 
   @spec archive_name(String.t(), os_type()) :: String.t()
   def archive_name(tag, {:unix, :linux}), do: "scry_2-#{tag}-linux-x86_64.tar.gz"
-  def archive_name(tag, {:unix, :darwin}), do: "scry_2-#{tag}-macos-x86_64.tar.gz"
+  def archive_name(tag, {:unix, :darwin}), do: "scry_2-#{tag}-macos-aarch64.tar.gz"
   def archive_name(tag, {:win32, _}), do: "scry_2-#{tag}-windows-x86_64.zip"
 
   @spec sha256sums_name(String.t(), os_type()) :: String.t()
@@ -52,7 +52,7 @@ defmodule Scry2.SelfUpdate.UpdateChecker do
     do: "scry_2-#{tag}-linux-x86_64-SHA256SUMS"
 
   def sha256sums_name(tag, {:unix, :darwin}),
-    do: "scry_2-#{tag}-macos-x86_64-SHA256SUMS"
+    do: "scry_2-#{tag}-macos-aarch64-SHA256SUMS"
 
   def sha256sums_name(tag, {:win32, _}),
     do: "scry_2-#{tag}-windows-x86_64-SHA256SUMS"
