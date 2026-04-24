@@ -142,7 +142,10 @@ banner "Verifying checksum"
 
 banner "Extracting"
 mkdir -p "$tmpdir/extract"
-tar -xzf "$tmpdir/$tarball" -C "$tmpdir/extract"
+# Release tarballs wrap everything in a top-level directory named
+# `scry_2-<tag>-<platform>/`. Strip that wrapper so the bundled
+# installer lives predictably at $tmpdir/extract/install.
+tar -xzf "$tmpdir/$tarball" --strip-components=1 -C "$tmpdir/extract"
 
 bundled_installer="$tmpdir/extract/install"
 [ -x "$bundled_installer" ] || die "Archive missing ./install — was this built before the install flow shipped?"
