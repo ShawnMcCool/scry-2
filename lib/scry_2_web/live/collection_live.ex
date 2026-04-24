@@ -61,7 +61,7 @@ defmodule Scry2Web.CollectionLive do
          |> reload_after_refresh()}
 
       {:error, reason} ->
-        {:noreply, assign(socket, refreshing: false, last_error: inspect(reason))}
+        {:noreply, assign(socket, refreshing: false, last_error: friendly_error(reason))}
     end
   end
 
@@ -74,10 +74,23 @@ defmodule Scry2Web.CollectionLive do
   end
 
   def handle_info({:refresh_failed, reason}, socket) do
-    {:noreply, assign(socket, refreshing: false, last_error: inspect(reason))}
+    {:noreply, assign(socket, refreshing: false, last_error: friendly_error(reason))}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  defp friendly_error(:mtga_not_running),
+    do: "MTGA is not running. Start the game, then click Refresh now."
+
+  defp friendly_error(:no_cards_array_found),
+    do:
+      "Could not locate the card collection in MTGA memory. Try again after opening your collection screen in MTGA."
+
+  defp friendly_error({:check, _}),
+    do:
+      "MTGA memory layout did not match expectations. It may have changed in a recent game update."
+
+  defp friendly_error(other), do: "Reader failed: #{inspect(other)}"
 
   defp reload_after_refresh(socket) do
     assign(socket, snapshot: Collection.current(), refreshing: false)
@@ -140,7 +153,11 @@ defmodule Scry2Web.CollectionLive do
     ~H"""
     <div class="space-y-6" data-role="collection-enabled">
       <div class="flex items-center gap-3">
-        <button class="btn btn-primary btn-sm" phx-click="refresh" disabled={@refreshing}>
+        <button
+          class="btn btn-soft btn-primary btn-sm"
+          phx-click="refresh"
+          disabled={@refreshing}
+        >
           <span :if={@refreshing}>Refreshing…</span>
           <span :if={not @refreshing}>Refresh now</span>
         </button>
@@ -149,8 +166,12 @@ defmodule Scry2Web.CollectionLive do
         </button>
       </div>
 
-      <div :if={@last_error} class="alert alert-warning max-w-3xl" data-role="collection-error">
-        <span>Reader error: {@last_error}</span>
+      <div
+        :if={@last_error}
+        class="alert alert-soft alert-warning max-w-3xl"
+        data-role="collection-error"
+      >
+        <span>{@last_error}</span>
       </div>
 
       <%= if @snapshot do %>

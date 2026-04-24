@@ -129,6 +129,9 @@ defmodule Scry2.Application do
         [
           # Stage 08: ingestion worker translates raw events to domain events.
           Scry2.Events.IngestRawEvents,
+          # Auto-triggers a collection refresh on log activity. Subscribes
+          # to domain:events so it must start after projectors + ingester.
+          Scry2.Collection.ActivityTrigger,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.
           Scry2.MtgaLogIngestion.Watcher
         ]
