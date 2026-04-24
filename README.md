@@ -42,7 +42,10 @@ Constructed-first.
 ## Requirements
 
 - Magic: The Gathering Arena with **Detailed Logs** enabled
-- Windows 10+, macOS 12+, or Linux (x86_64)
+- One of:
+  - Windows 10+ (x86_64)
+  - macOS 12+ (Apple Silicon)
+  - Linux (x86_64, glibc — musl/Alpine not supported)
 - No other software needed — the runtime is bundled
 
 ### Enable Detailed Logs in MTGA
@@ -55,19 +58,50 @@ Without this, Scry2 cannot parse your game data.
 
 ## Install
 
-1. Download the latest release for your platform from the
-   [Releases page](../../releases/latest)
-2. Extract the archive
-3. Run the install script:
-   - **Windows:** double-click `install.bat`
-   - **macOS / Linux:** `./install` in a terminal
+### Linux or macOS
 
-Scry2 will start automatically on each login and is accessible at
-`http://localhost:6015`.
+One command, end-to-end:
 
-> **Windows firewall note:** On first launch, Windows may ask you to allow
+```sh
+curl -fsSL https://raw.githubusercontent.com/ShawnMcCool/scry-2/main/installer/install.sh | sh
+```
+
+The bootstrap script resolves the latest release, verifies the archive
+against its published SHA256 checksum, and hands off to the bundled
+installer. Autostart is wired up automatically (XDG on Linux,
+LaunchAgent on macOS). To pin a specific version, append
+`-s -- --version v0.18.0` to the `sh` invocation.
+
+### Windows
+
+Download **`Scry2Setup-*.exe`** from the
+[Releases page](../../releases/latest) and run it. The bundled Burn
+installer takes care of the MSI and the Visual C++ Redistributable.
+
+> **Firewall:** on first launch, Windows may ask you to allow
 > **epmd** and **erlang** through the firewall. These are components of the
 > bundled runtime — allow both for Scry2 to function.
+
+### Manual install (any platform)
+
+Prefer to inspect or unpack the archive yourself?
+
+1. Download the release for your platform from the
+   [Releases page](../../releases/latest).
+2. Extract the archive.
+3. Run the bundled installer:
+   - **Linux / macOS:** `./install`
+   - **Windows (zip path):** double-click `install.bat`
+
+Scry2 starts automatically on each login and is accessible at
+`http://localhost:6015`.
+
+### Keeping up to date
+
+Once installed, future updates are one-click from
+**Settings → System → Apply update**. The app checks GitHub Releases
+hourly and downloads + verifies the archive before installing.
+No need to re-run the bootstrap.
 
 ---
 

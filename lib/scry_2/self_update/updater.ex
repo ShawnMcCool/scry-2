@@ -31,6 +31,8 @@ defmodule Scry2.SelfUpdate.Updater do
   @type phase ::
           :idle | :preparing | :downloading | :extracting | :handing_off | :done | :failed
 
+  @cancelable_phases [:preparing, :downloading, :extracting]
+
   # --- Public API ---
 
   def start_link(opts) do
@@ -53,6 +55,20 @@ defmodule Scry2.SelfUpdate.Updater do
   @spec status(GenServer.server()) :: %{phase: phase(), release: map() | nil, error: term() | nil}
   def status(server \\ __MODULE__), do: GenServer.call(server, :status)
 
+  @doc """
+  Cancels an in-flight apply if it's still before the point of no
+  return. The detached installer spawn at `:handing_off` is uncancelable
+  — once the external process is running there's nothing to kill.
+
+  Returns:
+    * `:ok` when a cancelable apply was running and has been stopped.
+    * `{:error, :not_running}` when nothing is in flight.
+    * `{:error, :past_point_of_no_return}` once `:handing_off` has fired.
+  """
+  @spec cancel(GenServer.server()) ::
+          :ok | {:error, :not_running | :past_point_of_no_return}
+  def cancel(server \\ __MODULE__), do: GenServer.call(server, :cancel)
+
   # --- Callbacks ---
 
   @impl GenServer
@@ -70,7 +86,8 @@ defmodule Scry2.SelfUpdate.Updater do
       handoff: Keyword.get(opts, :handoff, &DefaultHandoff.spawn_detached/2),
       current_version_fn: Keyword.get(opts, :current_version_fn, &Version.current/0),
       system_stop_fn: Keyword.get(opts, :system_stop_fn, &System.stop/1),
-      task_pid: nil
+      task_pid: nil,
+      staging_dir: nil
     }
 
     {:ok, state}
@@ -84,6 +101,30 @@ defmodule Scry2.SelfUpdate.Updater do
   def handle_call(:apply_pending, _from, %{phase: phase} = state)
       when phase not in [:idle, :done, :failed] do
     {:reply, {:error, :already_running}, state}
+  end
+
+  def handle_call(:cancel, _from, %{task_pid: nil} = state) do
+    {:reply, {:error, :not_running}, state}
+  end
+
+  def handle_call(:cancel, _from, %{phase: phase, task_pid: task_pid} = state)
+      when phase in @cancelable_phases and is_pid(task_pid) do
+    # Clear task_pid first so the subsequent {:EXIT, ...} message from
+    # the now-doomed task falls through to the catch-all clause instead
+    # of being re-classified as :failed.
+    state = %{state | task_pid: nil}
+    Process.exit(task_pid, :kill)
+
+    _ = ApplyLock.release(state.lock_path)
+    _ = rm_staging(state.staging_dir)
+    Topics.broadcast(Topics.updates_progress(), {:apply_cancelled})
+    Log.info(:system, "self-update apply cancelled from phase #{phase}")
+
+    {:reply, :ok, %{state | phase: :idle, release: nil, error: nil, staging_dir: nil}}
+  end
+
+  def handle_call(:cancel, _from, state) do
+    {:reply, {:error, :past_point_of_no_return}, state}
   end
 
   def handle_call(:apply_pending, _from, state) do
@@ -182,6 +223,13 @@ defmodule Scry2.SelfUpdate.Updater do
     stager = state.stager
     handoff = state.handoff
 
+    progress_fn = fn bytes, total ->
+      if is_integer(total) and total > 0 do
+        pct = min(div(bytes * 100, total), 100)
+        Topics.broadcast(Topics.updates_progress(), {:download_progress, pct})
+      end
+    end
+
     task_pid =
       spawn_link(fn ->
         send(parent, {:phase, :downloading})
@@ -193,7 +241,7 @@ defmodule Scry2.SelfUpdate.Updater do
                  sha256sums_url: sha_url,
                  dest_dir: staging_dir
                },
-               []
+               progress_fn: progress_fn
              ) do
           {:ok, %{archive_path: archive_path}} ->
             send(parent, {:phase, :extracting})
@@ -219,7 +267,21 @@ defmodule Scry2.SelfUpdate.Updater do
         end
       end)
 
-    %{state | phase: :preparing, release: release, error: nil, task_pid: task_pid}
+    %{
+      state
+      | phase: :preparing,
+        release: release,
+        error: nil,
+        task_pid: task_pid,
+        staging_dir: staging_dir
+    }
+  end
+
+  defp rm_staging(nil), do: :ok
+
+  defp rm_staging(path) when is_binary(path) do
+    _ = File.rm_rf(path)
+    :ok
   end
 
   defp broadcast_phase(phase),

@@ -68,6 +68,9 @@ defmodule Scry2.SelfUpdate do
   @spec apply_pending() :: :ok | {:error, term()}
   def apply_pending, do: Updater.apply_pending()
 
+  @spec cancel_apply() :: :ok | {:error, :not_running | :past_point_of_no_return}
+  def cancel_apply, do: Updater.cancel()
+
   @spec current_status() :: map()
   def current_status, do: Updater.status()
 

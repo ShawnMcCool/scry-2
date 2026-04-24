@@ -124,6 +124,25 @@ iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1   # REPL
 
 Disconnect the REPL with `Ctrl+\` (leaves the server running).
 
+### Install (end users)
+
+End users install scry_2 via the bootstrap shell installer checked in at
+`installer/install.sh`. This is the **default, blessed path** for Linux
+and macOS — no Git clone, no build toolchain required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ShawnMcCool/scry-2/main/installer/install.sh | sh
+```
+
+The bootstrap script: validates the platform (rejects musl/non-x86_64),
+resolves the latest GitHub Release tag, downloads the matching tarball +
+`SHA256SUMS` file, verifies the checksum, extracts to a temp dir, then
+exec's the bundled `./install` script from inside the archive. Pin a
+specific version with `curl … | sh -s -- --version v0.18.0`.
+
+Windows has no shell installer — users download the MSI from the
+Releases page (see **Windows Installation** below).
+
 ### Release
 
 ```bash
