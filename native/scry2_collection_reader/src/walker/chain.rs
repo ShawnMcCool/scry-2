@@ -34,7 +34,11 @@ use super::mono::{self, MonoOffsets};
 use super::vtable;
 
 /// Combined result of a full walk.
-#[derive(Clone, Debug, PartialEq, Eq)]
+///
+/// `InventoryValues` carries an `f64` (`vault_progress`) so we can't
+/// derive `Eq`; `PartialEq` is enough for tests and downstream
+/// equality checks.
+#[derive(Clone, Debug, PartialEq)]
 pub struct WalkResult {
     /// Used entries from the `Cards` dictionary.
     pub entries: Vec<DictEntry>,
@@ -573,7 +577,10 @@ mod tests {
         mem: &mut FakeMem,
         wrapper_field_specs: &[(&str, i32, bool)],
         cards: &[(i32, i32)],
-        inventory_values: [i32; 7],
+        // First six are i32 (wcCommon..gems); seventh is f64
+        // (vaultProgress).
+        inventory_int_values: [i32; 6],
+        inventory_vault_progress: f64,
     ) -> u64 {
         // Each entity owns its own 0x10000-byte sandbox so 0x40-byte
         // objects can't shadow nearby vtables / class blobs in
@@ -601,6 +608,8 @@ mod tests {
         let inv_vtable: u64 = 0x41_0000;
         let inv_class: u64 = 0x42_0000;
         let inv_fields_addr: u64 = 0x43_0000;
+        // Six i32 fields at 0x10..0x28 (4-byte stride), then a
+        // double-aligned f64 vaultProgress at 0x28.
         let inv_specs: Vec<(&str, i32, bool)> = FIELD_NAMES
             .iter()
             .enumerate()
@@ -609,10 +618,12 @@ mod tests {
         install_fields(mem, inv_fields_addr, 0x44_0000, 0x45_0000, &inv_specs);
         write_class_def_simple(mem, inv_class, inv_fields_addr, inv_specs.len() as u32);
         let mut inv_obj = vec![0u8; 0x40];
-        for (i, v) in inventory_values.iter().enumerate() {
+        for (i, v) in inventory_int_values.iter().enumerate() {
             let off = 0x10 + i * 4;
             inv_obj[off..off + 4].copy_from_slice(&v.to_le_bytes());
         }
+        // vaultProgress at offset 0x28 (4-byte stride after gems @0x24).
+        inv_obj[0x28..0x30].copy_from_slice(&inventory_vault_progress.to_bits().to_le_bytes());
         link_object_to_class(mem, inv_addr, inv_obj, inv_vtable, inv_class);
 
         // ---- Dictionary object + class + entries array
@@ -657,7 +668,8 @@ mod tests {
             &mut mem,
             &[("Cards", 0x10, false), ("m_inventory", 0x20, false)],
             &[(74116, 1), (32388, 4), (106_219, 3)],
-            [42, 17, 5, 2, 12_345, 3_000, 250],
+            [42, 17, 5, 2, 12_345, 3_000],
+            30.1,
         );
 
         let dict_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
@@ -672,7 +684,7 @@ mod tests {
         }));
         assert_eq!(result.inventory.wc_common, 42);
         assert_eq!(result.inventory.gold, 12_345);
-        assert_eq!(result.inventory.vault_progress, 250);
+        assert_eq!(result.inventory.vault_progress, 30.1);
         Ok(())
     }
 
@@ -688,7 +700,8 @@ mod tests {
                 ("m_inventory", 0x20, false),
             ],
             &[(7, 1)],
-            [1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1],
+            0.0,
         );
 
         let dict_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
@@ -708,7 +721,8 @@ mod tests {
             &mut mem,
             &[("Cards", 0x10, false), ("m_inventory", 0x20, false)],
             &[(7, 1)],
-            [1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 1],
+            0.0,
         );
 
         // Replace the wrapper object's Cards slot with NULL by shadow-
@@ -743,7 +757,8 @@ mod tests {
             &mut mem,
             &[("Cards", 0x10, false), ("m_inventory", 0x20, false)],
             &[(74116, 1), (32388, 4)],
-            [42, 17, 5, 2, 12_345, 3_000, 250],
+            [42, 17, 5, 2, 12_345, 3_000],
+            30.1,
         );
 
         // ---- IM object + class

@@ -84,7 +84,7 @@ defmodule Scry2.Collection.Mem.TestBackendTest do
         wildcards: %{common: 42, uncommon: 17, rare: 5, mythic: 2},
         gold: 12_345,
         gems: 3_000,
-        vault_progress: 250,
+        vault_progress: 30.1,
         build_hint: "abc-123-guid",
         reader_version: "scry2-walker-0.1.0"
       }

@@ -13,23 +13,31 @@
 //! | `wcMythic` | mythic wildcards held |
 //! | `gold` | soft currency (gold pieces) |
 //! | `gems` | hard currency (gems) |
-//! | `vaultProgress` | progress toward the next vault opening |
+//! | `vaultProgress` | progress toward the next vault opening (0–100 %) |
 //!
 //! Per spike 5 every one of these is a literal field name (no
 //! `<...>k__BackingField` decoration), so `field::find_by_name`
 //! resolves each with its exact-match pass.
 //!
-//! Each value is stored as a 32-bit little-endian word. The exact
-//! C# type for `vaultProgress` is ambiguous from static analysis —
-//! it is exposed as `i32` here; a caller that later identifies it as
-//! `float` can reinterpret via `f32::from_bits(value as u32)`
-//! without the walker changing shape.
+//! Wildcard counts and currencies are 32-bit little-endian integers.
+//! `vaultProgress` is a **`System.Double`** (8 bytes) holding the
+//! percentage as a float (e.g. `30.1` for "30.1 % of the way to the
+//! next vault opening"); the 4-byte gap between it and the previous
+//! `wcTrackPosition` field at offset `0x68` is alignment padding the
+//! C# compiler inserts ahead of the 8-byte aligned double.
+//! Confirmed against MTGA's live UI on 2026-04-25.
 
 use super::field::{self, ResolvedField};
 use super::mono::{self, MonoOffsets};
 
 /// Snapshot of one `ClientPlayerInventory` read.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+///
+/// `vault_progress` is the live 0–100 percentage as a `f64` —
+/// matches MTGA's `System.Double` field. We don't impl `Eq` on the
+/// struct because of the float field, but `PartialEq` + `Clone` +
+/// `Copy` are still useful for tests and snapshot equality on the
+/// integer fields.
+#[derive(Copy, Clone, Debug, PartialEq)]
 pub struct InventoryValues {
     pub wc_common: i32,
     pub wc_uncommon: i32,
@@ -37,7 +45,7 @@ pub struct InventoryValues {
     pub wc_mythic: i32,
     pub gold: i32,
     pub gems: i32,
-    pub vault_progress: i32,
+    pub vault_progress: f64,
 }
 
 /// The seven field names the walker resolves on `ClientPlayerInventory`,
@@ -72,9 +80,10 @@ pub fn read_inventory<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    let mut values = [0i32; 7];
-    for (i, name) in FIELD_NAMES.iter().enumerate() {
-        let resolved = resolve_and_read_i32(
+    // First six fields: 32-bit integers.
+    let mut values = [0i32; 6];
+    for (i, name) in FIELD_NAMES.iter().take(6).enumerate() {
+        values[i] = resolve_and_read_i32(
             offsets,
             class_bytes,
             class_base,
@@ -82,8 +91,16 @@ where
             name,
             &read_mem,
         )?;
-        values[i] = resolved;
     }
+    // vaultProgress is a System.Double.
+    let vault_progress = resolve_and_read_f64(
+        offsets,
+        class_bytes,
+        class_base,
+        object_remote_addr,
+        "vaultProgress",
+        &read_mem,
+    )?;
     Some(InventoryValues {
         wc_common: values[0],
         wc_uncommon: values[1],
@@ -91,7 +108,7 @@ where
         wc_mythic: values[3],
         gold: values[4],
         gems: values[5],
-        vault_progress: values[6],
+        vault_progress,
     })
 }
 
@@ -114,6 +131,27 @@ where
     let value_addr = object_remote_addr.checked_add(resolved.offset as u64)?;
     let bytes = read_mem(value_addr, 4)?;
     mono::read_u32(&bytes, 0, 0).map(|v| v as i32)
+}
+
+fn resolve_and_read_f64<F>(
+    offsets: &MonoOffsets,
+    class_bytes: &[u8],
+    class_base: usize,
+    object_remote_addr: u64,
+    field_name: &str,
+    read_mem: &F,
+) -> Option<f64>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    let resolved: ResolvedField =
+        field::find_by_name(offsets, class_bytes, class_base, field_name, read_mem)?;
+    if resolved.is_static || resolved.offset < 0 {
+        return None;
+    }
+    let value_addr = object_remote_addr.checked_add(resolved.offset as u64)?;
+    let bytes = read_mem(value_addr, 8)?;
+    mono::read_u64(&bytes, 0, 0).map(f64::from_bits)
 }
 
 #[cfg(test)]
@@ -178,11 +216,14 @@ mod tests {
     }
 
     /// Populate FakeMem with the seven required inventory fields at
-    /// the given object-relative offsets, and the i32 values at those
-    /// offsets inside an object blob. Returns (class_bytes, object_addr).
+    /// the given object-relative offsets. The first six values are
+    /// 32-bit ints; `vaultProgress` is a 64-bit double. Returns the
+    /// class_bytes blob the caller passes to `read_inventory`.
     fn populate_inventory(
         mem: &mut FakeMem,
-        field_offsets: [(i32, i32); 7], // (offset, value) per FIELD_NAMES entry
+        int_field_offsets: [(i32, i32); 6], // (offset, value) for first 6 fields
+        vault_progress_offset: i32,
+        vault_progress_value: f64,
         object_addr: u64,
     ) -> Vec<u8> {
         let fields_array_addr: u64 = 0x1_0000;
@@ -194,7 +235,12 @@ mod tests {
         for (i, name) in FIELD_NAMES.iter().enumerate() {
             let name_ptr = names_base + (i as u64) * 0x40;
             let type_ptr = types_base + (i as u64) * 0x20;
-            let (offset, value) = field_offsets[i];
+
+            let offset = if i < 6 {
+                int_field_offsets[i].0
+            } else {
+                vault_progress_offset
+            };
 
             entry_blob.extend_from_slice(&make_field_entry(name_ptr, type_ptr, offset));
 
@@ -203,9 +249,14 @@ mod tests {
             mem.add(name_ptr, name_buf);
             mem.add(type_ptr, make_type_block(0));
 
-            // Write the value into the object blob at the requested offset.
+            // Write the value into the object blob.
             let o = offset as usize;
-            object_blob[o..o + 4].copy_from_slice(&value.to_le_bytes());
+            if i < 6 {
+                let value = int_field_offsets[i].1;
+                object_blob[o..o + 4].copy_from_slice(&value.to_le_bytes());
+            } else {
+                object_blob[o..o + 8].copy_from_slice(&vault_progress_value.to_bits().to_le_bytes());
+            }
         }
         mem.add(fields_array_addr, entry_blob);
         mem.add(object_addr, object_blob);
@@ -219,16 +270,16 @@ mod tests {
         let mut mem = FakeMem::default();
         let object_addr: u64 = 0x4_0000;
         // Offsets chosen non-contiguous to catch offset-swapping bugs.
-        let field_offsets: [(i32, i32); 7] = [
+        let int_field_offsets: [(i32, i32); 6] = [
             (0x10, 42),     // wcCommon
             (0x14, 17),     // wcUncommon
             (0x18, 5),      // wcRare
             (0x1c, 2),      // wcMythic
             (0x20, 12_345), // gold
             (0x24, 3_000),  // gems
-            (0x28, 250),    // vaultProgress
         ];
-        let class_bytes = populate_inventory(&mut mem, field_offsets, object_addr);
+        let class_bytes =
+            populate_inventory(&mut mem, int_field_offsets, 0x30, 30.1, object_addr);
 
         let inv = read_inventory(&offsets, &class_bytes, 0, object_addr, |a, l| {
             mem.read(a, l)
@@ -244,7 +295,7 @@ mod tests {
                 wc_mythic: 2,
                 gold: 12_345,
                 gems: 3_000,
-                vault_progress: 250,
+                vault_progress: 30.1,
             }
         );
         Ok(())

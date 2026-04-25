@@ -60,7 +60,7 @@ defmodule Scry2.Collection.Snapshot do
     field :wildcards_mythic, :integer
     field :gold, :integer
     field :gems, :integer
-    field :vault_progress, :integer
+    field :vault_progress, :float
 
     timestamps(type: :utc_datetime_usec)
   end

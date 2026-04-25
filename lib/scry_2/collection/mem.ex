@@ -77,7 +77,7 @@ defmodule Scry2.Collection.Mem do
           },
           required(:gold) => integer(),
           required(:gems) => integer(),
-          required(:vault_progress) => integer(),
+          required(:vault_progress) => float(),
           required(:build_hint) => String.t() | nil,
           required(:reader_version) => String.t()
         }

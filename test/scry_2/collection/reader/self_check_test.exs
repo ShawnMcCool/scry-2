@@ -142,7 +142,7 @@ defmodule Scry2.Collection.Reader.SelfCheckTest do
           wildcards: %{common: 42, uncommon: 17, rare: 5, mythic: 2},
           gold: 12_345,
           gems: 3_000,
-          vault_progress: 250,
+          vault_progress: 30.1,
           build_hint: "abc-123-guid",
           reader_version: "scry2-walker-0.1.0"
         },
@@ -195,7 +195,7 @@ defmodule Scry2.Collection.Reader.SelfCheckTest do
     end
 
     test "flags negative vault_progress" do
-      assert SelfCheck.walker_result_ok?(walker_snapshot(%{vault_progress: -1})) ==
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{vault_progress: -0.1})) ==
                {:error, {:check, :walker_negative_vault_progress}}
     end
 

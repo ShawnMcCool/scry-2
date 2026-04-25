@@ -120,14 +120,15 @@ pub struct Wildcards {
 
 /// Wire shape returned to Elixir on success — matches the contract
 /// in `decisions/architecture/2026-04-22-034-memory-read-collection.md`
-/// (Revision 2026-04-25).
+/// (Revision 2026-04-25). `vault_progress` is the live percentage
+/// (0.0–100.0, e.g. `30.1`) — MTGA stores it as `System.Double`.
 #[derive(NifMap)]
 pub struct WalkSnapshot {
     pub cards: Vec<CardEntry>,
     pub wildcards: Wildcards,
     pub gold: i32,
     pub gems: i32,
-    pub vault_progress: i32,
+    pub vault_progress: f64,
     pub build_hint: Option<String>,
     pub reader_version: String,
 }

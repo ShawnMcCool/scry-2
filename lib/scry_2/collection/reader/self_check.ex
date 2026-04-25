@@ -140,7 +140,7 @@ defmodule Scry2.Collection.Reader.SelfCheck do
       Map.get(snapshot, :gems, 0) < 0 ->
         {:error, {:check, :walker_negative_gems}}
 
-      Map.get(snapshot, :vault_progress, 0) < 0 ->
+      Map.get(snapshot, :vault_progress, 0.0) < 0.0 ->
         {:error, {:check, :walker_negative_vault_progress}}
 
       not plausible_count_distribution?(cards) ->

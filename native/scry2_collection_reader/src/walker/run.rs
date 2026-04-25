@@ -77,8 +77,9 @@ pub enum WalkError {
 
 /// Full walk result returned by [`walk_collection`]. Wraps
 /// [`chain::WalkResult`] and adds the disk-sourced
-/// `mtga_build_hint`.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// `mtga_build_hint`. Only `PartialEq` is derivable because
+/// `InventoryValues` carries an `f64` (`vault_progress`).
+#[derive(Clone, Debug, PartialEq)]
 pub struct Snapshot {
     /// Used entries from the `Cards` dictionary.
     pub entries: Vec<DictEntry>,
