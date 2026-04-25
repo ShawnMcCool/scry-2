@@ -304,7 +304,7 @@ land when the walker stops needing the assembly walk and switches to
 | 0x10 | `aname` (`MonoAssemblyName`, embedded) — first field is `aname.name` so `[asm+0x10]` IS the name pointer | ✓ dumper + `mov rax,[rbx+0x10]` reading the assembly name in `mono_domain_assembly_open_internal` (rbx = assembly) |
 | 0x60 | `image` (`MonoImage *`) | ✓ dumper + `mov rsi,[rsi+0x60]` reading the image pointer right after dereferencing the GSList data slot |
 
-**`MonoImage`** (truncated to `assembly_name`):
+**`MonoImage`** (truncated to `class_cache`):
 
 | Offset | Field |
 |---:|---|
@@ -315,9 +315,41 @@ land when the walker stops needing the assembly walk and switches to
 | 0x20 | `name` (char *) |
 | 0x28 | `filename` (char *) |
 | 0x30 | `assembly_name` (`const char *`) |
+| 0x38 | `module_name` (`const char *`) |
+| 0x4c0 | `assembly` (`MonoAssembly *`) |
+| 0x4c8 | `method_cache` (`GHashTable *`) |
+| **0x4d0** | **`class_cache` (`MonoInternalHashTable`, embedded by value)** |
 
-✓ dumper. Live-disassembly cross-check on these will land when the
-walker reads `MonoImage.class_cache` (next phase of class lookup).
+✓ dumper for the full prefix; live disassembly confirms `class_cache`
+via `lea rcx, [r13+0x4d0]; call mono_internal_hash_table_lookup` at
+`1800c83b3..1800c83bc`.
+
+The intermediate offsets between `module_name` and `assembly` are
+controlled by the embedded `MonoStreamHeader heap_*` (6 × 16 bytes),
+the `MonoTableInfo tables[MONO_TABLE_NUM]` array (56 × 16 bytes), and
+several pointer fields. Re-derive from the dumper if you need them.
+
+**`MonoInternalHashTable`** (40 bytes, embedded in `MonoImage.class_cache`):
+
+| Offset | Field | Evidence |
+|---:|---|---|
+| 0x00 | `hash_func` (`GHashFunc` — function pointer) | ✓ dumper + `call QWORD PTR [rdi]` in `mono_internal_hash_table_lookup` |
+| 0x08 | `key_extract` (function pointer) | ✓ dumper + `call QWORD PTR [rdi+0x8]` |
+| 0x10 | `next_value` (function pointer) | ✓ dumper + `call QWORD PTR [rdi+0x10]` |
+| 0x18 | `size` (i32 — bucket count) | ✓ dumper + `div DWORD PTR [rdi+0x18]` |
+| 0x1c | `num_entries` (i32) | dumper (source order between `size` and `table`; both gint with no padding) |
+| 0x20 | `table` (`gpointer *` — heap-allocated array of `size` chain heads) | ✓ dumper + `mov rbx, [rdi+0x20]` |
+
+For class_cache iteration the walker bypasses the function-pointer
+callbacks (we can't invoke remote function pointers) and walks
+`MonoClassDef.next_class_cache = 0x108` directly. Each chain entry is
+a `MonoClassDef *` whose embedded `MonoClass` lives at offset 0; its
+name (offset 0x48) and `class_kind` (offset 0x1b) are already in
+`MonoOffsets`.
+
+**`MonoClassDef.next_class_cache`** (chain pointer for `class_cache`
+buckets): offset `0x108` per dumper. Stored as `MonoClass *` in the
+header but always points to the next `MonoClassDef *` in the bucket.
 
 **`MonoClassRuntimeInfo`** (inferred from `mono_class_vtable` fast path):
 
@@ -349,12 +381,11 @@ when `field.rs` / `dict.rs` / `inventory.rs` are wired up.
 ## Struct offsets — open work
 
 The walker's `mono.rs` module pins offsets verified by both the
-`offsets_probe/` dumper and live disassembly. Remaining offsets needed
-for the next walker module (`class_lookup`):
-
-- `MonoImage` — `class_cache` (`MonoInternalHashTable`)
-- `MonoInternalHashTable` — bucket array head, table size, key/next
-  field offsets within `MonoClass`-shaped chained nodes
+`offsets_probe/` dumper and live disassembly. All offsets required by
+`class_lookup`, `image_lookup`, and the existing inventory walk are
+now in. The next walker module (`domain.rs`) needs no new struct
+offsets — it composes existing pieces (`pe`, `prologue`,
+`mono_get_root_domain`).
 
 ### Method for each offset
 

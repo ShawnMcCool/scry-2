@@ -32,6 +32,7 @@
 #![allow(dead_code)]
 
 pub mod chain;
+pub mod class_lookup;
 pub mod dict;
 pub mod field;
 pub mod image_lookup;

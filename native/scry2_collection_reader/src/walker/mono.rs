@@ -130,6 +130,30 @@ pub enum OffsetKey {
     /// verified by `mov rsi,[rsi+0x60]` reading the image pointer
     /// after dereferencing a GSList node's data slot.
     AssemblyImage,
+    /// `MonoClass.name` (`const char *`). Offset `0x48`, verified
+    /// by `offsets_probe/dump.c`.
+    ClassName,
+    /// `MonoImage.class_cache` — start of the embedded
+    /// `MonoInternalHashTable`. Offset `0x4d0`, verified by
+    /// `lea rcx, [r13+0x4d0]; call mono_internal_hash_table_lookup`
+    /// at `1800c83b3..1800c83bc` in MTGA's mono DLL.
+    ImageClassCache,
+    /// `MonoInternalHashTable.size` (i32, bucket count). Offset
+    /// `0x18`, verified by `div DWORD PTR [rdi+0x18]` in
+    /// `mono_internal_hash_table_lookup` (rdi = table).
+    HashTableSize,
+    /// `MonoInternalHashTable.num_entries` (i32). Offset `0x1c`,
+    /// per dumper (source order between `size` at 0x18 and
+    /// `table` at 0x20; both gint with no padding).
+    HashTableNumEntries,
+    /// `MonoInternalHashTable.table` (`gpointer *` — heap-allocated
+    /// array of `size` chain heads). Offset `0x20`, verified by
+    /// `mov rbx, [rdi+0x20]` in `mono_internal_hash_table_lookup`.
+    HashTableTable,
+    /// `MonoClassDef.next_class_cache` — chain pointer for entries
+    /// in `MonoImage.class_cache`. Offset `0x108`, verified by the
+    /// `offsets_probe/` dumper.
+    ClassDefNextClassCache,
 }
 
 /// ECMA-335 `FIELD_ATTRIBUTE_STATIC` flag — set on a field's `type`
@@ -163,6 +187,12 @@ pub struct MonoOffsets {
     pub gslist_next: usize,
     pub assembly_aname_name: usize,
     pub assembly_image: usize,
+    pub class_name: usize,
+    pub image_class_cache: usize,
+    pub hash_table_size: usize,
+    pub hash_table_num_entries: usize,
+    pub hash_table_table: usize,
+    pub class_def_next_class_cache: usize,
 }
 
 impl MonoOffsets {
@@ -201,6 +231,12 @@ impl MonoOffsets {
             gslist_next: 0x08,
             assembly_aname_name: 0x10,
             assembly_image: 0x60,
+            class_name: 0x48,
+            image_class_cache: 0x4d0,
+            hash_table_size: 0x18,
+            hash_table_num_entries: 0x1c,
+            hash_table_table: 0x20,
+            class_def_next_class_cache: 0x108,
         }
     }
 
@@ -228,6 +264,12 @@ impl MonoOffsets {
             OffsetKey::GSListNext => self.gslist_next,
             OffsetKey::AssemblyAnameName => self.assembly_aname_name,
             OffsetKey::AssemblyImage => self.assembly_image,
+            OffsetKey::ClassName => self.class_name,
+            OffsetKey::ImageClassCache => self.image_class_cache,
+            OffsetKey::HashTableSize => self.hash_table_size,
+            OffsetKey::HashTableNumEntries => self.hash_table_num_entries,
+            OffsetKey::HashTableTable => self.hash_table_table,
+            OffsetKey::ClassDefNextClassCache => self.class_def_next_class_cache,
         }
     }
 }
@@ -460,6 +502,52 @@ pub fn assembly_image_ptr(
     read_ptr(bytes, assembly_base, offsets.assembly_image)
 }
 
+/// Read `MonoClass.name` — pointer to the class's NUL-terminated
+/// short name in the target process.
+pub fn class_name_ptr(offsets: &MonoOffsets, bytes: &[u8], class_base: usize) -> Option<u64> {
+    read_ptr(bytes, class_base, offsets.class_name)
+}
+
+/// Compute the remote address of `MonoImage.class_cache` (the start
+/// of the embedded `MonoInternalHashTable`) given the image's remote
+/// address.
+pub fn image_class_cache_addr(offsets: &MonoOffsets, image_remote_addr: u64) -> Option<u64> {
+    image_remote_addr.checked_add(offsets.image_class_cache as u64)
+}
+
+/// Read `MonoInternalHashTable.size` (i32 — bucket count).
+pub fn hash_table_size(offsets: &MonoOffsets, bytes: &[u8], table_base: usize) -> Option<i32> {
+    read_u32(bytes, table_base, offsets.hash_table_size).map(|v| v as i32)
+}
+
+/// Read `MonoInternalHashTable.num_entries` (i32). Useful as a
+/// sanity / diagnostic counter; the walker doesn't rely on it for
+/// iteration.
+pub fn hash_table_num_entries(
+    offsets: &MonoOffsets,
+    bytes: &[u8],
+    table_base: usize,
+) -> Option<i32> {
+    read_u32(bytes, table_base, offsets.hash_table_num_entries).map(|v| v as i32)
+}
+
+/// Read `MonoInternalHashTable.table` — pointer to the heap-allocated
+/// `gpointer[size]` array of bucket-chain heads.
+pub fn hash_table_table_ptr(offsets: &MonoOffsets, bytes: &[u8], table_base: usize) -> Option<u64> {
+    read_ptr(bytes, table_base, offsets.hash_table_table)
+}
+
+/// Read `MonoClassDef.next_class_cache` — the chain pointer in
+/// `MonoImage.class_cache` buckets. Each value is a `MonoClass *`
+/// (the next entry in the same bucket) or 0 at the end.
+pub fn class_def_next_class_cache_ptr(
+    offsets: &MonoOffsets,
+    bytes: &[u8],
+    class_base: usize,
+) -> Option<u64> {
+    read_ptr(bytes, class_base, offsets.class_def_next_class_cache)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -550,6 +638,12 @@ mod tests {
             gslist_next: 0xb3,
             assembly_aname_name: 0xb4,
             assembly_image: 0xb5,
+            class_name: 0xc1,
+            image_class_cache: 0xc2,
+            hash_table_size: 0xc3,
+            hash_table_num_entries: 0xc4,
+            hash_table_table: 0xc5,
+            class_def_next_class_cache: 0xc6,
         };
         assert_eq!(offsets.get(OffsetKey::ClassFields), 0xaa);
         assert_eq!(offsets.get(OffsetKey::ClassRuntimeInfo), 0xbb);
@@ -572,6 +666,12 @@ mod tests {
         assert_eq!(offsets.get(OffsetKey::GSListNext), 0xb3);
         assert_eq!(offsets.get(OffsetKey::AssemblyAnameName), 0xb4);
         assert_eq!(offsets.get(OffsetKey::AssemblyImage), 0xb5);
+        assert_eq!(offsets.get(OffsetKey::ClassName), 0xc1);
+        assert_eq!(offsets.get(OffsetKey::ImageClassCache), 0xc2);
+        assert_eq!(offsets.get(OffsetKey::HashTableSize), 0xc3);
+        assert_eq!(offsets.get(OffsetKey::HashTableNumEntries), 0xc4);
+        assert_eq!(offsets.get(OffsetKey::HashTableTable), 0xc5);
+        assert_eq!(offsets.get(OffsetKey::ClassDefNextClassCache), 0xc6);
     }
 
     #[test]
@@ -601,6 +701,12 @@ mod tests {
         assert_eq!(offsets.gslist_next, 0x08);
         assert_eq!(offsets.assembly_aname_name, 0x10);
         assert_eq!(offsets.assembly_image, 0x60);
+        assert_eq!(offsets.class_name, 0x48);
+        assert_eq!(offsets.image_class_cache, 0x4d0);
+        assert_eq!(offsets.hash_table_size, 0x18);
+        assert_eq!(offsets.hash_table_num_entries, 0x1c);
+        assert_eq!(offsets.hash_table_table, 0x20);
+        assert_eq!(offsets.class_def_next_class_cache, 0x108);
     }
 
     #[test]
@@ -940,5 +1046,71 @@ mod tests {
         // Just large enough for `aname.name` at 0x10:
         let small = vec![0u8; 0x18];
         assert_eq!(assembly_aname_name_ptr(&offsets, &small, 0), Some(0));
+    }
+
+    #[test]
+    fn class_name_ptr_reads_at_0x48() {
+        let offsets = MonoOffsets::mtga_default();
+        let class_base = 0x40;
+        let name_ptr: u64 = 0xdead_beef_0000_1234;
+        let mut buf = vec![0u8; class_base + 0x100];
+        buf[class_base + offsets.class_name..class_base + offsets.class_name + 8]
+            .copy_from_slice(&name_ptr.to_le_bytes());
+        assert_eq!(class_name_ptr(&offsets, &buf, class_base), Some(name_ptr));
+    }
+
+    #[test]
+    fn image_class_cache_addr_offsets_by_0x4d0() {
+        let offsets = MonoOffsets::mtga_default();
+        let image: u64 = 0x1_0000_0000;
+        assert_eq!(image_class_cache_addr(&offsets, image), Some(image + 0x4d0));
+    }
+
+    #[test]
+    fn image_class_cache_addr_rejects_overflow() {
+        let offsets = MonoOffsets::mtga_default();
+        assert_eq!(image_class_cache_addr(&offsets, u64::MAX), None);
+    }
+
+    #[test]
+    fn hash_table_accessors_read_size_num_entries_table() {
+        let offsets = MonoOffsets::mtga_default();
+        let table_base = 0x80;
+        let size: i32 = 1024;
+        let num: i32 = 837;
+        let table_ptr: u64 = 0x7fff_aaaa_bbbb_cccc;
+        let mut buf = vec![0u8; table_base + 0x40];
+        buf[table_base + offsets.hash_table_size..table_base + offsets.hash_table_size + 4]
+            .copy_from_slice(&(size as u32).to_le_bytes());
+        buf[table_base + offsets.hash_table_num_entries
+            ..table_base + offsets.hash_table_num_entries + 4]
+            .copy_from_slice(&(num as u32).to_le_bytes());
+        buf[table_base + offsets.hash_table_table..table_base + offsets.hash_table_table + 8]
+            .copy_from_slice(&table_ptr.to_le_bytes());
+
+        assert_eq!(hash_table_size(&offsets, &buf, table_base), Some(size));
+        assert_eq!(
+            hash_table_num_entries(&offsets, &buf, table_base),
+            Some(num)
+        );
+        assert_eq!(
+            hash_table_table_ptr(&offsets, &buf, table_base),
+            Some(table_ptr)
+        );
+    }
+
+    #[test]
+    fn class_def_next_class_cache_reads_at_0x108() {
+        let offsets = MonoOffsets::mtga_default();
+        let class_base = 0x10;
+        let next_ptr: u64 = 0xcafe_0011_2233_4455;
+        let mut buf = vec![0u8; class_base + 0x200];
+        buf[class_base + offsets.class_def_next_class_cache
+            ..class_base + offsets.class_def_next_class_cache + 8]
+            .copy_from_slice(&next_ptr.to_le_bytes());
+        assert_eq!(
+            class_def_next_class_cache_ptr(&offsets, &buf, class_base),
+            Some(next_ptr)
+        );
     }
 }

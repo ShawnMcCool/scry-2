@@ -36,6 +36,7 @@ typedef unsigned short     guint16;
 typedef unsigned int       guint;
 typedef unsigned int       guint32;
 typedef int                gint32;
+typedef short              gint16;
 typedef unsigned long long guint64;
 typedef int                gboolean;
 typedef void              *gpointer;
@@ -73,6 +74,10 @@ typedef struct _MonoClassRuntimeInfo  MonoClassRuntimeInfo;
 typedef struct _MonoArrayBounds       MonoArrayBounds;
 typedef struct _MonoAssembly          MonoAssembly;
 typedef struct _MonoAssemblyName      MonoAssemblyName;
+typedef struct _MonoCLIImageInfo      MonoCLIImageInfo;
+typedef struct _MonoMemPool           MonoMemPool;
+typedef struct _MonoAotModule         MonoAotModule;
+typedef struct _GHashTable            GHashTable;
 
 /* MonoGCDescriptor is a pointer-sized typedef in the bdwgc runtime. */
 typedef gpointer MonoGCDescriptor;
@@ -327,16 +332,72 @@ struct _MonoAssembly {
     /* Trailing fields elided — not consumed by the walker. */
 };
 
+/* ---- MonoStreamHeader (metadata-internals.h) ----
+ *
+ * Verbatim. 12 bytes content; trailing 4 bytes of padding when used
+ * in arrays (sizeof = 16).
+ */
+typedef struct {
+    const char *data;
+    guint32     size;
+} MonoStreamHeader;
+
+/* ---- MonoTableInfo (metadata-internals.h) ----
+ *
+ * Verbatim. The two `guint` bitfields share one 4-byte storage unit
+ * under MSVC packing rules. sizeof should be 16.
+ */
+struct _MonoTableInfo {
+    const char *base;
+    guint  rows     : 24;
+    guint  row_size : 8;
+    guint32 size_bitfield;
+};
+typedef struct _MonoTableInfo MonoTableInfo;
+
+_Static_assert(sizeof(MonoStreamHeader) == 16,
+               "MonoStreamHeader size mismatch — bitfield/padding rules differ from MSVC");
+_Static_assert(sizeof(MonoTableInfo) == 16,
+               "MonoTableInfo size mismatch — bitfield/padding rules differ from MSVC");
+
+/* `MONO_TABLE_NUM` is `MONO_TABLE_LAST + 1` per `metadata/blob.h`.
+ * MONO_TABLE_LAST = MONO_TABLE_CUSTOMDEBUGINFORMATION (the 56th
+ * entry, 0-indexed: 55) — derived by counting the enum members in
+ * `blob.h`. */
+#define MONO_TABLE_NUM 56
+
+/* ---- MonoInternalHashTable (mono/utils/mono-internal-hash.h) ----
+ *
+ * Verbatim. Embedded by value in `MonoImage.class_cache`. Used by
+ * the walker to enumerate every `MonoClass *` an image owns.
+ */
+typedef gpointer (*MonoInternalHashKeyExtractFunc)(gpointer);
+typedef gpointer *(*MonoInternalHashNextValueFunc)(gpointer);
+typedef guint (*GHashFunc)(gpointer);
+
+struct _MonoInternalHashTable {
+    GHashFunc                       hash_func;
+    MonoInternalHashKeyExtractFunc  key_extract;
+    MonoInternalHashNextValueFunc   next_value;
+    int                             size;
+    int                             num_entries;
+    gpointer                       *table;
+};
+typedef struct _MonoInternalHashTable MonoInternalHashTable;
+
 /* ---- MonoImage (metadata-internals.h) ----
  *
- * Reproduced **only up to the `assembly_name` field** the walker
- * may read. Truncating after `assembly_name` does not affect any
+ * Reproduced **only up to the `class_cache` field** the walker
+ * reads. Truncating after `class_cache` does not affect any
  * reproduced field's `offsetof`.
  *
  * The 12 single-bit `guint8` flags pack into 2 bytes under MSVC
  * bitfield rules (`-mms-bitfields`): same-underlying-type bitfields
  * coalesce into the same storage unit, with each `guint8` providing
  * up to 8 bits.
+ *
+ * `ENABLE_NETCORE` is OFF in MBE builds, so the netcore-only `alc`
+ * field is omitted — its offset cannot move what comes before it.
  */
 struct _MonoImage {
     int   ref_count;
@@ -357,9 +418,53 @@ struct _MonoImage {
     guint8 core_clr_platform_code: 1;
     guint8 minimal_delta         : 1;
 
-    char *name;
-    char *filename;
+    char       *name;
+    char       *filename;
     const char *assembly_name;
+
+    const char *module_name;
+    guint32     time_date_stamp;
+
+    char       *version;
+    gint16      md_version_major, md_version_minor;
+    char       *guid;
+    MonoCLIImageInfo *image_info;
+    MonoMemPool      *mempool;
+
+    char       *raw_metadata;
+
+    MonoStreamHeader heap_strings;
+    MonoStreamHeader heap_us;
+    MonoStreamHeader heap_blob;
+    MonoStreamHeader heap_guid;
+    MonoStreamHeader heap_tables;
+    MonoStreamHeader heap_pdb;
+
+    const char *tables_base;
+
+    guint64 referenced_tables;
+    int    *referenced_table_rows;
+
+    MonoTableInfo tables[MONO_TABLE_NUM];
+
+    MonoAssembly **references;
+    int            nreferences;
+
+    MonoImage    **modules;
+    guint32        module_count;
+    gboolean      *modules_loaded;
+
+    MonoImage    **files;
+    guint32        file_count;
+
+    MonoAotModule *aot_module;
+
+    guint8         aotid[16];
+
+    MonoAssembly  *assembly;
+
+    GHashTable    *method_cache;
+    MonoInternalHashTable class_cache;
     /* Trailing fields elided — not consumed by the walker. */
 };
 
@@ -480,7 +585,7 @@ int main(void) {
     P_OFFSET(struct _MonoAssembly, aname);
     P_OFFSET(struct _MonoAssembly, image);
 
-    puts("\n=== MonoImage (truncated to .assembly_name) ===");
+    puts("\n=== MonoImage (truncated to .class_cache) ===");
     P_OFFSET(struct _MonoImage, ref_count);
     P_OFFSET(struct _MonoImage, storage);
     P_OFFSET(struct _MonoImage, raw_data);
@@ -488,6 +593,39 @@ int main(void) {
     P_OFFSET(struct _MonoImage, name);
     P_OFFSET(struct _MonoImage, filename);
     P_OFFSET(struct _MonoImage, assembly_name);
+    P_OFFSET(struct _MonoImage, module_name);
+    P_OFFSET(struct _MonoImage, time_date_stamp);
+    P_OFFSET(struct _MonoImage, raw_metadata);
+    P_OFFSET(struct _MonoImage, heap_strings);
+    P_OFFSET(struct _MonoImage, tables_base);
+    P_OFFSET(struct _MonoImage, tables);
+    P_OFFSET(struct _MonoImage, references);
+    P_OFFSET(struct _MonoImage, modules);
+    P_OFFSET(struct _MonoImage, files);
+    P_OFFSET(struct _MonoImage, aot_module);
+    P_OFFSET(struct _MonoImage, aotid);
+    P_OFFSET(struct _MonoImage, assembly);
+    P_OFFSET(struct _MonoImage, method_cache);
+    P_OFFSET(struct _MonoImage, class_cache);
+
+    puts("\n=== MonoStreamHeader ===");
+    P_SIZE(MonoStreamHeader);
+    P_OFFSET(MonoStreamHeader, data);
+    P_OFFSET(MonoStreamHeader, size);
+
+    puts("\n=== MonoTableInfo ===");
+    P_SIZE(MonoTableInfo);
+    P_OFFSET(MonoTableInfo, base);
+    P_OFFSET(MonoTableInfo, size_bitfield);
+
+    puts("\n=== MonoInternalHashTable ===");
+    P_SIZE(MonoInternalHashTable);
+    P_OFFSET(MonoInternalHashTable, hash_func);
+    P_OFFSET(MonoInternalHashTable, key_extract);
+    P_OFFSET(MonoInternalHashTable, next_value);
+    P_OFFSET(MonoInternalHashTable, size);
+    P_OFFSET(MonoInternalHashTable, num_entries);
+    P_OFFSET(MonoInternalHashTable, table);
 
     return 0;
 }
