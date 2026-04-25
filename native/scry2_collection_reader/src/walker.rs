@@ -31,4 +31,12 @@
 // comes off.
 #![allow(dead_code)]
 
+pub mod chain;
+pub mod dict;
+pub mod field;
+pub mod image_lookup;
+pub mod inventory;
+pub mod mono;
+pub mod pe;
 pub mod prologue;
+pub mod vtable;
