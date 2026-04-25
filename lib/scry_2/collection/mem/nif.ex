@@ -53,6 +53,9 @@ defmodule Scry2.Collection.Mem.Nif do
     end
   end
 
+  @impl true
+  def walk_collection(_pid), do: :erlang.nif_error(:nif_not_loaded)
+
   # --- raw NIF declarations ---
 
   @doc false

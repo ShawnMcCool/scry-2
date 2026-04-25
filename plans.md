@@ -102,14 +102,10 @@ for evidence.
 
 ### Remaining — discrete next units
 
-**Walker (Rust crate) modules in dependency order:**
-
-_All Rust-side modules are now Done. Remaining work is the Elixir
-integration plan immediately below — wiring `Scry2.Collection.Mem.Nif`,
-the `walk_collection/1` callback in the `Mem` behaviour, the
-`Scry2.Collection.Reader.run/1` walker-first / scanner-fallback
-dispatch, the `SelfCheck` validator, and the `Snapshot` schema /
-diagnostics page changes._
+**Walker (Rust crate) modules — all Done.** Remaining work is the
+diagnostics page wiring (`walker share %` KPI on the reconciliation
+page should now reflect actual walker hits since `Scry2.Collection`
+already groups snapshots by `reader_confidence`).
 
 **NIF wiring (last Rust-side step before Elixir):**
 
@@ -118,20 +114,28 @@ in `native/scry2_collection_reader/src/lib.rs`. Map `WalkResult` →
 `{:ok, %{wildcards_common: …, gold: …, cards: [%{arena_id, count}, …], mtga_build_hint: …}}`
 matching the shape specified in ADR-034 Revision 2026-04-25.
 
-**Elixir integration plan** (after the NIF returns a usable WalkResult):
+**Elixir integration — Done.**
 
-1. `Scry2.Collection.Mem` behaviour grows a `walk_collection/1` callback.
-2. `Scry2.Collection.Reader.run/1` calls walker first; on `{:error, _}`
-   falls back to the existing `Scanner` and stamps
-   `reader_confidence = "fallback_scan"`. Walker success stamps
-   `"walker"`.
-3. `SelfCheck` validates the returned map (plausible card counts,
-   wildcards non-negative, build-hint shape).
-4. `Snapshot` schema fields `wildcards_*` / `gold` / `gems` /
-   `vault_progress` / `mtga_build_hint` (already present, currently
-   `nil`) get populated.
-5. The reconciliation diagnostics page's `walker share %` KPI starts
-   reflecting walker hits.
+1. ✅ `Scry2.Collection.Mem` behaviour has the `walk_collection/1`
+   callback; `Mem.Nif` delegates to the Rust NIF; `Mem.TestBackend`
+   reads from a `:walker_snapshot` fixture key.
+2. ✅ `Scry2.Collection.Reader.read/1` now tries the walker first
+   (after `discovery_ok?`). On `{:error, _}` from the walker or on
+   `walker_result_ok?/2` failure it logs and falls back to the
+   existing scanner pipeline. Walker success stamps
+   `reader_confidence: "walker"` plus the flat `wildcards_*` / `gold`
+   / `gems` / `vault_progress` / `mtga_build_hint` fields the
+   `Snapshot` schema already expects.
+3. ✅ `SelfCheck.walker_result_ok?/2` validates the walker output:
+   non-empty cards, positive arena_ids, positive counts, non-negative
+   wildcards / gold / gems / vault_progress, plausible count
+   distribution, configurable `:min_cards`.
+4. ✅ `Snapshot` schema fields are populated end-to-end —
+   `Scry2.Collection.save_snapshot/1` already merged the walker
+   fields into the changeset; the Reader now actually emits them.
+5. ✅ `Scry2.Collection.snapshot_count_by_confidence/0` is unchanged
+   but now meaningfully separates `walker` from `fallback_scan`
+   counts as walker hits start landing.
 
 **Test posture:** every Rust module gets `#[cfg(test)] mod tests` with
 inline byte-array fixtures; no live MTGA needed for unit tests. Live

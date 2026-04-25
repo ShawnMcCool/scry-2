@@ -2,23 +2,28 @@ defmodule Scry2.Collection.Reader do
   @moduledoc """
   Orchestrates one read of the MTGA card collection from process memory.
 
-  Pipeline (ADR 034 phase 3):
+  Pipeline (ADR 034 phase 3 / Revision 2026-04-25):
 
       find MTGA pid (Discovery)
         → list memory maps (Mem.list_maps)
           → discovery self-check (mono + UnityPlayer mapped)
-            → access channel self-check (MTGA.exe PE "MZ" readable)
-              → structural scan across candidate heap regions (Scanner)
-                → scan-result self-check (enough entries, plausible)
-                  → summarised read result
+            → walker path (Mem.walk_collection + walker_result_ok?)
+            ↓ on walker {:error, _} or self-check failure
+              → access channel self-check (MTGA.exe PE "MZ" readable)
+                → structural scan across candidate heap regions (Scanner)
+                  → scan-result self-check (enough entries, plausible)
+                    → summarised read result
 
-  The scanner path is proven; a mono-walker path is a follow-up (it
-  will short-circuit this pipeline once implemented, falling back to
-  the scanner on walker failure). For now `reader_confidence` is
-  always `"fallback_scan"`.
+  Walker success stamps `reader_confidence: "walker"` and populates
+  `wildcards_*`, `gold`, `gems`, `vault_progress`, and
+  `mtga_build_hint`. Scanner fallback stamps
+  `reader_confidence: "fallback_scan"` and leaves the walker-only
+  fields out of the result.
 
   Pure orchestrator: no GenServer, no ETS. The caller is an Oban job.
   """
+
+  require Scry2.Log, as: Log
 
   alias Scry2.Collection.Mem
   alias Scry2.Collection.Reader.{Discovery, Scanner, SelfCheck}
@@ -62,16 +67,65 @@ defmodule Scry2.Collection.Reader do
     scanner_opts = Keyword.get(opts, :scanner, [])
     chunk_size = Keyword.get(opts, :chunk_size, @default_chunk_size)
     max_regions = Keyword.get(opts, :max_regions, @default_max_regions)
-    self_check_opts = Keyword.take(opts, [:min_scan_entries])
+    scan_check_opts = Keyword.take(opts, [:min_scan_entries])
+    walker_check_opts = Keyword.take(opts, [:min_walker_cards])
 
     with {:ok, pid} <- Discovery.find_mtga(mem),
          {:ok, maps} <- mem.list_maps(pid),
-         :ok <- SelfCheck.discovery_ok?(maps),
-         :ok <- SelfCheck.access_channel_ok?(mem, pid, maps),
+         :ok <- SelfCheck.discovery_ok?(maps) do
+      case try_walker(mem, pid, walker_check_opts) do
+        {:ok, walker_result} ->
+          {:ok, walker_result}
+
+        {:error, reason} ->
+          Log.info(:ingester, fn ->
+            "walker fell back to scanner: #{inspect(reason)}"
+          end)
+
+          run_scanner_path(mem, pid, maps, scanner_opts, chunk_size, max_regions, scan_check_opts)
+      end
+    end
+  end
+
+  defp try_walker(mem, pid, walker_check_opts) do
+    with {:ok, snapshot} <- mem.walk_collection(pid),
+         :ok <- SelfCheck.walker_result_ok?(snapshot, walker_check_opts) do
+      {:ok, summarize_walker(snapshot)}
+    end
+  end
+
+  defp run_scanner_path(mem, pid, maps, scanner_opts, chunk_size, max_regions, scan_check_opts) do
+    with :ok <- SelfCheck.access_channel_ok?(mem, pid, maps),
          {:ok, finding} <- scan_heap(mem, pid, maps, scanner_opts, chunk_size, max_regions),
-         :ok <- SelfCheck.scan_result_ok?(finding, self_check_opts) do
+         :ok <- SelfCheck.scan_result_ok?(finding, scan_check_opts) do
       {:ok, summarize(finding)}
     end
+  end
+
+  defp summarize_walker(%{
+         cards: cards,
+         wildcards: %{common: c, uncommon: u, rare: r, mythic: m},
+         gold: gold,
+         gems: gems,
+         vault_progress: vault,
+         build_hint: build_hint
+       }) do
+    total_copies = Enum.reduce(cards, 0, fn {_, count}, acc -> acc + count end)
+
+    %{
+      entries: cards,
+      card_count: length(cards),
+      total_copies: total_copies,
+      reader_confidence: "walker",
+      wildcards_common: c,
+      wildcards_uncommon: u,
+      wildcards_rare: r,
+      wildcards_mythic: m,
+      gold: gold,
+      gems: gems,
+      vault_progress: vault,
+      mtga_build_hint: build_hint
+    }
   end
 
   # --- scan orchestration ---

@@ -77,6 +77,38 @@ defmodule Scry2.Collection.Mem.TestBackendTest do
     end
   end
 
+  describe "walk_collection/1" do
+    test "returns the configured :walker_snapshot fixture verbatim" do
+      snap = %{
+        cards: [{70012, 4}, {82456, 2}, {91234, 1}],
+        wildcards: %{common: 42, uncommon: 17, rare: 5, mythic: 2},
+        gold: 12_345,
+        gems: 3_000,
+        vault_progress: 250,
+        build_hint: "abc-123-guid",
+        reader_version: "scry2-walker-0.1.0"
+      }
+
+      TestBackend.set_fixture(walker_snapshot: snap)
+      assert TestBackend.walk_collection(1) == {:ok, snap}
+    end
+
+    test "returns {:error, :no_walker_snapshot} when fixture is set but :walker_snapshot is omitted" do
+      TestBackend.set_fixture(maps: [])
+      assert TestBackend.walk_collection(1) == {:error, :no_walker_snapshot}
+    end
+
+    test "returns {:error, :no_fixture} when no fixture has been set" do
+      assert TestBackend.walk_collection(1) == {:error, :no_fixture}
+    end
+
+    test "passes through any error tuple set in the fixture" do
+      # Lets a test simulate the walker failing for a specific reason.
+      TestBackend.set_fixture(walker_snapshot: {:error, {:assembly_not_found, "Core"}})
+      assert TestBackend.walk_collection(1) == {:error, {:assembly_not_found, "Core"}}
+    end
+  end
+
   describe "dictionary<int,int> fixture exercises" do
     test "reads a synthetic Mono Dictionary<int,int> entries array field-by-field" do
       # A Mono-style Dictionary<int,int> entries array in .NET/Mono layout:

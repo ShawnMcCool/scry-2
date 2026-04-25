@@ -22,6 +22,7 @@ defmodule Scry2.Collection.Reader.SelfCheck do
   @unity_player_suffix "UnityPlayer.dll"
   @mtga_exe_suffix "MTGA.exe"
   @default_min_scan_entries 500
+  @default_min_walker_cards 1
   @max_dominant_count_ratio 0.95
 
   @doc """
@@ -92,6 +93,64 @@ defmodule Scry2.Collection.Reader.SelfCheck do
     end
   end
 
+  @doc """
+  Plausibility validator for the walker's snapshot output.
+
+  Catches:
+
+    * empty `cards` list (walker-internal failure that escaped error
+      reporting)
+    * non-positive arena id or count
+    * negative wildcard / gold / gems / vault_progress totals
+    * implausibly uniform count distribution (looks like a sentinel
+      fill rather than a real collection)
+    * fewer cards than `:min_cards` (default 1)
+
+  Returns `:ok` or `{:error, {:check, atom() | tuple()}}`. Each
+  failure atom is prefixed `walker_` so the Console drawer can
+  distinguish walker checks from scanner checks at a glance.
+  """
+  @spec walker_result_ok?(Mem.walker_snapshot(), keyword()) ::
+          :ok | {:error, {:check, atom() | tuple()}}
+  def walker_result_ok?(snapshot, opts \\ [])
+
+  def walker_result_ok?(%{cards: cards} = snapshot, opts) do
+    min_cards = Keyword.get(opts, :min_cards, @default_min_walker_cards)
+    %{wildcards: wc} = snapshot
+
+    cond do
+      cards == [] ->
+        {:error, {:check, :walker_no_cards}}
+
+      length(cards) < min_cards ->
+        {:error, {:check, {:walker_too_few_cards, length(cards)}}}
+
+      not all_positive_arena_ids?(cards) ->
+        {:error, {:check, :walker_non_positive_arena_id}}
+
+      not all_positive_counts?(cards) ->
+        {:error, {:check, :walker_non_positive_count}}
+
+      negative_wildcards?(wc) ->
+        {:error, {:check, :walker_negative_wildcards}}
+
+      Map.get(snapshot, :gold, 0) < 0 ->
+        {:error, {:check, :walker_negative_gold}}
+
+      Map.get(snapshot, :gems, 0) < 0 ->
+        {:error, {:check, :walker_negative_gems}}
+
+      Map.get(snapshot, :vault_progress, 0) < 0 ->
+        {:error, {:check, :walker_negative_vault_progress}}
+
+      not plausible_count_distribution?(cards) ->
+        {:error, {:check, :walker_implausible_count_distribution}}
+
+      true ->
+        :ok
+    end
+  end
+
   # --- helpers ---
 
   defp has_module?(maps, suffix) do
@@ -119,6 +178,18 @@ defmodule Scry2.Collection.Reader.SelfCheck do
 
   defp all_arena_ids_positive?(entries) do
     Enum.all?(entries, fn {arena_id, _count} -> arena_id > 0 end)
+  end
+
+  defp all_positive_arena_ids?(cards) do
+    Enum.all?(cards, fn {arena_id, _count} -> arena_id > 0 end)
+  end
+
+  defp all_positive_counts?(cards) do
+    Enum.all?(cards, fn {_arena_id, count} -> count > 0 end)
+  end
+
+  defp negative_wildcards?(%{common: c, uncommon: u, rare: r, mythic: m}) do
+    c < 0 or u < 0 or r < 0 or m < 0
   end
 
   defp plausible_count_distribution?(entries) do

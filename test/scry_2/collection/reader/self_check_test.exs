@@ -133,4 +133,88 @@ defmodule Scry2.Collection.Reader.SelfCheckTest do
                {:error, {:check, :non_positive_arena_id}}
     end
   end
+
+  describe "walker_result_ok?/2" do
+    defp walker_snapshot(overrides \\ %{}) do
+      Map.merge(
+        %{
+          cards: [{70012, 1}, {82456, 4}, {91234, 2}, {44321, 1}],
+          wildcards: %{common: 42, uncommon: 17, rare: 5, mythic: 2},
+          gold: 12_345,
+          gems: 3_000,
+          vault_progress: 250,
+          build_hint: "abc-123-guid",
+          reader_version: "scry2-walker-0.1.0"
+        },
+        overrides
+      )
+    end
+
+    test "passes for a fully populated plausible snapshot" do
+      assert SelfCheck.walker_result_ok?(walker_snapshot()) == :ok
+    end
+
+    test "passes when build_hint is nil (boot.config unreadable)" do
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{build_hint: nil})) == :ok
+    end
+
+    test "flags an empty cards list" do
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{cards: []})) ==
+               {:error, {:check, :walker_no_cards}}
+    end
+
+    test "flags a non-positive arena_id" do
+      cards = [{70012, 1}, {0, 4}]
+
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{cards: cards})) ==
+               {:error, {:check, :walker_non_positive_arena_id}}
+    end
+
+    test "flags a non-positive count" do
+      cards = [{70012, 1}, {82456, 0}]
+
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{cards: cards})) ==
+               {:error, {:check, :walker_non_positive_count}}
+    end
+
+    test "flags a negative wildcard total" do
+      wc = %{common: -1, uncommon: 17, rare: 5, mythic: 2}
+
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{wildcards: wc})) ==
+               {:error, {:check, :walker_negative_wildcards}}
+    end
+
+    test "flags negative gold" do
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{gold: -1})) ==
+               {:error, {:check, :walker_negative_gold}}
+    end
+
+    test "flags negative gems" do
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{gems: -1})) ==
+               {:error, {:check, :walker_negative_gems}}
+    end
+
+    test "flags negative vault_progress" do
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{vault_progress: -1})) ==
+               {:error, {:check, :walker_negative_vault_progress}}
+    end
+
+    test "flags an implausibly uniform count distribution" do
+      # 100 cards all at count=1 — looks like a sentinel-fill, not a
+      # real collection.
+      cards = Enum.map(1..100, fn i -> {i, 1} end)
+
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{cards: cards})) ==
+               {:error, {:check, :walker_implausible_count_distribution}}
+    end
+
+    test "min_cards is configurable" do
+      cards = [{70012, 1}, {82456, 4}]
+
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{cards: cards}), min_cards: 5) ==
+               {:error, {:check, {:walker_too_few_cards, 2}}}
+
+      assert SelfCheck.walker_result_ok?(walker_snapshot(%{cards: cards}), min_cards: 1) == :ok
+    end
+  end
 end

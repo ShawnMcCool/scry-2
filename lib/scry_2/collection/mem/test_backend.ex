@@ -28,7 +28,8 @@ defmodule Scry2.Collection.Mem.TestBackend do
   @type fixture :: %{
           optional(:memory) => [memory_region()],
           optional(:maps) => [Scry2.Collection.Mem.map_entry()],
-          optional(:processes) => [Scry2.Collection.Mem.process_info()]
+          optional(:processes) => [Scry2.Collection.Mem.process_info()],
+          optional(:walker_snapshot) => Scry2.Collection.Mem.walker_snapshot() | {:error, term()}
         }
 
   @doc """
@@ -77,6 +78,17 @@ defmodule Scry2.Collection.Mem.TestBackend do
       |> case do
         nil -> {:error, :not_found}
         %{pid: pid} -> {:ok, pid}
+      end
+    end
+  end
+
+  @impl true
+  def walk_collection(_pid) do
+    with {:ok, fixture} <- fetch_fixture() do
+      case Map.fetch(fixture, :walker_snapshot) do
+        :error -> {:error, :no_walker_snapshot}
+        {:ok, {:error, _} = err} -> err
+        {:ok, snap} -> {:ok, snap}
       end
     end
   end

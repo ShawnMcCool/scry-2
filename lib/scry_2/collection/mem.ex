@@ -62,6 +62,36 @@ defmodule Scry2.Collection.Mem do
   @callback find_process((process_info() -> boolean())) ::
               {:ok, pid_int()} | {:error, atom()}
 
+  @typedoc """
+  Walker snapshot returned by `walk_collection/1` — the data the
+  Rust walker harvests in one pass through MTGA's Mono runtime.
+  Matches the contract in ADR 034 Revision 2026-04-25.
+  """
+  @type walker_snapshot :: %{
+          required(:cards) => [{integer(), integer()}],
+          required(:wildcards) => %{
+            required(:common) => integer(),
+            required(:uncommon) => integer(),
+            required(:rare) => integer(),
+            required(:mythic) => integer()
+          },
+          required(:gold) => integer(),
+          required(:gems) => integer(),
+          required(:vault_progress) => integer(),
+          required(:build_hint) => String.t() | nil,
+          required(:reader_version) => String.t()
+        }
+
+  @doc """
+  Walk MTGA's process memory and return the parsed collection +
+  inventory in one shot.
+
+  Implementations should propagate any walker-internal failure as
+  `{:error, atom() | tuple()}`. The Reader uses any error as a
+  signal to fall back to the structural-scan path.
+  """
+  @callback walk_collection(pid_int()) :: {:ok, walker_snapshot()} | {:error, term()}
+
   @doc """
   Returns the configured Mem backend module.
 
