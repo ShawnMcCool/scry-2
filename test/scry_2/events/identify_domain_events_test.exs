@@ -1343,7 +1343,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert {[], []} = IdentifyDomainEvents.translate(record, nil)
     end
 
-    test "skips ack-format EventPlayerDraftMakePick records" do
+    test "skips ack-format EventPlayerDraftMakePick records (both flags)" do
       # The server emits a follow-up acknowledgement after each pick
       # with just `IsPickingCompleted` / `IsPickSuccessful` flags. The
       # picked card lives on the *other* response shape (GrpIds +
@@ -1355,6 +1355,22 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         file_offset: 0,
         source_file: "Player.log",
         raw_json: ~s({"IsPickingCompleted":true,"IsPickSuccessful":true}),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+
+    test "skips ack-format with only IsPickSuccessful flag" do
+      # The pick-success-only shape is the most common ack — fired
+      # for every individual pick MTGA confirms. Has no GrpIds /
+      # DraftId so there's nothing to translate.
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventPlayerDraftMakePick",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: ~s({"IsPickSuccessful":true}),
         processed: false
       }
 

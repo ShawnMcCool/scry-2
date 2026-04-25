@@ -1252,15 +1252,21 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # emits HumanDraftPackOffered for the pack being offered at the next pick.
   # PackNumber and PickNumber in the response are 0-indexed; we convert to 1-indexed
   # to match DraftPickMade. DraftPack must be non-empty — empty means no next pick.
-  # The ack-shape of EventPlayerDraftMakePick: only the
-  # `IsPickingCompleted` / `IsPickSuccessful` status flags, no pick
-  # info. The GrpIds-bearing response is the one that carries the
-  # actual pick.
-  defp pick_ack?(%{"IsPickingCompleted" => _} = payload) do
+  # The ack-shape of EventPlayerDraftMakePick: only one or both of
+  # `IsPickingCompleted` / `IsPickSuccessful` flags, no pick info.
+  # The GrpIds-bearing response carries the actual pick.
+  #
+  # Two observed flavours, both ack-shaped:
+  # - `{"IsPickingCompleted":true,"IsPickSuccessful":true}` — overall
+  #   pack confirmation
+  # - `{"IsPickSuccessful":true}` — per-pick confirmation (most common)
+  defp pick_ack?(%{"IsPickSuccessful" => _} = payload), do: ack_payload?(payload)
+  defp pick_ack?(%{"IsPickingCompleted" => _} = payload), do: ack_payload?(payload)
+  defp pick_ack?(_), do: false
+
+  defp ack_payload?(payload) do
     not Map.has_key?(payload, "GrpIds") and not Map.has_key?(payload, "DraftId")
   end
-
-  defp pick_ack?(_), do: false
 
   defp translate_bot_pack_response(record) do
     occurred_at = record.mtga_timestamp || record.inserted_at
