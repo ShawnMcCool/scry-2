@@ -13,6 +13,7 @@ defmodule Scry2Web.SettingsLive.UpdatesHelpers do
           optional(:version) => String.t(),
           optional(:published_at) => String.t() | nil,
           optional(:html_url) => String.t(),
+          optional(:body) => String.t(),
           optional(:applying) => atom() | nil,
           optional(:last_error) => String.t() | nil
         }
@@ -43,6 +44,7 @@ defmodule Scry2Web.SettingsLive.UpdatesHelpers do
       version: release.version,
       published_at: release.published_at,
       html_url: release.html_url,
+      body: release.body,
       applying: applying,
       last_error: last_error
     }

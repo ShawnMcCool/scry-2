@@ -8,6 +8,7 @@ defmodule Scry2Web.SettingsLive.UpdatesCard do
   """
   use Scry2Web, :html
 
+  alias Scry2Web.SettingsLive.ReleaseNotes
   alias Scry2Web.SettingsLive.UpdatesHelpers
 
   attr :summary, :map, required: true
@@ -44,10 +45,26 @@ defmodule Scry2Web.SettingsLive.UpdatesCard do
                 </span>
                 <%= if @summary.html_url && @summary.html_url != "" do %>
                   <a class="link text-sm" href={@summary.html_url} target="_blank" rel="noopener">
-                    Release notes
+                    View on GitHub
                   </a>
                 <% end %>
               </div>
+              <details class="mt-3 group">
+                <summary class="cursor-pointer text-sm text-base-content/70 hover:text-base-content select-none flex items-center gap-1">
+                  <svg
+                    class="w-3 h-3 transition-transform group-open:rotate-90"
+                    viewBox="0 0 12 12"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path d="M4 2l4 4-4 4z" />
+                  </svg>
+                  What's new in {@summary.version}
+                </summary>
+                <div class="mt-2 ml-4 pl-3 border-l border-base-300 max-h-80 overflow-y-auto pr-2 text-sm">
+                  <ReleaseNotes.release_notes body={@summary[:body] || ""} />
+                </div>
+              </details>
             <% :ahead_of_release -> %>
               <p class="text-sm opacity-70">Running a version newer than the latest release.</p>
             <% :invalid -> %>

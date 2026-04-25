@@ -25,6 +25,19 @@ defmodule Scry2Web.SettingsLive.UpdatesHelpersTest do
     test ":no_data when cache empty" do
       assert %{status: :no_data} = UpdatesHelpers.summarize(:none, "0.14.0", nil)
     end
+
+    test "body is propagated from the release into the summary" do
+      release = %{
+        tag: "v0.15.0",
+        version: "0.15.0",
+        published_at: nil,
+        html_url: "",
+        body: "## Fixed\n\n- something cool"
+      }
+
+      assert %{body: "## Fixed\n\n- something cool"} =
+               UpdatesHelpers.summarize({:ok, release}, "0.14.0", nil)
+    end
   end
 
   describe "phase_label/1" do
