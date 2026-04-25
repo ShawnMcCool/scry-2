@@ -25,7 +25,15 @@ defmodule Scry2.Application do
         # Buffer.append/2's Process.whereis guard.
         Scry2.Console.RecentEntries,
         # Card image cache — ensures cache directory exists on startup.
-        Scry2.Cards.ImageCache
+        Scry2.Cards.ImageCache,
+        # TaskSupervisor must come BEFORE VersionCheck. A full reingest
+        # invokes the projector rebuild via `Task.Supervisor.async_stream(
+        # Scry2.TaskSupervisor, …)`; if the supervisor isn't up yet the
+        # rebuild crashes with `:no process` and the whole boot fails.
+        # TaskSupervisor doesn't touch SQLite, so placing it ahead of
+        # VersionCheck doesn't interfere with the write-lock invariant
+        # the Oban-after-VersionCheck ordering protects.
+        {Task.Supervisor, name: Scry2.TaskSupervisor}
       ]
       |> maybe_add_version_check()
       |> Kernel.++([
@@ -45,7 +53,6 @@ defmodule Scry2.Application do
           id: :cards_bootstrap,
           restart: :temporary
         ),
-        {Task.Supervisor, name: Scry2.TaskSupervisor},
         {Scry2.SelfUpdate.Updater,
          lock_path: Scry2.SelfUpdate.apply_lock_path(),
          staging_root: Scry2.SelfUpdate.staging_root()},
