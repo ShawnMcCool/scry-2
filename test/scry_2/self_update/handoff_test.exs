@@ -12,7 +12,7 @@ defmodule Scry2.SelfUpdate.HandoffTest do
   end
 
   describe "linux handoff" do
-    test "spawns setsid sh -c <script> -- <installer> <log>" do
+    test "spawns setsid env -i <vars> sh -c <script> -- <installer> <log>" do
       :ok =
         Handoff.spawn_detached(
           %{staged_root: "/tmp/staged", archive_filename: "scry_2-v0.15.0-linux-x86_64.tar.gz"},
@@ -20,7 +20,15 @@ defmodule Scry2.SelfUpdate.HandoffTest do
           spawner: capture_spawner()
         )
 
-      assert_receive {:spawn, "setsid", args, env}
+      assert_receive {:spawn, "setsid", args, _env}
+
+      # First two argv positions must isolate the environment via `env -i`.
+      # Without this, RELEASE_* vars from the running BEAM leak through
+      # Port.open's inherit-and-add semantics into the installer and the
+      # tray it relaunches, which then defaults `${RELEASE_VSN:-…}` to
+      # the now-deleted previous-release directory and aborts in `set -e`.
+      assert Enum.at(args, 0) == "env"
+      assert Enum.at(args, 1) == "-i"
 
       script_idx = Enum.find_index(args, &(&1 == "-c"))
       assert script_idx, "expected sh -c form"
@@ -42,12 +50,22 @@ defmodule Scry2.SelfUpdate.HandoffTest do
       assert Enum.at(args, dashdash_idx + 1) == "/tmp/staged/install"
       assert Enum.at(args, dashdash_idx + 2) == "/tmp/staged/handoff.log"
 
-      assert Enum.any?(env, &match?({"PATH", _}, &1))
+      # PATH must be re-asserted explicitly between `env -i` and the
+      # shell command, since env -i wipes inherited PATH too.
+      env_pairs = Enum.slice(args, 2, script_idx - 3)
+
+      assert Enum.any?(env_pairs, &String.starts_with?(&1, "PATH=")),
+             "PATH must be set explicitly after env -i"
+
+      # And RELEASE_* must NOT be in the explicit env list — the old BEAM's
+      # release vars must die with `env -i`, not be reaffirmed.
+      refute Enum.any?(env_pairs, &String.starts_with?(&1, "RELEASE_")),
+             "no RELEASE_* env should leak through the installer handoff"
     end
   end
 
   describe "macos handoff" do
-    test "spawns /bin/sh -c <script> -- <installer> <log> with nohup" do
+    test "spawns /usr/bin/env -i <vars> /bin/sh -c <script> -- <installer> <log> with nohup" do
       :ok =
         Handoff.spawn_detached(
           %{staged_root: "/tmp/staged", archive_filename: "scry_2-v0.15.0-macos-aarch64.tar.gz"},
@@ -55,7 +73,11 @@ defmodule Scry2.SelfUpdate.HandoffTest do
           spawner: capture_spawner()
         )
 
-      assert_receive {:spawn, "/bin/sh", args, _env}
+      assert_receive {:spawn, "/usr/bin/env", args, _env}
+
+      # env -i must isolate the environment for the same reason as Linux —
+      # RELEASE_* vars from the BEAM must not survive into the installer.
+      assert Enum.at(args, 0) == "-i"
 
       script_idx = Enum.find_index(args, &(&1 == "-c"))
       body = Enum.at(args, script_idx + 1)
@@ -70,6 +92,11 @@ defmodule Scry2.SelfUpdate.HandoffTest do
       dashdash_idx = Enum.find_index(args, &(&1 == "--"))
       assert Enum.at(args, dashdash_idx + 1) == "/tmp/staged/install"
       assert Enum.at(args, dashdash_idx + 2) == "/tmp/staged/handoff.log"
+
+      env_pairs = Enum.slice(args, 1, script_idx - 3)
+
+      refute Enum.any?(env_pairs, &String.starts_with?(&1, "RELEASE_")),
+             "no RELEASE_* env should leak through the installer handoff"
     end
   end
 
@@ -110,7 +137,7 @@ defmodule Scry2.SelfUpdate.HandoffTest do
           spawner: capture_spawner()
         )
 
-      assert_receive {:spawn, "/bin/sh", args, _env}
+      assert_receive {:spawn, "/usr/bin/env", args, _env}
       dashdash_idx = Enum.find_index(args, &(&1 == "--"))
       installer = Enum.at(args, dashdash_idx + 1)
 

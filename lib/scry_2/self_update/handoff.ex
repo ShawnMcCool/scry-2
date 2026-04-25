@@ -74,24 +74,35 @@ defmodule Scry2.SelfUpdate.Handoff do
     # directory, so `staged_root` points directly at the release root.
     installer = Path.join(root, "install")
     log = Path.join(root, "handoff.log")
-    env = take_env(@minimal_unix_env_keys) ++ [{"PATH", "/usr/local/bin:/usr/bin:/bin"}]
 
+    # `env -i` wipes the environment at exec time. Without it, every
+    # variable the BEAM exports (including `RELEASE_VSN`,
+    # `RELEASE_SYS_CONFIG`, etc., set by the running release's wrapper
+    # script) leaks through `Port.open`'s inherit-and-add semantics
+    # into the installer and the tray it relaunches. The tray then
+    # spawns `bin/scry_2 start`, the wrapper sees the leaked
+    # `RELEASE_VSN` pointing at the now-deleted previous-release
+    # directory, and aborts in `set -e` before `exec erl` runs.
     spawner.(
       "setsid",
-      ["sh", "-c", @linux_script, "--", installer, log],
-      env
+      ["env", "-i"] ++
+        env_args(unix_env()) ++
+        ["sh", "-c", @linux_script, "--", installer, log],
+      []
     )
   end
 
   defp do_spawn({:unix, :darwin}, %{staged_root: root}, spawner) do
     installer = Path.join(root, "install")
     log = Path.join(root, "handoff.log")
-    env = take_env(@minimal_unix_env_keys) ++ [{"PATH", "/usr/local/bin:/usr/bin:/bin"}]
 
+    # See linux clause for the env-isolation rationale.
     spawner.(
-      "/bin/sh",
-      ["-c", @macos_script, "--", installer, log],
-      env
+      "/usr/bin/env",
+      ["-i"] ++
+        env_args(unix_env()) ++
+        ["/bin/sh", "-c", @macos_script, "--", installer, log],
+      []
     )
   end
 
@@ -137,4 +148,10 @@ defmodule Scry2.SelfUpdate.Handoff do
   defp take_env(keys) do
     for key <- keys, val = System.get_env(key), is_binary(val), do: {key, val}
   end
+
+  defp unix_env do
+    take_env(@minimal_unix_env_keys) ++ [{"PATH", "/usr/local/bin:/usr/bin:/bin"}]
+  end
+
+  defp env_args(env), do: Enum.map(env, fn {k, v} -> "#{k}=#{v}" end)
 end
