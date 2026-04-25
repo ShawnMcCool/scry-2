@@ -71,7 +71,7 @@ NIF surface (lib.rs): `ping`, `read_bytes`, `list_maps_nif`,
 
 **Walker session resume point (2026-04-25):**
 
-157 unit tests passing in `native/scry2_collection_reader/`,
+166 unit tests passing in `native/scry2_collection_reader/`,
 `cargo fmt --check` clean, `cargo clippy --all-targets` clean on all
 walker code (only pre-existing `type_complexity` warnings remain in
 `lib.rs` / `linux.rs` — unrelated). All struct offsets in
@@ -92,6 +92,7 @@ for evidence.
 | `vtable.rs` | `class_vtable(class_addr, domain_addr)` resolves `MonoClass.runtime_info → max_domain bounds-check → domain_vtables[domain_id]`. `static_storage_base(...)` extends to `*(vtable + 0x48 + vtable_size*8)` — i.e. mono's `mono_vtable_get_static_field_data`. |
 | `chain.rs` (innermost) | `from_service_wrapper` composes `field::find_by_name` + `dict::read_int_int_entries` + `inventory::read_inventory` into one `WalkResult { entries, inventory }`. End-to-end tested with a full FakeMem fixture covering three classes + three objects + the dictionary array. |
 | `chain.rs` (outer layers) | `from_papa_class` reads PAPA's static `_instance` field via `vtable::static_storage_base`, follows `<InventoryManager>k__BackingField` and `_inventoryServiceWrapper` (instance), and delegates to `from_service_wrapper`. Internal helper `read_static_pointer` enforces is_static/offset>=0/non-null and is symmetric with the existing `read_instance_pointer`. |
+| `run.rs` (top-level) | `walker::run::walk_collection(maps, read_mem)` is the single entry point the NIF calls. Pipeline: locate `mono-2.0-bdwgc.dll` in `/proc/<pid>/maps` → stitch its mapped sections into one RVA-indexed buffer → `domain::find_root_domain` → `image_lookup` × {Core, Assembly-CSharp, mscorlib} → `class_lookup` × {PAPA, InventoryManager, InventoryServiceWrapper, ClientPlayerInventory, Dictionary\`2} → read each class's `MonoClassDef` blob (0x110 bytes) → `chain::from_papa_class` → `WalkResult`. `WalkError` enum names every failure mode (MonoDllNotFound, RootDomainNotFound, AssemblyNotFound("Core"), ClassNotFound("PAPA"), etc.) so the Elixir side can route loudly. |
 | `image_lookup.rs` | `find_by_assembly_name` walks `MonoDomain.domain_assemblies` (a `GSList` of `MonoAssembly *`) and returns the `MonoImage *` for the first assembly whose `aname.name` matches a target short name (e.g. `"Core"`, `"Assembly-CSharp"`). Bounded at `MAX_ASSEMBLIES = 1024` nodes so cycles can't hang the NIF. |
 | `class_lookup.rs` | `find_by_name` linearly scans every bucket and chain in `MonoImage.class_cache` (an embedded `MonoInternalHashTable`), returning the `MonoClass *` whose `name` matches a target. Skips remote `hash_func`/`key_extract`/`next_value` callbacks (we can't `call` function pointers in another process); instead chains via `MonoClassDef.next_class_cache` at offset `0x108`. Bounded at `MAX_TOTAL_CLASSES = 65 536` so corrupted chains can't hang the NIF. |
 | `domain.rs` | `find_root_domain(mono_dll_bytes, mono_dll_base, read_mem)` composes `pe::find_export_rva("mono_get_root_domain")` + `prologue::parse_mov_rax_rip_ret` + a single 8-byte read against the target process to return the live `MonoDomain *`. Pure orchestration on top of existing helpers. Reports `None` on missing export / mismatched prologue / truncated bytes / unreadable static slot / null pointer. |
@@ -103,8 +104,8 @@ for evidence.
 
 | # | Module | Scope | Notes |
 |---|---|---|---|
-| 1 | Top-level `walk_collection(pid)` in `chain.rs` (or new `walker::run`) | Stitches everything: `list_maps` → find `mono-2.0-bdwgc.dll` base + bytes → `domain::find_root_domain` for live `MonoDomain *` → `image_lookup` for Core/Assembly-CSharp → `class_lookup` for the five classes → `from_papa_class` → `WalkResult`. | Returns `Result<WalkResult, WalkError>`. The error enum should distinguish the failure mode (no MTGA, can't find symbol, can't find class, dict cap exceeded, etc.) so the Elixir `Scry2.Collection.Reader` can route loudly. |
-| 2 | `build_hint.rs` | Read MTGA's build GUID from `<MTGA root>/MTGA_Data/boot.config` — a plain key=value file on disk, **not** on the PAPA chain. Adds `mtga_build_hint` to `WalkResult`. | Trivial once the disk-path discovery (parse `/proc/<pid>/maps` for the MTGA install dir) is solved. |
+| 1 | `build_hint.rs` | Read MTGA's build GUID from `<MTGA root>/MTGA_Data/boot.config` — a plain key=value file on disk, **not** on the PAPA chain. Adds `mtga_build_hint` to `WalkResult`. | Trivial once the disk-path discovery (parse `/proc/<pid>/maps` for the MTGA install dir) is solved. |
+| 2 | NIF wiring | Wrap `walker::run::walk_collection` as a fourth `#[rustler::nif(schedule = "DirtyIo")]` in `lib.rs`. Convert `WalkResult` → the Elixir map shape specified in ADR-034 Revision 2026-04-25 and `WalkError` → an atom + payload tuple. Once this lands the Elixir-side integration (`Scry2.Collection.Reader.run/1`) can call `walk_collection`. |
 
 **NIF wiring (last Rust-side step before Elixir):**
 

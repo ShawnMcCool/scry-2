@@ -41,4 +41,5 @@ pub mod inventory;
 pub mod mono;
 pub mod pe;
 pub mod prologue;
+pub mod run;
 pub mod vtable;
