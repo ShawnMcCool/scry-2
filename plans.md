@@ -94,6 +94,7 @@ for evidence.
 | `chain.rs` (outer layers) | `from_papa_class` reads PAPA's static `_instance` field via `vtable::static_storage_base`, follows `<InventoryManager>k__BackingField` and `_inventoryServiceWrapper` (instance), and delegates to `from_service_wrapper`. Internal helper `read_static_pointer` enforces is_static/offset>=0/non-null and is symmetric with the existing `read_instance_pointer`. |
 | `run.rs` (top-level) | `walker::run::walk_collection(maps, read_mem, build_hint)` is the single entry point the NIF calls. Pipeline: locate `mono-2.0-bdwgc.dll` in `/proc/<pid>/maps` → stitch its mapped sections into one RVA-indexed buffer → `domain::find_root_domain` → `image_lookup` × {Core, Assembly-CSharp, mscorlib} → `class_lookup` × {PAPA, InventoryManager, InventoryServiceWrapper, ClientPlayerInventory, Dictionary\`2} → read each class's `MonoClassDef` blob (0x110 bytes) → `chain::from_papa_class` → wraps the result in a `Snapshot { entries, inventory, mtga_build_hint }`. `WalkError` enum names every failure mode (MonoDllNotFound, RootDomainNotFound, AssemblyNotFound("Core"), ClassNotFound("PAPA"), etc.) so the Elixir side can route loudly. |
 | `build_hint.rs` | Reads MTGA's build GUID from `<MTGA root>/MTGA_Data/boot.config`. `find_mtga_root` derives the install root from the mono DLL's path in /proc/<pid>/maps (walks up `EmbedRuntime` and `MonoBleedingEdge`). `parse_build_guid` extracts `build-guid=…`/`build-guid: …` lines from boot.config text. `read_build_guid` composes them with `fs::read_to_string`. The walker orchestrator takes a `build_hint` closure so the run-time disk read is injectable (kept disk-free in unit tests). |
+| NIF wiring (`lib.rs`) | `walk_collection(pid)` exposed as a fourth `#[rustler::nif(schedule = "DirtyIo")]`. Internally calls `platform::list_maps`, builds the `read_mem` closure off `platform::read_bytes`, and runs `walker::run::walk_collection`. Maps `Snapshot` → `%{cards, wildcards, gold, gems, vault_progress, build_hint, reader_version}` (matching ADR-034 Revision 2026-04-25). Maps `WalkError` → `WalkErrorWire` (NifTaggedEnum) so parameterised variants carry their class/assembly name on the Elixir side, e.g. `{:error, {:assembly_not_found, "Core"}}`. `mix compile` builds and links the crate; the NIF is callable from `Scry2.Collection.Mem.Nif.walk_collection/1`. |
 | `image_lookup.rs` | `find_by_assembly_name` walks `MonoDomain.domain_assemblies` (a `GSList` of `MonoAssembly *`) and returns the `MonoImage *` for the first assembly whose `aname.name` matches a target short name (e.g. `"Core"`, `"Assembly-CSharp"`). Bounded at `MAX_ASSEMBLIES = 1024` nodes so cycles can't hang the NIF. |
 | `class_lookup.rs` | `find_by_name` linearly scans every bucket and chain in `MonoImage.class_cache` (an embedded `MonoInternalHashTable`), returning the `MonoClass *` whose `name` matches a target. Skips remote `hash_func`/`key_extract`/`next_value` callbacks (we can't `call` function pointers in another process); instead chains via `MonoClassDef.next_class_cache` at offset `0x108`. Bounded at `MAX_TOTAL_CLASSES = 65 536` so corrupted chains can't hang the NIF. |
 | `domain.rs` | `find_root_domain(mono_dll_bytes, mono_dll_base, read_mem)` composes `pe::find_export_rva("mono_get_root_domain")` + `prologue::parse_mov_rax_rip_ret` + a single 8-byte read against the target process to return the live `MonoDomain *`. Pure orchestration on top of existing helpers. Reports `None` on missing export / mismatched prologue / truncated bytes / unreadable static slot / null pointer. |
@@ -103,9 +104,12 @@ for evidence.
 
 **Walker (Rust crate) modules in dependency order:**
 
-| # | Module | Scope | Notes |
-|---|---|---|---|
-| 1 | NIF wiring | Wrap `walker::run::walk_collection` as a fourth `#[rustler::nif(schedule = "DirtyIo")]` in `lib.rs`. Convert `Snapshot` → the Elixir map shape specified in ADR-034 Revision 2026-04-25 (`%{wildcards_common: …, gold: …, cards: [%{arena_id, count}, …], mtga_build_hint: …}`) and `WalkError` → an atom + payload tuple. Once this lands the Elixir-side integration (`Scry2.Collection.Reader.run/1`) can call `walk_collection`. |
+_All Rust-side modules are now Done. Remaining work is the Elixir
+integration plan immediately below — wiring `Scry2.Collection.Mem.Nif`,
+the `walk_collection/1` callback in the `Mem` behaviour, the
+`Scry2.Collection.Reader.run/1` walker-first / scanner-fallback
+dispatch, the `SelfCheck` validator, and the `Snapshot` schema /
+diagnostics page changes._
 
 **NIF wiring (last Rust-side step before Elixir):**
 
