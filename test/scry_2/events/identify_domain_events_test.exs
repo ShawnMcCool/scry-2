@@ -1342,6 +1342,24 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
 
       assert {[], []} = IdentifyDomainEvents.translate(record, nil)
     end
+
+    test "skips ack-format EventPlayerDraftMakePick records" do
+      # The server emits a follow-up acknowledgement after each pick
+      # with just `IsPickingCompleted` / `IsPickSuccessful` flags. The
+      # picked card lives on the *other* response shape (GrpIds +
+      # DraftId), which already produces the HumanDraftPickMade event
+      # — the ack is genuinely noise.
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventPlayerDraftMakePick",
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json: ~s({"IsPickingCompleted":true,"IsPickSuccessful":true}),
+        processed: false
+      }
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
   end
 
   # ── DraftCompleteDraft → DraftCompleted ────────────────────────────

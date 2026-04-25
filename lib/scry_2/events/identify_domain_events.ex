@@ -465,6 +465,17 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   # EventPlayerDraftMakePick confirms the player's pick in a human draft.
   # GrpIds is an array — Pick Two Draft can have multiple selections.
+  #
+  # Three observed shapes:
+  #
+  #   1. Request — `{"request": "<json>"}`. Skip silently; the
+  #      response shape carries the data we need.
+  #   2. Response — `{"DraftId":..., "Pack":..., "Pick":..., "GrpIds":[...]}`.
+  #      Translate to `HumanDraftPickMade`.
+  #   3. Ack — `{"IsPickingCompleted":true,"IsPickSuccessful":true}`.
+  #      A follow-up acknowledgement after each pick. Carries no
+  #      pick info — the GrpIds-bearing response (shape 2) is what
+  #      records the actual pick. Skip silently.
   def translate(
         %EventRecord{event_type: "EventPlayerDraftMakePick"} = record,
         _self_user_id,
@@ -474,6 +485,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
          false <- Map.has_key?(payload, "request"),
+         false <- pick_ack?(payload),
          grp_ids when is_list(grp_ids) <- payload["GrpIds"],
          draft_id when is_binary(draft_id) <- payload["DraftId"] do
       {[
@@ -1240,6 +1252,16 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # emits HumanDraftPackOffered for the pack being offered at the next pick.
   # PackNumber and PickNumber in the response are 0-indexed; we convert to 1-indexed
   # to match DraftPickMade. DraftPack must be non-empty — empty means no next pick.
+  # The ack-shape of EventPlayerDraftMakePick: only the
+  # `IsPickingCompleted` / `IsPickSuccessful` status flags, no pick
+  # info. The GrpIds-bearing response is the one that carries the
+  # actual pick.
+  defp pick_ack?(%{"IsPickingCompleted" => _} = payload) do
+    not Map.has_key?(payload, "GrpIds") and not Map.has_key?(payload, "DraftId")
+  end
+
+  defp pick_ack?(_), do: false
+
   defp translate_bot_pack_response(record) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
