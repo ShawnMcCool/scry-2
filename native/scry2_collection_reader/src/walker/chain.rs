@@ -42,16 +42,12 @@ pub struct WalkResult {
     pub inventory: InventoryValues,
 }
 
-/// Walk from a resolved `InventoryServiceWrapper` object.
+/// Walk from a resolved `InventoryServiceWrapper` object, deriving
+/// the wrapper's runtime class (and the dict + inventory runtime
+/// classes) from each instance's vtable.
 ///
 /// Required inputs:
 /// - `service_wrapper_addr` — object address in the target process.
-/// - `service_wrapper_class_bytes` — bytes of the wrapper's
-///   `MonoClassDef` (covers `MonoClass.fields` @ `0x98` and
-///   `MonoClassDef.field_count` @ `0x100`).
-/// - `dictionary_class_bytes` — bytes of the `Dictionary<int,int>`
-///   class (for resolving `_entries`).
-/// - `inventory_class_bytes` — bytes of `ClientPlayerInventory`.
 /// - `read_mem(addr, len)` — remote-memory reader closure.
 ///
 /// Returns `None` on any miss (unresolved field, null pointer,
@@ -60,25 +56,30 @@ pub struct WalkResult {
 pub fn from_service_wrapper<F>(
     offsets: &MonoOffsets,
     service_wrapper_addr: u64,
-    service_wrapper_class_bytes: &[u8],
     dictionary_class_bytes: &[u8],
-    inventory_class_bytes: &[u8],
     read_mem: F,
 ) -> Option<WalkResult>
 where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
-    // Cards → Dictionary<int,int> object
+    let wrapper_class_bytes = read_object_class_def(offsets, service_wrapper_addr, &read_mem)?;
+
     let cards_dict_addr = read_instance_pointer(
         offsets,
-        service_wrapper_class_bytes,
+        &wrapper_class_bytes,
         0,
         service_wrapper_addr,
         "Cards",
         &read_mem,
     )?;
 
-    // Dictionary<int,int>._entries → MonoArray<Entry>
+    // The cards dictionary's runtime class is the closed-generic
+    // `Dictionary<int,int>` (a `MonoClassGenericInst` whose
+    // `field_count` lives at a different offset than
+    // `MonoClassDef.field_count`). Resolving `_entries` against the
+    // *open-generic* `Dictionary\`2` definition gets us the correct
+    // field offset — reference fields like `Entry[] _entries` are 8
+    // bytes regardless of T/V.
     let entries_array_addr = read_instance_pointer(
         offsets,
         dictionary_class_bytes,
@@ -87,19 +88,19 @@ where
         "_entries",
         &read_mem,
     )?;
-    let entries = dict::read_int_int_entries(offsets, entries_array_addr, &read_mem)?;
+    let entries = dict::read_int_int_entries(offsets, entries_array_addr, read_mem)?;
 
-    // m_inventory → ClientPlayerInventory object
     let inv_addr = read_instance_pointer(
         offsets,
-        service_wrapper_class_bytes,
+        &wrapper_class_bytes,
         0,
         service_wrapper_addr,
         "m_inventory",
         &read_mem,
     )?;
+    let inventory_class_bytes = read_object_class_def(offsets, inv_addr, &read_mem)?;
     let inventory_values =
-        inventory::read_inventory(offsets, inventory_class_bytes, 0, inv_addr, &read_mem)?;
+        inventory::read_inventory(offsets, &inventory_class_bytes, 0, inv_addr, read_mem)?;
 
     Some(WalkResult {
         entries,
@@ -107,44 +108,64 @@ where
     })
 }
 
-/// Walk from a `PAPA` class down to the inventory.
+/// Read the runtime class of `obj_addr` (via `obj.vtable.klass`)
+/// and pull a `MonoClassDef`-sized blob for it.
 ///
-/// Reads `PAPA._instance` (a static field) via the runtime VTable,
-/// follows two instance fields (`<InventoryManager>k__BackingField`
-/// and `_inventoryServiceWrapper`), and delegates to
-/// [`from_service_wrapper`].
+/// `MonoObject.vtable` and `MonoVTable.klass` both live at offset 0
+/// of their respective structs — no [`MonoOffsets`] entries needed.
+fn read_object_class_def<F>(_offsets: &MonoOffsets, obj_addr: u64, read_mem: &F) -> Option<Vec<u8>>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    let vtable_buf = read_mem(obj_addr, 8)?;
+    let vtable_addr = mono::read_u64(&vtable_buf, 0, 0)?;
+    if vtable_addr == 0 {
+        return None;
+    }
+    let klass_buf = read_mem(vtable_addr, 8)?;
+    let klass_addr = mono::read_u64(&klass_buf, 0, 0)?;
+    if klass_addr == 0 {
+        return None;
+    }
+    // 0x110 covers MonoClass.fields (0x98), MonoClass.runtime_info
+    // (0xd0), and MonoClassDef.field_count (0x100).
+    read_mem(klass_addr, 0x110)
+}
+
+/// Walk from a `PAPA` class down to the inventory, deriving each
+/// downstream class from its **instance's vtable** at runtime
+/// instead of demanding its `MonoClassDef` bytes up front.
+///
+/// MTGA's concrete inventory types vary across builds:
+/// `MockInventoryServiceWrapper`, `HarnessInventoryServiceWrapper`,
+/// `AwsInventoryServiceWrapper`, etc. all live in different
+/// assemblies and the build-time substitution determines which one
+/// MTGA actually instantiates. Looking up the wrapper class by
+/// name is therefore brittle — instead we read
+/// `wrapper_object.vtable.klass` and pick up whichever runtime
+/// class is in play.
 ///
 /// Required inputs:
 /// - `papa_class_addr` — `MonoClass *` of `PAPA` in the target
-///   process.
+///   process. PAPA itself has a stable name across builds.
 /// - `domain_addr` — live `MonoDomain *`.
 /// - `papa_class_bytes` — bytes of PAPA's `MonoClassDef` (covers
 ///   the static `_instance` field and the instance
 ///   `<InventoryManager>k__BackingField`).
-/// - `inventory_manager_class_bytes` — bytes of the concrete
-///   `InventoryManager` class (covers `_inventoryServiceWrapper`).
-/// - `service_wrapper_class_bytes`, `dictionary_class_bytes`,
-///   `inventory_class_bytes` — see [`from_service_wrapper`].
 /// - `read_mem(addr, len)` — remote-memory reader.
 ///
 /// Returns `None` on any miss along the chain.
-#[allow(clippy::too_many_arguments)]
 pub fn from_papa_class<F>(
     offsets: &MonoOffsets,
     papa_class_addr: u64,
     domain_addr: u64,
     papa_class_bytes: &[u8],
-    inventory_manager_class_bytes: &[u8],
-    service_wrapper_class_bytes: &[u8],
     dictionary_class_bytes: &[u8],
-    inventory_class_bytes: &[u8],
     read_mem: F,
 ) -> Option<WalkResult>
 where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
-    // PAPA._instance — static field, resolved through the class's
-    // runtime VTable's static-storage slot.
     let papa_singleton_addr = read_static_pointer(
         offsets,
         papa_class_bytes,
@@ -155,7 +176,6 @@ where
         &read_mem,
     )?;
 
-    // PAPA singleton.<InventoryManager>k__BackingField
     let inventory_manager_addr = read_instance_pointer(
         offsets,
         papa_class_bytes,
@@ -165,10 +185,11 @@ where
         &read_mem,
     )?;
 
-    // InventoryManager._inventoryServiceWrapper
+    let inventory_manager_class_bytes =
+        read_object_class_def(offsets, inventory_manager_addr, &read_mem)?;
     let service_wrapper_addr = read_instance_pointer(
         offsets,
-        inventory_manager_class_bytes,
+        &inventory_manager_class_bytes,
         0,
         inventory_manager_addr,
         "_inventoryServiceWrapper",
@@ -178,9 +199,7 @@ where
     from_service_wrapper(
         offsets,
         service_wrapper_addr,
-        service_wrapper_class_bytes,
         dictionary_class_bytes,
-        inventory_class_bytes,
         read_mem,
     )
 }
@@ -255,7 +274,8 @@ mod tests {
     use crate::walker::inventory::FIELD_NAMES;
     use crate::walker::mono::{DICT_INT_INT_ENTRY_SIZE, MONO_CLASS_FIELD_SIZE};
 
-    /// FakeMem — simple (base, bytes) pair list.
+    /// FakeMem fixture (matches the shape used by the rest of the
+    /// walker tests).
     #[derive(Default)]
     struct FakeMem {
         blocks: Vec<(u64, Vec<u8>)>,
@@ -280,7 +300,6 @@ mod tests {
         }
     }
 
-    /// Write a 32-byte MonoClassField entry (non-static).
     fn make_field_entry(name_ptr: u64, type_ptr: u64, offset: i32) -> Vec<u8> {
         let o = MonoOffsets::mtga_default();
         let mut v = vec![0u8; MONO_CLASS_FIELD_SIZE];
@@ -290,48 +309,120 @@ mod tests {
         v
     }
 
-    /// 16-byte MonoType block; low 16 bits of bitfield word = attrs.
     fn make_type_block(attrs: u16) -> Vec<u8> {
         let mut v = vec![0u8; 16];
         v[8..12].copy_from_slice(&(attrs as u32).to_le_bytes());
         v
     }
 
-    /// MonoClassDef header: class.fields @ 0x98, class_def.field_count @ 0x100.
-    fn make_class_def(fields_ptr: u64, field_count: u32) -> Vec<u8> {
-        let offsets = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; 0x110];
-        buf[offsets.class_fields..offsets.class_fields + 8]
-            .copy_from_slice(&fields_ptr.to_le_bytes());
-        buf[offsets.class_def_field_count..offsets.class_def_field_count + 4]
-            .copy_from_slice(&field_count.to_le_bytes());
-        buf
-    }
-
-    /// Install a class with named fields into FakeMem at `fields_addr`,
-    /// `names_base`, `types_base`. Returns the class_bytes blob.
-    fn install_class(
+    /// Install field+type entries for a class. Caller writes the
+    /// MonoClass blob separately (since the field array address +
+    /// count are class-blob fields).
+    fn install_fields(
         mem: &mut FakeMem,
         fields_addr: u64,
         names_base: u64,
         types_base: u64,
-        specs: &[(&str, i32)],
-    ) -> Vec<u8> {
+        specs: &[(&str, i32, bool /* is_static */)],
+    ) {
         let mut blob = Vec::with_capacity(specs.len() * MONO_CLASS_FIELD_SIZE);
-        for (i, (name, offset)) in specs.iter().enumerate() {
+        for (i, (name, offset, is_static)) in specs.iter().enumerate() {
             let name_ptr = names_base + (i as u64) * 0x80;
             let type_ptr = types_base + (i as u64) * 0x40;
             blob.extend_from_slice(&make_field_entry(name_ptr, type_ptr, *offset));
             let mut nbuf = name.as_bytes().to_vec();
             nbuf.push(0);
             mem.add(name_ptr, nbuf);
-            mem.add(type_ptr, make_type_block(0));
+            let attrs: u16 = if *is_static { 0x10 } else { 0 };
+            mem.add(type_ptr, make_type_block(attrs));
         }
         mem.add(fields_addr, blob);
-        make_class_def(fields_addr, specs.len() as u32)
     }
 
-    /// MonoArray<Entry> header + used-slot blob at `array_addr`.
+    /// Write a `MonoClassDef` blob covering fields ptr + field_count
+    /// only. Used for instance-only classes (no static field /
+    /// vtable resolution needed).
+    fn write_class_def_simple(
+        mem: &mut FakeMem,
+        class_addr: u64,
+        fields_addr: u64,
+        field_count: u32,
+    ) {
+        let o = MonoOffsets::mtga_default();
+        let mut buf = vec![0u8; 0x110];
+        buf[o.class_fields..o.class_fields + 8].copy_from_slice(&fields_addr.to_le_bytes());
+        buf[o.class_def_field_count..o.class_def_field_count + 4]
+            .copy_from_slice(&field_count.to_le_bytes());
+        mem.add(class_addr, buf);
+    }
+
+    /// Write a `MonoClassDef` blob carrying fields + runtime_info +
+    /// vtable_size, used for classes that need static-field
+    /// resolution.
+    fn write_class_def_with_vtable(
+        mem: &mut FakeMem,
+        class_addr: u64,
+        fields_addr: u64,
+        field_count: u32,
+        runtime_info: u64,
+        vtable_size: i32,
+    ) {
+        let o = MonoOffsets::mtga_default();
+        let mut buf = vec![0u8; 0x110];
+        buf[o.class_fields..o.class_fields + 8].copy_from_slice(&fields_addr.to_le_bytes());
+        buf[o.class_def_field_count..o.class_def_field_count + 4]
+            .copy_from_slice(&field_count.to_le_bytes());
+        buf[o.class_runtime_info..o.class_runtime_info + 8]
+            .copy_from_slice(&runtime_info.to_le_bytes());
+        buf[o.class_vtable_size..o.class_vtable_size + 4]
+            .copy_from_slice(&(vtable_size as u32).to_le_bytes());
+        mem.add(class_addr, buf);
+    }
+
+    /// Wire up `obj_addr` so that reading its first 8 bytes (vtable),
+    /// then 8 bytes at the vtable's start (klass), yields `class_addr`.
+    /// Allocates a synthetic vtable in FakeMem at `vtable_addr`.
+    fn link_object_to_class(
+        mem: &mut FakeMem,
+        obj_addr: u64,
+        obj_bytes: Vec<u8>,
+        vtable_addr: u64,
+        class_addr: u64,
+    ) {
+        // Object: vtable pointer at offset 0, plus the caller's payload.
+        let mut obj = obj_bytes;
+        if obj.len() < 8 {
+            obj.resize(8, 0);
+        }
+        obj[0..8].copy_from_slice(&vtable_addr.to_le_bytes());
+        mem.add(obj_addr, obj);
+
+        // VTable: klass pointer at offset 0 (rest unused for runtime-class
+        // resolution).
+        mem.add(vtable_addr, class_addr.to_le_bytes().to_vec());
+    }
+
+    fn install_static_storage_chain(
+        mem: &mut FakeMem,
+        rti_addr: u64,
+        vtable_addr: u64,
+        storage_addr: u64,
+        vtable_size: i32,
+    ) {
+        let o = MonoOffsets::mtga_default();
+        let mut rti = vec![0u8; o.runtime_info_domain_vtables + 8];
+        rti[o.runtime_info_max_domain..o.runtime_info_max_domain + 2]
+            .copy_from_slice(&0u16.to_le_bytes());
+        rti[o.runtime_info_domain_vtables..o.runtime_info_domain_vtables + 8]
+            .copy_from_slice(&vtable_addr.to_le_bytes());
+        mem.add(rti_addr, rti);
+
+        let slot_off = o.vtable_method_slots + (vtable_size as usize) * 8;
+        let mut vt = vec![0u8; slot_off + 8];
+        vt[slot_off..slot_off + 8].copy_from_slice(&storage_addr.to_le_bytes());
+        mem.add(vtable_addr, vt);
+    }
+
     fn install_dict_array(mem: &mut FakeMem, array_addr: u64, entries: &[(i32, i32)]) {
         let o = MonoOffsets::mtga_default();
         let capacity = entries.len() as u64;
@@ -342,319 +433,68 @@ mod tests {
         let vector_addr = array_addr + o.array_vector as u64;
         let mut blob = Vec::with_capacity(entries.len() * DICT_INT_INT_ENTRY_SIZE);
         for (key, value) in entries {
-            // used entry: hashCode = key & 0x7FFFFFFF
             blob.extend_from_slice(&(key & 0x7FFF_FFFF).to_le_bytes());
-            blob.extend_from_slice(&(-1i32).to_le_bytes()); // next
+            blob.extend_from_slice(&(-1i32).to_le_bytes());
             blob.extend_from_slice(&key.to_le_bytes());
             blob.extend_from_slice(&value.to_le_bytes());
         }
         mem.add(vector_addr, blob);
     }
 
-    /// Install a ClientPlayerInventory object + class whose 7 fields
-    /// each sit at `(0x10 + i*4, value)`. Returns (obj_addr, class_bytes).
-    fn install_inventory(mem: &mut FakeMem, obj_addr: u64, values: [i32; 7]) -> Vec<u8> {
-        // Class
-        let fields_addr: u64 = 0x5_0000;
-        let names_base: u64 = 0x5_1000;
-        let types_base: u64 = 0x5_2000;
-        let specs: Vec<(&str, i32)> = FIELD_NAMES
-            .iter()
-            .enumerate()
-            .map(|(i, n)| (*n, 0x10 + i as i32 * 4))
-            .collect();
-        let class_bytes = install_class(mem, fields_addr, names_base, types_base, &specs);
+    // -----------------------------------------------------------------
+    // read_static_pointer — exercised independently of from_papa_class.
+    // -----------------------------------------------------------------
 
-        // Object: 0x40-byte blob with the 7 values
-        let mut obj = vec![0u8; 0x40];
-        for (i, v) in values.iter().enumerate() {
-            let off = 0x10 + i * 4;
-            obj[off..off + 4].copy_from_slice(&v.to_le_bytes());
-        }
-        mem.add(obj_addr, obj);
-
-        class_bytes
+    fn make_class_def_for_static_test(class_addr: u64, fields_addr: u64) -> (u64, u64) {
+        // Returns (rti_addr, vtable_addr) constants used by the test.
+        let _ = (class_addr, fields_addr);
+        (0x20_1000, 0x20_2000)
     }
 
-    #[test]
-    fn end_to_end_walk_returns_both_halves() -> Result<(), String> {
-        let offsets = MonoOffsets::mtga_default();
-        let mut mem = FakeMem::default();
-
-        // --- Dictionary<int,int> class: one field, `_entries` at 0x18
-        let dict_fields_addr: u64 = 0x2_0000;
-        let dict_class_bytes = install_class(
-            &mut mem,
-            dict_fields_addr,
-            0x2_1000,
-            0x2_2000,
-            &[("_entries", 0x18)],
-        );
-
-        // --- Dictionary object & array
-        let dict_obj_addr: u64 = 0x3_0000;
-        let entries_array_addr: u64 = 0x3_1000;
-        // Dictionary object: pointer to entries array at offset 0x18
-        let mut dict_obj = vec![0u8; 0x40];
-        dict_obj[0x18..0x18 + 8].copy_from_slice(&entries_array_addr.to_le_bytes());
-        mem.add(dict_obj_addr, dict_obj);
-        install_dict_array(
-            &mut mem,
-            entries_array_addr,
-            &[(74116, 1), (32388, 4), (106_219, 3)],
-        );
-
-        // --- Inventory object & class
-        let inv_obj_addr: u64 = 0x4_0000;
-        let inv_class_bytes =
-            install_inventory(&mut mem, inv_obj_addr, [42, 17, 5, 2, 12_345, 3_000, 250]);
-
-        // --- InventoryServiceWrapper: Cards (→ dict_obj) at 0x10,
-        //     m_inventory (→ inv_obj) at 0x20.
-        let sw_fields_addr: u64 = 0x6_0000;
-        let sw_class_bytes = install_class(
-            &mut mem,
-            sw_fields_addr,
-            0x6_1000,
-            0x6_2000,
-            &[("Cards", 0x10), ("m_inventory", 0x20)],
-        );
-        let sw_addr: u64 = 0x7_0000;
-        let mut sw_obj = vec![0u8; 0x40];
-        sw_obj[0x10..0x10 + 8].copy_from_slice(&dict_obj_addr.to_le_bytes());
-        sw_obj[0x20..0x20 + 8].copy_from_slice(&inv_obj_addr.to_le_bytes());
-        mem.add(sw_addr, sw_obj);
-
-        let result = from_service_wrapper(
-            &offsets,
-            sw_addr,
-            &sw_class_bytes,
-            &dict_class_bytes,
-            &inv_class_bytes,
-            |a, l| mem.read(a, l),
-        )
-        .ok_or("walk should succeed")?;
-
-        assert_eq!(result.entries.len(), 3);
-        assert!(result
-            .entries
-            .iter()
-            .any(|e| e.key == 74116 && e.value == 1));
-        assert!(result
-            .entries
-            .iter()
-            .any(|e| e.key == 32388 && e.value == 4));
-        assert_eq!(result.inventory.wc_common, 42);
-        assert_eq!(result.inventory.gold, 12_345);
-        assert_eq!(result.inventory.vault_progress, 250);
-        Ok(())
-    }
-
-    #[test]
-    fn walk_resolves_cards_via_backing_field_name() -> Result<(), String> {
-        // If the service wrapper exposes the BACKING form rather than
-        // a literal `Cards` field, field::find_by_name's second pass
-        // must still resolve it.
-        let offsets = MonoOffsets::mtga_default();
-        let mut mem = FakeMem::default();
-
-        let dict_class_bytes = install_class(
-            &mut mem,
-            0x2_0000,
-            0x2_1000,
-            0x2_2000,
-            &[("_entries", 0x18)],
-        );
-
-        let dict_obj_addr: u64 = 0x3_0000;
-        let entries_array_addr: u64 = 0x3_1000;
-        let mut dict_obj = vec![0u8; 0x40];
-        dict_obj[0x18..0x18 + 8].copy_from_slice(&entries_array_addr.to_le_bytes());
-        mem.add(dict_obj_addr, dict_obj);
-        install_dict_array(&mut mem, entries_array_addr, &[(7, 1)]);
-
-        let inv_obj_addr: u64 = 0x4_0000;
-        let inv_class_bytes = install_inventory(&mut mem, inv_obj_addr, [1, 1, 1, 1, 1, 1, 1]);
-
-        // Wrapper class exposes <Cards>k__BackingField (not literal
-        // "Cards") for the dictionary reference.
-        let sw_class_bytes = install_class(
-            &mut mem,
-            0x6_0000,
-            0x6_1000,
-            0x6_2000,
-            &[("<Cards>k__BackingField", 0x10), ("m_inventory", 0x20)],
-        );
-        let sw_addr: u64 = 0x7_0000;
-        let mut sw_obj = vec![0u8; 0x40];
-        sw_obj[0x10..0x10 + 8].copy_from_slice(&dict_obj_addr.to_le_bytes());
-        sw_obj[0x20..0x20 + 8].copy_from_slice(&inv_obj_addr.to_le_bytes());
-        mem.add(sw_addr, sw_obj);
-
-        let result = from_service_wrapper(
-            &offsets,
-            sw_addr,
-            &sw_class_bytes,
-            &dict_class_bytes,
-            &inv_class_bytes,
-            |a, l| mem.read(a, l),
-        )
-        .ok_or("walk should succeed with backing-field Cards")?;
-
-        assert_eq!(result.entries, vec![DictEntry { key: 7, value: 1 }]);
-        Ok(())
-    }
-
-    #[test]
-    fn walk_returns_none_when_cards_pointer_is_null() {
-        let offsets = MonoOffsets::mtga_default();
-        let mut mem = FakeMem::default();
-
-        let dict_class_bytes = install_class(
-            &mut mem,
-            0x2_0000,
-            0x2_1000,
-            0x2_2000,
-            &[("_entries", 0x18)],
-        );
-        let inv_obj_addr: u64 = 0x4_0000;
-        let inv_class_bytes = install_inventory(&mut mem, inv_obj_addr, [1, 1, 1, 1, 1, 1, 1]);
-        let sw_class_bytes = install_class(
-            &mut mem,
-            0x6_0000,
-            0x6_1000,
-            0x6_2000,
-            &[("Cards", 0x10), ("m_inventory", 0x20)],
-        );
-        let sw_addr: u64 = 0x7_0000;
-        let mut sw_obj = vec![0u8; 0x40];
-        // Cards pointer = 0 — uninitialised
-        sw_obj[0x20..0x20 + 8].copy_from_slice(&inv_obj_addr.to_le_bytes());
-        mem.add(sw_addr, sw_obj);
-
-        assert_eq!(
-            from_service_wrapper(
-                &offsets,
-                sw_addr,
-                &sw_class_bytes,
-                &dict_class_bytes,
-                &inv_class_bytes,
-                |a, l| mem.read(a, l),
-            ),
-            None
-        );
-    }
-
-    /// Build a class with custom field specs that may include
-    /// static fields. `is_static` set on each spec controls the
-    /// MonoType.attrs value written to that field's MonoType block.
-    fn install_class_with_attrs(
+    fn build_static_test_fixture(
         mem: &mut FakeMem,
-        fields_addr: u64,
-        names_base: u64,
-        types_base: u64,
-        specs: &[(&str, i32, bool /* is_static */)],
-    ) -> Vec<u8> {
-        let mut blob = Vec::with_capacity(specs.len() * MONO_CLASS_FIELD_SIZE);
-        for (i, (name, offset, is_static)) in specs.iter().enumerate() {
-            let name_ptr = names_base + (i as u64) * 0x80;
-            let type_ptr = types_base + (i as u64) * 0x40;
-            blob.extend_from_slice(&make_field_entry(name_ptr, type_ptr, *offset));
-            let mut nbuf = name.as_bytes().to_vec();
-            nbuf.push(0);
-            mem.add(name_ptr, nbuf);
-            let attrs = if *is_static { 0x10u16 } else { 0u16 };
-            mem.add(type_ptr, make_type_block(attrs));
-        }
-        mem.add(fields_addr, blob);
-        make_class_def(fields_addr, specs.len() as u32)
-    }
+        field_specs: &[(&str, i32, bool)],
+    ) -> (Vec<u8>, u64, u64, u64) {
+        // Returns (class_bytes, class_addr, domain_addr, storage_addr).
+        let offsets = MonoOffsets::mtga_default();
+        let class_addr: u64 = 0x20_0000;
+        let fields_addr: u64 = 0x10_0000;
+        let names_base: u64 = 0x10_1000;
+        let types_base: u64 = 0x10_2000;
+        let storage_addr: u64 = 0x20_3000;
+        let domain_addr: u64 = 0x20_4000;
+        let (rti_addr, vtable_addr) = make_class_def_for_static_test(class_addr, fields_addr);
+        let vtable_size: i32 = 0;
 
-    /// Install a runtime_info + vtable + static-storage triple in
-    /// FakeMem at deterministic addresses. Returns the static-storage
-    /// remote address. Caller installs the class blob separately
-    /// (using `make_class` from this module's test helpers).
-    fn install_static_storage_chain(
-        mem: &mut FakeMem,
-        rti_addr: u64,
-        vtable_addr: u64,
-        storage_addr: u64,
-        vtable_size: i32,
-    ) -> u64 {
-        let o = MonoOffsets::mtga_default();
-        // runtime_info: max_domain=0, single domain_vtables[0] = vtable_addr
-        let mut rti = vec![0u8; o.runtime_info_domain_vtables + 8];
-        rti[o.runtime_info_max_domain..o.runtime_info_max_domain + 2]
-            .copy_from_slice(&0u16.to_le_bytes());
-        rti[o.runtime_info_domain_vtables..o.runtime_info_domain_vtables + 8]
-            .copy_from_slice(&vtable_addr.to_le_bytes());
-        mem.add(rti_addr, rti);
+        install_fields(mem, fields_addr, names_base, types_base, field_specs);
 
-        // vtable: static-storage slot at vtable + 0x48 + size*8
-        let slot_off = o.vtable_method_slots + (vtable_size as usize) * 8;
-        let mut vt = vec![0u8; slot_off + 8];
-        vt[slot_off..slot_off + 8].copy_from_slice(&storage_addr.to_le_bytes());
-        mem.add(vtable_addr, vt);
-
-        storage_addr
-    }
-
-    /// Make a MonoClass blob carrying both runtime_info @0xd0 and
-    /// vtable_size @0x5c, plus the fields ptr / field_count for
-    /// MonoClassDef-shaped buffer use.
-    fn make_class_with_runtime_info(
-        fields_ptr: u64,
-        field_count: u32,
-        runtime_info: u64,
-        vtable_size: i32,
-    ) -> Vec<u8> {
-        let o = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; 0x110];
-        buf[o.class_fields..o.class_fields + 8].copy_from_slice(&fields_ptr.to_le_bytes());
-        buf[o.class_def_field_count..o.class_def_field_count + 4]
-            .copy_from_slice(&field_count.to_le_bytes());
-        buf[o.class_runtime_info..o.class_runtime_info + 8]
-            .copy_from_slice(&runtime_info.to_le_bytes());
-        buf[o.class_vtable_size..o.class_vtable_size + 4]
+        let mut class_buf = vec![0u8; 0x110];
+        class_buf[offsets.class_fields..offsets.class_fields + 8]
+            .copy_from_slice(&fields_addr.to_le_bytes());
+        class_buf[offsets.class_def_field_count..offsets.class_def_field_count + 4]
+            .copy_from_slice(&(field_specs.len() as u32).to_le_bytes());
+        class_buf[offsets.class_runtime_info..offsets.class_runtime_info + 8]
+            .copy_from_slice(&rti_addr.to_le_bytes());
+        class_buf[offsets.class_vtable_size..offsets.class_vtable_size + 4]
             .copy_from_slice(&(vtable_size as u32).to_le_bytes());
-        buf
+        mem.add(class_addr, class_buf.clone());
+
+        let mut domain = vec![0u8; 0x100];
+        domain[offsets.domain_id..offsets.domain_id + 4].copy_from_slice(&0u32.to_le_bytes());
+        mem.add(domain_addr, domain);
+
+        install_static_storage_chain(mem, rti_addr, vtable_addr, storage_addr, vtable_size);
+
+        (class_buf, class_addr, domain_addr, storage_addr)
     }
 
     #[test]
     fn read_static_pointer_resolves_via_vtable_storage() -> Result<(), String> {
         let offsets = MonoOffsets::mtga_default();
         let mut mem = FakeMem::default();
+        let (class_bytes, class_addr, domain_addr, storage_addr) =
+            build_static_test_fixture(&mut mem, &[("_instance", 0x20, true)]);
 
-        // Class layout: one static field at offset 0x20 within static storage.
-        let fields_addr: u64 = 0x10_0000;
-        let class_bytes = install_class_with_attrs(
-            &mut mem,
-            fields_addr,
-            0x10_1000,
-            0x10_2000,
-            &[("_instance", 0x20, true)],
-        );
-
-        // Class lives in remote memory at class_addr — needs a separate
-        // blob carrying runtime_info + vtable_size for vtable resolution.
-        let class_addr: u64 = 0x20_0000;
-        let rti_addr: u64 = 0x20_1000;
-        let vtable_addr: u64 = 0x20_2000;
-        let storage_addr: u64 = 0x20_3000;
-        let domain_addr: u64 = 0x20_4000;
-        let vtable_size: i32 = 4;
-
-        mem.add(
-            class_addr,
-            make_class_with_runtime_info(fields_addr, 1, rti_addr, vtable_size),
-        );
-        // Domain — domain_id at 0x94 = 0
-        let mut domain = vec![0u8; 0x100];
-        domain[offsets.domain_id..offsets.domain_id + 4].copy_from_slice(&0u32.to_le_bytes());
-        mem.add(domain_addr, domain);
-        install_static_storage_chain(&mut mem, rti_addr, vtable_addr, storage_addr, vtable_size);
-
-        // Singleton pointer lives at storage_addr + 0x20.
         let singleton_addr: u64 = 0x99_0000;
         let mut storage = vec![0u8; 0x40];
         storage[0x20..0x20 + 8].copy_from_slice(&singleton_addr.to_le_bytes());
@@ -678,52 +518,9 @@ mod tests {
     fn read_static_pointer_rejects_instance_field() {
         let offsets = MonoOffsets::mtga_default();
         let mut mem = FakeMem::default();
-        // Same field name, but flagged instance — must be rejected.
-        let class_bytes = install_class_with_attrs(
-            &mut mem,
-            0x10_0000,
-            0x10_1000,
-            0x10_2000,
-            &[("_instance", 0x20, false /* instance */)],
-        );
-        assert_eq!(
-            read_static_pointer(
-                &offsets,
-                &class_bytes,
-                0,
-                0x20_0000,
-                0x20_4000,
-                "_instance",
-                &|a, l| mem.read(a, l),
-            ),
-            None
-        );
-    }
+        let (class_bytes, class_addr, domain_addr, _) =
+            build_static_test_fixture(&mut mem, &[("_instance", 0x20, false /* instance */)]);
 
-    #[test]
-    fn read_static_pointer_returns_none_when_storage_is_null() {
-        let offsets = MonoOffsets::mtga_default();
-        let mut mem = FakeMem::default();
-        let class_bytes = install_class_with_attrs(
-            &mut mem,
-            0x10_0000,
-            0x10_1000,
-            0x10_2000,
-            &[("_instance", 0x20, true)],
-        );
-        let class_addr: u64 = 0x20_0000;
-        let rti_addr: u64 = 0x20_1000;
-        let vtable_addr: u64 = 0x20_2000;
-        let domain_addr: u64 = 0x20_4000;
-        mem.add(
-            class_addr,
-            make_class_with_runtime_info(0x10_0000, 1, rti_addr, 0),
-        );
-        let mut domain = vec![0u8; 0x100];
-        domain[offsets.domain_id..offsets.domain_id + 4].copy_from_slice(&0u32.to_le_bytes());
-        mem.add(domain_addr, domain);
-        // storage = 0 → null
-        install_static_storage_chain(&mut mem, rti_addr, vtable_addr, 0, 0);
         assert_eq!(
             read_static_pointer(
                 &offsets,
@@ -740,32 +537,10 @@ mod tests {
 
     #[test]
     fn read_static_pointer_resolves_backing_field_form() -> Result<(), String> {
-        // Class exposes <Instance>k__BackingField (not literal
-        // "_instance") for the static singleton pointer. Two-pass
-        // resolution must still succeed.
         let offsets = MonoOffsets::mtga_default();
         let mut mem = FakeMem::default();
-        let fields_addr: u64 = 0x10_0000;
-        let class_bytes = install_class_with_attrs(
-            &mut mem,
-            fields_addr,
-            0x10_1000,
-            0x10_2000,
-            &[("<Instance>k__BackingField", 0x20, true)],
-        );
-        let class_addr: u64 = 0x20_0000;
-        let rti_addr: u64 = 0x20_1000;
-        let vtable_addr: u64 = 0x20_2000;
-        let storage_addr: u64 = 0x20_3000;
-        let domain_addr: u64 = 0x20_4000;
-        mem.add(
-            class_addr,
-            make_class_with_runtime_info(fields_addr, 1, rti_addr, 0),
-        );
-        let mut domain = vec![0u8; 0x100];
-        domain[offsets.domain_id..offsets.domain_id + 4].copy_from_slice(&0u32.to_le_bytes());
-        mem.add(domain_addr, domain);
-        install_static_storage_chain(&mut mem, rti_addr, vtable_addr, storage_addr, 0);
+        let (class_bytes, class_addr, domain_addr, storage_addr) =
+            build_static_test_fixture(&mut mem, &[("<Instance>k__BackingField", 0x20, true)]);
 
         let singleton_addr: u64 = 0x99_0000;
         let mut storage = vec![0u8; 0x40];
@@ -786,246 +561,280 @@ mod tests {
         Ok(())
     }
 
-    /// End-to-end fixture for `from_papa_class`: builds PAPA →
-    /// InventoryManager → ServiceWrapper → Dictionary + Inventory.
-    /// Returns (papa_class_addr, domain_addr) plus the class_bytes
-    /// for each layer the caller passes back into `from_papa_class`.
-    #[allow(clippy::type_complexity)]
-    fn build_full_papa_chain(
+    // -----------------------------------------------------------------
+    // from_service_wrapper — vtable-driven class derivation.
+    // -----------------------------------------------------------------
+
+    /// Build a FakeMem fixture for the inner service-wrapper walk.
+    /// Each instance object has its first 8 bytes set to its synthetic
+    /// vtable; each vtable holds the klass at offset 0; each klass has
+    /// a `MonoClassDef` blob describing the fields the walker reads.
+    fn build_service_wrapper_fixture(
         mem: &mut FakeMem,
+        wrapper_field_specs: &[(&str, i32, bool)],
         cards: &[(i32, i32)],
         inventory_values: [i32; 7],
-    ) -> (
-        u64,     // papa_class_addr
-        u64,     // domain_addr
-        Vec<u8>, // papa_class_bytes
-        Vec<u8>, // inventory_manager_class_bytes
-        Vec<u8>, // service_wrapper_class_bytes
-        Vec<u8>, // dictionary_class_bytes
-        Vec<u8>, // inventory_class_bytes
-    ) {
-        let offsets = MonoOffsets::mtga_default();
+    ) -> u64 {
+        // Each entity owns its own 0x10000-byte sandbox so 0x40-byte
+        // objects can't shadow nearby vtables / class blobs in
+        // FakeMem's first-match-wins lookup.
+        let wrapper_addr: u64 = 0x70_0000;
+        let wrapper_vtable: u64 = 0x71_0000;
+        let wrapper_class: u64 = 0x72_0000;
+        let wrapper_fields_addr: u64 = 0x73_0000;
+        install_fields(
+            mem,
+            wrapper_fields_addr,
+            0x74_0000,
+            0x75_0000,
+            wrapper_field_specs,
+        );
+        write_class_def_simple(
+            mem,
+            wrapper_class,
+            wrapper_fields_addr,
+            wrapper_field_specs.len() as u32,
+        );
 
-        // ---- Inner: dictionary class + object + array
-        let dict_class_bytes =
-            install_class(mem, 0x2_0000, 0x2_1000, 0x2_2000, &[("_entries", 0x18)]);
-        let dict_obj_addr: u64 = 0x3_0000;
-        let entries_array_addr: u64 = 0x3_1000;
+        // ---- Inventory object + class
+        let inv_addr: u64 = 0x40_0000;
+        let inv_vtable: u64 = 0x41_0000;
+        let inv_class: u64 = 0x42_0000;
+        let inv_fields_addr: u64 = 0x43_0000;
+        let inv_specs: Vec<(&str, i32, bool)> = FIELD_NAMES
+            .iter()
+            .enumerate()
+            .map(|(i, n)| (*n, 0x10 + i as i32 * 4, false))
+            .collect();
+        install_fields(mem, inv_fields_addr, 0x44_0000, 0x45_0000, &inv_specs);
+        write_class_def_simple(mem, inv_class, inv_fields_addr, inv_specs.len() as u32);
+        let mut inv_obj = vec![0u8; 0x40];
+        for (i, v) in inventory_values.iter().enumerate() {
+            let off = 0x10 + i * 4;
+            inv_obj[off..off + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        link_object_to_class(mem, inv_addr, inv_obj, inv_vtable, inv_class);
+
+        // ---- Dictionary object + class + entries array
+        let dict_addr: u64 = 0x30_0000;
+        let dict_vtable: u64 = 0x31_0000;
+        let dict_class: u64 = 0x32_0000;
+        let dict_fields_addr: u64 = 0x33_0000;
+        install_fields(
+            mem,
+            dict_fields_addr,
+            0x34_0000,
+            0x35_0000,
+            &[("_entries", 0x18, false)],
+        );
+        write_class_def_simple(mem, dict_class, dict_fields_addr, 1);
+        let entries_array_addr: u64 = 0x36_0000;
         let mut dict_obj = vec![0u8; 0x40];
         dict_obj[0x18..0x18 + 8].copy_from_slice(&entries_array_addr.to_le_bytes());
-        mem.add(dict_obj_addr, dict_obj);
+        link_object_to_class(mem, dict_addr, dict_obj, dict_vtable, dict_class);
         install_dict_array(mem, entries_array_addr, cards);
 
-        // ---- Inventory class + object
-        let inv_obj_addr: u64 = 0x4_0000;
-        let inventory_class_bytes = install_inventory(mem, inv_obj_addr, inventory_values);
-
-        // ---- Service wrapper class + object: Cards @0x10, m_inventory @0x20
-        let sw_class_bytes = install_class(
+        // ---- Wrapper object payload
+        let mut wrapper_obj = vec![0u8; 0x40];
+        wrapper_obj[0x10..0x10 + 8].copy_from_slice(&dict_addr.to_le_bytes());
+        wrapper_obj[0x20..0x20 + 8].copy_from_slice(&inv_addr.to_le_bytes());
+        link_object_to_class(
             mem,
-            0x6_0000,
-            0x6_1000,
-            0x6_2000,
-            &[("Cards", 0x10), ("m_inventory", 0x20)],
+            wrapper_addr,
+            wrapper_obj,
+            wrapper_vtable,
+            wrapper_class,
         );
-        let sw_addr: u64 = 0x7_0000;
-        let mut sw_obj = vec![0u8; 0x40];
-        sw_obj[0x10..0x10 + 8].copy_from_slice(&dict_obj_addr.to_le_bytes());
-        sw_obj[0x20..0x20 + 8].copy_from_slice(&inv_obj_addr.to_le_bytes());
-        mem.add(sw_addr, sw_obj);
 
-        // ---- InventoryManager class + object: _inventoryServiceWrapper @0x30
-        let im_class_bytes = install_class(
-            mem,
-            0x8_0000,
-            0x8_1000,
-            0x8_2000,
-            &[("_inventoryServiceWrapper", 0x30)],
+        wrapper_addr
+    }
+
+    #[test]
+    fn from_service_wrapper_returns_both_halves() -> Result<(), String> {
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+        let wrapper_addr = build_service_wrapper_fixture(
+            &mut mem,
+            &[("Cards", 0x10, false), ("m_inventory", 0x20, false)],
+            &[(74116, 1), (32388, 4), (106_219, 3)],
+            [42, 17, 5, 2, 12_345, 3_000, 250],
         );
-        let im_addr: u64 = 0x9_0000;
+
+        let dict_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
+        let result =
+            from_service_wrapper(&offsets, wrapper_addr, &dict_bytes, |a, l| mem.read(a, l))
+                .ok_or("walk should succeed")?;
+
+        assert_eq!(result.entries.len(), 3);
+        assert!(result.entries.contains(&dict::DictEntry {
+            key: 74116,
+            value: 1
+        }));
+        assert_eq!(result.inventory.wc_common, 42);
+        assert_eq!(result.inventory.gold, 12_345);
+        assert_eq!(result.inventory.vault_progress, 250);
+        Ok(())
+    }
+
+    #[test]
+    fn from_service_wrapper_resolves_cards_via_backing_field_form() -> Result<(), String> {
+        // Wrapper exposes <Cards>k__BackingField rather than literal "Cards".
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+        let wrapper_addr = build_service_wrapper_fixture(
+            &mut mem,
+            &[
+                ("<Cards>k__BackingField", 0x10, false),
+                ("m_inventory", 0x20, false),
+            ],
+            &[(7, 1)],
+            [1, 1, 1, 1, 1, 1, 1],
+        );
+
+        let dict_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
+        let result =
+            from_service_wrapper(&offsets, wrapper_addr, &dict_bytes, |a, l| mem.read(a, l))
+                .ok_or("walk should succeed via backing-field form")?;
+        assert_eq!(result.entries, vec![dict::DictEntry { key: 7, value: 1 }]);
+        Ok(())
+    }
+
+    #[test]
+    fn from_service_wrapper_returns_none_when_cards_pointer_is_null() -> Result<(), String> {
+        // Re-use the fixture but zero out the wrapper's Cards field.
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+        let wrapper_addr = build_service_wrapper_fixture(
+            &mut mem,
+            &[("Cards", 0x10, false), ("m_inventory", 0x20, false)],
+            &[(7, 1)],
+            [1, 1, 1, 1, 1, 1, 1],
+        );
+
+        // Replace the wrapper object's Cards slot with NULL by shadow-
+        // writing a zeroed blob ahead of the original.
+        let mut zeroed_obj = vec![0u8; 0x40];
+        let wrapper_vtable: u64 = 0x71_0000;
+        zeroed_obj[0..8].copy_from_slice(&wrapper_vtable.to_le_bytes());
+        let mut new_blocks = vec![(wrapper_addr, zeroed_obj)];
+        new_blocks.extend(mem.blocks);
+        mem.blocks = new_blocks;
+
+        let dict_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
+        assert_eq!(
+            from_service_wrapper(&offsets, wrapper_addr, &dict_bytes, |a, l| mem.read(a, l)),
+            None
+        );
+        Ok(())
+    }
+
+    // -----------------------------------------------------------------
+    // from_papa_class — outer composition test.
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn from_papa_class_walks_static_then_runtime_classes() -> Result<(), String> {
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+
+        // Reuse the service_wrapper fixture; it provides everything from
+        // the wrapper down. We then build PAPA on top.
+        let wrapper_addr = build_service_wrapper_fixture(
+            &mut mem,
+            &[("Cards", 0x10, false), ("m_inventory", 0x20, false)],
+            &[(74116, 1), (32388, 4)],
+            [42, 17, 5, 2, 12_345, 3_000, 250],
+        );
+
+        // ---- IM object + class
+        let im_addr: u64 = 0x90_0000;
+        let im_vtable: u64 = 0x91_0000;
+        let im_class: u64 = 0x92_0000;
+        let im_fields_addr: u64 = 0x93_0000;
+        install_fields(
+            &mut mem,
+            im_fields_addr,
+            0x94_0000,
+            0x95_0000,
+            &[("_inventoryServiceWrapper", 0x30, false)],
+        );
+        write_class_def_simple(&mut mem, im_class, im_fields_addr, 1);
         let mut im_obj = vec![0u8; 0x80];
-        im_obj[0x30..0x30 + 8].copy_from_slice(&sw_addr.to_le_bytes());
-        mem.add(im_addr, im_obj);
+        im_obj[0x30..0x38].copy_from_slice(&wrapper_addr.to_le_bytes());
+        link_object_to_class(&mut mem, im_addr, im_obj, im_vtable, im_class);
 
-        // ---- PAPA class with one static + one instance field.
-        // The static `_instance` lives at static-storage offset 0x10.
-        // The instance `<InventoryManager>k__BackingField` (queried as
-        // "InventoryManager") lives at PAPA singleton offset 0x40.
-        let papa_fields_addr: u64 = 0xA_0000;
-        let papa_class_bytes = install_class_with_attrs(
-            mem,
+        // ---- PAPA class with static `_instance` + instance
+        // `<InventoryManager>k__BackingField`
+        let papa_class_addr: u64 = 0xB0_0000;
+        let papa_fields_addr: u64 = 0xA0_0000;
+        let papa_rti: u64 = 0xB1_0000;
+        let papa_vtable: u64 = 0xB2_0000;
+        let papa_storage: u64 = 0xB3_0000;
+        let domain_addr: u64 = 0xB4_0000;
+        let papa_vtable_size: i32 = 3;
+
+        install_fields(
+            &mut mem,
             papa_fields_addr,
-            0xA_1000,
-            0xA_2000,
+            0xA1_0000,
+            0xA2_0000,
             &[
                 ("_instance", 0x10, true),
                 ("<InventoryManager>k__BackingField", 0x40, false),
             ],
         );
-
-        // Live PAPA class blob: includes runtime_info + vtable_size.
-        let papa_class_addr: u64 = 0xB_0000;
-        let rti_addr: u64 = 0xB_1000;
-        let vtable_addr: u64 = 0xB_2000;
-        let storage_addr: u64 = 0xB_3000;
-        let domain_addr: u64 = 0xB_4000;
-        let vtable_size: i32 = 3;
-
-        mem.add(
+        write_class_def_with_vtable(
+            &mut mem,
             papa_class_addr,
-            make_class_with_runtime_info(papa_fields_addr, 2, rti_addr, vtable_size),
+            papa_fields_addr,
+            2,
+            papa_rti,
+            papa_vtable_size,
         );
+
         let mut domain = vec![0u8; 0x100];
         domain[offsets.domain_id..offsets.domain_id + 4].copy_from_slice(&0u32.to_le_bytes());
         mem.add(domain_addr, domain);
-        install_static_storage_chain(mem, rti_addr, vtable_addr, storage_addr, vtable_size);
-
-        // Static storage: at offset 0x10 lives the PAPA singleton ptr.
-        let papa_singleton_addr: u64 = 0xC_0000;
-        let mut storage = vec![0u8; 0x40];
-        storage[0x10..0x10 + 8].copy_from_slice(&papa_singleton_addr.to_le_bytes());
-        mem.add(storage_addr, storage);
-
-        // PAPA singleton object: at offset 0x40 lives the IM ptr.
-        let mut papa_obj = vec![0u8; 0x80];
-        papa_obj[0x40..0x40 + 8].copy_from_slice(&im_addr.to_le_bytes());
-        mem.add(papa_singleton_addr, papa_obj);
-
-        (
-            papa_class_addr,
-            domain_addr,
-            papa_class_bytes,
-            im_class_bytes,
-            sw_class_bytes,
-            dict_class_bytes,
-            inventory_class_bytes,
-        )
-    }
-
-    #[test]
-    fn from_papa_class_walks_full_chain() -> Result<(), String> {
-        let offsets = MonoOffsets::mtga_default();
-        let mut mem = FakeMem::default();
-        let (papa_class, domain, papa_b, im_b, sw_b, dict_b, inv_b) = build_full_papa_chain(
+        install_static_storage_chain(
             &mut mem,
-            &[(74116, 1), (32388, 4)],
-            [42, 17, 5, 2, 12_345, 3_000, 250],
+            papa_rti,
+            papa_vtable,
+            papa_storage,
+            papa_vtable_size,
         );
+
+        // PAPA's static storage at offset 0x10 holds the singleton ptr.
+        let papa_singleton: u64 = 0xC0_0000;
+        let mut storage = vec![0u8; 0x40];
+        storage[0x10..0x18].copy_from_slice(&papa_singleton.to_le_bytes());
+        mem.add(papa_storage, storage);
+
+        // PAPA singleton: instance field at 0x40 → IM.
+        let mut papa_obj = vec![0u8; 0x80];
+        papa_obj[0x40..0x48].copy_from_slice(&im_addr.to_le_bytes());
+        mem.add(papa_singleton, papa_obj);
+
+        // Re-fetch the papa_class_bytes + dict_class_bytes the
+        // walker will pass back in.
+        let papa_class_bytes = mem.read(papa_class_addr, 0x110).ok_or("papa class read")?;
+        let dict_class_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
 
         let result = from_papa_class(
             &offsets,
-            papa_class,
-            domain,
-            &papa_b,
-            &im_b,
-            &sw_b,
-            &dict_b,
-            &inv_b,
+            papa_class_addr,
+            domain_addr,
+            &papa_class_bytes,
+            &dict_class_bytes,
             |a, l| mem.read(a, l),
         )
-        .ok_or("full chain must resolve")?;
+        .ok_or("walk should succeed")?;
 
         assert_eq!(result.entries.len(), 2);
-        assert!(result
-            .entries
-            .iter()
-            .any(|e| e.key == 74116 && e.value == 1));
-        assert_eq!(result.inventory.wc_common, 42);
+        assert!(result.entries.contains(&dict::DictEntry {
+            key: 74116,
+            value: 1
+        }));
         assert_eq!(result.inventory.gold, 12_345);
         Ok(())
-    }
-
-    #[test]
-    fn from_papa_class_returns_none_when_papa_singleton_uninitialized() {
-        let offsets = MonoOffsets::mtga_default();
-        let mut mem = FakeMem::default();
-        let (papa_class, domain, papa_b, im_b, sw_b, dict_b, inv_b) =
-            build_full_papa_chain(&mut mem, &[(1, 1)], [0; 7]);
-
-        // Overwrite the PAPA singleton pointer in static storage with 0.
-        let storage_addr: u64 = 0xB_3000;
-        let mut zeroed = vec![0u8; 0x40];
-        // Leave bytes at offset 0x10 zeroed (no singleton).
-        // No need to write — default vec is already zero. But we must
-        // shadow the previous storage block, which means re-adding.
-        // FakeMem.read picks the first block whose range covers the
-        // address — adding a fresh block at the same address ahead
-        // of the original works because we just overwrite by appending
-        // a higher-precedence entry. Simplest: rebuild the blocks list.
-        zeroed[0..8].copy_from_slice(&0u64.to_le_bytes());
-        // Replace the storage block with a fresh zero block.
-        // We rely on FakeMem's "first match wins" semantics by
-        // *replacing* blocks rather than appending — there's no
-        // remove API, so emit a new mem and re-add everything except
-        // the storage block.
-        let mut new_mem = FakeMem::default();
-        for (a, b) in mem.blocks.into_iter() {
-            if a != storage_addr {
-                new_mem.blocks.push((a, b));
-            }
-        }
-        new_mem.add(storage_addr, zeroed);
-
-        assert_eq!(
-            from_papa_class(
-                &offsets,
-                papa_class,
-                domain,
-                &papa_b,
-                &im_b,
-                &sw_b,
-                &dict_b,
-                &inv_b,
-                |a, l| new_mem.read(a, l),
-            ),
-            None
-        );
-    }
-
-    #[test]
-    fn walk_returns_none_when_entries_field_missing_from_dict_class() {
-        let offsets = MonoOffsets::mtga_default();
-        let mut mem = FakeMem::default();
-
-        // Dictionary class is missing _entries — pretend the key field
-        // is named wrong. Walker must fail cleanly.
-        let dict_class_bytes = install_class(
-            &mut mem,
-            0x2_0000,
-            0x2_1000,
-            0x2_2000,
-            &[("not_entries", 0x18)],
-        );
-
-        let dict_obj_addr: u64 = 0x3_0000;
-        mem.add(dict_obj_addr, vec![0u8; 0x40]);
-
-        let inv_obj_addr: u64 = 0x4_0000;
-        let inv_class_bytes = install_inventory(&mut mem, inv_obj_addr, [1, 1, 1, 1, 1, 1, 1]);
-
-        let sw_class_bytes = install_class(
-            &mut mem,
-            0x6_0000,
-            0x6_1000,
-            0x6_2000,
-            &[("Cards", 0x10), ("m_inventory", 0x20)],
-        );
-        let sw_addr: u64 = 0x7_0000;
-        let mut sw_obj = vec![0u8; 0x40];
-        sw_obj[0x10..0x10 + 8].copy_from_slice(&dict_obj_addr.to_le_bytes());
-        sw_obj[0x20..0x20 + 8].copy_from_slice(&inv_obj_addr.to_le_bytes());
-        mem.add(sw_addr, sw_obj);
-
-        assert_eq!(
-            from_service_wrapper(
-                &offsets,
-                sw_addr,
-                &sw_class_bytes,
-                &dict_class_bytes,
-                &inv_class_bytes,
-                |a, l| mem.read(a, l),
-            ),
-            None
-        );
     }
 }

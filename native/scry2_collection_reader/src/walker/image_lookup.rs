@@ -31,6 +31,99 @@ pub const MAX_NAME_LEN: usize = 256;
 pub const MAX_ASSEMBLIES: usize = 1024;
 
 /// Walk `domain->domain_assemblies` and return the `MonoImage *` for
+/// every assembly the runtime has loaded. Returns the list in
+/// traversal order. Bounded at [`MAX_ASSEMBLIES`] for cycle
+/// protection.
+///
+/// Used by [`super::run`] to search every assembly's `class_cache`
+/// when a specific class's home image is not known up front
+/// (MTGA's IL2CPP-style builds bury most types in unnamed
+/// assemblies that aren't `Core` / `Assembly-CSharp`).
+pub fn list_all_images<F>(offsets: &MonoOffsets, domain_addr: u64, read_mem: F) -> Option<Vec<u64>>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    let head = read_domain_assemblies_head(offsets, domain_addr, &read_mem)?;
+    let mut out = Vec::new();
+    if head == 0 {
+        return Some(out);
+    }
+    let mut node = head;
+    for _ in 0..MAX_ASSEMBLIES {
+        let node_buf = read_mem(node, gslist_node_size(offsets))?;
+        let assembly_ptr = mono::gslist_data_ptr(offsets, &node_buf, 0)?;
+        let next = mono::gslist_next_ptr(offsets, &node_buf, 0)?;
+
+        if assembly_ptr != 0 {
+            if let Some(image) = read_assembly_image(offsets, assembly_ptr, &read_mem) {
+                out.push(image);
+            }
+        }
+
+        if next == 0 {
+            return Some(out);
+        }
+        node = next;
+    }
+    Some(out)
+}
+
+/// Walk `domain->domain_assemblies` and return the assembly short
+/// name + `MonoImage *` for every loaded assembly. Useful for
+/// diagnostics ("which assemblies does this MTGA build expose?")
+/// and as the engine behind [`list_all_images`].
+pub fn list_all_assembly_names_and_images<F>(
+    offsets: &MonoOffsets,
+    domain_addr: u64,
+    read_mem: F,
+) -> Option<Vec<(String, u64)>>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    let head = read_domain_assemblies_head(offsets, domain_addr, &read_mem)?;
+    let mut out = Vec::new();
+    if head == 0 {
+        return Some(out);
+    }
+    let mut node = head;
+    for _ in 0..MAX_ASSEMBLIES {
+        let node_buf = read_mem(node, gslist_node_size(offsets))?;
+        let assembly_ptr = mono::gslist_data_ptr(offsets, &node_buf, 0)?;
+        let next = mono::gslist_next_ptr(offsets, &node_buf, 0)?;
+
+        if assembly_ptr != 0 {
+            let name = read_assembly_name(offsets, assembly_ptr, &read_mem);
+            let image = read_assembly_image(offsets, assembly_ptr, &read_mem);
+            if let (Some(name), Some(image)) = (name, image) {
+                out.push((name, image));
+            }
+        }
+
+        if next == 0 {
+            return Some(out);
+        }
+        node = next;
+    }
+    Some(out)
+}
+
+/// Read the assembly's short name as a UTF-8-best-effort string.
+fn read_assembly_name<F>(offsets: &MonoOffsets, assembly_ptr: u64, read_mem: &F) -> Option<String>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    let name_slot = assembly_ptr.checked_add(offsets.assembly_aname_name as u64)?;
+    let name_ptr_buf = read_mem(name_slot, 8)?;
+    let name_ptr = mono::read_ptr(&name_ptr_buf, 0, 0)?;
+    if name_ptr == 0 {
+        return None;
+    }
+    let buf = read_mem(name_ptr, MAX_NAME_LEN)?;
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    Some(String::from_utf8_lossy(&buf[..end]).into_owned())
+}
+
+/// Walk `domain->domain_assemblies` and return the `MonoImage *` for
 /// the first assembly whose short name matches `target_name`.
 ///
 /// Returns `None` when:

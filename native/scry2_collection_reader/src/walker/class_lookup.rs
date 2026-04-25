@@ -37,6 +37,82 @@ pub const MAX_TOTAL_CLASSES: usize = 65_536;
 /// low thousands. A `size` field much above this is suspicious.
 pub const MAX_BUCKETS: usize = 1_048_576;
 
+/// Walk `image->class_cache` and return every class name +
+/// `MonoClass *` it visits. Useful for diagnostics when looking for
+/// a class whose exact name is unknown (e.g. searching for any
+/// class containing "Inventory" or "Wrapper" across an MTGA build).
+pub fn list_all_classes<F>(
+    offsets: &MonoOffsets,
+    image_addr: u64,
+    read_mem: F,
+) -> Option<Vec<(String, u64)>>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    let cache_addr = mono::image_class_cache_addr(offsets, image_addr)?;
+    let header = read_mem(cache_addr, hash_table_header_size(offsets))?;
+    let size = mono::hash_table_size(offsets, &header, 0)?;
+    if size <= 0 {
+        return Some(Vec::new());
+    }
+    let size = size as usize;
+    if size > MAX_BUCKETS {
+        return Some(Vec::new());
+    }
+    let table_ptr = mono::hash_table_table_ptr(offsets, &header, 0)?;
+    if table_ptr == 0 {
+        return Some(Vec::new());
+    }
+
+    let mut out = Vec::new();
+    let mut visited = 0usize;
+    for bucket_idx in 0..size {
+        let bucket_slot_addr =
+            table_ptr.checked_add((bucket_idx as u64).checked_mul(POINTER_SIZE as u64)?)?;
+        let bucket_buf = match read_mem(bucket_slot_addr, POINTER_SIZE) {
+            Some(b) => b,
+            None => continue,
+        };
+        let mut node = match mono::read_ptr(&bucket_buf, 0, 0) {
+            Some(p) => p,
+            None => continue,
+        };
+        while node != 0 {
+            visited += 1;
+            if visited > MAX_TOTAL_CLASSES {
+                return Some(out);
+            }
+
+            if let Some(name) = read_class_name(offsets, node, &read_mem) {
+                out.push((name, node));
+            }
+
+            node = match read_next_class_cache(offsets, node, &read_mem) {
+                Some(n) => n,
+                None => break,
+            };
+        }
+    }
+    Some(out)
+}
+
+/// Read `MonoClass.name` as a UTF-8-best-effort string. Returns
+/// `None` only on a read failure that prevents the read.
+fn read_class_name<F>(offsets: &MonoOffsets, class_addr: u64, read_mem: &F) -> Option<String>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    let name_slot = class_addr.checked_add(offsets.class_name as u64)?;
+    let name_ptr_buf = read_mem(name_slot, POINTER_SIZE)?;
+    let name_ptr = mono::read_ptr(&name_ptr_buf, 0, 0)?;
+    if name_ptr == 0 {
+        return None;
+    }
+    let buf = read_mem(name_ptr, MAX_NAME_LEN)?;
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    Some(String::from_utf8_lossy(&buf[..end]).into_owned())
+}
+
 /// Walk `image->class_cache` and return the `MonoClass *` for the
 /// first class whose `name` matches `target_name` (exact bytewise
 /// comparison; `target_name` carries no trailing NUL).

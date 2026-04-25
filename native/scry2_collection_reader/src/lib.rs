@@ -203,4 +203,135 @@ fn walk_collection(pid: i32) -> Result<WalkSnapshot, WalkErrorWire> {
     Ok(snapshot_to_wire(snap))
 }
 
+/// Diagnostic NIF — list every `(assembly_name, class_name)` whose
+/// class name contains `needle` (case-insensitive). Returned tuples
+/// are `{assembly_name, class_name, class_addr}` so callers can
+/// follow up with targeted reads.
+///
+/// Not exposed in the production behaviour; useful when a target
+/// class can't be found by exact name and we need to discover what
+/// it's actually called in a given MTGA build.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walker_debug_classes_matching(
+    pid: i32,
+    needle: String,
+) -> Result<Vec<(String, String, u64)>, Atom> {
+    use walker::mono::MonoOffsets;
+    let offsets = MonoOffsets::mtga_default();
+    let maps = platform::list_maps(pid).map_err(err_atom)?;
+    let read_mem = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+
+    let (mono_base, mono_bytes) =
+        walker::run::read_mono_image(&maps, &read_mem).ok_or(atoms::io_error())?;
+    let domain_addr = walker::domain::find_root_domain(&mono_bytes, mono_base, read_mem)
+        .ok_or(atoms::io_error())?;
+    let pairs =
+        walker::image_lookup::list_all_assembly_names_and_images(&offsets, domain_addr, read_mem)
+            .ok_or(atoms::io_error())?;
+
+    let needle_lower = needle.to_lowercase();
+    let mut out = Vec::new();
+    for (asm_name, image) in &pairs {
+        if let Some(classes) = walker::class_lookup::list_all_classes(&offsets, *image, read_mem) {
+            for (class_name, class_addr) in classes {
+                if class_name.to_lowercase().contains(&needle_lower) {
+                    out.push((asm_name.clone(), class_name, class_addr));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Diagnostic NIF — list every field on a class found by name in
+/// any image, returning `{class_name, field_name, offset, is_static}`
+/// for every field of every class whose name equals `class_name`.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walker_debug_class_fields(
+    pid: i32,
+    class_name: String,
+) -> Result<Vec<(String, String, i32, bool)>, Atom> {
+    use walker::field;
+    use walker::mono::{self as mono_mod, MonoOffsets, MONO_CLASS_FIELD_SIZE};
+    let offsets = MonoOffsets::mtga_default();
+    let maps = platform::list_maps(pid).map_err(err_atom)?;
+    let read_mem = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+
+    let (mono_base, mono_bytes) =
+        walker::run::read_mono_image(&maps, &read_mem).ok_or(atoms::io_error())?;
+    let domain_addr = walker::domain::find_root_domain(&mono_bytes, mono_base, read_mem)
+        .ok_or(atoms::io_error())?;
+    let images = walker::image_lookup::list_all_images(&offsets, domain_addr, read_mem)
+        .ok_or(atoms::io_error())?;
+
+    let mut out = Vec::new();
+    for image in &images {
+        let Some(classes) = walker::class_lookup::list_all_classes(&offsets, *image, read_mem)
+        else {
+            continue;
+        };
+        for (cname, class_addr) in classes {
+            if cname != class_name {
+                continue;
+            }
+            let Some(class_bytes) = read_mem(class_addr, 0x110) else {
+                continue;
+            };
+            let Some(fields_ptr) = mono_mod::class_fields_ptr(&offsets, &class_bytes, 0) else {
+                continue;
+            };
+            let Some(field_count) = mono_mod::class_def_field_count(&offsets, &class_bytes, 0)
+            else {
+                continue;
+            };
+            for i in 0..(field_count as usize) {
+                let entry_addr = fields_ptr + (i as u64) * (MONO_CLASS_FIELD_SIZE as u64);
+                let Some(entry_buf) = read_mem(entry_addr, MONO_CLASS_FIELD_SIZE) else {
+                    continue;
+                };
+                let Some(name_ptr) = mono_mod::field_name_ptr(&offsets, &entry_buf, 0) else {
+                    continue;
+                };
+                let Some(name_buf) = read_mem(name_ptr, field::MAX_NAME_LEN) else {
+                    continue;
+                };
+                let end = name_buf
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(name_buf.len());
+                let fname = String::from_utf8_lossy(&name_buf[..end]).into_owned();
+                let offset = mono_mod::field_offset_value(&offsets, &entry_buf, 0).unwrap_or(0);
+                let type_ptr = mono_mod::field_type_ptr(&offsets, &entry_buf, 0).unwrap_or(0);
+                let is_static = if type_ptr == 0 {
+                    false
+                } else {
+                    read_mem(type_ptr, 12)
+                        .and_then(|t| mono_mod::type_attrs(&offsets, &t, 0))
+                        .map(mono_mod::attrs_is_static)
+                        .unwrap_or(false)
+                };
+                out.push((cname.clone(), fname, offset, is_static));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Diagnostic NIF — list every loaded assembly's
+/// `{name, image_addr}`.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walker_debug_list_assemblies(pid: i32) -> Result<Vec<(String, u64)>, Atom> {
+    use walker::mono::MonoOffsets;
+    let offsets = MonoOffsets::mtga_default();
+    let maps = platform::list_maps(pid).map_err(err_atom)?;
+    let read_mem = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+
+    let (mono_base, mono_bytes) =
+        walker::run::read_mono_image(&maps, &read_mem).ok_or(atoms::io_error())?;
+    let domain_addr = walker::domain::find_root_domain(&mono_bytes, mono_base, read_mem)
+        .ok_or(atoms::io_error())?;
+    walker::image_lookup::list_all_assembly_names_and_images(&offsets, domain_addr, read_mem)
+        .ok_or(atoms::io_error())
+}
+
 rustler::init!("Elixir.Scry2.Collection.Mem.Nif");

@@ -56,6 +56,21 @@ defmodule Scry2.Collection.Mem.Nif do
   @impl true
   def walk_collection(_pid), do: :erlang.nif_error(:nif_not_loaded)
 
+  @doc false
+  @spec walker_debug_classes_matching(non_neg_integer(), String.t()) ::
+          {:ok, [{String.t(), String.t(), non_neg_integer()}]} | {:error, atom()}
+  def walker_debug_classes_matching(_pid, _needle), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
+  @spec walker_debug_list_assemblies(non_neg_integer()) ::
+          {:ok, [{String.t(), non_neg_integer()}]} | {:error, atom()}
+  def walker_debug_list_assemblies(_pid), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc false
+  @spec walker_debug_class_fields(non_neg_integer(), String.t()) ::
+          {:ok, [{String.t(), String.t(), integer(), boolean()}]} | {:error, atom()}
+  def walker_debug_class_fields(_pid, _class_name), do: :erlang.nif_error(:nif_not_loaded)
+
   # --- raw NIF declarations ---
 
   @doc false
