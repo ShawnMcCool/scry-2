@@ -11,150 +11,32 @@ the structural scanner). Each item is tagged with its prerequisite:
 
 This is a brainstorm tracker, not a commitment. Order is not priority.
 
-## Currently in progress — Walker phase 6 (Rust)
+## Walker phase 6 — shipped
 
-**Why this is the focus:** Section B is FOCUS, and Walker phase 6 is the
-single piece of structural work that unlocks ~10 downstream items across
-B (currency / booster / log-gap reconciliation), E (forecasting), and
-most of F (alerts). Cards reading already works via structural scan; the
-walker replaces that with named-pointer navigation through Mono and
-picks up wildcards / gold / gems / vault / build-hint on the same trip.
+The Rust walker (`native/scry2_collection_reader/`, ADR-034 Revision
+2026-04-25) is complete: NIF wired, Elixir integration in
+`Scry2.Collection.Reader` (walker-first with scanner fallback),
+`SelfCheck.walker_result_ok?/2` validating output, `Snapshot` schema
+populated end-to-end (cards + wildcards + gold/gems/vault_progress +
+build hint), and the `walker share %` KPI rendered on the Collection
+diagnostics page. 178 Rust unit tests pass, `cargo clippy --all-targets`
+is clean.
 
-**Decision (ADR-034 Revision 2026-04-25):** walker is **in Rust**, not
-Elixir. The original ADR put it in Elixir to keep "one language for
-logic"; on closer look, hand-rolled Mono C-struct decoding in Elixir
-bitstring syntax is too error-prone vs. Rust's `#[repr(C)]` casts.
-Performance was not the driver — the walker reads <1 MB total. Elixir
-keeps orchestration, self-check, fallback-to-scanner, snapshot
-persistence, and UI. Scanner stays in Elixir.
-
-**Pointer chain to navigate** (verified end-to-end via the spike 7 POC,
-just via structural scan instead of a walker — the chain is correct,
-the implementation route is what changes):
-
-```
-mono_get_root_domain()                  -> MonoDomain *
-  PAPA  (search Core.dll then Assembly-CSharp.dll)
-    <Instance>k__BackingField           [STATIC field, on PAPA's VTable]
-      <InventoryManager>k__BackingField [instance]
-        _inventoryServiceWrapper        [instance]
-          <Cards>k__BackingField        -> Dictionary<int,int>  (collection)
-          m_inventory                   -> ClientPlayerInventory
-                                          { wcCommon, wcUncommon,
-                                            wcRare,  wcMythic,
-                                            gold, gems, vaultProgress }
-```
-
-**Field-resolution rule** (from spike 5): exact name first, then fall
-back to `<UpperCamel>k__BackingField`. Static-vs-instance dispatch on
-the `MONO_FIELD_ATTR_STATIC = 0x10` flag — static fields read from
-`vtable->data[offset]`, instance fields from `obj_ptr + offset`.
-
-**Design references** (read these before any new code):
+**Canonical references for follow-on walker / `reader+` work:**
 
 - `decisions/architecture/2026-04-22-034-memory-read-collection.md` —
   the ADR; **Revision 2026-04-25** at the bottom contains the
-  walker-in-Rust rationale and the revised NIF contract.
-- `mtga-duress/research/002-mtga-memory-reader-design.md` — full
-  evidence summary across all spikes.
-- `mtga-duress/experiments/spikes/spike5_mono_metadata/FINDING.md` —
-  field-resolution algorithm + which assemblies hold which classes.
-- `mtga-duress/experiments/spikes/spike7_papa_walk/FINDING.md` —
-  pointer chain + the list of Mono struct offsets the walker needs.
-- `mtga-duress/experiments/spikes/spike6_runtime_root/FINDING.md` —
-  prologue-byte pattern for `mono_get_root_domain`.
-
-**Rust crate location:** `native/scry2_collection_reader/`. Existing
-NIF surface (lib.rs): `ping`, `read_bytes`, `list_maps_nif`,
-`list_processes_nif`. Walker work is gated on `mod walker` (with
-`#![allow(dead_code)]` until `walk_collection` is wired).
-
-**Walker session resume point (2026-04-25):**
-
-181 unit tests passing in `native/scry2_collection_reader/`,
-`cargo fmt --check` clean, `cargo clippy --all-targets` clean on all
-walker code (only pre-existing `type_complexity` warnings remain in
-`lib.rs` / `linux.rs` — unrelated). All struct offsets in
-`MonoOffsets::mtga_default()` are cross-verified by `offsets_probe/`
-and live disassembly; see `.claude/skills/mono-memory-reader/SKILL.md`
-for evidence.
-
-### Done
-
-| Module | What it does |
-|---|---|
-| `prologue.rs` | Parse `48 8b 05 disp32 c3` accessor body → absolute static-pointer address. |
-| `pe.rs` | PE32+ export-directory walk: find a named symbol's RVA in mapped DLL bytes. |
-| `mono.rs` | 16-field `MonoOffsets` table (`MonoClass`, `MonoClassField`, `MonoType.attrs`, `MonoArray`, `MonoDomain.domain_id`, `MonoClassRuntimeInfo`, `MonoVTable.method_slots`) plus `MONO_CLASS_FIELD_SIZE`, `DICT_INT_INT_ENTRY_SIZE`, `MONO_FIELD_ATTR_STATIC` constants. Bounds-checked `read_u{8,16,32,64}` / `read_ptr` primitives and per-field typed accessors. |
-| `field.rs` | `find_by_name` — two-pass resolution (exact → `<UpperCamel>k__BackingField`) over a class's `MonoClassField[]`. Generic over `Fn(u64, usize) -> Option<Vec<u8>>`. Returns `ResolvedField { type_ptr, parent_ptr, offset, is_static, name_found }`. |
-| `dict.rs` | `read_int_int_entries` — `MonoArray<Entry>` walk filtering used slots via `hashCode == key & 0x7FFFFFFF`. 100K-entry sanity cap. |
-| `inventory.rs` | `read_inventory` — resolves the seven literal `ClientPlayerInventory` fields (wcCommon/wcUncommon/wcRare/wcMythic/gold/gems/vaultProgress). All-or-nothing on any missing / static / negative-offset field. |
-| `vtable.rs` | `class_vtable(class_addr, domain_addr)` resolves `MonoClass.runtime_info → max_domain bounds-check → domain_vtables[domain_id]`. `static_storage_base(...)` extends to `*(vtable + 0x48 + vtable_size*8)` — i.e. mono's `mono_vtable_get_static_field_data`. |
-| `chain.rs` (innermost) | `from_service_wrapper` composes `field::find_by_name` + `dict::read_int_int_entries` + `inventory::read_inventory` into one `WalkResult { entries, inventory }`. End-to-end tested with a full FakeMem fixture covering three classes + three objects + the dictionary array. |
-| `chain.rs` (outer layers) | `from_papa_class` reads PAPA's static `_instance` field via `vtable::static_storage_base`, follows `<InventoryManager>k__BackingField` and `_inventoryServiceWrapper` (instance), and delegates to `from_service_wrapper`. Internal helper `read_static_pointer` enforces is_static/offset>=0/non-null and is symmetric with the existing `read_instance_pointer`. |
-| `run.rs` (top-level) | `walker::run::walk_collection(maps, read_mem, build_hint)` is the single entry point the NIF calls. Pipeline: locate `mono-2.0-bdwgc.dll` in `/proc/<pid>/maps` → stitch its mapped sections into one RVA-indexed buffer → `domain::find_root_domain` → `image_lookup` × {Core, Assembly-CSharp, mscorlib} → `class_lookup` × {PAPA, InventoryManager, InventoryServiceWrapper, ClientPlayerInventory, Dictionary\`2} → read each class's `MonoClassDef` blob (0x110 bytes) → `chain::from_papa_class` → wraps the result in a `Snapshot { entries, inventory, mtga_build_hint }`. `WalkError` enum names every failure mode (MonoDllNotFound, RootDomainNotFound, AssemblyNotFound("Core"), ClassNotFound("PAPA"), etc.) so the Elixir side can route loudly. |
-| `build_hint.rs` | Reads MTGA's build GUID from `<MTGA root>/MTGA_Data/boot.config`. `find_mtga_root` derives the install root from the mono DLL's path in /proc/<pid>/maps (walks up `EmbedRuntime` and `MonoBleedingEdge`). `parse_build_guid` extracts `build-guid=…`/`build-guid: …` lines from boot.config text. `read_build_guid` composes them with `fs::read_to_string`. The walker orchestrator takes a `build_hint` closure so the run-time disk read is injectable (kept disk-free in unit tests). |
-| NIF wiring (`lib.rs`) | `walk_collection(pid)` exposed as a fourth `#[rustler::nif(schedule = "DirtyIo")]`. Internally calls `platform::list_maps`, builds the `read_mem` closure off `platform::read_bytes`, and runs `walker::run::walk_collection`. Maps `Snapshot` → `%{cards, wildcards, gold, gems, vault_progress, build_hint, reader_version}` (matching ADR-034 Revision 2026-04-25). Maps `WalkError` → `WalkErrorWire` (NifTaggedEnum) so parameterised variants carry their class/assembly name on the Elixir side, e.g. `{:error, {:assembly_not_found, "Core"}}`. `mix compile` builds and links the crate; the NIF is callable from `Scry2.Collection.Mem.Nif.walk_collection/1`. |
-| `image_lookup.rs` | `find_by_assembly_name` walks `MonoDomain.domain_assemblies` (a `GSList` of `MonoAssembly *`) and returns the `MonoImage *` for the first assembly whose `aname.name` matches a target short name (e.g. `"Core"`, `"Assembly-CSharp"`). Bounded at `MAX_ASSEMBLIES = 1024` nodes so cycles can't hang the NIF. |
-| `class_lookup.rs` | `find_by_name` linearly scans every bucket and chain in `MonoImage.class_cache` (an embedded `MonoInternalHashTable`), returning the `MonoClass *` whose `name` matches a target. Skips remote `hash_func`/`key_extract`/`next_value` callbacks (we can't `call` function pointers in another process); instead chains via `MonoClassDef.next_class_cache` at offset `0x108`. Bounded at `MAX_TOTAL_CLASSES = 65 536` so corrupted chains can't hang the NIF. |
-| `domain.rs` | `find_root_domain(mono_dll_bytes, mono_dll_base, read_mem)` composes `pe::find_export_rva("mono_get_root_domain")` + `prologue::parse_mov_rax_rip_ret` + a single 8-byte read against the target process to return the live `MonoDomain *`. Pure orchestration on top of existing helpers. Reports `None` on missing export / mismatched prologue / truncated bytes / unreadable static slot / null pointer. |
-| `offsets_probe/dump.c` | Standalone C dumper compiled with `gcc -mms-bitfields` against Unity mono `unity-2022.3-mbe` headers. Used to verify every `MonoOffsets::mtga_default()` value. Now also covers `GSList`, `MonoAssemblyName`, `MonoAssembly` (truncated to `image`), `MonoImage` (full prefix through `class_cache`), `MonoStreamHeader`, `MonoTableInfo`, and `MonoInternalHashTable`. |
-
-### Remaining — discrete next units
-
-**Walker (Rust crate) modules — all Done.** Remaining work is the
-diagnostics page wiring (`walker share %` KPI on the reconciliation
-page should now reflect actual walker hits since `Scry2.Collection`
-already groups snapshots by `reader_confidence`).
-
-**NIF wiring (last Rust-side step before Elixir):**
-
-Add `walk_collection` as a fourth `#[rustler::nif(schedule = "DirtyIo")]`
-in `native/scry2_collection_reader/src/lib.rs`. Map `WalkResult` →
-`{:ok, %{wildcards_common: …, gold: …, cards: [%{arena_id, count}, …], mtga_build_hint: …}}`
-matching the shape specified in ADR-034 Revision 2026-04-25.
-
-**Elixir integration — Done.**
-
-1. ✅ `Scry2.Collection.Mem` behaviour has the `walk_collection/1`
-   callback; `Mem.Nif` delegates to the Rust NIF; `Mem.TestBackend`
-   reads from a `:walker_snapshot` fixture key.
-2. ✅ `Scry2.Collection.Reader.read/1` now tries the walker first
-   (after `discovery_ok?`). On `{:error, _}` from the walker or on
-   `walker_result_ok?/2` failure it logs and falls back to the
-   existing scanner pipeline. Walker success stamps
-   `reader_confidence: "walker"` plus the flat `wildcards_*` / `gold`
-   / `gems` / `vault_progress` / `mtga_build_hint` fields the
-   `Snapshot` schema already expects.
-3. ✅ `SelfCheck.walker_result_ok?/2` validates the walker output:
-   non-empty cards, positive arena_ids, positive counts, non-negative
-   wildcards / gold / gems / vault_progress, plausible count
-   distribution, configurable `:min_cards`.
-4. ✅ `Snapshot` schema fields are populated end-to-end —
-   `Scry2.Collection.save_snapshot/1` already merged the walker
-   fields into the changeset; the Reader now actually emits them.
-5. ✅ `Scry2.Collection.snapshot_count_by_confidence/0` is unchanged
-   but now meaningfully separates `walker` from `fallback_scan`
-   counts as walker hits start landing.
-
-**Test posture:** every Rust module gets `#[cfg(test)] mod tests` with
-inline byte-array fixtures; no live MTGA needed for unit tests. Live
-integration test will exist in Elixir under `@tag :external` and be
-excluded from default `mix test`.
-
-**Ship signal:** at any commit, prior tests stay green, `cargo
-clippy --all-targets` does not regress, and `mix compile` must succeed.
-After `walk_collection` is wired end-to-end, the user-visible signal
-is `reader_confidence == "walker"` on a fresh refresh.
-
-**Skill index:** `.claude/skills/mono-memory-reader/SKILL.md` is the
-canonical reference for all walker offsets, the verification recipe
-(via `offsets_probe/`), and live-disassembly evidence. Spike 10
-retired `joaoescribano/mtga-reader` as a reference (it's not a memory
-reader). Two independent sources per offset: (1) Unity mono
-`unity-2022.3-mbe` headers + the dumper, (2) live disassembly of
-MTGA's `mono-2.0-bdwgc.dll`. The skill carries per-offset evidence
-citations.
+  walker-in-Rust rationale and the NIF contract.
+- `.claude/skills/mono-memory-reader/SKILL.md` — canonical reference
+  for all walker offsets, the verification recipe (via
+  `offsets_probe/`), and live-disassembly evidence. Two independent
+  sources per offset: (1) Unity mono `unity-2022.3-mbe` headers +
+  the C dumper, (2) live disassembly of MTGA's `mono-2.0-bdwgc.dll`.
+- `mtga-duress/research/002-mtga-memory-reader-design.md` — evidence
+  summary across all spikes.
+- `mtga-duress/experiments/spikes/spike{5,6,7}/FINDING.md` —
+  field-resolution algorithm, prologue-byte pattern for
+  `mono_get_root_domain`, and the PAPA→inventory pointer chain.
 
 ## A. Snapshot extensions (one-shot reads, same model as today)
 
@@ -231,11 +113,11 @@ All gated on walker phase 6 producing a stream of currency/progression rows.
 
 ## Cross-cutting prerequisites
 
-- **Walker phase 6** — unlocks wildcards, gold, gems, vault progress, build
-  hint. Active work: see "Currently in progress — Walker phase 6 (Rust)" at
-  the top of this file. Specced in ADR-034 (Revision 2026-04-25) and
-  `mtga-duress/research/002-*` + `mtga-duress/experiments/spikes/spike{5,6,7}/`.
-  Most B/E/F items wait on this.
+- **Walker phase 6 — ✅ shipped.** Wildcards, gold, gems, vault progress,
+  and build hint are now read end-to-end by the Rust walker and persisted
+  on every `Scry2.Collection` snapshot. See "Walker phase 6 — shipped" at
+  the top of this file for refs. B/E/F items can now be picked up on top
+  of real walker data.
 - **Live-state GenServer** — does not exist. Currently snapshots are one-shot.
   Adding a poll loop is a deliberate architectural step (settings flag, kill
   switch, isolation gate) — not a casual addition.

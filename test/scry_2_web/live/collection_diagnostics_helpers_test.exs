@@ -86,6 +86,19 @@ defmodule Scry2Web.CollectionDiagnosticsHelpersTest do
     end
   end
 
+  describe "walker_share/1" do
+    test "returns nil when no snapshots exist (avoids divide-by-zero)" do
+      assert H.walker_share(%{walker: 0, fallback_scan: 0}) == nil
+    end
+
+    test "returns the walker share as a 0..1 float rounded to 2 decimals" do
+      assert H.walker_share(%{walker: 0, fallback_scan: 5}) == 0.0
+      assert H.walker_share(%{walker: 5, fallback_scan: 0}) == 1.0
+      assert H.walker_share(%{walker: 1, fallback_scan: 3}) == 0.25
+      assert H.walker_share(%{walker: 1, fallback_scan: 2}) == 0.33
+    end
+  end
+
   describe "format_percent/1" do
     test "formats a 0..1 float as a percent string" do
       assert H.format_percent(0.0) == "0%"

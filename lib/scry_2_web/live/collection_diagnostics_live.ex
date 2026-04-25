@@ -50,7 +50,7 @@ defmodule Scry2Web.CollectionDiagnosticsLive do
     top_diffs = Collection.top_diffs_by_acquired(5)
     latest_snapshot = Collection.current()
     signal_ratio = H.noise_signal_ratio(diff_count, empty_diff_count)
-    walker_share = walker_share(reader_breakdown)
+    walker_share = H.walker_share(reader_breakdown)
 
     assign(socket,
       snapshot_count: snapshot_count,
@@ -66,12 +66,6 @@ defmodule Scry2Web.CollectionDiagnosticsLive do
       growth_series: Jason.encode!(H.growth_series(snapshots)),
       refresh_dots_series: Jason.encode!(H.refresh_dots_series(snapshots))
     )
-  end
-
-  defp walker_share(%{walker: 0, fallback_scan: 0}), do: nil
-
-  defp walker_share(%{walker: walker, fallback_scan: fallback}) do
-    Float.round(walker / (walker + fallback), 2)
   end
 
   @impl true

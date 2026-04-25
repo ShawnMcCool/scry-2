@@ -47,6 +47,10 @@ mod atoms {
     }
 }
 
+/// One row from `/proc/<pid>/maps` (or the platform equivalent):
+/// `(start_addr, end_addr, perms, path?)`.
+pub type MapEntry = (u64, u64, String, Option<String>);
+
 /// Platform-level failure modes; mapped into atoms at the NIF boundary.
 #[derive(Debug)]
 pub enum PlatformError {
@@ -87,7 +91,7 @@ fn read_bytes<'a>(env: Env<'a>, pid: i32, addr: u64, size: u64) -> Result<Binary
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-fn list_maps_nif(pid: i32) -> Result<Vec<(u64, u64, String, Option<String>)>, Atom> {
+fn list_maps_nif(pid: i32) -> Result<Vec<MapEntry>, Atom> {
     platform::list_maps(pid).map_err(err_atom)
 }
 

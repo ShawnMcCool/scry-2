@@ -75,6 +75,20 @@ defmodule Scry2Web.CollectionDiagnosticsHelpers do
     Float.round((total - empty) / total, 2)
   end
 
+  @doc """
+  Returns the share of snapshots taken via the walker (high-confidence)
+  path vs the structural fallback scan, as a `0..1` float rounded to 2
+  decimals. Returns `nil` when there are no snapshots in either bucket
+  (divide-by-zero). Input matches `Scry2.Collection.reader_path_breakdown/0`.
+  """
+  @spec walker_share(%{walker: non_neg_integer(), fallback_scan: non_neg_integer()}) ::
+          float() | nil
+  def walker_share(%{walker: 0, fallback_scan: 0}), do: nil
+
+  def walker_share(%{walker: walker, fallback_scan: fallback}) do
+    Float.round(walker / (walker + fallback), 2)
+  end
+
   @doc "Formats a `0..1` float as a rounded percent string (e.g. `0.7 -> \"70%\"`)."
   @spec format_percent(float() | nil) :: String.t()
   def format_percent(nil), do: "—"

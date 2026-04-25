@@ -5,7 +5,7 @@ use std::io;
 
 use libc::{iovec, process_vm_readv};
 
-use crate::PlatformError;
+use crate::{MapEntry, PlatformError};
 
 fn io_err_to_platform(err: &io::Error) -> PlatformError {
     use io::ErrorKind::*;
@@ -56,14 +56,14 @@ pub fn read_bytes(pid: i32, addr: u64, size: usize) -> Result<Vec<u8>, PlatformE
     Ok(buf)
 }
 
-pub fn list_maps(pid: i32) -> Result<Vec<(u64, u64, String, Option<String>)>, PlatformError> {
+pub fn list_maps(pid: i32) -> Result<Vec<MapEntry>, PlatformError> {
     let path = format!("/proc/{}/maps", pid);
     let contents = fs::read_to_string(&path).map_err(|e| io_err_to_platform(&e))?;
 
     Ok(contents.lines().filter_map(parse_map_line).collect())
 }
 
-fn parse_map_line(line: &str) -> Option<(u64, u64, String, Option<String>)> {
+fn parse_map_line(line: &str) -> Option<MapEntry> {
     // Each /proc/<pid>/maps line has 5 or 6 whitespace-separated columns:
     //   start-end perms offset dev inode [pathname]
     let mut iter = line.split_whitespace();
