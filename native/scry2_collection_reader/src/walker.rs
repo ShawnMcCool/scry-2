@@ -31,6 +31,7 @@
 // comes off.
 #![allow(dead_code)]
 
+pub mod build_hint;
 pub mod chain;
 pub mod class_lookup;
 pub mod dict;

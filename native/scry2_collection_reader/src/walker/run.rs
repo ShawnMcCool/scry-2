@@ -21,10 +21,12 @@
 //! (no /proc, no syscalls) so unit tests can drive it with a
 //! `FakeMem`-style fixture.
 
-use super::chain::{self, WalkResult};
+use super::chain;
 use super::class_lookup;
+use super::dict::DictEntry;
 use super::domain;
 use super::image_lookup;
+use super::inventory::InventoryValues;
 use super::mono::MonoOffsets;
 
 /// Bytes to read for each `MonoClassDef` blob the walker consumes.
@@ -73,12 +75,21 @@ pub enum WalkError {
     ChainFailed,
 }
 
-/// Full walk result.
-///
-/// Currently a thin alias for [`chain::WalkResult`]; if the
-/// orchestrator grows additional fields (e.g. `mtga_build_hint` from
-/// `build_hint.rs`) those will land here, not on the inner type.
-pub type Snapshot = WalkResult;
+/// Full walk result returned by [`walk_collection`]. Wraps
+/// [`chain::WalkResult`] and adds the disk-sourced
+/// `mtga_build_hint`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Snapshot {
+    /// Used entries from the `Cards` dictionary.
+    pub entries: Vec<DictEntry>,
+    /// Wildcards / currencies / vault progress.
+    pub inventory: InventoryValues,
+    /// MTGA build GUID from `boot.config`, or `None` if the file
+    /// couldn't be located or parsed. Useful as a sanity check on
+    /// top of walker output: when the GUID changes between runs the
+    /// walker offsets may have shifted.
+    pub mtga_build_hint: Option<String>,
+}
 
 /// One row in `/proc/<pid>/maps`-style output, in the shape
 /// `crate::platform::list_maps` already returns.
@@ -88,10 +99,19 @@ pub type MapEntry = (u64, u64, String, Option<String>);
 ///
 /// `maps` is the output of `list_maps(pid)`. `read_mem(addr, len)`
 /// reads `len` bytes from the target process at remote address
-/// `addr`, returning `None` on any failure.
-pub fn walk_collection<F>(maps: &[MapEntry], read_mem: F) -> Result<Snapshot, WalkError>
+/// `addr`, returning `None` on any failure. `build_hint` is invoked
+/// once after the chain succeeds — split out as a closure so unit
+/// tests stay disk-free; the NIF wrapper passes a closure that
+/// composes [`super::build_hint::find_mtga_root`] +
+/// [`super::build_hint::read_build_guid`].
+pub fn walk_collection<F, B>(
+    maps: &[MapEntry],
+    read_mem: F,
+    build_hint: B,
+) -> Result<Snapshot, WalkError>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+    B: FnOnce() -> Option<String>,
 {
     let offsets = MonoOffsets::mtga_default();
 
@@ -158,7 +178,7 @@ where
     let dict_bytes = read_mem(dict_addr, CLASS_DEF_BLOB_LEN)
         .ok_or(WalkError::ClassReadFailed("Dictionary`2"))?;
 
-    chain::from_papa_class(
+    let walk = chain::from_papa_class(
         &offsets,
         papa_addr,
         domain_addr,
@@ -169,7 +189,13 @@ where
         &inventory_bytes,
         read_mem,
     )
-    .ok_or(WalkError::ChainFailed)
+    .ok_or(WalkError::ChainFailed)?;
+
+    Ok(Snapshot {
+        entries: walk.entries,
+        inventory: walk.inventory,
+        mtga_build_hint: build_hint(),
+    })
 }
 
 /// Locate the mono DLL in `maps`, stitch all its mapped sections
@@ -405,7 +431,7 @@ mod tests {
         let maps: Vec<MapEntry> = vec![];
         let mem = FakeMem::default();
         assert_eq!(
-            walk_collection(&maps, |a, l| mem.read(a, l)),
+            walk_collection(&maps, |a, l| mem.read(a, l), || None),
             Err(WalkError::MonoDllReadFailed)
         );
     }
@@ -981,8 +1007,12 @@ mod tests {
         mem.add(vector_addr, blob);
 
         // ---- 10. Run the orchestrator!
-        let result = walk_collection(&maps, |a, l| mem.read(a, l))
-            .map_err(|e| format!("walk should succeed, got {:?}", e))?;
+        let result = walk_collection(
+            &maps,
+            |a, l| mem.read(a, l),
+            || Some("end-to-end-test-guid".to_string()),
+        )
+        .map_err(|e| format!("walk should succeed, got {:?}", e))?;
 
         assert_eq!(result.entries.len(), 2);
         assert!(result.entries.contains(&DictEntry {
@@ -992,6 +1022,10 @@ mod tests {
         assert_eq!(result.inventory.wc_common, 42);
         assert_eq!(result.inventory.gold, 12_345);
         assert_eq!(result.inventory.vault_progress, 250);
+        assert_eq!(
+            result.mtga_build_hint.as_deref(),
+            Some("end-to-end-test-guid")
+        );
         Ok(())
     }
 }
