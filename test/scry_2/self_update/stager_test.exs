@@ -41,6 +41,21 @@ defmodule Scry2.SelfUpdate.StagerTest do
       assert File.exists?(Path.join(root, "bin/scry_2"))
     end
 
+    test "strips a single top-level wrapper directory", %{dest: dest} do
+      # Real release archives wrap everything under
+      # `scry_2-vX.Y.Z-<platform>/`. The Stager must descend into
+      # that wrapper so required-file checks and Handoff path
+      # construction land on the actual contents.
+      assert {:ok, root} =
+               Stager.extract_tar(Path.join(@fixtures, "ok_wrapped.tar.gz"), dest)
+
+      # `root` resolves to the wrapped contents directly — `bin/scry_2`
+      # is reachable at `root/bin/scry_2`, not under another nested dir.
+      assert File.exists?(Path.join(root, "bin/scry_2"))
+      assert File.exists?(Path.join(root, "install"))
+      refute File.dir?(Path.join(root, "scry_2-v0.0.0-linux-x86_64"))
+    end
+
     test "rejects path traversal WITHOUT extracting anything", %{dest: dest} do
       assert {:error, :path_traversal} =
                Stager.extract_tar(Path.join(@fixtures, "traversal.tar.gz"), dest)
@@ -56,6 +71,15 @@ defmodule Scry2.SelfUpdate.StagerTest do
                Stager.extract_zip(Path.join(@fixtures, "ok.zip"), dest)
 
       assert File.exists?(Path.join(root, "bin/scry_2.bat"))
+    end
+
+    test "strips a single top-level wrapper directory", %{dest: dest} do
+      assert {:ok, root} =
+               Stager.extract_zip(Path.join(@fixtures, "ok_wrapped.zip"), dest)
+
+      assert File.exists?(Path.join(root, "bin/scry_2.bat"))
+      assert File.exists?(Path.join(root, "install.bat"))
+      refute File.dir?(Path.join(root, "scry_2-v0.0.0-windows-x86_64"))
     end
   end
 
@@ -85,11 +109,19 @@ defmodule Scry2.SelfUpdate.StagerTest do
     test "extract_tar/3 rejects a tarball missing a required member", %{dest: dest} do
       assert {:error, {:missing_required, missing}} =
                Stager.extract_tar(Path.join(@fixtures, "ok.tar.gz"), dest,
-                 required: ["install-linux", "bin/scry_2"]
+                 required: ["install", "bin/scry_2"]
                )
 
-      # The fixture only contains bin/scry_2; install-linux is the missing one.
-      assert "install-linux" in missing
+      # The fixture only contains bin/scry_2; install is the missing one.
+      assert "install" in missing
+    end
+
+    test "extract_tar/3 finds required members under the stripped wrapper dir",
+         %{dest: dest} do
+      assert {:ok, _root} =
+               Stager.extract_tar(Path.join(@fixtures, "ok_wrapped.tar.gz"), dest,
+                 required: ["install", "bin/scry_2"]
+               )
     end
 
     test "extract_zip/3 rejects a zip missing a required member", %{dest: dest} do
@@ -100,6 +132,14 @@ defmodule Scry2.SelfUpdate.StagerTest do
 
       # The fixture only contains bin/scry_2.bat; install.bat is missing.
       assert "install.bat" in missing
+    end
+
+    test "extract_zip/3 finds required members under the stripped wrapper dir",
+         %{dest: dest} do
+      assert {:ok, _root} =
+               Stager.extract_zip(Path.join(@fixtures, "ok_wrapped.zip"), dest,
+                 required: ["install.bat", "bin/scry_2.bat"]
+               )
     end
   end
 end

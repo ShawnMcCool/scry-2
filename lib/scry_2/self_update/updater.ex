@@ -315,10 +315,16 @@ defmodule Scry2.SelfUpdate.Updater do
   # Members the release archive must contain for handoff to be safe. A
   # truncated or malformed release fails fast at the Stager rather than
   # spawning an installer that can't migrate.
+  #
+  # `scripts/release` copies `scripts/install-linux` / `install-macos`
+  # into the package as plain `install` (and the Windows path as
+  # `install.bat`). The Stager strips the archive's single top-level
+  # wrapper directory before checking, so paths here are relative to
+  # the release root, not to `dest_dir/extracted`.
   defp required_files(archive) do
     cond do
-      String.contains?(archive, "-linux-") -> ["install-linux", "bin/scry_2"]
-      String.contains?(archive, "-macos-") -> ["install-macos", "bin/scry_2"]
+      String.contains?(archive, "-linux-") -> ["install", "bin/scry_2"]
+      String.contains?(archive, "-macos-") -> ["install", "bin/scry_2"]
       String.contains?(archive, "-windows-") -> ["install.bat", "bin/scry_2.bat"]
       true -> []
     end

@@ -68,7 +68,11 @@ defmodule Scry2.SelfUpdate.Handoff do
   end
 
   defp do_spawn({:unix, :linux}, %{staged_root: root}, spawner) do
-    installer = Path.join(root, "install-linux")
+    # `scripts/release` packages the platform-specific installer as
+    # plain `install` (renamed from `scripts/install-linux`); the
+    # Stager has already stripped the archive's single wrapper
+    # directory, so `staged_root` points directly at the release root.
+    installer = Path.join(root, "install")
     log = Path.join(root, "handoff.log")
     env = take_env(@minimal_unix_env_keys) ++ [{"PATH", "/usr/local/bin:/usr/bin:/bin"}]
 
@@ -80,7 +84,7 @@ defmodule Scry2.SelfUpdate.Handoff do
   end
 
   defp do_spawn({:unix, :darwin}, %{staged_root: root}, spawner) do
-    installer = Path.join(root, "install-macos")
+    installer = Path.join(root, "install")
     log = Path.join(root, "handoff.log")
     env = take_env(@minimal_unix_env_keys) ++ [{"PATH", "/usr/local/bin:/usr/bin:/bin"}]
 

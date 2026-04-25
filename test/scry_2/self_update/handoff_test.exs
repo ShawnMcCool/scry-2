@@ -39,7 +39,7 @@ defmodule Scry2.SelfUpdate.HandoffTest do
 
       dashdash_idx = Enum.find_index(args, &(&1 == "--"))
       assert dashdash_idx > script_idx, "-- must come after the script body"
-      assert Enum.at(args, dashdash_idx + 1) == "/tmp/staged/install-linux"
+      assert Enum.at(args, dashdash_idx + 1) == "/tmp/staged/install"
       assert Enum.at(args, dashdash_idx + 2) == "/tmp/staged/handoff.log"
 
       assert Enum.any?(env, &match?({"PATH", _}, &1))
@@ -68,7 +68,7 @@ defmodule Scry2.SelfUpdate.HandoffTest do
       assert String.contains?(body, ~s("$1"))
 
       dashdash_idx = Enum.find_index(args, &(&1 == "--"))
-      assert Enum.at(args, dashdash_idx + 1) == "/tmp/staged/install-macos"
+      assert Enum.at(args, dashdash_idx + 1) == "/tmp/staged/install"
       assert Enum.at(args, dashdash_idx + 2) == "/tmp/staged/handoff.log"
     end
   end
@@ -91,7 +91,7 @@ defmodule Scry2.SelfUpdate.HandoffTest do
       dashdash_idx = Enum.find_index(args, &(&1 == "--"))
       installer = Enum.at(args, dashdash_idx + 1)
 
-      assert installer == Path.join(staged, "install-linux")
+      assert installer == Path.join(staged, "install")
       assert String.contains?(installer, ";")
       # And critically, the script body is unchanged — the metacharacters
       # are not in the shell-parsed text at all.
@@ -114,7 +114,7 @@ defmodule Scry2.SelfUpdate.HandoffTest do
       dashdash_idx = Enum.find_index(args, &(&1 == "--"))
       installer = Enum.at(args, dashdash_idx + 1)
 
-      assert installer == Path.join(staged, "install-macos")
+      assert installer == Path.join(staged, "install")
       script_idx = Enum.find_index(args, &(&1 == "-c"))
       body = Enum.at(args, script_idx + 1)
       refute String.contains?(body, "rm -rf")

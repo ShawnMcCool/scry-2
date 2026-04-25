@@ -41,9 +41,13 @@ defmodule Scry2.SelfUpdate.Stager do
              (case :erl_tar.extract(archive_c, [:compressed, {:cwd, String.to_charlist(root)}]) do
                 :ok -> :ok
                 {:error, reason} -> {:error, reason}
-              end),
-           :ok <- check_required(root, required) do
-        {:ok, root}
+              end) do
+        effective = strip_single_wrapper(root)
+
+        case check_required(effective, required) do
+          :ok -> {:ok, effective}
+          err -> err
+        end
       end
     end
   end
@@ -60,12 +64,44 @@ defmodule Scry2.SelfUpdate.Stager do
       root = Path.join(dest_dir, "extracted")
       File.mkdir_p!(root)
 
-      with {:ok, _files} <- :zip.extract(archive_c, [{:cwd, String.to_charlist(root)}]),
-           :ok <- check_required(root, required) do
-        {:ok, root}
+      with {:ok, _files} <- :zip.extract(archive_c, [{:cwd, String.to_charlist(root)}]) do
+        effective = strip_single_wrapper(root)
+
+        case check_required(effective, required) do
+          :ok -> {:ok, effective}
+          err -> err
+        end
       else
         {:error, reason} -> {:error, reason}
       end
+    end
+  end
+
+  # Real release archives wrap their contents under a single
+  # `scry_2-vX.Y.Z-<platform>/` directory (`scripts/release` builds
+  # the tarball that way; the bootstrap installer matches the
+  # convention with `tar --strip-components=1`). When the extracted
+  # root contains exactly that single wrapper, descend into it so
+  # the rest of the SelfUpdate pipeline (required-file check,
+  # Handoff path construction) operates on the actual release root.
+  #
+  # The check is intentionally narrow — only a directory whose name
+  # starts with `scry_2-` qualifies. A bare `bin/` directory at the
+  # top level (the legacy / synthetic-test layout) is left alone.
+  @spec strip_single_wrapper(Path.t()) :: Path.t()
+  defp strip_single_wrapper(root) do
+    case File.ls(root) do
+      {:ok, [single]} ->
+        candidate = Path.join(root, single)
+
+        if String.starts_with?(single, "scry_2-") and File.dir?(candidate) do
+          candidate
+        else
+          root
+        end
+
+      _ ->
+        root
     end
   end
 
