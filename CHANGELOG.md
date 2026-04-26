@@ -6,12 +6,21 @@ history for the full engineering trail.
 
 This file is the source of truth for the GitHub release body and the
 in-app **What's new in vX.Y.Z** disclosure on Settings → Updates. Add
-new entries under `## [Unreleased]
-
-## v0.25.2 — 2026-04-26` as you work; `scripts/tag-release`
+new entries under the Unreleased heading as you work; `scripts/tag-release`
 renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
+
+## v0.25.2 — 2026-04-26
+
+### Fixed
+
+- **Operations page no longer crashes.** Opening **Settings → Operations**
+  in the production app returned an Internal Server Error because the
+  service-detection helper read the build environment via a runtime
+  call to `Mix`, which is not loaded in installed releases. The
+  environment is now captured at compile time, so the page loads
+  cleanly under the tray supervisor.
 
 ## v0.25.1 — 2026-04-26
 

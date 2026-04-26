@@ -59,10 +59,16 @@ version = os.environ['VERSION']
 today = os.environ['TODAY']
 path = 'CHANGELOG.md'
 content = open(path).read()
-if '## [Unreleased]' not in content:
-    sys.exit(f'Error: `## [Unreleased]` header not found in {path}')
+# Match the Unreleased header at the start of a line so the intro
+# paragraph (which mentions `## [Unreleased]` inside backticks) is
+# not rotated by accident.
+header_re = re.compile(r'^## \[Unreleased\]\s*$', re.MULTILINE)
+if not header_re.search(content):
+    sys.exit(f'Error: `## [Unreleased]` section header not found in {path}')
 new_header = f'## [Unreleased]\n\n## v{version} — {today}'
-updated = content.replace('## [Unreleased]', new_header, 1)
+updated, count = header_re.subn(new_header, content, count=1)
+if count != 1:
+    sys.exit(f'Error: failed to rotate Unreleased section in {path}')
 with open(path, 'w') as f:
     f.write(updated)
 print(f'CHANGELOG.md rotated: v{version} — {today}')
