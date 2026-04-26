@@ -61,8 +61,11 @@ path = 'CHANGELOG.md'
 content = open(path).read()
 # Match the Unreleased header at the start of a line so the intro
 # paragraph (which mentions `## [Unreleased]` inside backticks) is
-# not rotated by accident.
-header_re = re.compile(r'^## \[Unreleased\]\s*$', re.MULTILINE)
+# not rotated by accident. Use `[ \t]*$` rather than `\s*$` so the
+# trailing newline is left in place — `\s` matches newlines, and
+# consuming one collapses the blank line between the new version
+# header and the first body line.
+header_re = re.compile(r'^## \[Unreleased\][ \t]*$', re.MULTILINE)
 if not header_re.search(content):
     sys.exit(f'Error: `## [Unreleased]` section header not found in {path}')
 new_header = f'## [Unreleased]\n\n## v{version} — {today}'
