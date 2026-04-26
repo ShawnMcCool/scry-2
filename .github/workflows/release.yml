@@ -249,16 +249,45 @@ jobs:
             "$msiHash  $msiName" | Out-File -Encoding ascii -Append $sumsFile
           }
 
+      - name: Extract release notes from CHANGELOG
+        shell: bash
+        run: |
+          tag="${{ github.ref_name }}"
+          notes="${RUNNER_TEMP}/release-notes.md"
+
+          if [ -f CHANGELOG.md ]; then
+            # Print lines between the `## <tag> ` header (exclusive) and
+            # the next `## v` header. Trims leading blank lines.
+            awk -v tag="$tag" '
+              $0 ~ "^## " tag " " { in_section=1; next }
+              in_section && /^## v[0-9]/ { exit }
+              in_section { print }
+            ' CHANGELOG.md | sed -e '/./,$!d' > "$notes"
+          fi
+
+          if [ ! -s "$notes" ]; then
+            cat > "$notes" <<EOF
+          Scry2 ${tag} release.
+
+          See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for the full history.
+          EOF
+          fi
+
+          echo "RELEASE_NOTES_PATH=$notes" >> "$GITHUB_ENV"
+          echo "--- Release notes for $tag ---"
+          cat "$notes"
+
       - name: Upload release archive
         uses: softprops/action-gh-release@v2
         with:
           files: |
             scry_2-${{ github.ref_name }}-${{ matrix.platform }}.${{ matrix.ext }}
             scry_2-${{ github.ref_name }}-${{ matrix.platform }}-SHA256SUMS
-          generate_release_notes: true
+          body_path: ${{ env.RELEASE_NOTES_PATH }}
 
       - name: Upload MSI installer
         if: matrix.os == 'windows-latest'
         uses: softprops/action-gh-release@v2
         with:
           files: installer/output/Scry2-${{ env.TRIMMED_VERSION }}.msi
+          body_path: ${{ env.RELEASE_NOTES_PATH }}

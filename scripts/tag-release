@@ -46,7 +46,32 @@ with open('mix.exs', 'w') as f:
 print('mix.exs updated')
 "
 
-# Describe the jj change
+# Rotate CHANGELOG.md: rename `## [Unreleased]` to `## vX.Y.Z — DATE`
+# and seed a fresh empty Unreleased section. Whatever sits between the
+# old Unreleased header and the next `## v` header becomes the body of
+# the release on GitHub and the in-app "What's new" disclosure.
+TODAY="$(date +%Y-%m-%d)"
+if [[ -f CHANGELOG.md ]]; then
+    echo "Rotating CHANGELOG.md..."
+    VERSION="$VERSION" TODAY="$TODAY" python3 <<'PY'
+import os, re, sys
+version = os.environ['VERSION']
+today = os.environ['TODAY']
+path = 'CHANGELOG.md'
+content = open(path).read()
+if '## [Unreleased]' not in content:
+    sys.exit(f'Error: `## [Unreleased]` header not found in {path}')
+new_header = f'## [Unreleased]\n\n## v{version} — {today}'
+updated = content.replace('## [Unreleased]', new_header, 1)
+with open(path, 'w') as f:
+    f.write(updated)
+print(f'CHANGELOG.md rotated: v{version} — {today}')
+PY
+else
+    echo "Note: CHANGELOG.md not found, skipping rotation."
+fi
+
+# Describe the jj change (includes mix.exs + CHANGELOG.md rotation)
 jj describe -m "chore: release ${TAG}"
 
 # Capture the change ID before tagging (tagging makes @ immutable and creates a new empty commit)
