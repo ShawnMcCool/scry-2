@@ -57,6 +57,19 @@ defmodule Scry2.ServiceTest do
 
       assert Service.detect(env_fn: env_fn, mix_env: :dev) == Backend.Unmanaged
     end
+
+    test "detect/0 works with no opts (release-safe — Mix module not loaded in prod releases)" do
+      assert Service.detect() in [Backend.Systemd, Backend.Tray, Backend.Unmanaged]
+    end
+
+    test "name/0, state/0, capabilities/0 work with no opts (the OperationsLive call sites)" do
+      # These are exactly the calls OperationsLive.assign_service/1 makes in
+      # mount. In a prod release with no Mix module, the default mix_env must
+      # come from a compile-time attribute, not a runtime Mix.env() call.
+      assert is_binary(Service.name())
+      assert is_map(Service.state())
+      assert is_map(Service.capabilities())
+    end
   end
 
   describe "facade delegates to detected backend" do

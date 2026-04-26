@@ -40,10 +40,14 @@ defmodule Scry2.Service do
 
   @type backend :: module()
 
+  # Capture mix env at compile time. `Mix` is not loaded in prod releases —
+  # calling `Mix.env()` at runtime crashes the LiveView that calls into here.
+  @compile_mix_env Mix.env()
+
   @spec detect(keyword()) :: backend()
   def detect(opts \\ []) do
     env_fn = Keyword.get(opts, :env_fn, &System.get_env/1)
-    mix_env = Keyword.get(opts, :mix_env, Mix.env())
+    mix_env = Keyword.get(opts, :mix_env, @compile_mix_env)
 
     cond do
       under_systemd?(env_fn) -> Backend.Systemd
