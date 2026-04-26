@@ -34,7 +34,21 @@ defmodule Scry2.SelfUpdate.Handoff do
 
   @type spawner :: (String.t(), [String.t()], [{String.t(), String.t()}] -> :ok)
 
-  @minimal_unix_env_keys ~w(HOME XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS XDG_DATA_DIRS XDG_CONFIG_DIRS)
+  # GUI session vars (DISPLAY / WAYLAND_DISPLAY / XAUTHORITY) are
+  # required by the relaunched scry2-tray — without them GTK can't open
+  # a display, the tray exits, and the watchdog never starts the BEAM.
+  # The original whitelist stripped them along with RELEASE_*, breaking
+  # every in-app update on Linux/macOS desktops.
+  @minimal_unix_env_keys ~w(
+    HOME
+    XDG_RUNTIME_DIR
+    DBUS_SESSION_BUS_ADDRESS
+    XDG_DATA_DIRS
+    XDG_CONFIG_DIRS
+    DISPLAY
+    WAYLAND_DISPLAY
+    XAUTHORITY
+  )
   @minimal_windows_env_keys ~w(APPDATA LOCALAPPDATA USERPROFILE SystemRoot Path)
 
   # Linux script body — runs the installer in the background and returns
@@ -63,11 +77,12 @@ defmodule Scry2.SelfUpdate.Handoff do
   def spawn_detached(args, opts \\ []) do
     os_type = Keyword.get(opts, :os_type, :os.type())
     spawner = Keyword.get(opts, :spawner, &default_spawn/3)
+    env_fn = Keyword.get(opts, :env_fn, &System.get_env/1)
 
-    do_spawn(os_type, args, spawner)
+    do_spawn(os_type, args, spawner, env_fn)
   end
 
-  defp do_spawn({:unix, :linux}, %{staged_root: root}, spawner) do
+  defp do_spawn({:unix, :linux}, %{staged_root: root}, spawner, env_fn) do
     # `scripts/release` packages the platform-specific installer as
     # plain `install` (renamed from `scripts/install-linux`); the
     # Stager has already stripped the archive's single wrapper
@@ -86,13 +101,13 @@ defmodule Scry2.SelfUpdate.Handoff do
     spawner.(
       "setsid",
       ["env", "-i"] ++
-        env_args(unix_env()) ++
+        env_args(unix_env(env_fn)) ++
         ["sh", "-c", @linux_script, "--", installer, log],
       []
     )
   end
 
-  defp do_spawn({:unix, :darwin}, %{staged_root: root}, spawner) do
+  defp do_spawn({:unix, :darwin}, %{staged_root: root}, spawner, env_fn) do
     installer = Path.join(root, "install")
     log = Path.join(root, "handoff.log")
 
@@ -100,14 +115,14 @@ defmodule Scry2.SelfUpdate.Handoff do
     spawner.(
       "/usr/bin/env",
       ["-i"] ++
-        env_args(unix_env()) ++
+        env_args(unix_env(env_fn)) ++
         ["/bin/sh", "-c", @macos_script, "--", installer, log],
       []
     )
   end
 
-  defp do_spawn({:win32, _}, %{staged_root: root, archive_filename: archive}, spawner) do
-    env = take_env(@minimal_windows_env_keys)
+  defp do_spawn({:win32, _}, %{staged_root: root, archive_filename: archive}, spawner, env_fn) do
+    env = take_env(@minimal_windows_env_keys, env_fn)
 
     cmd =
       cond do
@@ -145,12 +160,12 @@ defmodule Scry2.SelfUpdate.Handoff do
     error -> {:error, {:spawn_failed, error}}
   end
 
-  defp take_env(keys) do
-    for key <- keys, val = System.get_env(key), is_binary(val), do: {key, val}
+  defp take_env(keys, env_fn) do
+    for key <- keys, val = env_fn.(key), is_binary(val), do: {key, val}
   end
 
-  defp unix_env do
-    take_env(@minimal_unix_env_keys) ++ [{"PATH", "/usr/local/bin:/usr/bin:/bin"}]
+  defp unix_env(env_fn) do
+    take_env(@minimal_unix_env_keys, env_fn) ++ [{"PATH", "/usr/local/bin:/usr/bin:/bin"}]
   end
 
   defp env_args(env), do: Enum.map(env, fn {k, v} -> "#{k}=#{v}" end)

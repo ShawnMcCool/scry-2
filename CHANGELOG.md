@@ -11,6 +11,18 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **In-app updates no longer leave the app dead.** Applying an update
+  through **Settings → Updates** ran the new release's installer
+  cleanly, but the relaunched tray crashed with *"Gtk-WARNING: cannot
+  open display:"* and the BEAM never came back. The self-updater's
+  `env -i` isolation was scrubbing `DISPLAY` / `WAYLAND_DISPLAY` /
+  `XAUTHORITY` along with the stale `RELEASE_*` vars. The whitelist
+  now passes those GUI session vars through; the installer also
+  rehydrates them from systemd as a fallback for upgrades from older
+  versions still using the buggy whitelist.
+
 ## v0.25.2 — 2026-04-26
 
 ### Fixed

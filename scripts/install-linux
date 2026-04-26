@@ -5,6 +5,20 @@ INSTALL_DIR="$HOME/.local/lib/scry_2"
 DESKTOP_FILE="$HOME/.config/autostart/scry2.desktop"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# When run from the in-app self-updater on Scry2 ≤ 0.25.2, the BEAM
+# spawns this script under `env -i` with a whitelist that did not
+# include DISPLAY / WAYLAND_DISPLAY / XAUTHORITY. Without those, the
+# tray we relaunch below crashes with "Gtk-WARNING: cannot open
+# display:" and the BEAM never starts. Rehydrate the GUI session env
+# from systemd if it's missing — XDG_RUNTIME_DIR + DBUS were always in
+# the whitelist, so `systemctl --user` works in the stripped env.
+if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ] && command -v systemctl &>/dev/null; then
+    while IFS= read -r line; do
+        export "$line"
+    done < <(systemctl --user show-environment 2>/dev/null \
+             | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|XDG_SESSION_TYPE|XDG_CURRENT_DESKTOP)=')
+fi
+
 echo "Installing Scry2..."
 
 # Stop existing backend and tray if running

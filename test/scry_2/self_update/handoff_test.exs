@@ -100,6 +100,56 @@ defmodule Scry2.SelfUpdate.HandoffTest do
     end
   end
 
+  describe "GUI session env passthrough (regression)" do
+    # When `env -i` strips the BEAM's environment, the GUI session vars
+    # (DISPLAY / WAYLAND_DISPLAY / XAUTHORITY) are stripped along with
+    # RELEASE_*. Without them the relaunched scry2-tray crashes with
+    # "Gtk-WARNING: cannot open display:" and the BEAM is never started.
+    test "linux: DISPLAY / WAYLAND_DISPLAY / XAUTHORITY survive env -i isolation" do
+      env_fn = fn
+        "DISPLAY" -> ":0"
+        "WAYLAND_DISPLAY" -> "wayland-1"
+        "XAUTHORITY" -> "/run/user/1000/.Xauthority"
+        "HOME" -> "/home/u"
+        "XDG_RUNTIME_DIR" -> "/run/user/1000"
+        _ -> nil
+      end
+
+      :ok =
+        Handoff.spawn_detached(
+          %{staged_root: "/tmp/staged", archive_filename: "scry_2-v0.15.0-linux-x86_64.tar.gz"},
+          os_type: {:unix, :linux},
+          spawner: capture_spawner(),
+          env_fn: env_fn
+        )
+
+      assert_receive {:spawn, "setsid", args, _env}
+
+      assert "DISPLAY=:0" in args
+      assert "WAYLAND_DISPLAY=wayland-1" in args
+      assert "XAUTHORITY=/run/user/1000/.Xauthority" in args
+    end
+
+    test "macos: DISPLAY survives env -i isolation" do
+      env_fn = fn
+        "DISPLAY" -> ":0"
+        "HOME" -> "/Users/u"
+        _ -> nil
+      end
+
+      :ok =
+        Handoff.spawn_detached(
+          %{staged_root: "/tmp/staged", archive_filename: "scry_2-v0.15.0-macos-aarch64.tar.gz"},
+          os_type: {:unix, :darwin},
+          spawner: capture_spawner(),
+          env_fn: env_fn
+        )
+
+      assert_receive {:spawn, "/usr/bin/env", args, _env}
+      assert "DISPLAY=:0" in args
+    end
+  end
+
   describe "argv safety (regression)" do
     # Defense in depth — the staging path is always under our control,
     # but the shell-injection-via-path bug class disappears entirely
