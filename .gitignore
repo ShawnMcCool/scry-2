@@ -51,3 +51,6 @@ docs/superpowers/
 
 # Compiled NIF artifacts (platform-specific, rebuilt by mix compile).
 /priv/native/
+
+# Claude Code runtime locks (per-session, not source).
+/.claude/scheduled_tasks.lock

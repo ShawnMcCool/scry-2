@@ -50,6 +50,12 @@ print('mix.exs updated')
 # and seed a fresh empty Unreleased section. Whatever sits between the
 # old Unreleased header and the next `## v` header becomes the body of
 # the release on GitHub and the in-app "What's new" disclosure.
+#
+# Guard: if the body between `## [Unreleased]` and the next `## ` is
+# whitespace-only, halt. An empty section means the resulting GitHub
+# release body and in-app "What's new" card would be blank for end users.
+# /ship populates the section before delegating here; if you reached this
+# script directly with an empty Unreleased section, that's the bug to fix.
 TODAY="$(date +%Y-%m-%d)"
 if [[ -f CHANGELOG.md ]]; then
     echo "Rotating CHANGELOG.md..."
@@ -66,8 +72,27 @@ content = open(path).read()
 # consuming one collapses the blank line between the new version
 # header and the first body line.
 header_re = re.compile(r'^## \[Unreleased\][ \t]*$', re.MULTILINE)
-if not header_re.search(content):
+header_match = header_re.search(content)
+if not header_match:
     sys.exit(f'Error: `## [Unreleased]` section header not found in {path}')
+
+# Verify the section has actual user-facing content. The body is
+# everything after the Unreleased header up to (but not including) the
+# next `## ` header at the start of a line. Whitespace-only → halt.
+body_start = header_match.end()
+next_header = re.search(r'^## ', content[body_start:], re.MULTILINE)
+body_end = body_start + next_header.start() if next_header else len(content)
+body = content[body_start:body_end]
+if not body.strip():
+    sys.exit(
+        "Error: `## [Unreleased]` section is empty. The resulting GitHub "
+        "release body and in-app 'What's new' card would be blank for "
+        "end users.\n\n"
+        "Use `/ship patch|minor|major` instead of invoking this script "
+        "directly — /ship drafts user-facing release notes from your "
+        "commits and prepends them under [Unreleased] before tagging."
+    )
+
 new_header = f'## [Unreleased]\n\n## v{version} — {today}'
 updated, count = header_re.subn(new_header, content, count=1)
 if count != 1:

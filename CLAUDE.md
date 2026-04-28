@@ -77,19 +77,18 @@ All repositories use **JJ (Jujutsu)** — never use raw `git` commands.
 
 ### Releasing
 
-**Always use `scripts/tag-release <version>` to release.** Never manually bump versions, create tags, or push.
+**Always use `/ship patch|minor|major` to release.** The slash command at `.claude/commands/ship.md` runs the self-update safety checks, drafts user-facing release notes from the commits since the last tag (in MTGA-player language, not engineer language), prepends them under `## [Unreleased]` in `CHANGELOG.md` after you confirm the draft, and then delegates the actual tagging mechanics to `scripts/tag-release`.
 
-Prerequisites before running the script:
-1. All changes must be described (`jj desc -m "..."`)
-2. Working copy must be empty (`jj new` after last described change)
-3. `mix precommit` must pass cleanly
+The notes flow into both the GitHub Release body and the in-app **Settings → Updates → "What's new in vX.Y.Z"** disclosure, so they need to be readable by the user — not by an engineer.
 
 ```bash
-jj new                          # ensure clean working copy
-scripts/tag-release 0.5.3      # bumps mix.exs, tags, pushes — triggers CI release
+/ship patch       # bug-fix release (x.y.Z → x.y.(Z+1))
+/ship minor       # feature release (x.Y.z → x.(Y+1).0)
+/ship major       # breaking release (X.y.z → (X+1).0.0)
+/ship             # plain ship (describe + push, no tag)
 ```
 
-The script handles: precommit check, version bump in `mix.exs`, jj tag, bookmark update, and push. CI then builds all platform archives and publishes to GitHub Releases.
+`scripts/tag-release` is the underlying mechanic — it runs `mix precommit`, bumps `mix.exs`, rotates `## [Unreleased]` to a versioned section, describes the jj change, tags, and pushes. Don't invoke it directly: it has no changelog-drafting step and only an empty-section guard as a backstop. CI then builds all platform archives and publishes to GitHub Releases.
 
 ## Build & Run
 
