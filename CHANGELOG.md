@@ -11,6 +11,20 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Rebuilds no longer silently drop matches from your draft records.**
+  When you ran **Settings → Operations → Rebuild** on the Matches
+  projection, transient errors on individual events were being swallowed
+  silently — the rebuild would report "complete" while quietly skipping
+  rows. The most visible fallout: Pick Two and Premier draft records
+  could show **0–0** even when matches were played. Rebuild now logs an
+  error in the Console drawer (press `` ` ``) listing how many events
+  were skipped and a sample of their ids, so you know whether to re-run
+  the rebuild or investigate. **If your draft records are stuck at 0–0,
+  open Settings → Operations and rebuild the Matches projection again
+  on this version to recover them.**
+
 ## v0.25.5 — 2026-04-28
 
 ### Fixed
