@@ -5,9 +5,9 @@ defmodule Scry2.PlayersTest do
   alias Scry2.TestFactory
   alias Scry2.Topics
 
-  describe "find_or_create!/2" do
+  describe "get_or_create!/2" do
     test "creates a new player on first encounter" do
-      player = Players.find_or_create!("ABC123", "Alice")
+      player = Players.get_or_create!("ABC123", "Alice")
 
       assert player.mtga_user_id == "ABC123"
       assert player.screen_name == "Alice"
@@ -16,15 +16,15 @@ defmodule Scry2.PlayersTest do
     end
 
     test "returns existing player when mtga_user_id matches" do
-      first = Players.find_or_create!("ABC123", "Alice")
-      second = Players.find_or_create!("ABC123", "Alice")
+      first = Players.get_or_create!("ABC123", "Alice")
+      second = Players.get_or_create!("ABC123", "Alice")
 
       assert first.id == second.id
     end
 
     test "updates screen_name when it changes" do
-      Players.find_or_create!("ABC123", "Alice")
-      updated = Players.find_or_create!("ABC123", "Alice Renamed")
+      Players.get_or_create!("ABC123", "Alice")
+      updated = Players.get_or_create!("ABC123", "Alice Renamed")
 
       assert updated.screen_name == "Alice Renamed"
     end
@@ -32,27 +32,27 @@ defmodule Scry2.PlayersTest do
     test "broadcasts :player_discovered on first encounter" do
       Topics.subscribe(Topics.players_updates())
 
-      Players.find_or_create!("NEW123", "NewPlayer")
+      Players.get_or_create!("NEW123", "NewPlayer")
 
       assert_received {:player_discovered, player}
       assert player.mtga_user_id == "NEW123"
     end
 
     test "broadcasts :player_updated when screen_name changes" do
-      Players.find_or_create!("ABC123", "Alice")
+      Players.get_or_create!("ABC123", "Alice")
       Topics.subscribe(Topics.players_updates())
 
-      Players.find_or_create!("ABC123", "Alice Renamed")
+      Players.get_or_create!("ABC123", "Alice Renamed")
 
       assert_received {:player_updated, player}
       assert player.screen_name == "Alice Renamed"
     end
 
     test "does not broadcast when nothing changed" do
-      Players.find_or_create!("ABC123", "Alice")
+      Players.get_or_create!("ABC123", "Alice")
       Topics.subscribe(Topics.players_updates())
 
-      Players.find_or_create!("ABC123", "Alice")
+      Players.get_or_create!("ABC123", "Alice")
 
       refute_received {:player_discovered, _}
       refute_received {:player_updated, _}

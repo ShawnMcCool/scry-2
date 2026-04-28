@@ -18,12 +18,12 @@ defmodule Scry2.Players do
   alias Scry2.Topics
 
   @doc """
-  Finds or creates a player by MTGA user ID.
+  Gets or creates a player by MTGA user ID.
 
   If the player exists, updates the screen_name if it changed.
   Returns the player record.
   """
-  def find_or_create!(mtga_user_id, screen_name)
+  def get_or_create!(mtga_user_id, screen_name)
       when is_binary(mtga_user_id) and is_binary(screen_name) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 

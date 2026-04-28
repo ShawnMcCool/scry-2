@@ -249,15 +249,6 @@ defmodule Scry2.Matches do
   defp exclude_blank_strings(query, field) when field in @boolean_fields, do: query
   defp exclude_blank_strings(query, field), do: where(query, [m], field(m, ^field) != "")
 
-  @doc "Returns a map of mtga_match_id => won for the given MTGA match IDs."
-  def outcomes_by_mtga_ids(mtga_match_ids) when is_list(mtga_match_ids) do
-    Match
-    |> where([m], m.mtga_match_id in ^mtga_match_ids)
-    |> select([m], {m.mtga_match_id, m.won})
-    |> Repo.all()
-    |> Map.new()
-  end
-
   @doc """
   Returns cumulative win rate data points for the chart, respecting filter opts.
 

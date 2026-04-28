@@ -865,7 +865,7 @@ defmodule Scry2.TestFactory do
     attrs = Map.new(attrs)
     mtga_user_id = attrs[:mtga_user_id] || "TESTUSER" <> random_suffix()
     screen_name = attrs[:screen_name] || "Test Player"
-    Players.find_or_create!(mtga_user_id, screen_name)
+    Players.get_or_create!(mtga_user_id, screen_name)
   end
 
   def create_set(attrs \\ %{}) do

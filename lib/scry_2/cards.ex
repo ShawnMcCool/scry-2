@@ -692,11 +692,6 @@ defmodule Scry2.Cards do
     Repo.get_by(ScryfallCard, arena_id: arena_id)
   end
 
-  @doc "Returns the Scryfall card for the given scryfall_id, or nil."
-  def get_scryfall_by_scryfall_id(scryfall_id) when is_binary(scryfall_id) do
-    Repo.get_by(ScryfallCard, scryfall_id: scryfall_id)
-  end
-
   # ── MTGA Cards ─────────────────────────────────────────────────────────
 
   @doc "Returns the total MTGA card count."

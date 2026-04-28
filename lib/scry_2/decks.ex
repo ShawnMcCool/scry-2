@@ -42,7 +42,7 @@ defmodule Scry2.Decks do
 
     decks =
       Deck
-      |> maybe_filter_player(player_id)
+      |> maybe_filter_by_player(player_id)
       |> order_by([d], desc_nulls_last: d.last_played_at, desc: d.last_updated_at)
       |> Repo.all()
 
@@ -70,6 +70,18 @@ defmodule Scry2.Decks do
   @doc "Returns the deck with the given MTGA deck id, or nil."
   def get_deck(mtga_deck_id) when is_binary(mtga_deck_id) do
     Repo.get_by(Deck, mtga_deck_id: mtga_deck_id)
+  end
+
+  @doc """
+  Returns every deck's `mtga_deck_id` and current main-deck composition.
+
+  Used by the projector to find the stable deck UUID that matches a freshly
+  submitted card list. Light projection — composition columns only.
+  """
+  def list_deck_compositions do
+    Deck
+    |> select([d], %{mtga_deck_id: d.mtga_deck_id, current_main_deck: d.current_main_deck})
+    |> Repo.all()
   end
 
   @doc "Returns the number of deck versions for a deck."
@@ -370,56 +382,6 @@ defmodule Scry2.Decks do
       total_keeps: total_keeps,
       keep_rate: win_rate(total_keeps, total_hands),
       win_rate_on_7: win_rate_on_7,
-      by_hand_size: by_hand_size,
-      by_land_count: by_land_count
-    }
-  end
-
-  @doc """
-  Returns mulligan analytics across ALL decks (for the global stats page).
-  Same shape as `mulligan_analytics/1` but unscoped.
-  """
-  def global_mulligan_analytics do
-    base = MulliganHand
-
-    %{total_hands: total_hands, total_keeps: total_keeps} =
-      base
-      |> select([m], %{
-        total_hands: count(),
-        total_keeps: sum(fragment("CASE WHEN ? = 'kept' THEN 1 ELSE 0 END", m.decision))
-      })
-      |> Repo.one()
-      |> then(fn row -> %{row | total_keeps: row.total_keeps || 0} end)
-
-    by_hand_size =
-      base
-      |> where([m], not is_nil(m.decision))
-      |> group_by([m], m.hand_size)
-      |> select([m], %{
-        hand_size: m.hand_size,
-        total: count(),
-        keeps: sum(fragment("CASE WHEN ? = 'kept' THEN 1 ELSE 0 END", m.decision))
-      })
-      |> order_by([m], desc: m.hand_size)
-      |> Repo.all()
-      |> Enum.map(fn row -> Map.put(row, :keep_rate, win_rate(row.keeps, row.total)) end)
-
-    by_land_count =
-      base
-      |> where([m], m.decision == "kept" and not is_nil(m.land_count) and not is_nil(m.match_won))
-      |> group_by([m], m.land_count)
-      |> select([m], %{
-        land_count: m.land_count,
-        total: count(),
-        wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.match_won))
-      })
-      |> order_by([m], asc: m.land_count)
-      |> Repo.all()
-      |> Enum.map(fn row -> Map.put(row, :win_rate, win_rate(row.wins, row.total)) end)
-
-    %{
-      total_hands: total_hands,
-      total_keeps: total_keeps,
       by_hand_size: by_hand_size,
       by_land_count: by_land_count
     }
@@ -774,7 +736,7 @@ defmodule Scry2.Decks do
   # ── Private helpers ───────────────────────────────────────────────────────
 
   # decks_decks has no player_id — the context is single-player by design.
-  defp maybe_filter_player(query, _player_id), do: query
+  defp maybe_filter_by_player(query, _player_id), do: query
 
   defp maybe_filter_played_from_deck(decks, false), do: decks
 

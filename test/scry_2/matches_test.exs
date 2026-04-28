@@ -255,8 +255,8 @@ defmodule Scry2.MatchesTest do
     end
 
     test "filters by player_id" do
-      player = Scry2.Players.find_or_create!("player-1", "Player One")
-      other = Scry2.Players.find_or_create!("player-2", "Player Two")
+      player = Scry2.Players.get_or_create!("player-1", "Player One")
+      other = Scry2.Players.get_or_create!("player-2", "Player Two")
 
       TestFactory.create_match(%{won: true, player_id: player.id})
       TestFactory.create_match(%{won: false, player_id: other.id})
@@ -358,7 +358,7 @@ defmodule Scry2.MatchesTest do
 
   describe "list_matches_for_event/2" do
     test "returns matches for the given event_name and player_id" do
-      player = Scry2.Players.find_or_create!("player-list-event", "Player List Event")
+      player = Scry2.Players.get_or_create!("player-list-event", "Player List Event")
 
       match =
         TestFactory.create_match(%{
@@ -385,7 +385,7 @@ defmodule Scry2.MatchesTest do
 
   describe "list_decks_for_event/2" do
     test "returns distinct deck entries used in the event" do
-      player = Scry2.Players.find_or_create!("player-list-decks", "Player List Decks")
+      player = Scry2.Players.get_or_create!("player-list-decks", "Player List Decks")
 
       TestFactory.create_match(%{
         event_name: "QuickDraft_FDN_20260401",
@@ -409,7 +409,7 @@ defmodule Scry2.MatchesTest do
     end
 
     test "excludes matches with nil mtga_deck_id" do
-      player = Scry2.Players.find_or_create!("player-list-decks-nil", "Player List Decks Nil")
+      player = Scry2.Players.get_or_create!("player-list-decks-nil", "Player List Decks Nil")
 
       TestFactory.create_match(%{
         event_name: "QuickDraft_FDN_20260401",

@@ -187,19 +187,6 @@ defmodule Scry2.MtgaLogIngestion do
   end
 
   @doc """
-  Marks ALL raw events as processed in a single UPDATE — no WHERE clause.
-
-  Safe in the reingest context because reingest resets every raw event to
-  `processed: false` before retranslation, then processes every one.
-  Avoids hitting any per-query parameter limits at large scale.
-  """
-  def bulk_mark_all_processed! do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-    Repo.update_all(EventRecord, set: [processed: true, processed_at: now])
-    :ok
-  end
-
-  @doc """
   Marks each `{id, reason}` pair as a processing error.
 
   Errors are rare (malformed events) so individual updates are fine.
@@ -227,13 +214,6 @@ defmodule Scry2.MtgaLogIngestion do
     )
     |> Repo.all()
     |> Map.new()
-  end
-
-  @doc "Returns all raw events ordered by id ascending."
-  def list_all_ordered do
-    EventRecord
-    |> order_by([e], asc: e.id)
-    |> Repo.all()
   end
 
   @doc """

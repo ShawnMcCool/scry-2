@@ -493,7 +493,7 @@ defmodule Scry2.Events.IngestRawEvents do
   end
 
   # Apply each domain event to IngestionState, collecting side effects.
-  # For SessionStarted, resolve the player via Players.find_or_create!
+  # For SessionStarted, resolve the player via Players.get_or_create!
   # and set player_id on the session (side effect not in pure apply_event).
   defp apply_events_to_state(state, events) do
     {final_state, collected_events} =
@@ -514,7 +514,7 @@ defmodule Scry2.Events.IngestRawEvents do
          %Scry2.Events.Session.SessionStarted{client_id: client_id, screen_name: screen_name}
        )
        when is_binary(client_id) do
-    player = Players.find_or_create!(client_id, screen_name || client_id)
+    player = Players.get_or_create!(client_id, screen_name || client_id)
 
     if state.session.self_user_id != client_id do
       Log.info(:ingester, "auto-detected player: #{player.screen_name} (#{client_id})")

@@ -70,7 +70,7 @@ defmodule Scry2.Events.IngestionState do
         %Scry2.Events.Session.SessionStarted{} = event
       ) do
     # Note: player_id is NOT set here — it's resolved by IngestRawEvents
-    # via Players.find_or_create! and set on the session directly, because
+    # via Players.get_or_create! and set on the session directly, because
     # the DB lookup is a side effect that doesn't belong in a pure function.
     session = %Session{
       current_session

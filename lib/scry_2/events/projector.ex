@@ -129,29 +129,12 @@ defmodule Scry2.Events.Projector do
         # Truncate projection tables (reverse order for FK safety)
         Enum.each(Enum.reverse(@projection_tables), &Scry2.Repo.delete_all/1)
 
+        # Catch all three exit kinds (:error, :exit, :throw) so replay continues past
+        # any single bad event — connection-checkout timeouts and
+        # Ecto.MultipleResultsError both surface here under bulk load.
         Events.replay_by_types(
           @claimed_slugs,
-          fn event ->
-            # Catch all three exit kinds: :error (rescue), :exit (catch :exit),
-            # :throw (catch :throw). Replay must continue past one bad event
-            # under any failure mode — connection-checkout timeouts and
-            # Ecto.MultipleResultsError both surface here under bulk load.
-            try do
-              project(event)
-            rescue
-              error ->
-                Log.warning(
-                  :ingester,
-                  "#{@projector_name} rebuild skip (rescue): #{inspect(error)}"
-                )
-            catch
-              kind, reason ->
-                Log.warning(
-                  :ingester,
-                  "#{@projector_name} rebuild skip (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
-                )
-            end
-          end,
+          fn event -> safe_project_replay(event, "rebuild") end,
           on_batch: fn last_id, processed ->
             Events.put_watermark!(@projector_name, last_id)
             if on_progress, do: on_progress.(min(processed, total), total)
@@ -182,23 +165,7 @@ defmodule Scry2.Events.Projector do
 
         Events.replay_by_types(
           @claimed_slugs,
-          fn event ->
-            try do
-              project(event)
-            rescue
-              error ->
-                Log.warning(
-                  :ingester,
-                  "#{@projector_name} catch-up skip (rescue): #{inspect(error)}"
-                )
-            catch
-              kind, reason ->
-                Log.warning(
-                  :ingester,
-                  "#{@projector_name} catch-up skip (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
-                )
-            end
-          end,
+          fn event -> safe_project_replay(event, "catch-up") end,
           cursor: cursor,
           on_batch: fn last_id, processed ->
             Events.put_watermark!(@projector_name, last_id)
@@ -237,23 +204,7 @@ defmodule Scry2.Events.Projector do
 
         Events.replay_by_types(
           @claimed_slugs,
-          fn event ->
-            try do
-              project(event)
-            rescue
-              error ->
-                Log.warning(
-                  :ingester,
-                  "#{@projector_name} full_rebuild skip (rescue): #{inspect(error)}"
-                )
-            catch
-              kind, reason ->
-                Log.warning(
-                  :ingester,
-                  "#{@projector_name} full_rebuild skip (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
-                )
-            end
-          end,
+          fn event -> safe_project_replay(event, "full_rebuild") end,
           on_batch: fn last_id, _ -> Events.put_watermark!(@projector_name, last_id) end
         )
 
@@ -303,23 +254,7 @@ defmodule Scry2.Events.Projector do
       @impl true
       def handle_info({:domain_event, id, type_slug, event}, state)
           when type_slug in @claimed_slugs do
-        try do
-          project(event)
-          Events.put_watermark!(@projector_name, id)
-        rescue
-          error ->
-            Log.error(
-              :ingester,
-              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (rescue): #{inspect(error)}"
-            )
-        catch
-          kind, reason ->
-            Log.error(
-              :ingester,
-              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
-            )
-        end
-
+        safe_project_live(event, id, type_slug)
         {:noreply, state}
       end
 
@@ -327,24 +262,7 @@ defmodule Scry2.Events.Projector do
       @impl true
       def handle_info({:domain_event, id, type_slug}, state)
           when type_slug in @claimed_slugs do
-        try do
-          event = Events.get!(id)
-          project(event)
-          Events.put_watermark!(@projector_name, id)
-        rescue
-          error ->
-            Log.error(
-              :ingester,
-              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (rescue): #{inspect(error)}"
-            )
-        catch
-          kind, reason ->
-            Log.error(
-              :ingester,
-              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
-            )
-        end
-
+        safe_project_live({:lazy_fetch, id}, id, type_slug)
         {:noreply, state}
       end
 
@@ -353,6 +271,54 @@ defmodule Scry2.Events.Projector do
       def handle_info(msg, state), do: handle_extra_info(msg, state)
 
       def handle_extra_info(_msg, state), do: {:noreply, state}
+
+      # ── Shared error-handling helpers ────────────────────────────────────
+      # Replay paths log a warning and continue. Live paths log an error and
+      # advance the watermark only on success — keeping these in one place
+      # ensures every projector applies identical fault-tolerance semantics.
+
+      defp safe_project_replay(event, phase) do
+        try do
+          project(event)
+        rescue
+          error ->
+            Log.warning(
+              :ingester,
+              "#{@projector_name} #{phase} skip (rescue): #{inspect(error)}"
+            )
+        catch
+          kind, reason ->
+            Log.warning(
+              :ingester,
+              "#{@projector_name} #{phase} skip (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
+            )
+        end
+      end
+
+      defp safe_project_live(event_or_lazy, id, type_slug) do
+        try do
+          event =
+            case event_or_lazy do
+              {:lazy_fetch, ^id} -> Events.get!(id)
+              loaded -> loaded
+            end
+
+          project(event)
+          Events.put_watermark!(@projector_name, id)
+        rescue
+          error ->
+            Log.error(
+              :ingester,
+              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (rescue): #{inspect(error)}"
+            )
+        catch
+          kind, reason ->
+            Log.error(
+              :ingester,
+              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
+            )
+        end
+      end
 
       defoverridable after_init: 1, handle_extra_info: 2
     end

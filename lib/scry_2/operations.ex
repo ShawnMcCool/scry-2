@@ -73,7 +73,7 @@ defmodule Scry2.Operations do
 
     Task.Supervisor.async_nolink(Scry2.TaskSupervisor, fn ->
       try do
-        Phoenix.PubSub.subscribe(Scry2.PubSub, Topics.domain_control())
+        Topics.subscribe(Topics.domain_control())
         Topics.broadcast(Topics.domain_control(), :rebuild_all)
         await_rebuilt(expected, :rebuild)
       rescue
@@ -117,7 +117,7 @@ defmodule Scry2.Operations do
 
     Task.Supervisor.async_nolink(Scry2.TaskSupervisor, fn ->
       try do
-        Phoenix.PubSub.subscribe(Scry2.PubSub, Topics.domain_control())
+        Topics.subscribe(Topics.domain_control())
         Topics.broadcast(Topics.domain_control(), :catch_up_all)
         await_caught_up(expected, :catch_up)
       rescue

@@ -47,8 +47,8 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
   end
 
   @doc "Returns the current watcher state for dashboard/settings UI."
-  def status do
-    GenServer.call(__MODULE__, :status)
+  def status(server \\ __MODULE__) do
+    GenServer.call(server, :status)
   catch
     :exit, _ -> %{state: :not_running}
   end

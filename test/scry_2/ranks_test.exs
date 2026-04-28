@@ -44,7 +44,7 @@ defmodule Scry2.RanksTest do
     end
 
     test "filters by player_id" do
-      player = Scry2.Players.find_or_create!("p1", "Player One")
+      player = Scry2.Players.get_or_create!("p1", "Player One")
 
       Ranks.insert_snapshot!(%{occurred_at: ~U[2026-04-08 12:00:00Z], player_id: player.id})
       Ranks.insert_snapshot!(%{occurred_at: ~U[2026-04-08 13:00:00Z], player_id: nil})
@@ -96,7 +96,7 @@ defmodule Scry2.RanksTest do
     end
 
     test "filters by player_id" do
-      player = Scry2.Players.find_or_create!("p2", "Player Two")
+      player = Scry2.Players.get_or_create!("p2", "Player Two")
 
       Ranks.insert_snapshot!(%{
         occurred_at: ~U[2026-01-01 00:00:00Z],

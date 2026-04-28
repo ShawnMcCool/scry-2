@@ -396,9 +396,7 @@ defmodule Scry2.Decks.DeckProjection do
       end)
       |> Enum.sort()
 
-    Decks.Deck
-    |> select([d], %{mtga_deck_id: d.mtga_deck_id, current_main_deck: d.current_main_deck})
-    |> Repo.all()
+    Decks.list_deck_compositions()
     |> Enum.find_value(fn deck ->
       known_sorted =
         ((deck.current_main_deck && deck.current_main_deck["cards"]) || [])
@@ -440,9 +438,9 @@ defmodule Scry2.Decks.DeckProjection do
   # which is wrong for conceded games (opponent concedes while ahead).
   defp correct_game_results(mtga_match_id, authoritative_games) do
     won_by_game =
-      Map.new(authoritative_games, fn g ->
-        game_num = g["game_number"] || g[:game_number]
-        won = if is_nil(g["won"]), do: g[:won], else: g["won"]
+      Map.new(authoritative_games, fn game ->
+        game_num = game["game_number"] || game[:game_number]
+        won = if is_nil(game["won"]), do: game[:won], else: game["won"]
         {game_num, won}
       end)
 

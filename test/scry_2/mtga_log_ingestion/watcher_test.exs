@@ -51,7 +51,7 @@ defmodule Scry2.MtgaLogIngestion.WatcherTest do
 
       assert_receive {:status, :running}, 1_000
 
-      status = GenServer.call(pid, :status)
+      status = Watcher.status(pid)
       assert status.state == :running
       assert status.path == tmp_path
 

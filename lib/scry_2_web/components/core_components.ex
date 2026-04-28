@@ -51,7 +51,7 @@ defmodule Scry2Web.CoreComponents do
 
     ~H"""
     <div
-      :if={msg = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
+      :if={flash_content = render_slot(@inner_block) || Phoenix.Flash.get(@flash, @kind)}
       id={@id}
       phx-click={JS.push("lv:clear-flash", value: %{key: @kind}) |> hide("##{@id}")}
       role="alert"
@@ -67,7 +67,7 @@ defmodule Scry2Web.CoreComponents do
         <.icon :if={@kind == :error} name="hero-exclamation-circle" class="size-5 shrink-0" />
         <div>
           <p :if={@title} class="font-semibold">{@title}</p>
-          <p>{msg}</p>
+          <p>{flash_content}</p>
         </div>
         <div class="flex-1" />
         <button type="button" class="group self-start cursor-pointer" aria-label="close">
