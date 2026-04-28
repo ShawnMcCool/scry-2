@@ -11,6 +11,23 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Logs now persist across restarts.** Scry2 writes its log to
+  `<data dir>/log/scry_2.log` (5 rotating files, ~25MB total). If the
+  app ever crashes, the events leading up to it are still on disk
+  instead of being wiped with the in-memory Console drawer. On Linux
+  that's `~/.local/share/scry_2/log/`, on Windows `%APPDATA%\scry_2\log\`,
+  on macOS `~/Library/Application Support/scry_2/log/`.
+
+- **The Operations page now shows the previous BEAM crash, if any.**
+  When the app's underlying runtime dies hard (rather than a graceful
+  shutdown), Erlang writes a crash dump. **Settings → Operations** now
+  shows a yellow "Last BEAM crash" card with the timestamp, the
+  slogan, and the path to the preserved dump file — so you don't have
+  to dig through the filesystem to find out what happened. Up to 5
+  recent crash dumps are retained.
+
 ## v0.25.6 — 2026-04-28
 
 ### Fixed
