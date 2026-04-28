@@ -169,6 +169,25 @@ defmodule Scry2.Drafts.DraftProjectionTest do
       draft = Drafts.get_by_mtga_id(draft_id, player.id)
       assert draft.format == "traditional_draft"
     end
+
+    test "derives pick_two_draft from PickTwoDraft_ event name (CourseId-keyed)" do
+      player = create_player()
+      draft_id = Ecto.UUID.generate()
+
+      event =
+        build_draft_started(%{
+          player_id: player.id,
+          event_name: "PickTwoDraft_SOS_20260421",
+          mtga_draft_id: draft_id,
+          set_code: "SOS"
+        })
+
+      project_events(DraftProjection, event)
+
+      draft = Drafts.get_by_mtga_id(draft_id, player.id)
+      assert draft.format == "pick_two_draft"
+      assert draft.set_code == "SOS"
+    end
   end
 
   describe "DraftCompleted" do

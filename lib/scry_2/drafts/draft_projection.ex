@@ -233,17 +233,20 @@ defmodule Scry2.Drafts.DraftProjection do
     end
   end
 
-  defp derive_format("QuickDraft_" <> _), do: "quick_draft"
-  defp derive_format("PremierDraft_" <> _), do: "premier_draft"
-  defp derive_format("TradDraft_" <> _), do: "traditional_draft"
-  defp derive_format(_), do: "unknown"
+  # Parses any MTGA InternalEventName of the form
+  # `<TypeName>Draft_<SET>_<YYYYMMDD>` into a format slug. Delegates to
+  # the anti-corruption layer's parser so the format vocabulary stays
+  # consistent across the pipeline.
+  defp derive_format(event_name) do
+    case Scry2.Events.IdentifyDomainEvents.parse_draft_event_name(event_name) do
+      {format, _set} -> format
+      _ -> "unknown"
+    end
+  end
 
-  # Works for event-name-style IDs (e.g. "PremierDraft_FDN_20260401") but returns nil
-  # for UUID-style human draft IDs (MTGA's Draft.Notify draftId is a UUID).
-  # The UUID case is a known gap — pending real human draft log samples.
   defp extract_set_code(event_name) do
-    case String.split(event_name, "_") do
-      [_, set | _] -> set
+    case Scry2.Events.IdentifyDomainEvents.parse_draft_event_name(event_name) do
+      {_format, set} -> set
       _ -> nil
     end
   end

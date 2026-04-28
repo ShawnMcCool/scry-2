@@ -503,8 +503,12 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     end
   end
 
-  # DraftCompleteDraft fires when the draft portion finishes. Carries
-  # the full card pool and whether this was a bot or human draft.
+  # DraftCompleteDraft fires when the human draft portion finishes (Premier,
+  # Traditional, Pick Two, etc.). The payload's CourseId is the stable
+  # identifier paired with the EventJoin that opened this draft, so it's
+  # used as mtga_draft_id. Bot drafts (Quick Draft) do not emit this event;
+  # their completion comes through EventClaimPrize instead, so any draft
+  # arriving here is a human draft.
   def translate(
         %EventRecord{event_type: "DraftCompleteDraft"} = record,
         _self_user_id,
@@ -513,12 +517,13 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
-         false <- Map.has_key?(payload, "request") do
+         false <- Map.has_key?(payload, "request"),
+         course_id when is_binary(course_id) <- payload["CourseId"] do
       {[
          %DraftCompleted{
-           mtga_draft_id: payload["EventName"] || payload["InternalEventName"],
-           event_name: payload["EventName"] || payload["InternalEventName"],
-           is_bot_draft: payload["IsBotDraft"],
+           mtga_draft_id: course_id,
+           event_name: payload["InternalEventName"] || payload["EventName"],
+           is_bot_draft: false,
            card_pool_arena_ids: payload["CardPool"],
            occurred_at: occurred_at
          }
@@ -634,6 +639,11 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # from InventoryInfo.Changes[].
 
   # EventJoin response carries Course (enrollment) + InventoryInfo (entry fee).
+  # When CurrentModule == "PlayerDraft" and the InternalEventName matches the
+  # human-draft pattern (e.g. "PremierDraft_SOS_20260421", "PickTwoDraft_SOS_20260421"),
+  # we also emit DraftStarted using CourseId as mtga_draft_id — that's the only
+  # new-format signal that a human draft has begun, since the old Draft.Notify
+  # / HumanDraftPackOffered events are no longer emitted by MTGA.
   # Request format has {"id", "request"} — skip it.
   def translate(
         %EventRecord{event_type: "EventJoin"} = record,
@@ -655,9 +665,25 @@ defmodule Scry2.Events.IdentifyDomainEvents do
           occurred_at: occurred_at
         }
 
+      draft_started_events =
+        case {course["CurrentModule"], parse_draft_event_name(event_name), course["CourseId"]} do
+          {"PlayerDraft", {_format, set_code}, course_id} when is_binary(course_id) ->
+            [
+              %DraftStarted{
+                mtga_draft_id: course_id,
+                event_name: event_name,
+                set_code: set_code,
+                occurred_at: occurred_at
+              }
+            ]
+
+          _ ->
+            []
+        end
+
       inventory_events = build_inventory_changed(inventory_info, occurred_at)
 
-      {[joined | inventory_events], []}
+      {draft_started_events ++ [joined | inventory_events], []}
     else
       %{"request" => _} -> {[], []}
       _ -> {[], translation_warning(record, "failed to decode EventJoin response")}
@@ -1108,6 +1134,28 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   def translate(%EventRecord{}, _self_user_id, _match_context), do: {[], []}
 
   # ── Event participation + economy helpers ───────────────────────────
+
+  # Parses an MTGA InternalEventName of the form
+  # `<TypeName>Draft_<SET>_<YYYYMMDD>` (e.g. "PremierDraft_SOS_20260421",
+  # "PickTwoDraft_SOS_20260421", "QuickDraft_FDN_20260323", "TradDraft_BLB_20250101")
+  # into `{format_slug, set_code}`. Returns `nil` for non-draft events
+  # (e.g. "Traditional_Ladder", "DualColorPrecons").
+  @draft_event_name_regex ~r/^(?<type>[A-Za-z0-9]+?)Draft_(?<set>[A-Z0-9]+)_\d+$/
+  @doc false
+  def parse_draft_event_name(name) when is_binary(name) do
+    case Regex.named_captures(@draft_event_name_regex, name) do
+      %{"type" => type, "set" => set} -> {draft_format_slug(type), set}
+      _ -> nil
+    end
+  end
+
+  def parse_draft_event_name(_), do: nil
+
+  defp draft_format_slug("Quick"), do: "quick_draft"
+  defp draft_format_slug("Premier"), do: "premier_draft"
+  defp draft_format_slug("Trad"), do: "traditional_draft"
+  defp draft_format_slug("PickTwo"), do: "pick_two_draft"
+  defp draft_format_slug(other), do: other |> Macro.underscore() |> Kernel.<>("_draft")
 
   defp detect_entry_currency(inventory_info) do
     case get_in(inventory_info, ["Changes", Access.at(0)]) do

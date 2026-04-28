@@ -778,6 +778,93 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     end
   end
 
+  # ── EventJoin (CurrentModule=PlayerDraft) → DraftStarted ────────────
+
+  describe "translate/2 — EventJoin response (PlayerDraft) → DraftStarted" do
+    test "PickTwoDraft: emits DraftStarted with CourseId as mtga_draft_id" do
+      record = record_from_fixture("event_join_pick_two_draft_response.log")
+
+      assert {events, []} = IdentifyDomainEvents.translate(record, nil)
+
+      started = Enum.find(events, &is_struct(&1, DraftStarted))
+      assert started, "expected a DraftStarted in #{inspect(events)}"
+      assert started.mtga_draft_id == "500a621e-a42b-4965-9e4c-720fe05307c7"
+      assert started.event_name == "PickTwoDraft_SOS_20260421"
+      assert started.set_code == "SOS"
+
+      assert Enum.find(events, &is_struct(&1, EventJoined))
+    end
+
+    test "non-draft EventJoin (CurrentModule=CreateMatch) does not emit DraftStarted" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventJoin",
+        mtga_timestamp: ~U[2026-04-27 16:30:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Course" => %{
+              "CourseId" => "00000000-0000-0000-0000-000000000001",
+              "InternalEventName" => "Traditional_Ladder",
+              "CurrentModule" => "CreateMatch"
+            },
+            "InventoryInfo" => %{"Changes" => []}
+          }),
+        processed: false
+      }
+
+      assert {events, []} = IdentifyDomainEvents.translate(record, nil)
+      refute Enum.any?(events, &is_struct(&1, DraftStarted))
+    end
+
+    test "EventJoin with no CurrentModule does not emit DraftStarted" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventJoin",
+        mtga_timestamp: ~U[2026-04-27 16:30:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Course" => %{
+              "CourseId" => "00000000-0000-0000-0000-000000000002",
+              "InternalEventName" => "Traditional_Ladder"
+            },
+            "InventoryInfo" => %{"Changes" => []}
+          }),
+        processed: false
+      }
+
+      assert {events, []} = IdentifyDomainEvents.translate(record, nil)
+      refute Enum.any?(events, &is_struct(&1, DraftStarted))
+    end
+  end
+
+  # ── DraftCompleteDraft (CourseId-keyed) → DraftCompleted ────────────
+
+  describe "translate/2 — DraftCompleteDraft response → DraftCompleted (CourseId)" do
+    test "PickTwoDraft: produces DraftCompleted keyed on CourseId" do
+      record = record_from_fixture("draft_complete_draft_pick_two_response.log")
+
+      assert {[%DraftCompleted{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert event.mtga_draft_id == "500a621e-a42b-4965-9e4c-720fe05307c7"
+      assert event.event_name == "PickTwoDraft_SOS_20260421"
+      assert event.is_bot_draft == false
+      assert length(event.card_pool_arena_ids) == 42
+    end
+
+    test "PremierDraft: produces DraftCompleted keyed on CourseId" do
+      record = record_from_fixture("draft_complete_draft_premier_response.log")
+
+      assert {[%DraftCompleted{} = event], []} = IdentifyDomainEvents.translate(record, nil)
+      assert event.mtga_draft_id == "472a1bd8-e661-49c9-b39e-ea25a4bd79bc"
+      assert event.event_name == "PremierDraft_SOS_20260421"
+      assert event.is_bot_draft == false
+      assert length(event.card_pool_arena_ids) == 42
+    end
+  end
+
   # ── EventClaimPrize → EventRewardClaimed + InventoryUpdated ─────────
 
   describe "translate/2 — EventClaimPrize response → EventRewardClaimed + InventoryUpdated" do
@@ -1390,9 +1477,8 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
         source_file: "Player.log",
         raw_json:
           Jason.encode!(%{
-            "EventName" => "PremierDraft_FDN_20260401",
+            "CourseId" => "abc12345-6789-4abc-9def-0123456789ab",
             "InternalEventName" => "PremierDraft_FDN_20260401",
-            "IsBotDraft" => false,
             "CardPool" => [91234, 91235, 91236, 91237]
           }),
         processed: false
@@ -1401,7 +1487,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert {[%DraftCompleted{} = event], []} =
                IdentifyDomainEvents.translate(record, nil)
 
-      assert event.mtga_draft_id == "PremierDraft_FDN_20260401"
+      assert event.mtga_draft_id == "abc12345-6789-4abc-9def-0123456789ab"
       assert event.event_name == "PremierDraft_FDN_20260401"
       assert event.is_bot_draft == false
       assert event.card_pool_arena_ids == [91234, 91235, 91236, 91237]
