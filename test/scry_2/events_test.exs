@@ -236,6 +236,49 @@ defmodule Scry2.EventsTest do
       assert_receive {:batch, _last_id, 2}
       assert_receive {:batch, _last_id2, 3}
     end
+
+    test "returns processed/failed/failed_ids summary, counting {:error, _} returns" do
+      Enum.each(1..4, fn i -> Events.append!(match_created("s#{i}"), nil) end)
+
+      summary =
+        Events.replay_by_types(~w(match_created), fn event ->
+          if rem(event.id, 2) == 0, do: :ok, else: {:error, :boom}
+        end)
+
+      assert summary.processed == 4
+      assert summary.failed == 2
+      assert length(summary.failed_ids) == 2
+
+      Enum.each(summary.failed_ids, fn id ->
+        assert rem(id, 2) == 1, "failed id #{id} expected odd"
+      end)
+    end
+
+    test "non-:ok and non-{:error, _} return values count as success" do
+      Enum.each(1..3, fn i -> Events.append!(match_created("n#{i}"), nil) end)
+
+      summary =
+        Events.replay_by_types(~w(match_created), fn _event ->
+          # send/2 returns the message tuple — older callers relied on this
+          send(self(), :ack)
+        end)
+
+      assert summary.processed == 3
+      assert summary.failed == 0
+      assert summary.failed_ids == []
+    end
+
+    test "caps failed_ids list at a sensible upper bound" do
+      Enum.each(1..150, fn i -> Events.append!(match_created("c#{i}"), nil) end)
+
+      summary =
+        Events.replay_by_types(~w(match_created), fn _event -> {:error, :always} end)
+
+      assert summary.processed == 150
+      assert summary.failed == 150
+      # Cap protects unbounded memory — the count is still accurate.
+      assert length(summary.failed_ids) <= 100
+    end
   end
 
   describe "count_by_type/0" do

@@ -204,6 +204,8 @@ defmodule Scry2.Events do
     |> Repo.all()
   end
 
+  @failed_ids_cap 100
+
   @doc """
   Fetches domain events of the given types in batches, ordered by id.
   Calls `fun` with each rehydrated event struct. Cursor-based — fetches
@@ -211,22 +213,49 @@ defmodule Scry2.Events do
 
   Used by projectors for self-owned replay (ADR-029). No PubSub involved.
 
+  ## Callback contract
+
+  `fun` should return `:ok` or `{:error, reason}`. Any other return value
+  (e.g. for legacy callers that ignore the contract) is treated as success.
+  When a callback returns `{:error, _}`, the offending event id is recorded
+  in `failed_ids` so the caller can surface visibility — projections must
+  not silently lose data (CLAUDE.md "Data Integrity").
+
+  ## Returns
+
+  `%{processed: integer, failed: integer, failed_ids: [integer]}`. The
+  `failed_ids` list is capped at #{@failed_ids_cap} — the count is always
+  accurate, the list is for diagnostics only.
+
   ## Example
 
       Events.replay_by_types(~w(match_created match_completed), fn event ->
         project(event)
       end)
   """
-  @spec replay_by_types([String.t()], (struct() -> any()), keyword()) :: :ok
+
+  @type replay_summary :: %{
+          processed: non_neg_integer(),
+          failed: non_neg_integer(),
+          failed_ids: [integer()]
+        }
+
+  @spec replay_by_types([String.t()], (struct() -> :ok | {:error, term()} | any()), keyword()) ::
+          replay_summary()
   def replay_by_types(type_slugs, fun, opts \\ [])
       when is_list(type_slugs) and is_function(fun, 1) do
     batch_size = Keyword.get(opts, :batch_size, 1000)
     cursor = Keyword.get(opts, :cursor, 0)
     on_batch = Keyword.get(opts, :on_batch)
-    do_replay_by_types(type_slugs, fun, batch_size, cursor, on_batch, 0)
+
+    do_replay_by_types(type_slugs, fun, batch_size, cursor, on_batch, %{
+      processed: 0,
+      failed: 0,
+      failed_ids: []
+    })
   end
 
-  defp do_replay_by_types(type_slugs, fun, batch_size, cursor, on_batch, processed) do
+  defp do_replay_by_types(type_slugs, fun, batch_size, cursor, on_batch, summary) do
     batch =
       type_slugs
       |> build_replay_batch_query(cursor)
@@ -236,21 +265,38 @@ defmodule Scry2.Events do
 
     case batch do
       [] ->
-        :ok
+        summary
 
       records ->
-        Enum.each(records, fn record ->
-          fun.(rehydrate_with_metadata(record))
-        end)
+        new_summary =
+          Enum.reduce(records, summary, fn record, acc ->
+            event = rehydrate_with_metadata(record)
+
+            case fun.(event) do
+              {:error, _reason} ->
+                %{
+                  acc
+                  | failed: acc.failed + 1,
+                    failed_ids: cap_failed_ids(acc.failed_ids, record.id)
+                }
+
+              _ ->
+                acc
+            end
+          end)
 
         last_id = List.last(records).id
-        new_processed = processed + length(records)
+        processed = new_summary.processed + length(records)
+        new_summary = %{new_summary | processed: processed}
 
-        if on_batch, do: on_batch.(last_id, new_processed)
+        if on_batch, do: on_batch.(last_id, processed)
 
-        do_replay_by_types(type_slugs, fun, batch_size, last_id, on_batch, new_processed)
+        do_replay_by_types(type_slugs, fun, batch_size, last_id, on_batch, new_summary)
     end
   end
+
+  defp cap_failed_ids(ids, new_id) when length(ids) < @failed_ids_cap, do: ids ++ [new_id]
+  defp cap_failed_ids(ids, _new_id), do: ids
 
   # Builds a UNION ALL query when there are multiple type slugs, allowing
   # SQLite to use the event_type index as a merge source (no temp b-tree sort).

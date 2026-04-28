@@ -132,21 +132,22 @@ defmodule Scry2.Events.Projector do
         # Catch all three exit kinds (:error, :exit, :throw) so replay continues past
         # any single bad event — connection-checkout timeouts and
         # Ecto.MultipleResultsError both surface here under bulk load.
-        Events.replay_by_types(
-          @claimed_slugs,
-          fn event -> safe_project_replay(event, "rebuild") end,
-          on_batch: fn last_id, processed ->
-            Events.put_watermark!(@projector_name, last_id)
-            if on_progress, do: on_progress.(min(processed, total), total)
-          end
-        )
+        summary =
+          Events.replay_by_types(
+            @claimed_slugs,
+            fn event -> safe_project_replay(event, "rebuild") end,
+            on_batch: fn last_id, processed ->
+              Events.put_watermark!(@projector_name, last_id)
+              if on_progress, do: on_progress.(min(processed, total), total)
+            end
+          )
 
         # Final watermark for any remaining events
         max_id = Events.max_event_id_for_types(@claimed_slugs)
         if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
         if on_progress, do: on_progress.(total, total)
 
-        Log.info(:ingester, "#{@projector_name}: rebuild complete")
+        log_replay_summary("rebuild", summary)
         :ok
       end
 
@@ -163,21 +164,22 @@ defmodule Scry2.Events.Projector do
 
         Log.info(:ingester, "#{@projector_name}: catching up #{total} events from id=#{cursor}")
 
-        Events.replay_by_types(
-          @claimed_slugs,
-          fn event -> safe_project_replay(event, "catch-up") end,
-          cursor: cursor,
-          on_batch: fn last_id, processed ->
-            Events.put_watermark!(@projector_name, last_id)
-            if on_progress, do: on_progress.(min(processed, total), total)
-          end
-        )
+        summary =
+          Events.replay_by_types(
+            @claimed_slugs,
+            fn event -> safe_project_replay(event, "catch-up") end,
+            cursor: cursor,
+            on_batch: fn last_id, processed ->
+              Events.put_watermark!(@projector_name, last_id)
+              if on_progress, do: on_progress.(min(processed, total), total)
+            end
+          )
 
         max_id = Events.max_event_id_for_types(@claimed_slugs)
         if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
         if on_progress, do: on_progress.(total, total)
 
-        Log.info(:ingester, "#{@projector_name}: catch-up complete")
+        log_replay_summary("catch-up", summary)
         :ok
       end
 
@@ -202,16 +204,17 @@ defmodule Scry2.Events.Projector do
         Events.put_watermark!(@projector_name, 0)
         Enum.each(Enum.reverse(@projection_tables), &Scry2.Repo.delete_all/1)
 
-        Events.replay_by_types(
-          @claimed_slugs,
-          fn event -> safe_project_replay(event, "full_rebuild") end,
-          on_batch: fn last_id, _ -> Events.put_watermark!(@projector_name, last_id) end
-        )
+        summary =
+          Events.replay_by_types(
+            @claimed_slugs,
+            fn event -> safe_project_replay(event, "full_rebuild") end,
+            on_batch: fn last_id, _ -> Events.put_watermark!(@projector_name, last_id) end
+          )
 
         max_id = Events.max_event_id_for_types(@claimed_slugs)
         if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
 
-        Log.info(:ingester, "#{@projector_name}: full rebuild complete")
+        log_replay_summary("full_rebuild", summary)
         Topics.broadcast(Topics.domain_control(), {:projector_rebuilt, @projector_name})
         {:noreply, state}
       end
@@ -273,24 +276,51 @@ defmodule Scry2.Events.Projector do
       def handle_extra_info(_msg, state), do: {:noreply, state}
 
       # ── Shared error-handling helpers ────────────────────────────────────
-      # Replay paths log a warning and continue. Live paths log an error and
-      # advance the watermark only on success — keeping these in one place
-      # ensures every projector applies identical fault-tolerance semantics.
+      # Replay paths catch errors and return `{:error, reason}` so the caller
+      # can count failures — silently skipping bad events violates "Data
+      # Integrity" (CLAUDE.md). Live paths log an error and advance the
+      # watermark only on success.
 
       defp safe_project_replay(event, phase) do
         try do
           project(event)
+          :ok
         rescue
           error ->
             Log.warning(
               :ingester,
               "#{@projector_name} #{phase} skip (rescue): #{inspect(error)}"
             )
+
+            {:error, {:rescue, error}}
         catch
           kind, reason ->
             Log.warning(
               :ingester,
               "#{@projector_name} #{phase} skip (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
+            )
+
+            {:error, {kind, reason}}
+        end
+      end
+
+      # Logged at info severity for clean rebuilds, error severity when any
+      # event was skipped — surfaces silent projection loss so the user can
+      # re-run rebuild or investigate before the watermark hides the issue.
+      defp log_replay_summary(phase, summary) do
+        case summary.failed do
+          0 ->
+            Log.info(
+              :ingester,
+              "#{@projector_name}: #{phase} complete (#{summary.processed} events)"
+            )
+
+          n ->
+            sample = summary.failed_ids |> Enum.take(10) |> inspect()
+
+            Log.error(
+              :ingester,
+              "#{@projector_name}: #{phase} skipped #{n}/#{summary.processed} events (sample ids: #{sample}). Re-run if errors are transient; investigate logs if persistent."
             )
         end
       end
