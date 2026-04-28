@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.25.5 — 2026-04-28
+
 ### Fixed
 
 - **Reingest no longer crashes the app.** Running **Settings → Operations →
