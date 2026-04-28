@@ -132,13 +132,23 @@ defmodule Scry2.Events.Projector do
         Events.replay_by_types(
           @claimed_slugs,
           fn event ->
+            # Catch all three exit kinds: :error (rescue), :exit (catch :exit),
+            # :throw (catch :throw). Replay must continue past one bad event
+            # under any failure mode — connection-checkout timeouts and
+            # Ecto.MultipleResultsError both surface here under bulk load.
             try do
               project(event)
             rescue
               error ->
                 Log.warning(
                   :ingester,
-                  "#{@projector_name} rebuild skip: #{inspect(error)}"
+                  "#{@projector_name} rebuild skip (rescue): #{inspect(error)}"
+                )
+            catch
+              kind, reason ->
+                Log.warning(
+                  :ingester,
+                  "#{@projector_name} rebuild skip (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
                 )
             end
           end,
@@ -179,7 +189,13 @@ defmodule Scry2.Events.Projector do
               error ->
                 Log.warning(
                   :ingester,
-                  "#{@projector_name} catch-up skip: #{inspect(error)}"
+                  "#{@projector_name} catch-up skip (rescue): #{inspect(error)}"
+                )
+            catch
+              kind, reason ->
+                Log.warning(
+                  :ingester,
+                  "#{@projector_name} catch-up skip (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
                 )
             end
           end,
@@ -228,7 +244,13 @@ defmodule Scry2.Events.Projector do
               error ->
                 Log.warning(
                   :ingester,
-                  "#{@projector_name} full_rebuild skip: #{inspect(error)}"
+                  "#{@projector_name} full_rebuild skip (rescue): #{inspect(error)}"
+                )
+            catch
+              kind, reason ->
+                Log.warning(
+                  :ingester,
+                  "#{@projector_name} full_rebuild skip (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
                 )
             end
           end,
@@ -288,7 +310,13 @@ defmodule Scry2.Events.Projector do
           error ->
             Log.error(
               :ingester,
-              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug}: #{inspect(error)}"
+              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (rescue): #{inspect(error)}"
+            )
+        catch
+          kind, reason ->
+            Log.error(
+              :ingester,
+              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
             )
         end
 
@@ -307,7 +335,13 @@ defmodule Scry2.Events.Projector do
           error ->
             Log.error(
               :ingester,
-              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug}: #{inspect(error)}"
+              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (rescue): #{inspect(error)}"
+            )
+        catch
+          kind, reason ->
+            Log.error(
+              :ingester,
+              "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
             )
         end
 

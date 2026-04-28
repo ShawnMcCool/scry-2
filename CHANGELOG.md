@@ -11,6 +11,14 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reingest no longer crashes the app.** Running **Settings → Operations →
+  Reingest** could disconnect the dashboard and shut the app down before
+  finishing — leaving historical matches missing from your match list. The
+  background work that rebuilds your match history now keeps going past
+  individual problem events instead of bringing the whole process down.
+
 ## v0.25.4 — 2026-04-28
 
 ## v0.25.3 — 2026-04-26
