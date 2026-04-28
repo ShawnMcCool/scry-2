@@ -2,6 +2,7 @@ defmodule Scry2Web.OperationsLive do
   use Scry2Web, :live_view
 
   alias Scry2.{Events, MtgaLogIngestion, Operations, Service, Topics}
+  alias Scry2.Diagnostics.CrashDump
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.ProjectorRegistry
   alias Scry2.MtgaLogIngestion.GitHubIssueReport
@@ -101,6 +102,7 @@ defmodule Scry2Web.OperationsLive do
     |> assign(:unrecognized, unrecognized)
     |> assign(:deferred_with_payloads, deferred_with_payloads)
     |> assign(:errors, errors)
+    |> assign(:last_crash, CrashDump.latest_summary())
   end
 
   # Orders a `type => count` map by count descending — used by the raw
@@ -543,6 +545,32 @@ defmodule Scry2Web.OperationsLive do
               </span>
             </li>
           </ul>
+        </div>
+      </section>
+
+      <%!-- Last BEAM crash (only when a previous run died hard) --%>
+      <section :if={@last_crash} class="card bg-base-200 border border-warning/40">
+        <div class="card-body p-5">
+          <div class="flex items-center gap-2 mb-2">
+            <.icon name="hero-exclamation-triangle" class="size-5 text-warning" />
+            <h2 class="card-title text-base">Last BEAM crash</h2>
+          </div>
+          <div class="text-sm space-y-1">
+            <div :if={@last_crash.crashed_at_raw}>
+              <span class="text-base-content/60">When:</span>
+              <span class="font-mono">{@last_crash.crashed_at_raw}</span>
+            </div>
+            <div :if={@last_crash.slogan} class="break-all">
+              <span class="text-base-content/60">Slogan:</span>
+              <span class="font-mono text-error">{@last_crash.slogan}</span>
+            </div>
+            <div :if={@last_crash.system_version} class="text-xs text-base-content/40">
+              {@last_crash.system_version}
+            </div>
+            <div :if={@last_crash.archived_path} class="text-xs text-base-content/40 mt-2">
+              Full dump preserved at <span class="font-mono">{@last_crash.archived_path}</span>
+            </div>
+          </div>
         </div>
       </section>
 

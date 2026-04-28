@@ -55,6 +55,11 @@ config :logger, level: :warning
 # to leak into test output.
 config :scry_2, install_console_handler: false
 
+# Skip the file log handler during tests — there's no need for log files
+# under data_dir/log/scry_2.log when running ExUnit, and the disk_log
+# wrapper is global state.
+config :scry_2, install_file_log_handler: false
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 

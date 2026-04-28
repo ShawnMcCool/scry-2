@@ -10,6 +10,8 @@ defmodule Scry2.Application do
     Scry2.Config.load!()
 
     install_console_handler()
+    install_file_log_handler()
+    Scry2.Diagnostics.CrashDump.init!()
 
     children =
       [
@@ -85,6 +87,49 @@ defmodule Scry2.Application do
           Scry2.Console.CaptureLogOutput,
           %{level: :all, config: %{}}
         )
+    end
+  end
+
+  # Persist log entries to disk so they survive BEAM restart — the in-memory
+  # Console buffer is wiped when the VM dies, leaving no record of what
+  # happened in the moments before a crash. Off by default in test
+  # (`config/test.exs` sets `:install_file_log_handler` false). Disk_log
+  # rotation: 5MB per file, 5 files retained → ~25MB ceiling.
+  defp install_file_log_handler do
+    if Application.get_env(:scry_2, :install_file_log_handler, true) do
+      log_path = Path.join([Scry2.Platform.data_dir(), "log", "scry_2.log"])
+
+      case File.mkdir_p(Path.dirname(log_path)) do
+        :ok ->
+          _ = :logger.remove_handler(:scry2_file)
+
+          :ok =
+            :logger.add_handler(
+              :scry2_file,
+              :logger_disk_log_h,
+              %{
+                level: :info,
+                config: %{
+                  file: String.to_charlist(log_path),
+                  type: :wrap,
+                  max_no_bytes: 5 * 1024 * 1024,
+                  max_no_files: 5
+                },
+                formatter:
+                  Logger.Formatter.new(
+                    format: "$time $metadata[$level] $message\n",
+                    metadata: [:component, :request_id]
+                  )
+              }
+            )
+
+        {:error, reason} ->
+          require Logger
+
+          Logger.warning(
+            "file log handler skipped — could not create log dir: #{inspect(reason)}"
+          )
+      end
     end
   end
 
