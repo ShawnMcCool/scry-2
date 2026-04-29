@@ -11,6 +11,22 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Draft win/loss records are no longer aggregated across multiple
+  drafts of the same format and set.** Premier Draft showed records
+  like *9–6* (impossible — max is 7 wins) and Pick Two Draft showed
+  *3–8* (impossible — max is 2 losses). MTGA assigns the same
+  internal event name to every Premier (or Pick Two) draft you run
+  in a given set/date window, so the previous reconciliation summed
+  matches across every draft of that format and stamped the same
+  number onto each row. Each draft now only counts the matches that
+  happened inside its own time window — between its start and the
+  start of the next draft of the same format. Quick Draft was
+  always correct because each Quick Draft already had a unique
+  event name. Rebuild the **Drafts** projection (Settings →
+  Operations) on this version to refresh existing rows.
+
 ## v0.25.9 — 2026-04-29
 
 ### Fixed
