@@ -414,5 +414,109 @@ defmodule Scry2.Drafts.DraftProjectionTest do
 
       assert %{wins: 0, losses: 0} = Drafts.get_by_mtga_id(orphan, player.id)
     end
+
+    test "multiple drafts sharing an event_name each get only their own time-window matches" do
+      player = create_player()
+      shared = "PremierDraft_SOS_20260421"
+
+      # Two human-draft instances on different days, both with the
+      # same MTGA event_name (the way Premier / Pick Two report it).
+      first_draft_id = "draft-uuid-first-#{System.unique_integer([:positive])}"
+      second_draft_id = "draft-uuid-second-#{System.unique_integer([:positive])}"
+
+      project_events(DraftProjection, [
+        build_draft_started(%{
+          player_id: player.id,
+          mtga_draft_id: first_draft_id,
+          event_name: shared,
+          set_code: "SOS",
+          occurred_at: ~U[2026-04-25 12:00:00Z]
+        }),
+        build_draft_started(%{
+          player_id: player.id,
+          mtga_draft_id: second_draft_id,
+          event_name: shared,
+          set_code: "SOS",
+          occurred_at: ~U[2026-04-26 12:00:00Z]
+        })
+      ])
+
+      # First-draft window: [04-25 12:00, 04-26 12:00). Two wins, one loss.
+      Enum.each(
+        [
+          {true, ~U[2026-04-25 13:00:00Z]},
+          {true, ~U[2026-04-25 14:00:00Z]},
+          {false, ~U[2026-04-25 15:00:00Z]}
+        ],
+        fn {won, started_at} ->
+          create_match(%{
+            player_id: player.id,
+            event_name: shared,
+            won: won,
+            started_at: started_at
+          })
+        end
+      )
+
+      # Second-draft window: [04-26 12:00, ∞). One win, three losses.
+      Enum.each(
+        [
+          {true, ~U[2026-04-26 13:00:00Z]},
+          {false, ~U[2026-04-26 14:00:00Z]},
+          {false, ~U[2026-04-26 15:00:00Z]},
+          {false, ~U[2026-04-26 16:00:00Z]}
+        ],
+        fn {won, started_at} ->
+          create_match(%{
+            player_id: player.id,
+            event_name: shared,
+            won: won,
+            started_at: started_at
+          })
+        end
+      )
+
+      assert :ok = DraftProjection.post_rebuild()
+
+      assert %{wins: 2, losses: 1} = Drafts.get_by_mtga_id(first_draft_id, player.id)
+      assert %{wins: 1, losses: 3} = Drafts.get_by_mtga_id(second_draft_id, player.id)
+    end
+
+    test "matches before any draft of the event_name are not counted" do
+      player = create_player()
+      shared = "PickTwoDraft_SOS_20260421"
+      draft_id = "draft-uuid-#{System.unique_integer([:positive])}"
+
+      project_events(
+        DraftProjection,
+        build_draft_started(%{
+          player_id: player.id,
+          mtga_draft_id: draft_id,
+          event_name: shared,
+          set_code: "SOS",
+          occurred_at: ~U[2026-04-26 12:00:00Z]
+        })
+      )
+
+      # A stray match before the draft started — should be ignored.
+      create_match(%{
+        player_id: player.id,
+        event_name: shared,
+        won: true,
+        started_at: ~U[2026-04-26 09:00:00Z]
+      })
+
+      # And one match after, which should count.
+      create_match(%{
+        player_id: player.id,
+        event_name: shared,
+        won: true,
+        started_at: ~U[2026-04-26 13:00:00Z]
+      })
+
+      assert :ok = DraftProjection.post_rebuild()
+
+      assert %{wins: 1, losses: 0} = Drafts.get_by_mtga_id(draft_id, player.id)
+    end
   end
 end

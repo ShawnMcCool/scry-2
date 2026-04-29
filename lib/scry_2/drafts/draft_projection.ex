@@ -43,33 +43,57 @@ defmodule Scry2.Drafts.DraftProjection do
   end
 
   @doc """
-  After a rebuild/catch-up, batch-reconcile every draft's `wins` /
-  `losses` from `matches_matches` in a single SQL statement.
+  Reconciles every draft's `wins` / `losses` from `matches_matches`
+  using a per-draft time window so multiple drafts that share the
+  same MTGA `event_name` (`PremierDraft_SOS_20260421`,
+  `PickTwoDraft_SOS_20260421`, etc.) don't collide.
 
-  Live operation keeps these fields in sync via `:match_updated`
-  broadcasts (see `handle_extra_info/2`). During a rebuild those
-  broadcasts are suppressed (`Scry2.Events.SilentMode`) so we'd
-  otherwise leave every draft at 0–0. SQLite's correlated subquery
-  on `(event_name, player_id)` runs in milliseconds even at full
-  history scale — vastly cheaper than the per-match cascade we
-  used to do.
+  The window for a draft is `[draft.started_at, next_draft.started_at)`
+  where `next_draft` is the next draft of the same `event_name` and
+  `player_id` ordered by `started_at`. Quick Draft is unaffected by
+  this — its `mtga_draft_id` is the event-name string, so each Quick
+  Draft already has a unique event_name and its window naturally
+  collapses onto its own matches.
+
+  Single SQL with a CTE — runs in milliseconds even on full history.
+  Used both at the end of a rebuild (no broadcast cascade fires
+  thanks to `Scry2.Events.SilentMode`) and on every live
+  `:match_updated` (see `handle_extra_info/2`) — the query is cheap
+  enough that doing the full reconciliation for one match-update is
+  simpler and more correct than trying to surgically update one
+  draft.
   """
   def post_rebuild do
     Repo.query!("""
-    UPDATE drafts_drafts AS d
+    WITH windows AS (
+      SELECT
+        d.id AS draft_id,
+        d.event_name,
+        d.player_id,
+        d.started_at,
+        LEAD(d.started_at) OVER (
+          PARTITION BY d.event_name, d.player_id
+          ORDER BY d.started_at
+        ) AS next_started_at
+      FROM drafts_drafts d
+    ),
+    counts AS (
+      SELECT
+        w.draft_id,
+        COALESCE(SUM(CASE WHEN m.won = 1 THEN 1 ELSE 0 END), 0) AS wins,
+        COALESCE(SUM(CASE WHEN m.won = 0 THEN 1 ELSE 0 END), 0) AS losses
+      FROM windows w
+      LEFT JOIN matches_matches m
+        ON m.event_name = w.event_name
+       AND m.player_id  = w.player_id
+       AND m.started_at >= w.started_at
+       AND (w.next_started_at IS NULL OR m.started_at < w.next_started_at)
+      GROUP BY w.draft_id
+    )
+    UPDATE drafts_drafts
     SET
-      wins = COALESCE((
-        SELECT COUNT(*) FROM matches_matches m
-        WHERE m.event_name = d.event_name
-          AND m.player_id = d.player_id
-          AND m.won = 1
-      ), 0),
-      losses = COALESCE((
-        SELECT COUNT(*) FROM matches_matches m
-        WHERE m.event_name = d.event_name
-          AND m.player_id = d.player_id
-          AND m.won = 0
-      ), 0),
+      wins   = COALESCE((SELECT wins   FROM counts WHERE counts.draft_id = drafts_drafts.id), 0),
+      losses = COALESCE((SELECT losses FROM counts WHERE counts.draft_id = drafts_drafts.id), 0),
       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
     """)
 
@@ -81,8 +105,14 @@ defmodule Scry2.Drafts.DraftProjection do
       nil ->
         {:noreply, state}
 
-      match ->
-        update_draft_wins_losses(match.event_name, match.player_id)
+      _match ->
+        # The single-event_name recount we used to do here was wrong for
+        # human drafts (Premier, Pick Two, Trad), which use a shared
+        # event_name across many drafts of the same format/set/date and
+        # only differentiate via the per-event mtga_draft_id. Calling the
+        # full time-window reconciliation in `post_rebuild/0` is one fast
+        # SQL statement and is correct in every case.
+        post_rebuild()
         {:noreply, state}
     end
   end
@@ -241,30 +271,6 @@ defmodule Scry2.Drafts.DraftProjection do
 
       existing ->
         existing
-    end
-  end
-
-  defp update_draft_wins_losses(event_name, player_id) do
-    case Drafts.get_by_event_name(event_name, player_id) do
-      nil ->
-        :ok
-
-      draft ->
-        matches = Matches.list_matches_for_event(event_name, player_id)
-        wins = Enum.count(matches, &(&1.won == true))
-        losses = Enum.count(matches, &(&1.won == false))
-
-        Drafts.upsert_draft!(%{
-          mtga_draft_id: draft.mtga_draft_id,
-          player_id: player_id,
-          wins: wins,
-          losses: losses
-        })
-
-        Log.info(
-          :ingester,
-          "updated wins/losses for draft #{draft.mtga_draft_id}: #{wins}W #{losses}L"
-        )
     end
   end
 
