@@ -62,7 +62,18 @@ defmodule Scry2.Application do
       ])
       |> maybe_add_watcher()
 
-    opts = [strategy: :one_for_one, name: Scry2.Supervisor]
+    # Restart intensity defaults are 3 in 5 seconds — too aggressive for
+    # this app, where a reingest hammers many child workers at once and
+    # transient SQLite/DBConnection contention can produce a quick burst
+    # of restarts that doesn't indicate a real failure. 10/30 keeps the
+    # safety net (something is genuinely broken if 10 children die in 30
+    # seconds) while preventing background-ops blips from killing the VM.
+    opts = [
+      strategy: :one_for_one,
+      name: Scry2.Supervisor,
+      max_restarts: 10,
+      max_seconds: 30
+    ]
 
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
@@ -93,27 +104,32 @@ defmodule Scry2.Application do
   # Persist log entries to disk so they survive BEAM restart — the in-memory
   # Console buffer is wiped when the VM dies, leaving no record of what
   # happened in the moments before a crash. Off by default in test
-  # (`config/test.exs` sets `:install_file_log_handler` false). Disk_log
-  # rotation: 5MB per file, 5 files retained → ~25MB ceiling.
+  # (`config/test.exs` sets `:install_file_log_handler` false). Rotation:
+  # 5MB per file, 5 files retained → ~25MB ceiling. `filesync_repeat_interval`
+  # forces a fsync every second so the last few seconds of activity before
+  # a hard crash actually land on disk (v0.25.7 buffered them and lost
+  # the supervisor crash report we needed to diagnose the reingest crash).
   defp install_file_log_handler do
     if Application.get_env(:scry_2, :install_file_log_handler, true) do
       log_path = Path.join([Scry2.Platform.data_dir(), "log", "scry_2.log"])
 
       case File.mkdir_p(Path.dirname(log_path)) do
         :ok ->
+          purge_legacy_disk_log_files(log_path)
           _ = :logger.remove_handler(:scry2_file)
 
           :ok =
             :logger.add_handler(
               :scry2_file,
-              :logger_disk_log_h,
+              :logger_std_h,
               %{
                 level: :info,
                 config: %{
                   file: String.to_charlist(log_path),
-                  type: :wrap,
+                  type: :file,
                   max_no_bytes: 5 * 1024 * 1024,
-                  max_no_files: 5
+                  max_no_files: 5,
+                  filesync_repeat_interval: 1_000
                 },
                 formatter:
                   Logger.Formatter.new(
@@ -131,6 +147,18 @@ defmodule Scry2.Application do
           )
       end
     end
+  end
+
+  # v0.25.7 used `logger_disk_log_h`, which writes a wrap log split into
+  # `<file>.1`, `<file>.2`, plus `<file>.idx` / `<file>.siz` index files.
+  # `logger_std_h` uses a different on-disk layout (`<file>`, `<file>.0`,
+  # `<file>.1`, …). Leaving the old files around confuses anyone tailing
+  # the directory; remove them on first boot of the new format.
+  defp purge_legacy_disk_log_files(log_path) do
+    [log_path <> ".idx", log_path <> ".siz"]
+    |> Enum.each(fn path ->
+      _ = File.rm(path)
+    end)
   end
 
   # Tell Phoenix to update the endpoint configuration

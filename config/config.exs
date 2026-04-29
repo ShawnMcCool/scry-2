@@ -84,6 +84,13 @@ config :logger, :default_formatter,
   format: "$time $metadata[$level] $message\n",
   metadata: [:request_id]
 
+# Capture SASL reports (supervisor crash/progress reports) so when a
+# child process dies the diagnostic information ends up in our log
+# file. Without this, OTP filters those reports out by default and the
+# only evidence of "child X crashed Y times before the supervisor gave
+# up" lives in the in-memory ring buffer that's lost on BEAM exit.
+config :logger, handle_sasl_reports: true
+
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
