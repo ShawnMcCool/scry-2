@@ -11,6 +11,27 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reingest no longer crashes the app under real-history load.** When
+  you ran **Settings → Operations → Reingest** against a full match
+  history, the rebuild fan-out — every projector running concurrently,
+  every match upsert triggering a draft recount, every draft update
+  triggering its own broadcast cascade — saturated the database pool
+  and brought down the whole runtime. The pipeline now rebuilds
+  projectors one at a time and skips the cross-projector
+  notification storm during a rebuild; after each rebuild a single
+  reconciliation pass writes the derived numbers (most visibly,
+  draft win/loss records). Reingest should now complete cleanly on
+  any history size.
+
+- **Pick Two and Premier draft win/loss records recover on rebuild.**
+  Rebuilding the **Drafts** projection (Settings → Operations) now
+  always writes the correct W–L on every draft from your match
+  history in one batch step, instead of relying on a per-match
+  cascade that could be interrupted by a crash and leave the page
+  stuck at 0–0.
+
 ## v0.25.8 — 2026-04-29
 
 ### Improved
