@@ -11,6 +11,25 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The crash log now captures *why* the app went down, not just *that*
+  it did.** v0.25.7 wrote a log file that was usually empty for the
+  last few seconds before a hard restart, because the underlying log
+  rotator buffered writes and the OTP runtime's own crash reports
+  were filtered out by default. Both gaps are closed: the file
+  handler now flushes to disk every second, and supervisor crash
+  reports flow into the same `<data dir>/log/scry_2.log` file so the
+  evidence trail survives the next BEAM exit.
+
+- **The app tolerates transient hiccups under heavy operations.**
+  Operations like **Reingest** can briefly stress SQLite hard enough
+  that a worker process bounces — entirely normal under load, not a
+  real failure. Previously, three such bounces in five seconds would
+  bring the whole app down. The threshold is now ten in thirty
+  seconds, so background-ops blips no longer kill the BEAM, while a
+  genuine failure still aborts cleanly.
+
 ## v0.25.7 — 2026-04-29
 
 ### Improved
