@@ -17,7 +17,8 @@ defmodule Scry2Web.RanksLive do
   alias Scry2.Topics
   alias Scry2Web.RanksHelpers
 
-  @valid_ranges ~w(today week season)
+  @valid_ranges ~w(today 3d week 2w season)
+  @default_range "2w"
 
   @impl true
   def mount(_params, _session, socket) do
@@ -34,7 +35,7 @@ defmodule Scry2Web.RanksLive do
        seasons: [],
        selected_season: nil,
        range_preference: range_preference,
-       time_range: "today",
+       time_range: @default_range,
        snapshots: [],
        latest_snapshot: nil,
        climb_constructed: "[]",
@@ -77,7 +78,7 @@ defmodule Scry2Web.RanksLive do
       cond do
         params["range"] in @valid_ranges -> params["range"]
         socket.assigns[:range_preference] -> socket.assigns.range_preference
-        true -> "today"
+        true -> @default_range
       end
 
     socket =
@@ -242,7 +243,15 @@ defmodule Scry2Web.RanksLive do
     ~H"""
     <div class="join" id="range-toggle" phx-hook="RangePreference" data-range={@selected}>
       <.link
-        :for={{value, label} <- [{"today", "Today"}, {"week", "Past Week"}, {"season", "Season"}]}
+        :for={
+          {value, label} <- [
+            {"today", "Today"},
+            {"3d", "Past 3D"},
+            {"week", "Past Week"},
+            {"2w", "Past 2W"},
+            {"season", "Season"}
+          ]
+        }
         patch={~p"/ranks?#{%{season: @season, range: value}}"}
         class={[
           "join-item btn btn-sm",

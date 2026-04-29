@@ -28,11 +28,16 @@ defmodule Scry2Web.MatchesLive do
   end
 
   @impl true
-  def handle_params(%{"id" => id}, _uri, socket) do
+  def handle_params(%{"id" => id} = params, _uri, socket) do
     match = Matches.get_match_with_associations(String.to_integer(id))
 
     if match do
-      {:noreply, assign_detail(socket, match)}
+      period = winrate_period_or_default(params["winrate"])
+
+      {:noreply,
+       socket
+       |> assign(:winrate_period, period)
+       |> assign_detail(match)}
     else
       {:noreply, push_navigate(socket, to: ~p"/matches")}
     end
@@ -45,6 +50,20 @@ defmodule Scry2Web.MatchesLive do
   @impl true
   def handle_event("toggle_all_formats", _params, socket) do
     {:noreply, assign(socket, show_all_formats: !socket.assigns.show_all_formats)}
+  end
+
+  @impl true
+  def handle_event("change_winrate_period", %{"period" => period}, socket) do
+    period = winrate_period_or_default(period)
+
+    target =
+      if match = socket.assigns[:match] do
+        ~p"/matches/#{match.id}?#{%{winrate: period}}"
+      else
+        filter_path_with_overrides(socket.assigns, %{"winrate" => period})
+      end
+
+    {:noreply, push_patch(socket, to: target)}
   end
 
   @impl true
@@ -74,6 +93,7 @@ defmodule Scry2Web.MatchesLive do
     bo = params["bo"]
     result = params["result"]
     page = parse_page(params["page"])
+    winrate_period = winrate_period_or_default(params["winrate"])
 
     filter_opts =
       [player_id: player_id]
@@ -83,7 +103,10 @@ defmodule Scry2Web.MatchesLive do
       |> maybe_add(:won, parse_result(result))
 
     stats = Matches.aggregate_stats(filter_opts)
-    cumulative_series = Matches.cumulative_win_rate(filter_opts)
+
+    cumulative_series =
+      Matches.rolling_win_rate(filter_opts ++ [days: winrate_period_to_days(winrate_period)])
+
     category_counts = Matches.category_counts(filter_opts)
     format_counts = Matches.format_counts(Keyword.delete(filter_opts, :format))
 
@@ -94,6 +117,7 @@ defmodule Scry2Web.MatchesLive do
 
     assign(socket,
       match: nil,
+      winrate_period: winrate_period,
       matches: matches,
       stats: stats,
       cumulative_series: cumulative_series,
@@ -166,6 +190,7 @@ defmodule Scry2Web.MatchesLive do
         stats={@stats}
         cumulative_series={@cumulative_series}
         show_all_formats={@show_all_formats}
+        winrate_period={@winrate_period}
       />
 
       <%!-- Filter bar --%>
@@ -257,6 +282,7 @@ defmodule Scry2Web.MatchesLive do
         id="match-opponent"
         opponent={@match.opponent_screen_name}
         history={@opponent_history}
+        winrate_period={@winrate_period}
       />
     </Layouts.app>
     """
@@ -265,12 +291,8 @@ defmodule Scry2Web.MatchesLive do
   # ── Dashboard component ──────────────────────────────────────────────
 
   defp dashboard(assigns) do
-    has_chart = length(assigns.cumulative_series) > 2
-
-    chart_series =
-      if has_chart, do: cumulative_winrate_series(assigns.cumulative_series), else: "[]"
-
-    assigns = assign(assigns, has_chart: has_chart, chart_series: chart_series)
+    chart_series = cumulative_winrate_series(assigns.cumulative_series)
+    assigns = assign(assigns, chart_series: chart_series)
 
     ~H"""
     <div class="mb-6">
@@ -288,14 +310,18 @@ defmodule Scry2Web.MatchesLive do
 
       <%!-- Chart + format breakdown --%>
       <div class="flex gap-4">
-        <div
-          :if={@has_chart}
-          id="matches-winrate-chart"
-          phx-hook="Chart"
-          data-chart-type="cumulative_winrate"
-          data-series={@chart_series}
-          class="flex-[2] min-w-0 min-h-[12rem] rounded-lg bg-base-300/40"
-        />
+        <div class="flex-[2] min-w-0 flex flex-col gap-2">
+          <div class="flex justify-end">
+            <.winrate_period_toggle selected={@winrate_period} />
+          </div>
+          <div
+            id={"matches-winrate-chart-#{@winrate_period}"}
+            phx-hook="Chart"
+            data-chart-type="cumulative_winrate"
+            data-series={@chart_series}
+            class="min-w-0 min-h-[12rem] rounded-lg bg-base-300/40"
+          />
+        </div>
         <.format_breakdown
           :if={@stats.by_format != []}
           formats={@stats.by_format}
@@ -734,6 +760,37 @@ defmodule Scry2Web.MatchesLive do
 
     if params == %{}, do: ~p"/matches", else: ~p"/matches?#{params}"
   end
+
+  # Used by the winrate-period toggle: preserve every current filter and
+  # only swap the keys named in `overrides`. Distinct from `filter_path/5`
+  # which is the chip/toggle path that resets `winrate` to its default
+  # because changing a category/format/bo/result implicitly invalidates
+  # the rolling-window scope.
+  defp filter_path_with_overrides(assigns, overrides) do
+    current = %{
+      "category" => assigns[:active_category] && category_slug(assigns[:active_category]),
+      "format" => assigns[:active_format],
+      "bo" => assigns[:active_bo],
+      "result" => assigns[:active_result],
+      "winrate" => assigns[:winrate_period]
+    }
+
+    params =
+      current
+      |> Map.merge(overrides)
+      |> Enum.reject(fn {_, v} -> is_nil(v) or v == "" end)
+      |> Map.new()
+      # The "2w" default is implicit when absent — keep the URL clean.
+      |> drop_default_winrate()
+
+    if params == %{}, do: ~p"/matches", else: ~p"/matches?#{params}"
+  end
+
+  defp drop_default_winrate(%{"winrate" => default} = params) do
+    if default == winrate_default_period(), do: Map.delete(params, "winrate"), else: params
+  end
+
+  defp drop_default_winrate(params), do: params
 
   defp parse_page(nil), do: 1
   defp parse_page(p) when is_binary(p), do: max(1, String.to_integer(p))

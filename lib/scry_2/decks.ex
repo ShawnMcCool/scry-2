@@ -20,6 +20,10 @@ defmodule Scry2.Decks do
   alias Scry2.Repo
   alias Scry2.Topics
 
+  # Minimum samples required for a rolling-window point to be plotted.
+  # See Scry2.Matches for rationale.
+  @rolling_min_samples 5
+
   # ── Reads ─────────────────────────────────────────────────────────────────
 
   @doc """
@@ -95,19 +99,28 @@ defmodule Scry2.Decks do
   @doc """
   Returns aggregated performance stats for a single deck.
 
+  Options:
+    * `:days` — rolling-window size for the win-rate chart series. When
+      `nil` (default), the series is cumulative (every prior match counts).
+
   Returns a map with:
     * `:bo1` — `%{total, wins, losses, win_rate, on_play_win_rate, on_draw_win_rate}`
     * `:bo3` — same plus `%{game1_win_rate, games_2_3_win_rate}`
     * `:cumulative_win_rate` — `%{bo1: [...], bo3: [...]}` where each entry is
-      `%{timestamp, win_rate, wins, total}` for a running win rate line chart
+      `%{timestamp, win_rate, wins, total}` for the win-rate line chart.
+      The key name is preserved for backward compatibility — when `:days`
+      is set, the values are rolling-window averages.
   """
-  def get_deck_performance(mtga_deck_id) when is_binary(mtga_deck_id) do
+  def get_deck_performance(mtga_deck_id, opts \\ []) when is_binary(mtga_deck_id) do
+    days = Keyword.get(opts, :days)
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+
     %{
       bo1: aggregate_deck_format_stats(mtga_deck_id, :bo1),
       bo3: aggregate_deck_bo3_stats(mtga_deck_id),
       cumulative_win_rate: %{
-        bo1: deck_cumulative_win_rate(mtga_deck_id, :bo1),
-        bo3: deck_cumulative_win_rate(mtga_deck_id, :bo3)
+        bo1: deck_rolling_win_rate(mtga_deck_id, :bo1, days, now),
+        bo3: deck_rolling_win_rate(mtga_deck_id, :bo3, days, now)
       }
     }
   end
@@ -823,16 +836,36 @@ defmodule Scry2.Decks do
     end)
   end
 
-  defp deck_cumulative_win_rate(mtga_deck_id, format) do
-    MatchResult
-    |> where(
-      [mr],
-      mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won) and not is_nil(mr.started_at)
-    )
-    |> apply_format_filter(format)
-    |> order_by([mr], asc: mr.started_at)
-    |> select([mr], %{started_at: mr.started_at, won: mr.won})
-    |> Repo.all()
+  defp deck_rolling_win_rate(mtga_deck_id, format, days, now) do
+    rows =
+      MatchResult
+      |> where(
+        [mr],
+        mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won) and not is_nil(mr.started_at)
+      )
+      |> apply_format_filter(format)
+      |> order_by([mr], asc: mr.started_at)
+      |> select([mr], %{started_at: mr.started_at, won: mr.won})
+      |> Repo.all()
+
+    case days do
+      nil ->
+        deck_cumulative_points(rows)
+
+      n when is_integer(n) and n > 0 ->
+        rows
+        |> deck_rolling_points(n)
+        |> deck_filter_to_display_window(n, now)
+    end
+  end
+
+  defp deck_filter_to_display_window(points, days, now) do
+    cutoff_iso = now |> DateTime.add(-days, :day) |> DateTime.to_iso8601()
+    Enum.filter(points, &(&1.timestamp >= cutoff_iso))
+  end
+
+  defp deck_cumulative_points(rows) do
+    rows
     |> Enum.map_reduce({0, 0}, fn row, {wins, total} ->
       new_wins = if row.won, do: wins + 1, else: wins
       new_total = total + 1
@@ -847,6 +880,52 @@ defmodule Scry2.Decks do
       {point, {new_wins, new_total}}
     end)
     |> elem(0)
+  end
+
+  # Two-pointer sliding window — see `Matches.rolling_win_rate/1` for the
+  # same algorithm against `matches_matches`.
+  defp deck_rolling_points([], _days), do: []
+
+  defp deck_rolling_points(rows, days) do
+    window_seconds = days * 86_400
+    indexed = rows |> Enum.with_index() |> Map.new(fn {r, i} -> {i, r} end)
+    n = map_size(indexed)
+
+    {points, _} =
+      Enum.reduce(0..(n - 1)//1, {[], 0}, fn i, {acc, left} ->
+        cutoff = DateTime.add(indexed[i].started_at, -window_seconds, :second)
+        new_left = deck_advance_left(indexed, left, i, cutoff)
+        {wins, total} = deck_count_window(indexed, new_left, i)
+
+        if total >= @rolling_min_samples do
+          point = %{
+            timestamp: DateTime.to_iso8601(indexed[i].started_at),
+            win_rate: win_rate(wins, total),
+            wins: wins,
+            total: total
+          }
+
+          {[point | acc], new_left}
+        else
+          {acc, new_left}
+        end
+      end)
+
+    Enum.reverse(points)
+  end
+
+  defp deck_advance_left(indexed, left, right, cutoff) do
+    if left <= right and DateTime.compare(indexed[left].started_at, cutoff) == :lt do
+      deck_advance_left(indexed, left + 1, right, cutoff)
+    else
+      left
+    end
+  end
+
+  defp deck_count_window(indexed, left, right) do
+    Enum.reduce(left..right//1, {0, 0}, fn i, {wins, total} ->
+      if indexed[i].won, do: {wins + 1, total + 1}, else: {wins, total + 1}
+    end)
   end
 
   # A match is BO3 if format_type is "Traditional" (ranked queues) OR

@@ -45,6 +45,7 @@ defmodule Scry2Web.DecksLive do
        mulligan_heatmap: [],
        card_performance: [],
        card_sort: :type,
+       winrate_period: winrate_default_period(),
        reload_timer: nil
      )}
   end
@@ -59,7 +60,13 @@ defmodule Scry2Web.DecksLive do
       tab = parse_tab(params["tab"])
       format = parse_format(params["format"])
       page = parse_page(params["page"])
-      socket = load_deck_detail(socket, deck, tab, format, page)
+      winrate_period = winrate_period_or_default(params["winrate"])
+
+      socket =
+        socket
+        |> assign(:winrate_period, winrate_period)
+        |> load_deck_detail(deck, tab, format, page)
+
       {:noreply, socket}
     end
   end
@@ -79,6 +86,19 @@ defmodule Scry2Web.DecksLive do
 
   def handle_event("sort_cards", %{"by" => sort_key}, socket) do
     {:noreply, assign(socket, card_sort: String.to_existing_atom(sort_key))}
+  end
+
+  def handle_event("change_winrate_period", %{"period" => period}, socket) do
+    period = winrate_period_or_default(period)
+    deck = socket.assigns.deck
+
+    if deck do
+      tab = socket.assigns.active_tab
+      url = ~p"/decks/#{deck.mtga_deck_id}?#{%{tab: tab, winrate: period}}"
+      {:noreply, push_patch(socket, to: url)}
+    else
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -257,6 +277,7 @@ defmodule Scry2Web.DecksLive do
             performance={@performance}
             deck={@deck}
             cards_by_arena_id={@cards_by_arena_id}
+            winrate_period={@winrate_period}
           />
         <% :matches -> %>
           <.matches_tab
@@ -334,6 +355,7 @@ defmodule Scry2Web.DecksLive do
   attr :performance, :map, required: true
   attr :deck, :map, required: true
   attr :cards_by_arena_id, :map, required: true
+  attr :winrate_period, :string, required: true
 
   defp overview_tab(assigns) do
     cmc_columns = DecksHelpers.group_cards_by_cmc(assigns.deck, assigns.cards_by_arena_id)
@@ -355,7 +377,7 @@ defmodule Scry2Web.DecksLive do
     ~H"""
     <div class="space-y-8">
       <%!-- Performance --%>
-      <.performance_section performance={@performance} />
+      <.performance_section performance={@performance} winrate_period={@winrate_period} />
 
       <div :if={@card_list_columns != []}>
         <%!-- Mana Curve — half width, space reserved for future chart --%>
@@ -442,6 +464,7 @@ defmodule Scry2Web.DecksLive do
   end
 
   attr :performance, :map, required: true
+  attr :winrate_period, :string, required: true
 
   defp performance_section(%{performance: nil} = assigns) do
     ~H"""
@@ -451,19 +474,26 @@ defmodule Scry2Web.DecksLive do
 
   defp performance_section(assigns) do
     ~H"""
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
-      <.stats_panel
-        title="Best-of-1"
-        stats={@performance.bo1}
-        format={:bo1}
-        cumulative_series={@performance.cumulative_win_rate.bo1}
-      />
-      <.stats_panel
-        title="Best-of-3"
-        stats={@performance.bo3}
-        format={:bo3}
-        cumulative_series={@performance.cumulative_win_rate.bo3}
-      />
+    <div class="space-y-3">
+      <div class="flex justify-end">
+        <.winrate_period_toggle selected={@winrate_period} />
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 items-stretch">
+        <.stats_panel
+          title="Best-of-1"
+          stats={@performance.bo1}
+          format={:bo1}
+          cumulative_series={@performance.cumulative_win_rate.bo1}
+          winrate_period={@winrate_period}
+        />
+        <.stats_panel
+          title="Best-of-3"
+          stats={@performance.bo3}
+          format={:bo3}
+          cumulative_series={@performance.cumulative_win_rate.bo3}
+          winrate_period={@winrate_period}
+        />
+      </div>
     </div>
     """
   end
@@ -501,15 +531,11 @@ defmodule Scry2Web.DecksLive do
   attr :stats, :map, required: true
   attr :format, :atom, required: true
   attr :cumulative_series, :list, default: []
+  attr :winrate_period, :string, required: true
 
   defp stats_panel(assigns) do
     chart_series = DecksHelpers.cumulative_winrate_series(assigns.cumulative_series)
-    has_trend = length(assigns.cumulative_series) > 2
-
-    assigns =
-      assigns
-      |> assign(:chart_series, chart_series)
-      |> assign(:has_trend, has_trend)
+    assigns = assign(assigns, :chart_series, chart_series)
 
     ~H"""
     <div class="bg-base-200 rounded-xl p-5 flex gap-4 h-full">
@@ -520,19 +546,12 @@ defmodule Scry2Web.DecksLive do
         <.stats_body stats={@stats} format={@format} />
       </div>
       <div
-        :if={@has_trend}
-        id={"deck-winrate-#{@format}"}
+        id={"deck-winrate-#{@format}-#{@winrate_period}"}
         phx-hook="Chart"
         data-chart-type="cumulative_winrate"
         data-series={@chart_series}
         class="flex-1 min-w-0 min-h-[12rem] rounded-lg bg-base-300/40"
       />
-      <div
-        :if={!@has_trend}
-        class="flex-1 min-w-0 min-h-[12rem] rounded-lg bg-base-300/40 flex items-center justify-center"
-      >
-        <span class="text-sm text-base-content/20">Not enough data for trend</span>
-      </div>
     </div>
     """
   end
@@ -1423,7 +1442,8 @@ defmodule Scry2Web.DecksLive do
   # ── Private helpers ───────────────────────────────────────────────────────
 
   defp load_deck_detail(socket, deck, tab, format, page) do
-    performance = Decks.get_deck_performance(deck.mtga_deck_id)
+    days = winrate_period_to_days(socket.assigns.winrate_period)
+    performance = Decks.get_deck_performance(deck.mtga_deck_id, days: days)
     match_count = performance.bo1.total + performance.bo3.total
     version_count = Decks.count_versions(deck.mtga_deck_id)
 

@@ -53,6 +53,45 @@ defmodule Scry2Web.LiveHelpersTest do
     end
   end
 
+  describe "winrate period helpers" do
+    test "default period is '2w'" do
+      assert H.winrate_default_period() == "2w"
+    end
+
+    test "winrate_period_options returns all buckets including 3d/1w/2w/1m/3m/all" do
+      slugs = H.winrate_period_options() |> Enum.map(fn {s, _} -> s end)
+      assert "3d" in slugs
+      assert "1w" in slugs
+      assert "2w" in slugs
+      assert "1m" in slugs
+      assert "3m" in slugs
+      assert "all" in slugs
+    end
+
+    test "winrate_period_to_days maps slugs correctly" do
+      assert H.winrate_period_to_days("3d") == 3
+      assert H.winrate_period_to_days("1w") == 7
+      assert H.winrate_period_to_days("2w") == 14
+      assert H.winrate_period_to_days("1m") == 30
+      assert H.winrate_period_to_days("3m") == 90
+      assert H.winrate_period_to_days("all") == nil
+    end
+
+    test "winrate_period_to_days falls back to default for nil/unknown" do
+      assert H.winrate_period_to_days(nil) == 14
+      assert H.winrate_period_to_days("garbage") == 14
+    end
+
+    test "winrate_period_or_default returns valid slug as-is" do
+      assert H.winrate_period_or_default("3m") == "3m"
+    end
+
+    test "winrate_period_or_default returns default for nil/unknown" do
+      assert H.winrate_period_or_default(nil) == "2w"
+      assert H.winrate_period_or_default("bogus") == "2w"
+    end
+  end
+
   describe "category_slug/1" do
     test "round-trips category atom to URL slug and back" do
       for category <- [:limited, :constructed, :other] do

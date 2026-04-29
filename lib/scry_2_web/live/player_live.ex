@@ -18,17 +18,30 @@ defmodule Scry2Web.PlayerLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.matches_updates())
 
-    {:ok, assign(socket, stats: nil, reload_timer: nil, show_all_formats: false)}
+    {:ok,
+     assign(socket,
+       stats: nil,
+       reload_timer: nil,
+       show_all_formats: false,
+       winrate_period: winrate_default_period()
+     )}
   end
 
   @impl true
-  def handle_params(_params, _uri, socket) do
-    {:noreply, load_data(socket)}
+  def handle_params(params, _uri, socket) do
+    period = winrate_period_or_default(params["winrate"])
+    {:noreply, socket |> assign(:winrate_period, period) |> load_data()}
   end
 
   @impl true
   def handle_event("toggle_all_formats", _params, socket) do
     {:noreply, assign(socket, show_all_formats: !socket.assigns.show_all_formats)}
+  end
+
+  @impl true
+  def handle_event("change_winrate_period", %{"period" => period}, socket) do
+    period = winrate_period_or_default(period)
+    {:noreply, push_patch(socket, to: ~p"/player?#{%{winrate: period}}")}
   end
 
   @impl true
@@ -45,9 +58,10 @@ defmodule Scry2Web.PlayerLive do
   defp load_data(socket) do
     player_id = socket.assigns[:active_player_id]
     opts = [player_id: player_id]
+    days = winrate_period_to_days(socket.assigns.winrate_period)
 
     stats = Matches.aggregate_stats(opts)
-    cumulative_series = Matches.cumulative_win_rate(opts)
+    cumulative_series = Matches.rolling_win_rate(opts ++ [days: days])
     recent = Matches.recent_results(opts)
     streak = Matches.current_streak(opts)
     decks_with_stats = Decks.list_decks_with_stats(player_id)
@@ -64,12 +78,8 @@ defmodule Scry2Web.PlayerLive do
 
   @impl true
   def render(assigns) do
-    has_chart = length(assigns.cumulative_series) > 2
-
-    chart_series =
-      if has_chart, do: cumulative_winrate_series(assigns.cumulative_series), else: "[]"
-
-    assigns = assign(assigns, has_chart: has_chart, chart_series: chart_series)
+    chart_series = cumulative_winrate_series(assigns.cumulative_series)
+    assigns = assign(assigns, chart_series: chart_series)
 
     ~H"""
     <Layouts.console_mount socket={@socket} />
@@ -120,8 +130,8 @@ defmodule Scry2Web.PlayerLive do
           <%!-- Right column: Win Rate Trend + Recent Form + Top Decks --%>
           <div class="space-y-6">
             <.win_rate_chart
-              has_chart={@has_chart}
               chart_series={@chart_series}
+              winrate_period={@winrate_period}
             />
             <.recent_form recent={@recent} />
             <.top_decks decks={@top_decks} />
@@ -209,24 +219,23 @@ defmodule Scry2Web.PlayerLive do
     """
   end
 
-  attr :has_chart, :boolean, required: true
   attr :chart_series, :string, required: true
+  attr :winrate_period, :string, required: true
 
   defp win_rate_chart(assigns) do
     ~H"""
     <section>
-      <h2 class="text-base font-semibold mb-3 font-beleren">Win Rate Over Time</h2>
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-base font-semibold font-beleren">Win Rate</h2>
+        <.winrate_period_toggle selected={@winrate_period} />
+      </div>
       <div
-        :if={@has_chart}
-        id="player-winrate-chart"
+        id={"player-winrate-chart-#{@winrate_period}"}
         phx-hook="Chart"
         data-chart-type="cumulative_winrate"
         data-series={@chart_series}
         class="min-h-[12rem] rounded-lg bg-base-300/40"
       />
-      <p :if={!@has_chart} class="text-sm text-base-content/50">
-        Not enough data for a trend chart yet.
-      </p>
     </section>
     """
   end

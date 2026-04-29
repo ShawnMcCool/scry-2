@@ -136,7 +136,9 @@ defmodule Scry2Web.EconomyHelpers do
   Filters snapshots to a time range for chart display.
 
   - `"season"` — returns all snapshots (no filtering)
+  - `"2w"` — returns only snapshots from the last 14 days
   - `"week"` — returns only snapshots from the last 7 days
+  - `"3d"` — returns only snapshots from the last 3 days
   - `"today"` — returns only snapshots from the current calendar day (UTC)
   """
   @spec filter_snapshots_to_range([map()], String.t()) :: [map()]
@@ -147,8 +149,12 @@ defmodule Scry2Web.EconomyHelpers do
     Enum.filter(snapshots, &(DateTime.to_date(&1.occurred_at) == today))
   end
 
-  def filter_snapshots_to_range(snapshots, "week") do
-    cutoff = DateTime.add(DateTime.utc_now(), -7, :day)
+  def filter_snapshots_to_range(snapshots, "3d"), do: filter_by_days(snapshots, 3)
+  def filter_snapshots_to_range(snapshots, "week"), do: filter_by_days(snapshots, 7)
+  def filter_snapshots_to_range(snapshots, "2w"), do: filter_by_days(snapshots, 14)
+
+  defp filter_by_days(snapshots, days) do
+    cutoff = DateTime.add(DateTime.utc_now(), -days, :day)
     Enum.filter(snapshots, &(DateTime.compare(&1.occurred_at, cutoff) != :lt))
   end
 end

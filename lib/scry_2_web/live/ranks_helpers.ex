@@ -388,7 +388,9 @@ defmodule Scry2Web.RanksHelpers do
   Filters snapshots to a time range for chart display.
 
   - `"season"` — returns all snapshots (no filtering)
+  - `"2w"` — returns only snapshots from the last 14 days
   - `"week"` — returns only snapshots from the last 7 days
+  - `"3d"` — returns only snapshots from the last 3 days
   - `"today"` — returns only snapshots from the current calendar day (UTC)
   """
   @spec filter_snapshots_to_range([map()], String.t()) :: [map()]
@@ -402,8 +404,20 @@ defmodule Scry2Web.RanksHelpers do
     end)
   end
 
+  def filter_snapshots_to_range(snapshots, "3d") do
+    filter_by_days(snapshots, 3)
+  end
+
   def filter_snapshots_to_range(snapshots, "week") do
-    cutoff = DateTime.add(DateTime.utc_now(), -7, :day)
+    filter_by_days(snapshots, 7)
+  end
+
+  def filter_snapshots_to_range(snapshots, "2w") do
+    filter_by_days(snapshots, 14)
+  end
+
+  defp filter_by_days(snapshots, days) do
+    cutoff = DateTime.add(DateTime.utc_now(), -days, :day)
 
     Enum.filter(snapshots, fn snapshot ->
       DateTime.compare(snapshot.occurred_at, cutoff) != :lt

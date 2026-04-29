@@ -6,7 +6,10 @@ defmodule Scry2Web.LiveHelpers do
   Contains:
   - PubSub debounce helper (`schedule_reload/2`) per ADR-023
   - Shared display formatters extracted from domain-specific helpers
+  - Win-rate chart period toggle component
   """
+
+  use Phoenix.Component
 
   @doc """
   Cancel-and-reschedule debounce for PubSub-triggered reloads.
@@ -163,8 +166,11 @@ defmodule Scry2Web.LiveHelpers do
   def record_str(wins, losses), do: "#{wins}W–#{losses}L"
 
   @doc """
-  Returns JSON-encoded cumulative win rate series for the ECharts chart.
+  Returns JSON-encoded win rate series for the ECharts chart.
   Each data point is `[iso8601_timestamp, win_rate, "NW–ML"]`.
+
+  The same shape works for both rolling-window and cumulative win rate
+  data — the chart hook doesn't distinguish.
   """
   @spec cumulative_winrate_series(list()) :: String.t()
   def cumulative_winrate_series(points) do
@@ -173,6 +179,82 @@ defmodule Scry2Web.LiveHelpers do
       [point.timestamp, point.win_rate, "#{point.wins}W–#{point.total - point.wins}L"]
     end)
     |> Jason.encode!()
+  end
+
+  # ── Win-rate period toggle ───────────────────────────────────────────
+
+  @winrate_periods [
+    {"3d", "3D", 3},
+    {"1w", "1W", 7},
+    {"2w", "2W", 14},
+    {"1m", "1M", 30},
+    {"3m", "3M", 90},
+    {"all", "All", nil}
+  ]
+  @winrate_default "2w"
+
+  @doc "Default rolling-window slug for win-rate charts."
+  def winrate_default_period, do: @winrate_default
+
+  @doc "List of `{slug, label}` pairs for the period-toggle UI."
+  def winrate_period_options do
+    Enum.map(@winrate_periods, fn {slug, label, _days} -> {slug, label} end)
+  end
+
+  @doc """
+  Maps a period slug to a `:days` integer (or nil for all-time).
+  Falls back to the default if the slug is unrecognized.
+  """
+  @spec winrate_period_to_days(String.t() | nil) :: pos_integer() | nil
+  def winrate_period_to_days(slug) do
+    case Enum.find(@winrate_periods, fn {s, _, _} -> s == slug end) do
+      {_, _, days} -> days
+      nil -> winrate_period_to_days(@winrate_default)
+    end
+  end
+
+  @doc """
+  Validates a period slug. Returns the slug if recognized, the default
+  otherwise. Use this when reading from URL params.
+  """
+  @spec winrate_period_or_default(String.t() | nil) :: String.t()
+  def winrate_period_or_default(slug) do
+    if Enum.any?(@winrate_periods, fn {s, _, _} -> s == slug end) do
+      slug
+    else
+      @winrate_default
+    end
+  end
+
+  @doc """
+  Renders the win-rate period toggle as a `join` group of buttons.
+
+  Emits `phx-click` events with the configured event name and
+  `phx-value-period` set to the slug. The parent LiveView handles the
+  event and pushes a patch to the URL.
+  """
+  attr :selected, :string, required: true
+  attr :phx_click, :string, default: "change_winrate_period"
+
+  def winrate_period_toggle(assigns) do
+    assigns = Phoenix.Component.assign(assigns, :options, winrate_period_options())
+
+    ~H"""
+    <div class="join">
+      <button
+        :for={{value, label} <- @options}
+        type="button"
+        phx-click={@phx_click}
+        phx-value-period={value}
+        class={[
+          "join-item btn btn-xs",
+          if(@selected == value, do: "btn-active", else: "btn-ghost")
+        ]}
+      >
+        {label}
+      </button>
+    </div>
+    """
   end
 
   @doc """

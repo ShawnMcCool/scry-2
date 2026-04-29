@@ -528,6 +528,208 @@ defmodule Scry2.MatchesTest do
     end
   end
 
+  describe "rolling_win_rate/1" do
+    test "with no :days, returns cumulative win rate (legacy behavior)" do
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-04-01 12:00:00Z]})
+      TestFactory.create_match(%{won: false, started_at: ~U[2026-04-02 12:00:00Z]})
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-04-03 12:00:00Z]})
+
+      [p1, p2, p3] = Matches.rolling_win_rate()
+
+      assert p1.win_rate == 100.0
+      assert p1.wins == 1
+      assert p1.total == 1
+
+      assert p2.win_rate == 50.0
+      assert p2.wins == 1
+      assert p2.total == 2
+
+      assert p3.win_rate == 66.7
+      assert p3.wins == 2
+      assert p3.total == 3
+    end
+
+    # Tests pin :now to a fixed point so they don't depend on the wall clock.
+    # All test data is dated within the resulting display window.
+    @rolling_now ~U[2026-04-15 12:00:00Z]
+
+    test "rolling skips early points where the window has fewer than 5 samples" do
+      # First 4 matches: window has < 5 samples, not plotted.
+      # 5th match onwards: window contains 5+ samples, plotted.
+      base = ~U[2026-04-15 06:00:00Z]
+
+      Enum.each(0..4, fn i ->
+        TestFactory.create_match(%{
+          won: true,
+          started_at: DateTime.add(base, i, :minute)
+        })
+      end)
+
+      points = Matches.rolling_win_rate(days: 14, now: @rolling_now)
+
+      # Only one point — the 5th match — qualifies.
+      assert length(points) == 1
+      [p1] = points
+      assert p1.total == 5
+      assert p1.wins == 5
+      assert p1.win_rate == 100.0
+    end
+
+    test "rolling :days=14 emits points once 5 samples are in the window" do
+      # 7 matches inside a 6-hour span; days=14 keeps everything in window.
+      base = ~U[2026-04-15 00:00:00Z]
+      results = [true, false, true, false, true, false, true]
+
+      results
+      |> Enum.with_index()
+      |> Enum.each(fn {won, i} ->
+        TestFactory.create_match(%{
+          won: won,
+          started_at: DateTime.add(base, i, :hour)
+        })
+      end)
+
+      points = Matches.rolling_win_rate(days: 14, now: @rolling_now)
+
+      # 7 matches − 4 warm-up (under 5 samples) = 3 plotted points.
+      assert length(points) == 3
+
+      [p1, p2, p3] = points
+      # 5th match (idx 4): T,F,T,F,T = 3/5.
+      assert {p1.wins, p1.total} == {3, 5}
+      # 6th: T,F,T,F,T,F = 3/6.
+      assert {p2.wins, p2.total} == {3, 6}
+      # 7th: T,F,T,F,T,F,T = 4/7.
+      assert {p3.wins, p3.total} == {4, 7}
+    end
+
+    test "rolling :days=1 sliding window excludes data older than 1 day" do
+      now = @rolling_now
+
+      # An ancient win, 2 days ago — should fall outside the 1-day rolling
+      # window of any recent point.
+      TestFactory.create_match(%{won: true, started_at: DateTime.add(now, -48, :hour)})
+
+      # 5 recent losses inside the last hour.
+      Enum.each(0..4, fn i ->
+        TestFactory.create_match(%{
+          won: false,
+          started_at: DateTime.add(now, -55 + i, :minute)
+        })
+      end)
+
+      points = Matches.rolling_win_rate(days: 1, now: now)
+
+      # The 5th recent match: its 1-day window contains the 5 recent
+      # losses but NOT the 2-day-old win. total=5, wins=0.
+      assert length(points) == 1
+      [p] = points
+      assert p.total == 5
+      assert p.wins == 0
+    end
+
+    test "filters output to the visible display window: only points within last :days days" do
+      # 10 matches, evenly spread across 30 days. With days=14 and now at
+      # the 30-day mark, only the most recent ~14 days of points are kept.
+      base = ~U[2026-04-01 12:00:00Z]
+      now = DateTime.add(base, 30, :day)
+
+      Enum.each(0..9, fn i ->
+        TestFactory.create_match(%{
+          won: true,
+          started_at: DateTime.add(base, i * 86_400 * 3, :second)
+        })
+      end)
+
+      points = Matches.rolling_win_rate(days: 14, now: now)
+
+      # All 10 matches pass the 5-sample threshold (matches 5..9 have ≥5
+      # samples in their trailing windows). But only those within
+      # [now - 14d, now] should be displayed.
+      cutoff = DateTime.add(now, -14, :day)
+
+      assert Enum.all?(points, fn p ->
+               {:ok, ts, _} = DateTime.from_iso8601(p.timestamp)
+               DateTime.compare(ts, cutoff) != :lt
+             end)
+    end
+
+    test "respects :player_id, :category, :format, :bo, :won filters" do
+      player = Scry2.Players.get_or_create!("p-rolling", "Player Rolling")
+      other = Scry2.Players.get_or_create!("p-rolling-other", "Other")
+
+      base = ~U[2026-04-15 06:00:00Z]
+
+      # 5 matches for the target player.
+      Enum.each(0..4, fn i ->
+        TestFactory.create_match(%{
+          won: true,
+          format_type: "Limited",
+          player_id: player.id,
+          started_at: DateTime.add(base, i, :minute)
+        })
+      end)
+
+      # Other player — should not affect the target player's counts.
+      Enum.each(0..4, fn i ->
+        TestFactory.create_match(%{
+          won: false,
+          format_type: "Limited",
+          player_id: other.id,
+          started_at: DateTime.add(base, i, :minute)
+        })
+      end)
+
+      points = Matches.rolling_win_rate(player_id: player.id, days: 14, now: @rolling_now)
+      assert length(points) == 1
+      [p] = points
+      assert p.total == 5
+      assert p.wins == 5
+    end
+
+    test "returns empty list when no completed matches exist" do
+      assert Matches.rolling_win_rate(days: 14, now: @rolling_now) == []
+    end
+
+    test "returns empty list when fewer than 5 completed matches" do
+      base = ~U[2026-04-15 06:00:00Z]
+
+      Enum.each(0..3, fn i ->
+        TestFactory.create_match(%{
+          won: true,
+          started_at: DateTime.add(base, i, :minute)
+        })
+      end)
+
+      assert Matches.rolling_win_rate(days: 14, now: @rolling_now) == []
+    end
+
+    test "excludes matches with nil won" do
+      base = ~U[2026-04-15 06:00:00Z]
+
+      # 4 wins
+      Enum.each(0..3, fn i ->
+        TestFactory.create_match(%{
+          won: true,
+          started_at: DateTime.add(base, i, :minute)
+        })
+      end)
+
+      # 1 nil-won — excluded from query
+      TestFactory.create_match(%{won: nil, started_at: DateTime.add(base, 4, :minute)})
+
+      # 4 wins + 1 nil = 4 in the query, below 5-sample floor.
+      assert Matches.rolling_win_rate(days: 14, now: @rolling_now) == []
+
+      # Add a 5th completed match to cross the threshold.
+      TestFactory.create_match(%{won: false, started_at: DateTime.add(base, 5, :minute)})
+
+      [p] = Matches.rolling_win_rate(days: 14, now: @rolling_now)
+      assert p.total == 5
+      assert p.wins == 4
+    end
+  end
+
   describe "list_matches/1 with :category" do
     test ":category=:limited filters to Limited matches only" do
       TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})

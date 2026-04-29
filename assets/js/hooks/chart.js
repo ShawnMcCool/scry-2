@@ -237,10 +237,10 @@ function winrateOption(data) {
 
 function cumulativeWinrateOption(data) {
   // data: [[timestamp, win_rate, "NW–ML"], ...]
-  if (!data.length) {
-    return {backgroundColor: "transparent", series: []}
-  }
-
+  // When data is empty (warm-up not yet satisfied, no matches in window),
+  // render the chart frame with axes intact so the layout is preserved
+  // — just with no series. The user sees an empty plot rather than a
+  // missing chart.
   return {
     backgroundColor: "transparent",
     grid: {left: 52, right: 20, top: 16, bottom: 40},

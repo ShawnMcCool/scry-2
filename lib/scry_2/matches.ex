@@ -18,6 +18,11 @@ defmodule Scry2.Matches do
   alias Scry2.Repo
   alias Scry2.Topics
 
+  # Minimum samples required for a rolling-window point to be plotted.
+  # With < 5 samples a single win/loss flips the rate by ≥ 20pp, which
+  # is too noisy to display as a trend.
+  @rolling_min_samples 5
+
   @doc """
   Returns the most recent matches, newest first.
 
@@ -254,34 +259,119 @@ defmodule Scry2.Matches do
   defp exclude_blank_strings(query, field), do: where(query, [m], field(m, ^field) != "")
 
   @doc """
-  Returns cumulative win rate data points for the chart, respecting filter opts.
+  Returns one win-rate data point per completed match for the chart,
+  computed over a rolling time window. With `:days` set to N, each point
+  is the win rate over matches in `[match.started_at - N days,
+  match.started_at]`. With `:days` unset or `nil`, falls back to a
+  cumulative win rate (every prior match counts).
+
+  Honors the same filter opts as `list_matches/1` (`:player_id`,
+  `:category`, `:format`, `:bo`, `:won`).
 
   Returns `[%{timestamp: iso8601, win_rate: float, wins: int, total: int}]`.
   """
-  def cumulative_win_rate(opts \\ []) do
-    opts
-    |> base_query()
-    |> where([m], not is_nil(m.won))
-    |> order_by([m], asc: m.started_at)
-    |> select([m], %{started_at: m.started_at, won: m.won})
-    |> Repo.all()
+  def rolling_win_rate(opts \\ []) do
+    days = Keyword.get(opts, :days)
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+
+    matches =
+      opts
+      |> Keyword.drop([:days, :now])
+      |> base_query()
+      |> where([m], not is_nil(m.won))
+      |> order_by([m], asc: m.started_at)
+      |> select([m], %{started_at: m.started_at, won: m.won})
+      |> Repo.all()
+
+    case days do
+      nil ->
+        cumulative_points(matches)
+
+      n when is_integer(n) and n > 0 ->
+        matches
+        |> rolling_points(n)
+        |> filter_to_display_window(n, now)
+    end
+  end
+
+  # Restrict the plotted points to the visible time window: only emit
+  # points whose timestamp falls in [now - N days, now]. The rolling-rate
+  # computation still considers earlier matches as context for points
+  # near the left edge of the window.
+  defp filter_to_display_window(points, days, now) do
+    cutoff_iso = now |> DateTime.add(-days, :day) |> DateTime.to_iso8601()
+    Enum.filter(points, &(&1.timestamp >= cutoff_iso))
+  end
+
+  # Cumulative reduction: each point counts every match up to and including itself.
+  defp cumulative_points(matches) do
+    matches
     |> Enum.reduce({0, 0, []}, fn match, {wins, total, acc} ->
       wins = if match.won, do: wins + 1, else: wins
       total = total + 1
-      rate = Float.round(wins / total * 100, 1)
-
-      point = %{
-        timestamp: DateTime.to_iso8601(match.started_at),
-        win_rate: rate,
-        wins: wins,
-        total: total
-      }
-
-      {wins, total, [point | acc]}
+      {wins, total, [point(match.started_at, wins, total) | acc]}
     end)
     |> elem(2)
     |> Enum.reverse()
   end
+
+  # Two-pointer sliding window: for each match, advance `left` past matches
+  # whose started_at is before the cutoff, then count wins in [left..i].
+  # O(n) overall — both pointers move forward monotonically.
+  #
+  # Minimum sample threshold: only emits points where the window contains
+  # at least @rolling_min_samples matches. A 1- or 2-sample rolling rate
+  # is too noisy to be informative (always 0% or 100%), and starting the
+  # line there is misleading. With a 5-sample floor the first plotted
+  # point has at least 5W+5L of data behind it.
+  defp rolling_points([], _days), do: []
+
+  defp rolling_points(matches, days) do
+    window_seconds = days * 86_400
+    indexed = matches |> Enum.with_index() |> Map.new(fn {m, i} -> {i, m} end)
+    n = map_size(indexed)
+
+    {points, _} =
+      Enum.reduce(0..(n - 1)//1, {[], 0}, fn i, {acc, left} ->
+        cutoff = DateTime.add(indexed[i].started_at, -window_seconds, :second)
+        new_left = advance_left(indexed, left, i, cutoff)
+        {wins, total} = count_window(indexed, new_left, i)
+
+        if total >= @rolling_min_samples do
+          {[point(indexed[i].started_at, wins, total) | acc], new_left}
+        else
+          {acc, new_left}
+        end
+      end)
+
+    Enum.reverse(points)
+  end
+
+  defp advance_left(indexed, left, right, cutoff) do
+    if left <= right and DateTime.compare(indexed[left].started_at, cutoff) == :lt do
+      advance_left(indexed, left + 1, right, cutoff)
+    else
+      left
+    end
+  end
+
+  defp count_window(indexed, left, right) do
+    Enum.reduce(left..right//1, {0, 0}, fn i, {wins, total} ->
+      if indexed[i].won, do: {wins + 1, total + 1}, else: {wins, total + 1}
+    end)
+  end
+
+  defp point(started_at, wins, total) do
+    %{
+      timestamp: DateTime.to_iso8601(started_at),
+      win_rate: Float.round(wins / total * 100, 1),
+      wins: wins,
+      total: total
+    }
+  end
+
+  @doc deprecated: "Use rolling_win_rate/1 instead. Same semantics with no :days opt."
+  def cumulative_win_rate(opts \\ []), do: rolling_win_rate(opts)
 
   @doc """
   Returns all matches against a specific opponent, excluding a given match.

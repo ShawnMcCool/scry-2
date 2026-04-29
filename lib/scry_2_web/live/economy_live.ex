@@ -9,7 +9,8 @@ defmodule Scry2Web.EconomyLive do
   alias Scry2.Topics
   alias Scry2Web.EconomyHelpers
 
-  @valid_ranges ~w(today week season)
+  @valid_ranges ~w(today 3d week 2w season)
+  @default_range "2w"
 
   @impl true
   def mount(_params, _session, socket) do
@@ -20,7 +21,7 @@ defmodule Scry2Web.EconomyLive do
        entries: [],
        inventory: nil,
        snapshots: [],
-       time_range: "week",
+       time_range: @default_range,
        currency_series: "{}",
        wildcards_series: "{}",
        reload_timer: nil
@@ -129,7 +130,15 @@ defmodule Scry2Web.EconomyLive do
           <div class="flex items-center gap-2">
             <div class="join">
               <button
-                :for={range <- ~w(today week season)}
+                :for={
+                  {range, label} <- [
+                    {"today", "Today"},
+                    {"3d", "Past 3D"},
+                    {"week", "Past Week"},
+                    {"2w", "Past 2W"},
+                    {"season", "Season"}
+                  ]
+                }
                 phx-click="change_range"
                 phx-value-range={range}
                 class={[
@@ -137,7 +146,7 @@ defmodule Scry2Web.EconomyLive do
                   if(@time_range == range, do: "btn-active", else: "btn-ghost")
                 ]}
               >
-                {String.capitalize(range)}
+                {label}
               </button>
             </div>
           </div>

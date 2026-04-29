@@ -36,9 +36,12 @@ defmodule Scry2Web.OpponentComponents do
   attr :id, :string, required: true
   attr :opponent, :string, required: true
   attr :history, :list, required: true
+  attr :winrate_period, :string, default: nil
 
   def opponent_panel(assigns) do
     {wins, losses} = OpponentHelpers.record(assigns.history)
+    period = assigns.winrate_period || winrate_default_period()
+    days = winrate_period_to_days(period)
 
     assigns =
       assign(assigns,
@@ -46,7 +49,8 @@ defmodule Scry2Web.OpponentComponents do
         losses: losses,
         win_rate: OpponentHelpers.win_rate(wins, losses),
         latest_rank: OpponentHelpers.latest_rank(assigns.history),
-        chart_series: OpponentHelpers.chart_series(assigns.history)
+        chart_series: OpponentHelpers.chart_series(assigns.history, days: days),
+        winrate_period: period
       )
 
     ~H"""
@@ -70,14 +74,18 @@ defmodule Scry2Web.OpponentComponents do
           />
         </div>
 
-        <div
-          :if={@chart_series != "[]"}
-          id={"#{@id}-chart"}
-          phx-hook="Chart"
-          data-chart-type="cumulative_winrate"
-          data-series={@chart_series}
-          class="min-h-[10rem] rounded-lg bg-base-300/40 mb-4"
-        />
+        <div class="mb-4 space-y-2">
+          <div class="flex justify-end">
+            <.winrate_period_toggle selected={@winrate_period} />
+          </div>
+          <div
+            id={"#{@id}-chart-#{@winrate_period}"}
+            phx-hook="Chart"
+            data-chart-type="cumulative_winrate"
+            data-series={@chart_series}
+            class="min-h-[10rem] rounded-lg bg-base-300/40"
+          />
+        </div>
 
         <div class="flex flex-col divide-y divide-base-content/5">
           <.link
