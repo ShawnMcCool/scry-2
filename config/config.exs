@@ -31,13 +31,15 @@ config :scry_2, Oban,
   plugins: [
     {Oban.Plugins.Cron,
      crontab: [
-       # Daily 04:00 UTC — refresh 17lands card reference data.
-       {"0 4 * * *", Scry2.Workers.PeriodicallyUpdateCards},
        # Daily 04:30 UTC — re-import the MTGA client card database so
        # new sets get picked up shortly after MTGA's content patch.
        {"30 4 * * *", Scry2.Workers.PeriodicallyImportMtgaClientCards},
-       # Weekly Sunday 05:00 UTC — backfill arena_id from Scryfall bulk data.
-       {"0 5 * * 0", Scry2.Workers.PeriodicallyBackfillArenaIds},
+       # Weekly Sunday 05:00 UTC — refresh Scryfall bulk data into
+       # cards_scryfall_cards (oracle metadata, image URIs, rotated cards).
+       {"0 5 * * 0", Scry2.Workers.PeriodicallyImportScryfallCards},
+       # Daily 05:30 UTC — synthesise cards_cards from MTGA + Scryfall.
+       # Runs after both upstream imports have had a chance to refresh.
+       {"30 5 * * *", Scry2.Workers.PeriodicallySynthesizeCards},
        # Hourly at :17 — check GitHub Releases for a new Scry2 version.
        # Offset from the :00 slots above so the cron firings don't pile up.
        {"17 * * * *", Scry2.SelfUpdate.CheckerJob, args: %{"trigger" => "cron"}}

@@ -100,19 +100,16 @@ defmodule Scry2.TestFactory do
 
   def build_card(attrs \\ %{}) do
     defaults = %{
-      # arena_id stays nil by default — tests that care about it set it
-      # explicitly. It's nullable in the schema (backfilled from Scryfall
-      # after the lands17 import) and the unique index is partial
-      # (WHERE arena_id IS NOT NULL), so multiple nil rows don't collide.
-      arena_id: nil,
-      lands17_id: 12_345,
+      # arena_id is the canonical identity since the synthesis pipeline
+      # replaced 17lands. Tests that don't pass it explicitly get a unique
+      # random id so persistence in `create_card/1` doesn't collide.
+      arena_id: :rand.uniform(1_000_000_000),
       name: "Test Card",
       rarity: "common",
       color_identity: "W",
       mana_value: 1,
       types: "Creature",
-      is_booster: true,
-      raw: %{}
+      is_booster: true
     }
 
     struct(Card, Map.merge(defaults, Map.new(attrs)))
@@ -874,9 +871,14 @@ defmodule Scry2.TestFactory do
 
   def create_card(attrs \\ %{}) do
     attrs = Map.new(attrs)
-    # Make lands17_id unique per call to avoid test cross-contamination.
-    attrs = Map.put_new(attrs, :lands17_id, :rand.uniform(1_000_000_000))
-    attrs |> build_card() |> Map.from_struct() |> Map.drop([:__meta__]) |> Cards.upsert_card!()
+    # Make arena_id unique per call to avoid test cross-contamination.
+    attrs = Map.put_new(attrs, :arena_id, :rand.uniform(1_000_000_000))
+
+    attrs
+    |> build_card()
+    |> Map.from_struct()
+    |> Map.drop([:__meta__])
+    |> Cards.synthesize_card!()
   end
 
   def create_match(attrs \\ %{}) do

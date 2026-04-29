@@ -21,93 +21,36 @@ defmodule Scry2.CardsTest do
     end
   end
 
-  describe "upsert_card!/1" do
-    test "creates a new card" do
+  describe "synthesize_card!/1" do
+    test "creates a new card keyed on arena_id" do
       card =
-        Cards.upsert_card!(%{
-          lands17_id: 9001,
+        Cards.synthesize_card!(%{
           arena_id: 91_001,
           name: "Test Card",
           rarity: "rare"
         })
 
-      assert card.lands17_id == 9001
       assert card.arena_id == 91_001
+      assert card.name == "Test Card"
     end
 
-    test "updates an existing card by lands17_id (idempotent per ADR-016)" do
-      first = Cards.upsert_card!(%{lands17_id: 9002, name: "Old Name"})
-      second = Cards.upsert_card!(%{lands17_id: 9002, name: "New Name"})
+    test "updates an existing card by arena_id (idempotent)" do
+      first = Cards.synthesize_card!(%{arena_id: 91_002, name: "Old Name"})
+      second = Cards.synthesize_card!(%{arena_id: 91_002, name: "New Name"})
 
       assert first.id == second.id
       assert second.name == "New Name"
     end
-
-    test "never overwrites an existing arena_id (ADR-014 stable key invariant)" do
-      _first = Cards.upsert_card!(%{lands17_id: 9003, arena_id: 91_003, name: "First"})
-
-      # Second upsert omits arena_id — existing value must be preserved.
-      second = Cards.upsert_card!(%{lands17_id: 9003, name: "Second"})
-
-      assert second.arena_id == 91_003
-    end
   end
 
-  describe "get_by_arena_id/1 and get_by_lands17_id/1" do
-    test "return nil for unknown ids" do
+  describe "get_by_arena_id/1" do
+    test "returns nil for unknown arena_ids" do
       assert Cards.get_by_arena_id(99_999_999) == nil
-      assert Cards.get_by_lands17_id(99_999_999) == nil
     end
 
-    test "return the card when found" do
-      card = TestFactory.create_card(%{lands17_id: 9100, arena_id: 91_100})
-
+    test "returns the card when found" do
+      card = TestFactory.create_card(%{arena_id: 91_100})
       assert Cards.get_by_arena_id(91_100).id == card.id
-      assert Cards.get_by_lands17_id(9100).id == card.id
-    end
-  end
-
-  describe "backfill_arena_id!/2" do
-    test "sets arena_id on a card that lacks one" do
-      card = TestFactory.create_card(%{lands17_id: 9300, arena_id: nil, name: "Backfill Me"})
-      assert card.arena_id == nil
-
-      {:ok, updated} = Cards.backfill_arena_id!(card, 91_300)
-
-      assert updated.arena_id == 91_300
-      assert Cards.get_by_arena_id(91_300).id == card.id
-    end
-
-    test "no-ops on a card that already has an arena_id (ADR-014)" do
-      card = TestFactory.create_card(%{lands17_id: 9301, arena_id: 91_301, name: "Already Set"})
-
-      {:ok, unchanged} = Cards.backfill_arena_id!(card, 99_999)
-
-      assert unchanged.arena_id == 91_301
-      assert Cards.get_by_arena_id(91_301).id == card.id
-      assert Cards.get_by_arena_id(99_999) == nil
-    end
-  end
-
-  describe "get_by_name_and_set/2" do
-    test "returns cards matching name and set code" do
-      set = TestFactory.create_set(%{code: "LCI", name: "Lost Caverns"})
-      card = TestFactory.create_card(%{lands17_id: 9400, name: "Dinosaur", set_id: set.id})
-
-      results = Cards.get_by_name_and_set("Dinosaur", "LCI")
-      assert length(results) == 1
-      assert hd(results).id == card.id
-    end
-
-    test "returns empty list when no match" do
-      assert Cards.get_by_name_and_set("Nonexistent Card", "ZZZ") == []
-    end
-
-    test "does not match wrong set" do
-      set = TestFactory.create_set(%{code: "MKM", name: "Murders"})
-      TestFactory.create_card(%{lands17_id: 9401, name: "Detective", set_id: set.id})
-
-      assert Cards.get_by_name_and_set("Detective", "LCI") == []
     end
   end
 
@@ -118,8 +61,7 @@ defmodule Scry2.CardsTest do
           scryfall_id: "abc-123",
           name: "Lightning Bolt",
           set_code: "lci",
-          rarity: "common",
-          raw: %{"id" => "abc-123"}
+          rarity: "common"
         })
 
       assert card.scryfall_id == "abc-123"
@@ -131,16 +73,14 @@ defmodule Scry2.CardsTest do
         Cards.upsert_scryfall_card!(%{
           scryfall_id: "abc-456",
           name: "Old Name",
-          set_code: "lci",
-          raw: %{}
+          set_code: "lci"
         })
 
       second =
         Cards.upsert_scryfall_card!(%{
           scryfall_id: "abc-456",
           name: "New Name",
-          set_code: "lci",
-          raw: %{}
+          set_code: "lci"
         })
 
       assert first.id == second.id
@@ -169,21 +109,22 @@ defmodule Scry2.CardsTest do
   end
 
   describe "refresh timestamps" do
-    test "import_timestamps/0 returns nil for both sources when never stamped" do
-      # Clean slate: no-op if nothing has ever written the keys.
-      Scry2.Settings.delete("cards_lands17_last_refresh_at")
+    test "import_timestamps/0 returns nil for all sources when never stamped" do
+      Scry2.Settings.delete("cards_synthesized_last_refresh_at")
       Scry2.Settings.delete("cards_scryfall_last_refresh_at")
+      Scry2.Settings.delete("cards_mtga_client_last_refresh_at")
 
-      %{lands17_updated_at: lands17, scryfall_updated_at: scryfall} = Cards.import_timestamps()
-      assert is_nil(lands17)
-      assert is_nil(scryfall)
+      result = Cards.import_timestamps()
+      assert is_nil(result.synthesized_updated_at)
+      assert is_nil(result.scryfall_updated_at)
+      assert is_nil(result.mtga_client_updated_at)
     end
 
-    test "record_lands17_refresh!/1 writes a retrievable DateTime" do
+    test "record_synthesis_refresh!/1 writes a retrievable DateTime" do
       now = ~U[2026-04-24 12:00:00Z]
-      :ok = Cards.record_lands17_refresh!(now)
+      :ok = Cards.record_synthesis_refresh!(now)
 
-      assert %{lands17_updated_at: ^now} = Cards.import_timestamps()
+      assert %{synthesized_updated_at: ^now} = Cards.import_timestamps()
     end
 
     test "record_scryfall_refresh!/1 writes a retrievable DateTime" do
@@ -193,17 +134,11 @@ defmodule Scry2.CardsTest do
       assert %{scryfall_updated_at: ^now} = Cards.import_timestamps()
     end
 
-    test "timestamps survive through Settings (not derived from card updated_at)" do
-      # Regression: before this change, freshness was derived from
-      # `max(cards.updated_at)`, which never advanced when the CSV
-      # import produced no-op changeset updates. Now the Settings-
-      # backed stamp advances independently of row changes.
-      stamp = ~U[2026-04-24 14:00:00Z]
-      :ok = Cards.record_lands17_refresh!(stamp)
+    test "record_mtga_client_refresh!/1 writes a retrievable DateTime" do
+      now = ~U[2026-04-24 12:00:00Z]
+      :ok = Cards.record_mtga_client_refresh!(now)
 
-      # No card rows created — pure Settings read.
-      assert Cards.count() == 0
-      assert Cards.import_timestamps().lands17_updated_at == stamp
+      assert %{mtga_client_updated_at: ^now} = Cards.import_timestamps()
     end
   end
 
@@ -250,8 +185,8 @@ defmodule Scry2.CardsTest do
 
   describe "list_cards/1" do
     setup do
-      TestFactory.create_card(%{lands17_id: 9200, name: "Aardvark", rarity: "common"})
-      TestFactory.create_card(%{lands17_id: 9201, name: "Zebra", rarity: "mythic"})
+      TestFactory.create_card(%{arena_id: 92_001, name: "Aardvark", rarity: "common"})
+      TestFactory.create_card(%{arena_id: 92_002, name: "Zebra", rarity: "mythic"})
       :ok
     end
 
@@ -280,30 +215,10 @@ defmodule Scry2.CardsTest do
 
   describe "list_cards/1 — color filters" do
     setup do
-      TestFactory.create_card(%{
-        lands17_id: 9500,
-        name: "Red Card",
-        color_identity: "R"
-      })
-
-      TestFactory.create_card(%{
-        lands17_id: 9501,
-        name: "Blue Card",
-        color_identity: "U"
-      })
-
-      TestFactory.create_card(%{
-        lands17_id: 9502,
-        name: "Izzet Card",
-        color_identity: "UR"
-      })
-
-      TestFactory.create_card(%{
-        lands17_id: 9503,
-        name: "Colorless Card",
-        color_identity: ""
-      })
-
+      TestFactory.create_card(%{arena_id: 93_001, name: "Red Card", color_identity: "R"})
+      TestFactory.create_card(%{arena_id: 93_002, name: "Blue Card", color_identity: "U"})
+      TestFactory.create_card(%{arena_id: 93_003, name: "Izzet Card", color_identity: "UR"})
+      TestFactory.create_card(%{arena_id: 93_004, name: "Colorless Card", color_identity: ""})
       :ok
     end
 
@@ -347,31 +262,34 @@ defmodule Scry2.CardsTest do
   describe "list_cards/1 — type filters" do
     setup do
       TestFactory.create_card(%{
-        lands17_id: 9600,
+        arena_id: 94_001,
         name: "Lightning Bolt",
         types: "Instant",
-        is_instant: true
+        is_instant: true,
+        is_creature: false
       })
 
       TestFactory.create_card(%{
-        lands17_id: 9601,
+        arena_id: 94_002,
         name: "Llanowar Elves",
         types: "Creature Elf Druid",
         is_creature: true
       })
 
       TestFactory.create_card(%{
-        lands17_id: 9602,
+        arena_id: 94_003,
         name: "Forest",
         types: "Basic Land Forest",
-        is_land: true
+        is_land: true,
+        is_creature: false
       })
 
       TestFactory.create_card(%{
-        lands17_id: 9603,
+        arena_id: 94_004,
         name: "Thoughtseize",
         types: "Sorcery",
-        is_sorcery: true
+        is_sorcery: true,
+        is_creature: false
       })
 
       :ok
@@ -408,10 +326,10 @@ defmodule Scry2.CardsTest do
 
   describe "list_cards/1 — mana value filters" do
     setup do
-      TestFactory.create_card(%{lands17_id: 9700, name: "Free Spell", mana_value: 0})
-      TestFactory.create_card(%{lands17_id: 9701, name: "One Drop", mana_value: 1})
-      TestFactory.create_card(%{lands17_id: 9702, name: "Three Drop", mana_value: 3})
-      TestFactory.create_card(%{lands17_id: 9703, name: "Big Spell", mana_value: 10})
+      TestFactory.create_card(%{arena_id: 95_001, name: "Free Spell", mana_value: 0})
+      TestFactory.create_card(%{arena_id: 95_002, name: "One Drop", mana_value: 1})
+      TestFactory.create_card(%{arena_id: 95_003, name: "Three Drop", mana_value: 3})
+      TestFactory.create_card(%{arena_id: 95_004, name: "Big Spell", mana_value: 10})
       :ok
     end
 
@@ -449,14 +367,14 @@ defmodule Scry2.CardsTest do
   describe "count_cards/1" do
     test "counts cards matching filters" do
       TestFactory.create_card(%{
-        lands17_id: 9800,
+        arena_id: 96_001,
         name: "Count Me",
         rarity: "rare",
         is_creature: true
       })
 
       TestFactory.create_card(%{
-        lands17_id: 9801,
+        arena_id: 96_002,
         name: "Skip Me",
         rarity: "common",
         is_creature: false
@@ -472,9 +390,8 @@ defmodule Scry2.CardsTest do
   end
 
   describe "list_by_arena_ids/1" do
-    test "returns 17lands cards indexed by arena_id when found" do
+    test "returns synthesised cards indexed by arena_id when found" do
       TestFactory.create_card(%{
-        lands17_id: 8001,
         arena_id: 80_001,
         name: "Lightning Bolt",
         types: "Instant"
@@ -497,7 +414,6 @@ defmodule Scry2.CardsTest do
     end
 
     test "MtgaCard fallback decodes integer types to human-readable strings" do
-      # MTGA type enum: 10=Sorcery, 5=Land, 4=Instant, 2=Creature, 1=Artifact, 3=Enchantment, 8=Planeswalker
       TestFactory.create_mtga_card(%{arena_id: 80_003, name: "Fireball", types: "10"})
       TestFactory.create_mtga_card(%{arena_id: 80_004, name: "Forest", types: "5"})
       TestFactory.create_mtga_card(%{arena_id: 80_005, name: "Bolt Instant", types: "4"})
@@ -524,9 +440,8 @@ defmodule Scry2.CardsTest do
       assert result[80_007].mana_value == 3
     end
 
-    test "17lands card is preferred over MtgaCard when both exist for the same arena_id" do
+    test "synthesised card is preferred over MtgaCard when both exist for the same arena_id" do
       TestFactory.create_card(%{
-        lands17_id: 8008,
         arena_id: 80_008,
         name: "Rich Card",
         types: "Creature",

@@ -7,14 +7,14 @@ defmodule Scry2Web.CardsLive do
   capped at 100 with a total count shown.
 
   Also shows Data Sources storage stats and Import Controls for triggering
-  17lands and Scryfall refreshes.
+  Scryfall imports and card synthesis.
   """
 
   use Scry2Web, :live_view
 
   alias Scry2.{Cards, Console, Topics}
   alias Scry2.Cards.ImageCache
-  alias Scry2.Workers.{PeriodicallyBackfillArenaIds, PeriodicallyUpdateCards}
+  alias Scry2.Workers.{PeriodicallyImportScryfallCards, PeriodicallySynthesizeCards}
   alias Scry2Web.CardsHelpers, as: Helpers
 
   @result_cap 100
@@ -108,19 +108,19 @@ defmodule Scry2Web.CardsLive do
   end
 
   @impl true
-  def handle_event("refresh_17lands", _params, socket) do
-    {:ok, _job} = %{} |> PeriodicallyUpdateCards.new() |> Oban.insert()
+  def handle_event("refresh_synthesis", _params, socket) do
+    {:ok, _job} = %{} |> PeriodicallySynthesizeCards.new() |> Oban.insert()
     Process.send_after(self(), :poll_import_status, 2_000)
 
     {:noreply,
      socket
-     |> update(:import_status, &%{&1 | lands17_running: true})
+     |> update(:import_status, &%{&1 | synthesis_running: true})
      |> assign(:import_log, [])}
   end
 
   @impl true
   def handle_event("refresh_scryfall", _params, socket) do
-    {:ok, _job} = %{} |> PeriodicallyBackfillArenaIds.new() |> Oban.insert()
+    {:ok, _job} = %{} |> PeriodicallyImportScryfallCards.new() |> Oban.insert()
     Process.send_after(self(), :poll_import_status, 2_000)
 
     {:noreply,
@@ -140,10 +140,11 @@ defmodule Scry2Web.CardsLive do
   end
 
   @impl true
-  def handle_info({:arena_ids_backfilled, _count}, socket) do
+  def handle_info({:scryfall_imported, _count}, socket) do
     {:noreply,
      socket
      |> assign(:import_log, [])
+     |> assign(:data_stats, Cards.data_source_stats())
      |> assign(:import_status, load_import_status())}
   end
 
@@ -160,7 +161,7 @@ defmodule Scry2Web.CardsLive do
   def handle_info(:poll_import_status, socket) do
     status = load_import_status()
 
-    if status.lands17_running or status.scryfall_running do
+    if status.synthesis_running or status.scryfall_running do
       Process.send_after(self(), :poll_import_status, 3_000)
     end
 
@@ -299,11 +300,11 @@ defmodule Scry2Web.CardsLive do
           </h2>
 
           <.source_row
-            label="17lands"
+            label="MTGA client"
             color="#3b82f6"
-            count={@data_stats.lands17_count}
+            count={@data_stats.mtga_client_count}
             count_label="cards"
-            bytes={@data_stats.lands17_bytes}
+            bytes={@data_stats.mtga_client_bytes}
           />
           <.source_row
             label="Scryfall"
@@ -311,6 +312,13 @@ defmodule Scry2Web.CardsLive do
             count={@data_stats.scryfall_count}
             count_label="records"
             bytes={@data_stats.scryfall_bytes}
+          />
+          <.source_row
+            label="Synthesised"
+            color="#22c55e"
+            count={@data_stats.synthesized_count}
+            count_label="cards"
+            bytes={@data_stats.synthesized_bytes}
           />
           <.source_row
             label="Card Images"
@@ -322,8 +330,9 @@ defmodule Scry2Web.CardsLive do
           <.source_row label="App Database" color="#f59e0b" bytes={@data_stats.db_bytes} />
 
           <.storage_bar segments={[
-            {"17lands", "#3b82f6", @data_stats.lands17_bytes},
+            {"MTGA client", "#3b82f6", @data_stats.mtga_client_bytes},
             {"Scryfall", "#8b5cf6", @data_stats.scryfall_bytes},
+            {"Synthesised", "#22c55e", @data_stats.synthesized_bytes},
             {"Card Images", "#10b981", @data_stats.image_bytes},
             {"App Database", "#f59e0b", @data_stats.db_bytes}
           ]} />
@@ -336,17 +345,17 @@ defmodule Scry2Web.CardsLive do
           </h2>
 
           <.import_row
-            label="17lands card data"
-            description="Card names, colors, types from 17lands public dataset"
-            updated_at={@import_status.lands17_updated_at}
-            running={@import_status.lands17_running}
-            event="refresh_17lands"
+            label="Card synthesis"
+            description="Builds the card read model from MTGA + Scryfall data"
+            updated_at={@import_status.synthesized_updated_at}
+            running={@import_status.synthesis_running}
+            event="refresh_synthesis"
             log_lines={@import_log}
           />
 
           <.import_row
-            label="Scryfall arena IDs"
-            description="Backfills MTGA arena IDs from Scryfall bulk data"
+            label="Scryfall bulk data"
+            description="Oracle text, image URIs, and rotated-card coverage"
             updated_at={@import_status.scryfall_updated_at}
             running={@import_status.scryfall_running}
             event="refresh_scryfall"
@@ -356,11 +365,11 @@ defmodule Scry2Web.CardsLive do
           <div class="border-t border-base-300 pt-3 text-xs text-base-content/40">
             Queue:
             <span class={
-              if Enum.any?([@import_status.lands17_running, @import_status.scryfall_running]),
+              if Enum.any?([@import_status.synthesis_running, @import_status.scryfall_running]),
                 do: "text-warning",
                 else: "text-success"
             }>
-              {if Enum.any?([@import_status.lands17_running, @import_status.scryfall_running]),
+              {if Enum.any?([@import_status.synthesis_running, @import_status.scryfall_running]),
                 do: "running",
                 else: "idle"}
             </span>
@@ -666,10 +675,10 @@ defmodule Scry2Web.CardsLive do
     timestamps = Cards.import_timestamps()
 
     %{
-      lands17_updated_at: timestamps.lands17_updated_at,
+      synthesized_updated_at: timestamps.synthesized_updated_at,
       scryfall_updated_at: timestamps.scryfall_updated_at,
-      lands17_running: oban_running?(PeriodicallyUpdateCards),
-      scryfall_running: oban_running?(PeriodicallyBackfillArenaIds)
+      synthesis_running: oban_running?(PeriodicallySynthesizeCards),
+      scryfall_running: oban_running?(PeriodicallyImportScryfallCards)
     }
   end
 

@@ -35,7 +35,7 @@ defmodule Scry2.Health.Check do
 
   @type category :: :ingestion | :card_data | :processing | :config
   @type status :: :ok | :warning | :error | :pending
-  @type fix :: nil | :reload_watcher | :enqueue_lands17 | :enqueue_scryfall | :manual
+  @type fix :: nil | :reload_watcher | :enqueue_synthesis | :enqueue_scryfall | :manual
 
   @type t :: %__MODULE__{
           id: atom(),

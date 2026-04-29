@@ -1,4 +1,11 @@
 defmodule Scry2.Cards.Card do
+  @moduledoc """
+  Schema for `cards_cards` — the canonical card read model.
+
+  Rows are synthesised by `Scry2.Cards.Synthesize` from `cards_mtga_cards`
+  (the user's local MTGA SQLite) and `cards_scryfall_cards` (Scryfall bulk
+  data). `arena_id` is the unique identity per ADR-014.
+  """
   use Ecto.Schema
   import Ecto.Changeset
 
@@ -6,7 +13,6 @@ defmodule Scry2.Cards.Card do
 
   schema "cards_cards" do
     field :arena_id, :integer
-    field :lands17_id, :integer
     field :name, :string
     field :rarity, :string
     field :color_identity, :string, default: ""
@@ -21,7 +27,6 @@ defmodule Scry2.Cards.Card do
     field :is_planeswalker, :boolean, default: false
     field :is_land, :boolean, default: false
     field :is_battle, :boolean, default: false
-    field :raw, :map
 
     belongs_to :set, Scry2.Cards.Set
 
@@ -29,27 +34,12 @@ defmodule Scry2.Cards.Card do
   end
 
   @doc """
-  Changeset for the Scryfall arena_id backfill path. Only touches
-  `arena_id` — all other fields remain under 17lands ownership.
-  See ADR-014.
+  Changeset for the synthesis pipeline. `arena_id` is required and unique.
   """
-  def scryfall_changeset(card, attrs) do
-    card
-    |> cast(attrs, [:arena_id])
-    |> validate_required([:arena_id])
-    |> unique_constraint(:arena_id)
-  end
-
-  @doc """
-  Changeset for the 17lands import path. Accepts `lands17_id` as the
-  primary key and treats `arena_id` as optional (filled in later by the
-  Scryfall backfill — see ADR-014).
-  """
-  def lands17_changeset(card, attrs) do
+  def synthesis_changeset(card, attrs) do
     card
     |> cast(attrs, [
       :arena_id,
-      :lands17_id,
       :name,
       :rarity,
       :color_identity,
@@ -64,11 +54,9 @@ defmodule Scry2.Cards.Card do
       :is_planeswalker,
       :is_land,
       :is_battle,
-      :raw,
       :set_id
     ])
-    |> validate_required([:lands17_id, :name])
-    |> unique_constraint(:lands17_id)
+    |> validate_required([:arena_id, :name])
     |> unique_constraint(:arena_id)
   end
 end

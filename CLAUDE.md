@@ -63,7 +63,7 @@ Invoke the skill **first**, then explore the codebase, then write code.
 
 # Scry2
 
-Scry2 is a Phoenix/Elixir backend worker with a LiveView admin UI. It monitors Magic: The Gathering Arena's `Player.log` file, parses MTGA events, and persists them to a local SQLite database. It imports card reference data from 17lands' public datasets. The project is inspired by 17lands.com and self-hosted for one player's data.
+Scry2 is a Phoenix/Elixir backend worker with a LiveView admin UI. It monitors Magic: The Gathering Arena's `Player.log` file, parses MTGA events, and persists them to a local SQLite database. It builds its card reference model by synthesising the user's local MTGA card database with Scryfall bulk metadata. The project is inspired by 17lands.com and self-hosted for one player's data.
 
 ## Version Control (Jujutsu)
 
@@ -257,7 +257,7 @@ Every system — Elixir, JavaScript, or otherwise — must be designed so that C
 ## Architecture Principles
 
 - **This app owns all writes to the scry_2 SQLite database.**
-- **17lands cards.csv is the source of truth for card reference data.** Scryfall is the source for `arena_id` backfill.
+- **The user's local MTGA card database is the canonical Arena card list.** Scryfall bulk data enriches it with oracle text, image URIs, and rotated-card coverage. `Scry2.Cards.Synthesize` joins the two by `arena_id` into `cards_cards` — the read model every projection and LiveView queries. See [ADR-035](decisions/architecture/2026-04-30-035-replace-17lands-with-mtga-and-scryfall.md).
 - **`arena_id` (MTGA's 5-digit card identifier) is the stable join key** for all log-derived data — never mutate it. See [ADR-014](decisions/architecture/2026-04-05-014-arena-id-as-stable-key.md).
 - **All cross-context communication goes through `Scry2.Topics` PubSub helpers** — never call another context's modules directly.
 - **The watcher is a read-only consumer of `Player.log`.** Scry2 never writes to MTGA files.
@@ -278,12 +278,25 @@ This is the single most common user-error mode. The watcher emits a
 `detailed_logs_warning` broadcast to `mtga_logs:status` if the first N
 events lack the expected structured payloads.
 
-## 17lands Data Provenance
+## Card Data Provenance
 
-Card reference data is imported from 17lands' public dataset at
-<https://17lands-public.s3.amazonaws.com/analysis_data/cards/cards.csv>.
-Licensed CC BY 4.0. Attribution is required if this data is ever
-re-exposed. See `Scry2.Cards.SeventeenLands`.
+Card reference data is synthesised from two upstream sources:
+
+1. **MTGA client database** (`Raw_CardDatabase_*.mtga` SQLite, shipped
+   with the user's MTGA install). Source of canonical Arena card list,
+   `arena_id`, expansion code, MTGA-internal rarity, type enum.
+   Zero third-party dependency. See `Scry2.Cards.MtgaClientData`.
+2. **Scryfall bulk data** (~80 MB JSON, fetched from
+   <https://api.scryfall.com/bulk-data/default-cards>). Source of oracle
+   text, image URIs, type lines, and coverage of rotated cards no longer
+   in the local MTGA DB. Scryfall is the de facto MTG data standard;
+   data is used under their published API terms. See
+   `Scry2.Cards.Scryfall`.
+
+`Scry2.Cards.Synthesize` joins these two by `arena_id` and upserts
+`cards_cards`. See [ADR-035](decisions/architecture/2026-04-30-035-replace-17lands-with-mtga-and-scryfall.md)
+for the rationale (this replaced an earlier 17lands CSV import in
+April 2026).
 
 ## Data Model
 
@@ -299,7 +312,7 @@ Each context owns its tables and communicates only via PubSub events. No context
 | **Events** | `domain_events` | domain event log, IdentifyDomainEvents (anti-corruption layer), IngestRawEvents | Subscribes `mtga_logs:events`; broadcasts `domain:events` |
 | **Matches** | `matches_` | matches, games, deck submissions (projection) | Subscribes `domain:events` via `Matches.Match`; broadcasts `matches:updates` |
 | **Drafts** | `drafts_` | drafts, draft picks (projection) | Subscribes `domain:events` via `Drafts.Draft`; broadcasts `drafts:updates` |
-| **Cards** | `cards_` | cards, sets (from 17lands) | Broadcasts `cards:updates` |
+| **Cards** | `cards_` | cards (synthesised), sets, MTGA + Scryfall mirrors | Broadcasts `cards:updates` |
 | **Decks** | `decks_` | decks, deck versions, game submissions, match results, mulligan hands, cards drawn (projection) | Subscribes `domain:events` via `Decks.DeckProjection`; broadcasts `decks:updates` |
 | **Economy** | `economy_` | event entries, inventory snapshots, transactions (projection) | Subscribes `domain:events` via `Economy.EconomyProjection`; broadcasts `economy:updates` |
 | **Ranks** | `ranks_` | rank snapshots (projection) | Subscribes `domain:events` via `Ranks.RankProjection`; broadcasts `ranks:updates` |
@@ -396,7 +409,7 @@ The handler classifies every entry into one component:
 | `:watcher` | Explicit via `Log.info(:watcher, ...)` — `Player.log` file events, tail progress |
 | `:parser` | Explicit — MTGA event parsing, unknown event types |
 | `:ingester` | Explicit — raw-event persistence, downstream dispatch |
-| `:importer` | Explicit — 17lands CSV import, Scryfall backfill |
+| `:importer` | Explicit — MTGA + Scryfall imports, card synthesis  |
 | `:http` | Explicit — API calls, rate limiting, fetch results |
 | `:system` | Fallback — any log without a component tag and no framework prefix |
 | `:phoenix` | Automatic — logs from `Phoenix.*` modules |

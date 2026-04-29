@@ -126,13 +126,8 @@ defmodule Scry2.ConfigTest do
       :ok = Config.load!()
     end
 
-    test "exposes the 17lands cards.csv url as a default" do
-      assert Config.get(:cards_lands17_url) ==
-               "https://17lands-public.s3.amazonaws.com/analysis_data/cards/cards.csv"
-    end
-
     test "exposes the default cron expression for refresh" do
-      assert Config.get(:cards_refresh_cron) == "0 4 * * *"
+      assert Config.get(:cards_refresh_cron) == "30 5 * * *"
     end
 
     test "exposes the default MTGA poll interval" do

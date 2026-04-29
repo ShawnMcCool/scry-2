@@ -1,8 +1,7 @@
 defmodule Scry2.Cards.Scryfall do
   @moduledoc """
-  Downloads Scryfall "Default Cards" bulk data, persists every card into
-  `cards_scryfall_cards`, and backfills `arena_id` on `cards_cards` rows
-  that were imported from 17lands but lack an MTGA identifier.
+  Downloads Scryfall "Default Cards" bulk data and persists every card
+  into `cards_scryfall_cards`.
 
   ## Source
 
@@ -17,9 +16,9 @@ defmodule Scry2.Cards.Scryfall do
   3. Decode the JSON file with Jason, calling `parse_card/1` on every object.
   4. For each parsed card, upsert into `cards_scryfall_cards` via
      `Cards.upsert_scryfall_card!/1`.
-  5. For cards with a non-nil `arena_id`, look up the 17lands card by
-     `(name, set_code)` and call `Cards.backfill_arena_id!/2`.
-  6. ADR-014: 17lands cards with an existing `arena_id` are skipped (no-op).
+
+  Synthesis into `cards_cards` lives in `Scry2.Cards.Synthesize` — this
+  module just keeps the Scryfall mirror table fresh.
   """
 
   alias Scry2.Cards
@@ -28,14 +27,10 @@ defmodule Scry2.Cards.Scryfall do
 
   require Scry2.Log, as: Log
 
-  @type run_result ::
-          {:ok,
-           %{matched: non_neg_integer(), skipped: non_neg_integer(), persisted: non_neg_integer()}}
-          | {:error, term()}
+  @type run_result :: {:ok, %{persisted: non_neg_integer()}} | {:error, term()}
 
   @doc """
-  Fetches Scryfall bulk data, persists all cards, and backfills `arena_id` on
-  matching 17lands cards.
+  Fetches Scryfall bulk data and persists all cards into `cards_scryfall_cards`.
 
   Options:
     * `:url` — overrides the configured catalog URL (useful for tests)
@@ -53,12 +48,9 @@ defmodule Scry2.Cards.Scryfall do
       with {:ok, download_uri} <- fetch_download_uri(url, req_options),
            {:ok, ^tmp_path} <- download_to_temp(download_uri, req_options, tmp_path) do
         stats = process_stream(tmp_path)
-        Topics.broadcast(Topics.cards_updates(), {:arena_ids_backfilled, stats.matched})
+        Topics.broadcast(Topics.cards_updates(), {:scryfall_imported, stats.persisted})
 
-        Log.info(
-          :importer,
-          "scryfall: persisted #{stats.persisted}, matched #{stats.matched}, skipped #{stats.skipped}"
-        )
+        Log.info(:importer, "scryfall: persisted #{stats.persisted}")
 
         {:ok, stats}
       end
@@ -68,15 +60,13 @@ defmodule Scry2.Cards.Scryfall do
   end
 
   @doc """
-  Extracts all typed columns from a raw Scryfall card map, preserving the full
-  raw JSON in `:raw`.
+  Extracts all typed columns from a raw Scryfall card map.
 
   Pure function — no HTTP, no DB. Exposed for unit testing.
 
   Returns `nil` only if required fields (`id`, `name`, `set`) are absent or
   non-binary. Every card — including those without an `arena_id` — is parsed
-  for persistence. Name splitting and set code upcasing are applied only in
-  the backfill path (where 17lands matching requires them), not here.
+  for persistence.
   """
   @spec parse_card(map()) :: map() | nil
   def parse_card(%{"id" => scryfall_id, "name" => name, "set" => set} = card)
@@ -168,22 +158,14 @@ defmodule Scry2.Cards.Scryfall do
         tmp_path
         |> File.read!()
         |> Jason.decode!()
-        |> Enum.reduce(%{matched: 0, skipped: 0, persisted: 0}, fn card_map, stats ->
+        |> Enum.reduce(%{persisted: 0}, fn card_map, stats ->
           case parse_card(card_map) do
             nil ->
               stats
 
             parsed ->
               Cards.upsert_scryfall_card!(parsed)
-              stats = %{stats | persisted: stats.persisted + 1}
-
-              if parsed.arena_id do
-                front_name = parsed.name |> String.split(" // ") |> hd()
-                set_code = String.upcase(parsed.set_code)
-                maybe_backfill(front_name, set_code, parsed.arena_id, stats)
-              else
-                %{stats | skipped: stats.skipped + 1}
-              end
+              %{stats | persisted: stats.persisted + 1}
           end
         end)
       end,
@@ -192,35 +174,6 @@ defmodule Scry2.Cards.Scryfall do
     |> case do
       {:ok, stats} -> stats
       {:error, reason} -> raise "Scryfall import transaction failed: #{inspect(reason)}"
-    end
-  end
-
-  defp maybe_backfill(name, set_code, arena_id, stats) do
-    case Cards.get_by_name_and_set(name, set_code) do
-      [] ->
-        %{stats | skipped: stats.skipped + 1}
-
-      cards ->
-        # Find the first card without an arena_id. If all already have one,
-        # this is a no-op (idempotent).
-        card = Enum.find(cards, &is_nil(&1.arena_id))
-
-        if card do
-          try do
-            {:ok, _} = Cards.backfill_arena_id!(card, arena_id)
-            %{stats | matched: stats.matched + 1}
-          rescue
-            _error in [Ecto.ConstraintError, Ecto.InvalidChangesetError] ->
-              Log.warning(
-                :importer,
-                "scryfall backfill: arena_id #{arena_id} already taken, skipping #{name} (#{set_code})"
-              )
-
-              %{stats | skipped: stats.skipped + 1}
-          end
-        else
-          %{stats | skipped: stats.skipped + 1}
-        end
     end
   end
 

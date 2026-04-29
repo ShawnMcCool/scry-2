@@ -41,7 +41,7 @@ defmodule Scry2.Topics do
   def economy_updates, do: "economy:updates"
 
   # ── Cards ────────────────────────────────────────────────────────────────
-  @doc "Card reference data refreshed (17lands import ran)."
+  @doc "Card reference data refreshed (Scryfall import or synthesis ran)."
   def cards_updates, do: "cards:updates"
 
   # ── Collection (memory-read snapshots, ADR 034) ────────────────────────

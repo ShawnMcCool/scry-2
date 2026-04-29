@@ -32,9 +32,9 @@ defmodule Scry2Web.SetupLive do
      |> assign(:page_title, "Set up Scry 2")
      |> assign(:state, %SetupFlow.State{step: :welcome})
      |> assign(:raw_event_count, 0)
-     |> assign(:lands17_count, 0)
+     |> assign(:synthesized_count, 0)
      |> assign(:scryfall_count, 0)
-     |> assign(:lands17_updated_at, nil)
+     |> assign(:synthesized_updated_at, nil)
      |> assign(:scryfall_updated_at, nil)}
   end
 
@@ -50,9 +50,9 @@ defmodule Scry2Web.SetupLive do
      socket
      |> assign(:state, merge_step(socket.assigns.state, state))
      |> assign(:raw_event_count, MtgaLogIngestion.count_all())
-     |> assign(:lands17_count, Cards.count())
+     |> assign(:synthesized_count, Cards.count())
      |> assign(:scryfall_count, Cards.scryfall_count())
-     |> assign(:lands17_updated_at, timestamps.lands17_updated_at)
+     |> assign(:synthesized_updated_at, timestamps.synthesized_updated_at)
      |> assign(:scryfall_updated_at, timestamps.scryfall_updated_at)}
   end
 
@@ -119,8 +119,8 @@ defmodule Scry2Web.SetupLive do
     {:noreply, assign(socket, :state, new_state)}
   end
 
-  def handle_info(:cards_refreshed, socket), do: refresh_card_assigns(socket)
-  def handle_info(:arena_ids_backfilled, socket), do: refresh_card_assigns(socket)
+  def handle_info({:cards_refreshed, _count}, socket), do: refresh_card_assigns(socket)
+  def handle_info({:scryfall_imported, _count}, socket), do: refresh_card_assigns(socket)
   def handle_info(_other, socket), do: {:noreply, socket}
 
   defp refresh_card_assigns(socket) do
@@ -128,9 +128,9 @@ defmodule Scry2Web.SetupLive do
 
     {:noreply,
      socket
-     |> assign(:lands17_count, Cards.count())
+     |> assign(:synthesized_count, Cards.count())
      |> assign(:scryfall_count, Cards.scryfall_count())
-     |> assign(:lands17_updated_at, timestamps.lands17_updated_at)
+     |> assign(:synthesized_updated_at, timestamps.synthesized_updated_at)
      |> assign(:scryfall_updated_at, timestamps.scryfall_updated_at)}
   end
 

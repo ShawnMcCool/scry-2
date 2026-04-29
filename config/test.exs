@@ -17,7 +17,7 @@ config :scry_2, Scry2.Repo,
   busy_timeout: 15_000,
   default_transaction_mode: :immediate
 
-# Don't start the MTGA log watcher or the 17lands importer during tests.
+# Don't start the MTGA log watcher or card importers during tests.
 # Tests that need these exercise them directly via the module API.
 config :scry_2, start_watcher: false, start_importer: false
 

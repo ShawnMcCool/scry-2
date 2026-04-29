@@ -24,7 +24,7 @@ defmodule Scry2.Log do
   | `:watcher`  | `Player.log` file events, tail progress           |
   | `:parser`   | MTGA event parsing, unknown event types           |
   | `:ingester` | Raw-event persistence, downstream dispatch        |
-  | `:importer` | 17lands CSV import, Scryfall backfill             |
+  | `:importer` | MTGA + Scryfall imports, card synthesis           |
   | `:http`     | API calls, rate limiting, fetch results           |
   | `:system`   | Fallback for anything without a tag               |
 

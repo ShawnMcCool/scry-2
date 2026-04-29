@@ -341,7 +341,7 @@ defmodule Scry2Web.HealthLive do
   end
 
   defp fixable?(%Scry2.Health.Check{fix: fix})
-       when fix in [:reload_watcher, :enqueue_lands17, :enqueue_scryfall], do: true
+       when fix in [:reload_watcher, :enqueue_synthesis, :enqueue_scryfall], do: true
 
   defp fixable?(_), do: false
 

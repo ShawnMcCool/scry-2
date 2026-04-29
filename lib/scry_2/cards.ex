@@ -2,12 +2,25 @@ defmodule Scry2.Cards do
   @moduledoc """
   Context module for card reference data.
 
-  Owns tables: `cards_cards`, `cards_sets`, `cards_scryfall_cards`, `cards_mtga_cards`.
+  Owns tables: `cards_cards`, `cards_sets`, `cards_scryfall_cards`,
+  `cards_mtga_cards`.
 
   PubSub role: broadcasts `"cards:updates"` after reference-data refreshes.
 
-  See `Scry2.Cards.SeventeenLands` for the bulk import path. See ADR-014
-  for the `arena_id` identity invariant.
+  ## Source-of-truth pipeline
+
+  Card data flows through three independent importers and one synthesis
+  step:
+
+  1. `Scry2.Cards.MtgaClientData` — reads the MTGA client's
+     `Raw_CardDatabase_*.mtga` SQLite into `cards_mtga_cards`.
+     Canonical Arena card list. Zero third-party dependency.
+  2. `Scry2.Cards.Scryfall` — streams Scryfall bulk data into
+     `cards_scryfall_cards`. Provides oracle metadata + image URIs.
+  3. `Scry2.Cards.Synthesize` — joins the two sources by `arena_id` and
+     upserts `cards_cards`. Disposable read model.
+
+  See ADR-014 for the `arena_id` identity invariant.
   """
 
   import Ecto.Query
@@ -16,7 +29,7 @@ defmodule Scry2.Cards do
   alias Scry2.Repo
   alias Scry2.Settings
 
-  @lands17_refresh_key "cards_lands17_last_refresh_at"
+  @synthesis_refresh_key "cards_synthesized_last_refresh_at"
   @scryfall_refresh_key "cards_scryfall_last_refresh_at"
   @mtga_client_refresh_key "cards_mtga_client_last_refresh_at"
 
@@ -109,7 +122,8 @@ defmodule Scry2.Cards do
   @doc """
   Returns storage stats for card data sources.
 
-  Keys: `:lands17_count`, `:lands17_bytes`, `:scryfall_count`, `:scryfall_bytes`,
+  Keys: `:synthesized_count`, `:synthesized_bytes`, `:scryfall_count`,
+        `:scryfall_bytes`, `:mtga_client_count`, `:mtga_client_bytes`,
         `:db_bytes`, `:image_count`, `:image_bytes`.
   """
   def data_source_stats do
@@ -117,10 +131,12 @@ defmodule Scry2.Cards do
     {image_count, image_bytes} = image_cache_stats(image_cache_dir)
 
     %{
-      lands17_count: Repo.aggregate(Card, :count),
+      synthesized_count: Repo.aggregate(Card, :count),
+      synthesized_bytes: table_size_bytes("cards_cards"),
       scryfall_count: Repo.aggregate(ScryfallCard, :count),
-      lands17_bytes: table_size_bytes("cards_cards"),
       scryfall_bytes: table_size_bytes("cards_scryfall_cards"),
+      mtga_client_count: Repo.aggregate(MtgaCard, :count),
+      mtga_client_bytes: table_size_bytes("cards_mtga_cards"),
       db_bytes: db_file_size(),
       image_count: image_count,
       image_bytes: image_bytes
@@ -131,40 +147,28 @@ defmodule Scry2.Cards do
   Returns the last **successful refresh** timestamp for each card data
   source.
 
-  This intentionally tracks refresh *runs*, not `updated_at` on the card
-  rows. When the upstream CSV/bulk data hasn't changed between imports,
-  Ecto's changeset comparison produces zero-change updates and row
-  `updated_at` doesn't advance — but "we verified the data is still
-  current" is exactly what the Health freshness check needs.
-
-  Stored via `Scry2.Settings` (SQLite JSON blob). Keys are
-  `cards_lands17_last_refresh_at` and `cards_scryfall_last_refresh_at`.
-
-  Keys in the returned map: `:lands17_updated_at`, `:scryfall_updated_at`
-  (both may be nil). Name is preserved for consumer stability even
-  though "updated_at" is now a soft alias for "last refresh".
+  Keys in the returned map: `:synthesized_updated_at`, `:scryfall_updated_at`,
+  `:mtga_client_updated_at` (all may be nil).
   """
   def import_timestamps do
     %{
-      lands17_updated_at: read_refresh_timestamp(@lands17_refresh_key),
+      synthesized_updated_at: read_refresh_timestamp(@synthesis_refresh_key),
       scryfall_updated_at: read_refresh_timestamp(@scryfall_refresh_key),
       mtga_client_updated_at: read_refresh_timestamp(@mtga_client_refresh_key)
     }
   end
 
   @doc """
-  Records a successful 17lands import at the current UTC time. Called
-  from `Scry2.Workers.PeriodicallyUpdateCards` after a successful run.
+  Records a successful synthesis run at the current UTC time.
   """
-  @spec record_lands17_refresh!(DateTime.t()) :: :ok
-  def record_lands17_refresh!(now \\ DateTime.utc_now()) do
-    Settings.put!(@lands17_refresh_key, DateTime.to_iso8601(now))
+  @spec record_synthesis_refresh!(DateTime.t()) :: :ok
+  def record_synthesis_refresh!(now \\ DateTime.utc_now()) do
+    Settings.put!(@synthesis_refresh_key, DateTime.to_iso8601(now))
     :ok
   end
 
   @doc """
-  Records a successful Scryfall backfill at the current UTC time. Called
-  from `Scry2.Workers.PeriodicallyBackfillArenaIds` after a successful run.
+  Records a successful Scryfall import at the current UTC time.
   """
   @spec record_scryfall_refresh!(DateTime.t()) :: :ok
   def record_scryfall_refresh!(now \\ DateTime.utc_now()) do
@@ -173,9 +177,7 @@ defmodule Scry2.Cards do
   end
 
   @doc """
-  Records a successful MTGA client database import at the current UTC
-  time. Called from `Scry2.Workers.PeriodicallyImportMtgaClientCards`
-  after a successful run.
+  Records a successful MTGA client database import at the current UTC time.
   """
   @spec record_mtga_client_refresh!(DateTime.t()) :: :ok
   def record_mtga_client_refresh!(now \\ DateTime.utc_now()) do
@@ -386,154 +388,6 @@ defmodule Scry2.Cards do
     ])
   end
 
-  @doc """
-  Sets `arena_id` on a card that doesn't have one yet.
-
-  Returns `{:ok, card}` if the backfill happened or was a no-op
-  (card already has an arena_id). Raises on DB errors.
-
-  ADR-014: never overwrites an existing arena_id.
-  """
-  def backfill_arena_id!(%Card{arena_id: existing} = card, _arena_id)
-      when not is_nil(existing) do
-    {:ok, card}
-  end
-
-  def backfill_arena_id!(%Card{arena_id: nil} = card, arena_id)
-      when is_integer(arena_id) do
-    updated =
-      card
-      |> Card.scryfall_changeset(%{arena_id: arena_id})
-      |> Repo.update!()
-
-    {:ok, updated}
-  end
-
-  @doc """
-  Backfills `arena_id` on `cards_cards` rows using MTGA client data.
-
-  Two passes are run, each targeting cards whose `arena_id` is not yet set:
-
-  **Pass 1 — Scryfall-mediated:** joins `cards_mtga_cards` → `cards_scryfall_cards`
-  via `(expansion_code, collector_number)` to get the Scryfall name (handles
-  DFC " // " naming). Works when MTGA and Scryfall share the same set code.
-
-  **Pass 2 — Direct MTGA name:** matches `cards_mtga_cards` directly to
-  `cards_cards` via `(name, expansion_code)`, bypassing Scryfall entirely.
-  Catches cards where MTGA and Scryfall use different set codes for the same
-  set (e.g., MTGA "Y24" vs Scryfall "YMKM").
-
-  Complements the Scryfall-based backfill in `Scry2.Cards.Scryfall`.
-  ADR-014: never overwrites an existing `arena_id`.
-
-  Returns the count of newly backfilled arena_ids.
-  """
-  def backfill_arena_ids_from_client_data! do
-    count = backfill_via_scryfall_name(0)
-    backfill_via_direct_name(count)
-  end
-
-  # Pass 1: mtga_cards → scryfall_cards (for name) → cards_cards.
-  # Works when the set code matches between MTGA and Scryfall.
-  defp backfill_via_scryfall_name(count) do
-    pairs =
-      from(mc in "cards_mtga_cards",
-        join: sc in "cards_scryfall_cards",
-        on:
-          sc.set_code == mc.expansion_code and
-            sc.collector_number == mc.collector_number,
-        left_join: existing in Card,
-        on: existing.arena_id == mc.arena_id,
-        where: is_nil(existing.id),
-        select: %{
-          arena_id: mc.arena_id,
-          front_name:
-            fragment(
-              "CASE WHEN instr(?, ' // ') > 0 THEN substr(?, 1, instr(?, ' // ') - 1) ELSE ? END",
-              sc.name,
-              sc.name,
-              sc.name,
-              sc.name
-            ),
-          set_code: mc.expansion_code
-        },
-        distinct: true
-      )
-      |> Repo.all()
-
-    apply_backfill_pairs(pairs, count)
-  end
-
-  # Pass 2: mtga_cards → cards_cards directly by (name, expansion_code).
-  # Catches cards where MTGA and Scryfall use different set code aliases
-  # (e.g., MTGA "Y24" vs Scryfall "YMKM"). Skips blank/unknown names.
-  defp backfill_via_direct_name(count) do
-    pairs =
-      from(mc in "cards_mtga_cards",
-        left_join: existing in Card,
-        on: existing.arena_id == mc.arena_id,
-        where:
-          is_nil(existing.id) and mc.name != "" and
-            not like(mc.name, "Unknown %"),
-        select: %{
-          arena_id: mc.arena_id,
-          front_name:
-            fragment(
-              "CASE WHEN instr(?, ' // ') > 0 THEN substr(?, 1, instr(?, ' // ') - 1) ELSE ? END",
-              mc.name,
-              mc.name,
-              mc.name,
-              mc.name
-            ),
-          set_code: mc.expansion_code
-        },
-        distinct: true
-      )
-      |> Repo.all()
-
-    apply_backfill_pairs(pairs, count)
-  end
-
-  defp apply_backfill_pairs(pairs, initial_count) do
-    Enum.reduce(pairs, initial_count, fn %{
-                                           arena_id: arena_id,
-                                           front_name: name,
-                                           set_code: set_code
-                                         },
-                                         count ->
-      case get_by_name_and_set(name, set_code) do
-        [] ->
-          count
-
-        cards ->
-          card = Enum.find(cards, &is_nil(&1.arena_id))
-
-          if card do
-            try do
-              {:ok, _} = backfill_arena_id!(card, arena_id)
-              count + 1
-            rescue
-              _error in [Ecto.ConstraintError, Ecto.InvalidChangesetError] -> count
-            end
-          else
-            count
-          end
-      end
-    end)
-  end
-
-  @doc """
-  Returns cards matching the given name and set code, or empty list.
-  """
-  def get_by_name_and_set(name, set_code)
-      when is_binary(name) and is_binary(set_code) do
-    from(c in Card,
-      join: s in assoc(c, :set),
-      where: c.name == ^name and s.code == ^set_code
-    )
-    |> Repo.all()
-  end
-
   @doc "Returns the card for the given MTGA arena_id, or nil."
   def get_by_arena_id(arena_id) when is_integer(arena_id) do
     Repo.get_by(Card, arena_id: arena_id)
@@ -586,7 +440,7 @@ defmodule Scry2.Cards do
   @doc """
   Returns a map of arena_id => card data for a list of arena_ids.
 
-  Queries `cards_cards` (17lands) first for rich data (human-readable types,
+  Queries `cards_cards` (synthesised) first for rich data (human-readable types,
   mana_value, color_identity). For any arena_ids not found there, falls back
   to `cards_mtga_cards` — the primary card identity source that covers every
   MTGA arena_id. MtgaCard fallback entries have `mana_value: 0` and
@@ -627,7 +481,7 @@ defmodule Scry2.Cards do
 
   @doc """
   Returns a map of `arena_id => card_name` for the given arena_ids.
-  Resolves from both `cards_cards` (17lands) and `cards_mtga_cards` (MTGA).
+  Resolves from both `cards_cards` (synthesised) and `cards_mtga_cards`.
   """
   def names_by_arena_ids(arena_ids) when is_list(arena_ids) do
     list_by_arena_ids(arena_ids)
@@ -639,7 +493,7 @@ defmodule Scry2.Cards do
 
   # Decodes MTGA's comma-separated integer type enums to a space-separated
   # human-readable string (e.g. "2,5" → "Creature Land"). Used only for
-  # MtgaCard fallback entries where 17lands data is unavailable.
+  # MtgaCard fallback entries where synthesised data is unavailable.
   #
   # MTGA type enum values (from Raw_CardDatabase Cards.Types column):
   #   1=Artifact, 2=Creature, 3=Enchantment, 4=Instant, 5=Land,
@@ -662,39 +516,19 @@ defmodule Scry2.Cards do
   defp mtga_type_name("10"), do: "Sorcery"
   defp mtga_type_name(other), do: other
 
-  @doc "Returns the card for the given 17lands lands17_id, or nil."
-  def get_by_lands17_id(lands17_id) when is_integer(lands17_id) do
-    Repo.get_by(Card, lands17_id: lands17_id)
-  end
-
   @doc """
-  Upserts a card by `lands17_id` (the 17lands primary import key).
-
-  Never mutates an existing row's `arena_id` — see ADR-014.
+  Upserts a card from the synthesis pipeline by `arena_id`. Returns the
+  persisted record.
   """
-  def upsert_card!(attrs) do
+  def synthesize_card!(attrs) do
     attrs = Map.new(attrs)
 
-    case get_by_lands17_id(attrs.lands17_id) do
-      nil ->
-        %Card{}
-        |> Card.lands17_changeset(attrs)
-        |> Repo.insert!()
-
-      existing ->
-        # Don't clobber arena_id if already set.
-        attrs = maybe_preserve_arena_id(attrs, existing)
-
-        existing
-        |> Card.lands17_changeset(attrs)
-        |> Repo.update!()
-    end
-  end
-
-  defp maybe_preserve_arena_id(attrs, %Card{arena_id: nil}), do: attrs
-
-  defp maybe_preserve_arena_id(attrs, %Card{arena_id: existing_id}) do
-    Map.put(attrs, :arena_id, existing_id)
+    %Card{}
+    |> Card.synthesis_changeset(attrs)
+    |> Repo.insert!(
+      on_conflict: {:replace_all_except, [:id, :inserted_at]},
+      conflict_target: [:arena_id]
+    )
   end
 
   # ── Scryfall Cards ────────────────────────────────────────────────────────

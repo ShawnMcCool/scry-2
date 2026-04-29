@@ -2,7 +2,7 @@ defmodule Scry2Web.SettingsLive do
   @moduledoc """
   User-facing settings page.
 
-  Tier 1 fields (MTGA `player_log_path`, `data_dir`, 17lands
+  Tier 1 fields (MTGA `player_log_path`, `data_dir`, card synthesis
   `refresh_cron`) are editable and persist via `Scry2.Settings`, which
   overrides the corresponding TOML values at runtime through
   `Scry2.Settings.get_or_config/2`.
@@ -54,7 +54,6 @@ defmodule Scry2Web.SettingsLive do
     snapshot = %{
       database_path: Config.get(:database_path),
       cache_dir: Config.get(:cache_dir),
-      cards_lands17_url: Config.get(:cards_lands17_url),
       cards_scryfall_bulk_url: Config.get(:cards_scryfall_bulk_url),
       start_watcher: Config.get(:start_watcher),
       start_importer: Config.get(:start_importer)
@@ -393,7 +392,7 @@ defmodule Scry2Web.SettingsLive do
 
         <section class="card bg-base-200">
           <div class="card-body">
-            <h2 class="card-title text-base">17lands refresh schedule</h2>
+            <h2 class="card-title text-base">Card refresh schedule</h2>
             <p class="text-sm">
               <span :if={@field_values.refresh_cron not in [nil, ""]}>
                 <code>{@field_values.refresh_cron}</code>
@@ -415,8 +414,9 @@ defmodule Scry2Web.SettingsLive do
 
             <div :if={@editing[:refresh_cron]} class="mt-2">
               <p class="text-sm text-base-content/70">
-                Cron expression for the daily <code>cards.csv</code>
-                refresh job. <span class="badge badge-soft badge-info">Restart required</span>
+                Cron expression for the daily card synthesis job
+                (<code>PeriodicallySynthesizeCards</code>).
+                <span class="badge badge-soft badge-info">Restart required</span>
                 Changes take effect on next app boot.
               </p>
 

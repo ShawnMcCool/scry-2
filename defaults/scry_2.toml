@@ -42,14 +42,13 @@ poll_interval_ms = 500
 # arrives, the translator falls back to assuming `systemSeatId: 1` is
 # you — which is correct for the overwhelming majority of matches.
 
-# ── Card reference data (17lands) ────────────────────────────────────────
+# ── Card reference data ──────────────────────────────────────────────────
 [cards]
-# URL for the 17lands public cards.csv. Override for air-gapped testing.
-lands17_url = "https://17lands-public.s3.amazonaws.com/analysis_data/cards/cards.csv"
-
-# Cron expression for the scheduled refresh (Oban.Plugins.Cron syntax).
-# Default: daily at 04:00 UTC.
-refresh_cron = "0 4 * * *"
+# Cron expression for the daily card synthesis job (Oban.Plugins.Cron
+# syntax). Synthesis builds `cards_cards` from `cards_mtga_cards` (your
+# local MTGA install) + `cards_scryfall_cards` (Scryfall bulk).
+# Default: daily at 05:30 UTC, after the upstream MTGA + Scryfall imports.
+refresh_cron = "30 5 * * *"
 
 # Scryfall bulk-data catalog endpoint. The actual download URL rotates;
 # this endpoint returns JSON with a `download_uri` field.

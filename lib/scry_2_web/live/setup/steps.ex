@@ -12,9 +12,9 @@ defmodule Scry2Web.SetupLive.Steps do
        the user to enable MTGA's "Detailed Logs (Plugin Support)".
     2. `locate_log_step/1` — shows the auto-detected Player.log path,
        or a manual text input if auto-resolution failed.
-    3. `card_status_step/1` — informational status of 17lands + Scryfall
-       imports, plus the cron schedule. No actions here — card data
-       auto-imports on boot.
+    3. `card_status_step/1` — informational status of card synthesis +
+       Scryfall imports, plus the cron schedule. No actions here — card
+       data auto-imports on boot.
     4. `verify_events_step/1` — live-waits for the first raw event.
        "Launch MTGA now" prompt; skippable.
     5. `done_step/1` — summary + link to the dashboard.
@@ -136,9 +136,9 @@ defmodule Scry2Web.SetupLive.Steps do
   # ── Step 3: Card data status ──────────────────────────────────────────────
 
   attr :state, State, required: true
-  attr :lands17_count, :integer, required: true
+  attr :synthesized_count, :integer, required: true
   attr :scryfall_count, :integer, required: true
-  attr :lands17_updated_at, :any, required: true
+  attr :synthesized_updated_at, :any, required: true
   attr :scryfall_updated_at, :any, required: true
 
   def card_status_step(assigns) do
@@ -147,20 +147,19 @@ defmodule Scry2Web.SetupLive.Steps do
       <h2 class="text-lg font-semibold text-base-content">Card reference data</h2>
 
       <p>
-        Scry 2 downloads card data from
-        <a href="https://www.17lands.com" target="_blank" class="link">17lands</a>
-        (names, rarity, types, colors)
-        and from <a href="https://scryfall.com" target="_blank" class="link">Scryfall</a>
-        (to match MTGA's internal IDs). This happens automatically on first launch and
-        refreshes on a schedule after that — you don't need to do anything.
+        Scry 2 reads card identity from your local MTGA install and pulls oracle
+        text and card images from <a href="https://scryfall.com" target="_blank" class="link">Scryfall</a>.
+        Both sources are synthesised into a single read model that powers card
+        lookups. This happens automatically on first launch and refreshes on a
+        schedule after that — you don't need to do anything.
       </p>
 
       <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
         <.card_source_row
-          label="17lands"
-          count={@lands17_count}
-          updated_at={@lands17_updated_at}
-          schedule="Daily at 04:00 UTC"
+          label="Synthesised cards"
+          count={@synthesized_count}
+          updated_at={@synthesized_updated_at}
+          schedule="Daily at 05:30 UTC"
         />
         <.card_source_row
           label="Scryfall"
@@ -264,7 +263,7 @@ defmodule Scry2Web.SetupLive.Steps do
 
   attr :state, State, required: true
   attr :raw_event_count, :integer, required: true
-  attr :lands17_count, :integer, required: true
+  attr :synthesized_count, :integer, required: true
 
   def done_step(assigns) do
     ~H"""
@@ -290,9 +289,9 @@ defmodule Scry2Web.SetupLive.Steps do
           ok={@raw_event_count > 0}
         />
         <.summary_row
-          label="17lands cards"
-          value={"#{@lands17_count} rows"}
-          ok={@lands17_count > 0}
+          label="Card data"
+          value={"#{@synthesized_count} cards synthesised"}
+          ok={@synthesized_count > 0}
         />
       </div>
 

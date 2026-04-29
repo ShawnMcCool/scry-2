@@ -35,8 +35,8 @@ defmodule Scry2.Health do
   alias Scry2.MtgaLogIngestion
   alias Scry2.MtgaLogIngestion.LocateLogFile
   alias Scry2.MtgaLogIngestion.Watcher
-  alias Scry2.Workers.PeriodicallyBackfillArenaIds
-  alias Scry2.Workers.PeriodicallyUpdateCards
+  alias Scry2.Workers.PeriodicallyImportScryfallCards
+  alias Scry2.Workers.PeriodicallySynthesizeCards
 
   @doc """
   Runs every check and returns a `%Report{}` snapshot of system health.
@@ -75,12 +75,12 @@ defmodule Scry2.Health do
 
   def run_category(:card_data) do
     timestamps = Cards.import_timestamps()
-    lands17_count = Cards.count()
+    synthesized_count = Cards.count()
     scryfall_count = Cards.scryfall_count()
 
     [
-      CardData.lands17_present(lands17_count),
-      CardData.lands17_fresh(timestamps.lands17_updated_at),
+      CardData.synthesized_present(synthesized_count),
+      CardData.synthesized_fresh(timestamps.synthesized_updated_at),
       CardData.scryfall_present(scryfall_count),
       CardData.scryfall_fresh(timestamps.scryfall_updated_at)
     ]
@@ -114,7 +114,7 @@ defmodule Scry2.Health do
   setup:
 
     * `Player.log` is locatable
-    * At least one 17lands card is in the DB
+    * At least one synthesised card is in the DB
     * At least one domain event has been persisted (i.e. events have
       actually flowed through the pipeline)
 
@@ -146,16 +146,16 @@ defmodule Scry2.Health do
     {:ok, "Watcher path reload requested"}
   end
 
-  def auto_fix(:enqueue_lands17) do
-    case Oban.insert(PeriodicallyUpdateCards.new(%{})) do
-      {:ok, _job} -> {:ok, "17lands import enqueued"}
+  def auto_fix(:enqueue_synthesis) do
+    case Oban.insert(PeriodicallySynthesizeCards.new(%{})) do
+      {:ok, _job} -> {:ok, "Card synthesis enqueued"}
       {:error, reason} -> {:error, reason}
     end
   end
 
   def auto_fix(:enqueue_scryfall) do
-    case Oban.insert(PeriodicallyBackfillArenaIds.new(%{})) do
-      {:ok, _job} -> {:ok, "Scryfall backfill enqueued"}
+    case Oban.insert(PeriodicallyImportScryfallCards.new(%{})) do
+      {:ok, _job} -> {:ok, "Scryfall import enqueued"}
       {:error, reason} -> {:error, reason}
     end
   end
