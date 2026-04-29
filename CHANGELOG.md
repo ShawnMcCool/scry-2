@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.25.8 — 2026-04-29
+
 ### Improved
 
 - **The crash log now captures *why* the app went down, not just *that*
