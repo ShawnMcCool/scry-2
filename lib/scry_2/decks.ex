@@ -1014,6 +1014,8 @@ defmodule Scry2.Decks do
   end
 
   defp broadcast_update(mtga_deck_id) do
-    Topics.broadcast(Topics.decks_updates(), {:deck_updated, mtga_deck_id})
+    unless Scry2.Events.SilentMode.silent?() do
+      Topics.broadcast(Topics.decks_updates(), {:deck_updated, mtga_deck_id})
+    end
   end
 end

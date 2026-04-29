@@ -40,7 +40,7 @@ if config_env() == :prod do
 
   config :scry_2, Scry2.Repo,
     database: database_path,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "5"),
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
     journal_mode: :wal,
     busy_timeout: 30_000,
     default_transaction_mode: :immediate,

@@ -124,30 +124,34 @@ defmodule Scry2.Events.Projector do
 
         Log.info(:ingester, "#{@projector_name}: rebuilding #{total} events from event store")
 
-        Events.put_watermark!(@projector_name, 0)
+        Scry2.Events.SilentMode.with_silence(fn ->
+          Events.put_watermark!(@projector_name, 0)
 
-        # Truncate projection tables (reverse order for FK safety)
-        Enum.each(Enum.reverse(@projection_tables), &Scry2.Repo.delete_all/1)
+          # Truncate projection tables (reverse order for FK safety)
+          Enum.each(Enum.reverse(@projection_tables), &Scry2.Repo.delete_all/1)
 
-        # Catch all three exit kinds (:error, :exit, :throw) so replay continues past
-        # any single bad event — connection-checkout timeouts and
-        # Ecto.MultipleResultsError both surface here under bulk load.
-        summary =
-          Events.replay_by_types(
-            @claimed_slugs,
-            fn event -> safe_project_replay(event, "rebuild") end,
-            on_batch: fn last_id, processed ->
-              Events.put_watermark!(@projector_name, last_id)
-              if on_progress, do: on_progress.(min(processed, total), total)
-            end
-          )
+          # Catch all three exit kinds (:error, :exit, :throw) so replay continues
+          # past any single bad event — connection-checkout timeouts and
+          # Ecto.MultipleResultsError both surface here under bulk load.
+          summary =
+            Events.replay_by_types(
+              @claimed_slugs,
+              fn event -> safe_project_replay(event, "rebuild") end,
+              on_batch: fn last_id, processed ->
+                Events.put_watermark!(@projector_name, last_id)
+                if on_progress, do: on_progress.(min(processed, total), total)
+              end
+            )
 
-        # Final watermark for any remaining events
-        max_id = Events.max_event_id_for_types(@claimed_slugs)
-        if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
-        if on_progress, do: on_progress.(total, total)
+          # Final watermark for any remaining events
+          max_id = Events.max_event_id_for_types(@claimed_slugs)
+          if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
+          if on_progress, do: on_progress.(total, total)
 
-        log_replay_summary("rebuild", summary)
+          log_replay_summary("rebuild", summary)
+          post_rebuild()
+        end)
+
         :ok
       end
 
@@ -164,22 +168,26 @@ defmodule Scry2.Events.Projector do
 
         Log.info(:ingester, "#{@projector_name}: catching up #{total} events from id=#{cursor}")
 
-        summary =
-          Events.replay_by_types(
-            @claimed_slugs,
-            fn event -> safe_project_replay(event, "catch-up") end,
-            cursor: cursor,
-            on_batch: fn last_id, processed ->
-              Events.put_watermark!(@projector_name, last_id)
-              if on_progress, do: on_progress.(min(processed, total), total)
-            end
-          )
+        Scry2.Events.SilentMode.with_silence(fn ->
+          summary =
+            Events.replay_by_types(
+              @claimed_slugs,
+              fn event -> safe_project_replay(event, "catch-up") end,
+              cursor: cursor,
+              on_batch: fn last_id, processed ->
+                Events.put_watermark!(@projector_name, last_id)
+                if on_progress, do: on_progress.(min(processed, total), total)
+              end
+            )
 
-        max_id = Events.max_event_id_for_types(@claimed_slugs)
-        if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
-        if on_progress, do: on_progress.(total, total)
+          max_id = Events.max_event_id_for_types(@claimed_slugs)
+          if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
+          if on_progress, do: on_progress.(total, total)
 
-        log_replay_summary("catch-up", summary)
+          log_replay_summary("catch-up", summary)
+          post_rebuild()
+        end)
+
         :ok
       end
 
@@ -193,6 +201,22 @@ defmodule Scry2.Events.Projector do
 
       def after_init(_opts), do: :ok
 
+      @doc """
+      Hook invoked at the end of `rebuild!/1`, `catch_up!/1`, and the
+      `:full_rebuild` handler — after every claimed event has been
+      replayed and the watermark advanced. Runs inside the same
+      `SilentMode.with_silence/1` window as the rebuild, so any DB
+      writes here also skip PubSub.
+
+      Default is a no-op. Projectors that maintain derived state
+      computed *across* events (e.g. `DraftProjection` storing
+      wins/losses denormalised from `matches_matches`) override this
+      to do a single batch reconciliation instead of relying on the
+      per-event broadcast cascade that no longer fires during a
+      silent rebuild.
+      """
+      def post_rebuild, do: :ok
+
       @impl true
       def handle_info(:full_rebuild, state) do
         Log.info(
@@ -204,17 +228,21 @@ defmodule Scry2.Events.Projector do
         Events.put_watermark!(@projector_name, 0)
         Enum.each(Enum.reverse(@projection_tables), &Scry2.Repo.delete_all/1)
 
-        summary =
-          Events.replay_by_types(
-            @claimed_slugs,
-            fn event -> safe_project_replay(event, "full_rebuild") end,
-            on_batch: fn last_id, _ -> Events.put_watermark!(@projector_name, last_id) end
-          )
+        Scry2.Events.SilentMode.with_silence(fn ->
+          summary =
+            Events.replay_by_types(
+              @claimed_slugs,
+              fn event -> safe_project_replay(event, "full_rebuild") end,
+              on_batch: fn last_id, _ -> Events.put_watermark!(@projector_name, last_id) end
+            )
 
-        max_id = Events.max_event_id_for_types(@claimed_slugs)
-        if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
+          max_id = Events.max_event_id_for_types(@claimed_slugs)
+          if max_id > 0, do: Events.put_watermark!(@projector_name, max_id)
 
-        log_replay_summary("full_rebuild", summary)
+          log_replay_summary("full_rebuild", summary)
+          post_rebuild()
+        end)
+
         Topics.broadcast(Topics.domain_control(), {:projector_rebuilt, @projector_name})
         {:noreply, state}
       end
@@ -350,7 +378,7 @@ defmodule Scry2.Events.Projector do
         end
       end
 
-      defoverridable after_init: 1, handle_extra_info: 2
+      defoverridable after_init: 1, handle_extra_info: 2, post_rebuild: 0
     end
   end
 end

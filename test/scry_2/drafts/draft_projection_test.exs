@@ -346,4 +346,73 @@ defmodule Scry2.Drafts.DraftProjectionTest do
       _ = match2
     end
   end
+
+  describe "post_rebuild/0 batch reconciliation" do
+    test "reconciles wins and losses on every draft from the matches table" do
+      player = create_player()
+      a = "QuickDraft_FDN_#{System.unique_integer([:positive])}"
+      b = "PremierDraft_SOS_#{System.unique_integer([:positive])}"
+
+      project_events(DraftProjection, [
+        build_draft_started(%{
+          player_id: player.id,
+          mtga_draft_id: a,
+          event_name: a,
+          set_code: "FDN"
+        }),
+        build_draft_started(%{
+          player_id: player.id,
+          mtga_draft_id: b,
+          event_name: b,
+          set_code: "SOS"
+        })
+      ])
+
+      # Three wins + two losses for draft A
+      Enum.each(1..3, fn _ ->
+        create_match(%{player_id: player.id, event_name: a, won: true})
+      end)
+
+      Enum.each(1..2, fn _ ->
+        create_match(%{player_id: player.id, event_name: a, won: false})
+      end)
+
+      # One win + four losses for draft B
+      create_match(%{player_id: player.id, event_name: b, won: true})
+
+      Enum.each(1..4, fn _ ->
+        create_match(%{player_id: player.id, event_name: b, won: false})
+      end)
+
+      # `project_events` calls rebuild! which already invokes post_rebuild —
+      # at that point no matches exist, so both drafts settle at 0–0.
+      assert %{wins: 0, losses: 0} = Drafts.get_by_mtga_id(a, player.id)
+      assert %{wins: 0, losses: 0} = Drafts.get_by_mtga_id(b, player.id)
+
+      # Re-running post_rebuild after matches exist must pick them up.
+      assert :ok = DraftProjection.post_rebuild()
+
+      assert %{wins: 3, losses: 2} = Drafts.get_by_mtga_id(a, player.id)
+      assert %{wins: 1, losses: 4} = Drafts.get_by_mtga_id(b, player.id)
+    end
+
+    test "drafts whose event_name has no matches reconcile to 0–0, not nil" do
+      player = create_player()
+      orphan = "QuickDraft_FDN_#{System.unique_integer([:positive])}"
+
+      project_events(
+        DraftProjection,
+        build_draft_started(%{
+          player_id: player.id,
+          mtga_draft_id: orphan,
+          event_name: orphan,
+          set_code: "FDN"
+        })
+      )
+
+      assert :ok = DraftProjection.post_rebuild()
+
+      assert %{wins: 0, losses: 0} = Drafts.get_by_mtga_id(orphan, player.id)
+    end
+  end
 end

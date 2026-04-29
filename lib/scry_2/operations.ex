@@ -67,15 +67,14 @@ defmodule Scry2.Operations do
   acks and broadcasts `{:operation_completed, :rebuild}` when all done.
   """
   def start_rebuild! do
-    names = Enum.map(ProjectorRegistry.all(), & &1.projector_name())
+    projectors = ProjectorRegistry.all()
+    names = Enum.map(projectors, & &1.projector_name())
     broadcast_started(:rebuild, %{projectors: names})
-    expected = MapSet.new(names)
 
     Task.Supervisor.async_nolink(Scry2.TaskSupervisor, fn ->
       try do
-        Topics.subscribe(Topics.domain_control())
-        Topics.broadcast(Topics.domain_control(), :rebuild_all)
-        await_rebuilt(expected, :rebuild)
+        rebuild_with_progress(projectors, :rebuild)
+        broadcast_completed(:rebuild)
       rescue
         error ->
           Log.error(:ingester, "rebuild failed: #{inspect(error)}")
@@ -111,15 +110,14 @@ defmodule Scry2.Operations do
   events (from watermark) without truncating tables.
   """
   def start_catch_up! do
-    names = Enum.map(ProjectorRegistry.all(), & &1.projector_name())
+    projectors = ProjectorRegistry.all()
+    names = Enum.map(projectors, & &1.projector_name())
     broadcast_started(:catch_up, %{projectors: names})
-    expected = MapSet.new(names)
 
     Task.Supervisor.async_nolink(Scry2.TaskSupervisor, fn ->
       try do
-        Topics.subscribe(Topics.domain_control())
-        Topics.broadcast(Topics.domain_control(), :catch_up_all)
-        await_caught_up(expected, :catch_up)
+        catch_up_with_progress(projectors)
+        broadcast_completed(:catch_up)
       rescue
         error ->
           Log.error(:ingester, "catch-up failed: #{inspect(error)}")
@@ -169,52 +167,6 @@ defmodule Scry2.Operations do
     }
   end
 
-  # ── Coordinator receive loops (domain:control ack collection) ──────
-
-  defp await_rebuilt(expected, type) do
-    if MapSet.size(expected) == 0 do
-      broadcast_completed(type)
-    else
-      receive do
-        {:projector_rebuilt, name} ->
-          await_rebuilt(MapSet.delete(expected, name), type)
-
-        {:projector_progress, name, processed, total} ->
-          broadcast_progress(type, %{
-            phase: :projection,
-            projector: name,
-            processed: processed,
-            total: total,
-            percent: percent(processed, total)
-          })
-
-          await_rebuilt(expected, type)
-      end
-    end
-  end
-
-  defp await_caught_up(expected, type) do
-    if MapSet.size(expected) == 0 do
-      broadcast_completed(type)
-    else
-      receive do
-        {:projector_caught_up, name} ->
-          await_caught_up(MapSet.delete(expected, name), type)
-
-        {:projector_progress, name, processed, total} ->
-          broadcast_progress(type, %{
-            phase: :projection,
-            projector: name,
-            processed: processed,
-            total: total,
-            percent: percent(processed, total)
-          })
-
-          await_caught_up(expected, type)
-      end
-    end
-  end
-
   # ── Background work with progress (subset/single-projector ops) ────
 
   defp reingest_with_progress do
@@ -244,65 +196,51 @@ defmodule Scry2.Operations do
       end
     )
 
-    # Signal all projectors to rebuild from scratch. Each projector handles
-    # :full_rebuild in its own GenServer mailbox — BEAM's single-process
-    # guarantee ensures any live events that arrive afterward queue up and
-    # are processed after the rebuild completes (zero message loss).
-    Topics.broadcast(Topics.domain_control(), :full_rebuild)
+    # Rebuild every projector sequentially in registry order. Concurrent
+    # rebuilds (the previous design, broadcasting :full_rebuild) hammered
+    # SQLite's connection pool and amplified the per-event broadcast
+    # cascade between projectors badly enough to crash the BEAM under
+    # full-history reingest. Sequential is slower but bounded; combined
+    # with `SilentMode` suppression of cross-projector broadcasts and
+    # `post_rebuild/0` batch reconciliation, the pipeline stays inside
+    # safe DB-pool and BEAM-supervisor budgets.
+    rebuild_with_progress(ProjectorRegistry.all(), :reingest)
   end
 
-  defp rebuild_with_progress(projector_modules) do
-    projector_modules
-    |> then(fn projectors ->
-      Task.Supervisor.async_stream(
-        Scry2.TaskSupervisor,
-        projectors,
-        fn mod ->
-          name = mod.projector_name()
+  defp rebuild_with_progress(projector_modules, op_type \\ :rebuild) do
+    Enum.each(projector_modules, fn mod ->
+      name = mod.projector_name()
 
-          mod.rebuild!(
-            on_progress: fn processed, total ->
-              broadcast_progress(:rebuild, %{
-                phase: :projection,
-                projector: name,
-                processed: processed,
-                total: total,
-                percent: percent(processed, total)
-              })
-            end
-          )
-        end,
-        timeout: :infinity
+      mod.rebuild!(
+        on_progress: fn processed, total ->
+          broadcast_progress(op_type, %{
+            phase: :projection,
+            projector: name,
+            processed: processed,
+            total: total,
+            percent: percent(processed, total)
+          })
+        end
       )
     end)
-    |> Stream.run()
   end
 
   defp catch_up_with_progress(projector_modules) do
-    projector_modules
-    |> then(fn projectors ->
-      Task.Supervisor.async_stream(
-        Scry2.TaskSupervisor,
-        projectors,
-        fn mod ->
-          name = mod.projector_name()
+    Enum.each(projector_modules, fn mod ->
+      name = mod.projector_name()
 
-          mod.catch_up!(
-            on_progress: fn processed, total ->
-              broadcast_progress(:catch_up, %{
-                phase: :projection,
-                projector: name,
-                processed: processed,
-                total: total,
-                percent: percent(processed, total)
-              })
-            end
-          )
-        end,
-        timeout: :infinity
+      mod.catch_up!(
+        on_progress: fn processed, total ->
+          broadcast_progress(:catch_up, %{
+            phase: :projection,
+            projector: name,
+            processed: processed,
+            total: total,
+            percent: percent(processed, total)
+          })
+        end
       )
     end)
-    |> Stream.run()
   end
 
   # ── Helpers ─────────────────────────────────────────────────────────

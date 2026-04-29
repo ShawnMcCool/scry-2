@@ -382,6 +382,8 @@ defmodule Scry2.Matches do
   defp maybe_filter_by_won(query, won) when is_boolean(won), do: where(query, [m], m.won == ^won)
 
   defp broadcast_update(match_id) do
-    Topics.broadcast(Topics.matches_updates(), {:match_updated, match_id})
+    unless Scry2.Events.SilentMode.silent?() do
+      Topics.broadcast(Topics.matches_updates(), {:match_updated, match_id})
+    end
   end
 end

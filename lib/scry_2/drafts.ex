@@ -209,6 +209,8 @@ defmodule Scry2.Drafts do
   defp maybe_filter_by_set(query, set_code), do: where(query, [d], d.set_code == ^set_code)
 
   defp broadcast_update(draft_id) do
-    Topics.broadcast(Topics.drafts_updates(), {:draft_updated, draft_id})
+    unless Scry2.Events.SilentMode.silent?() do
+      Topics.broadcast(Topics.drafts_updates(), {:draft_updated, draft_id})
+    end
   end
 end

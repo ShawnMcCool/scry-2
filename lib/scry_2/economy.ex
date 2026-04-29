@@ -37,7 +37,7 @@ defmodule Scry2.Economy do
         conflict_target: [:player_id, :event_name, :joined_at]
       )
 
-    Topics.broadcast(Topics.economy_updates(), {:economy_updated, :event_entry})
+    broadcast({:economy_updated, :event_entry})
     entry
   end
 
@@ -59,7 +59,7 @@ defmodule Scry2.Economy do
       |> EventEntry.changeset(Map.new(reward_attrs))
       |> Repo.update!()
 
-      Topics.broadcast(Topics.economy_updates(), {:economy_updated, :event_entry})
+      broadcast({:economy_updated, :event_entry})
     end
   end
 
@@ -89,7 +89,7 @@ defmodule Scry2.Economy do
       |> InventorySnapshot.changeset(Map.new(attrs))
       |> Repo.insert!()
 
-    Topics.broadcast(Topics.economy_updates(), {:economy_updated, :inventory})
+    broadcast({:economy_updated, :inventory})
     snapshot
   end
 
@@ -113,7 +113,7 @@ defmodule Scry2.Economy do
       |> Transaction.changeset(Map.new(attrs))
       |> Repo.insert!()
 
-    Topics.broadcast(Topics.economy_updates(), {:economy_updated, :transaction})
+    broadcast({:economy_updated, :transaction})
     transaction
   end
 
@@ -162,4 +162,10 @@ defmodule Scry2.Economy do
 
   defp maybe_filter_by_player(query, nil), do: query
   defp maybe_filter_by_player(query, player_id), do: where(query, [r], r.player_id == ^player_id)
+
+  defp broadcast(message) do
+    unless Scry2.Events.SilentMode.silent?() do
+      Topics.broadcast(Topics.economy_updates(), message)
+    end
+  end
 end

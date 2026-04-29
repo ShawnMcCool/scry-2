@@ -27,6 +27,7 @@ defmodule Scry2.Drafts.DraftProjection do
   alias Scry2.Events.Draft.{DraftCompleted, DraftPickMade, DraftStarted}
   alias Scry2.Events.Draft.{HumanDraftPackOffered, HumanDraftPickMade}
   alias Scry2.Matches
+  alias Scry2.Repo
   alias Scry2.Topics
 
   if Mix.env() == :test do
@@ -39,6 +40,40 @@ defmodule Scry2.Drafts.DraftProjection do
 
   def after_init(_opts) do
     Topics.subscribe(Topics.matches_updates())
+  end
+
+  @doc """
+  After a rebuild/catch-up, batch-reconcile every draft's `wins` /
+  `losses` from `matches_matches` in a single SQL statement.
+
+  Live operation keeps these fields in sync via `:match_updated`
+  broadcasts (see `handle_extra_info/2`). During a rebuild those
+  broadcasts are suppressed (`Scry2.Events.SilentMode`) so we'd
+  otherwise leave every draft at 0–0. SQLite's correlated subquery
+  on `(event_name, player_id)` runs in milliseconds even at full
+  history scale — vastly cheaper than the per-match cascade we
+  used to do.
+  """
+  def post_rebuild do
+    Repo.query!("""
+    UPDATE drafts_drafts AS d
+    SET
+      wins = COALESCE((
+        SELECT COUNT(*) FROM matches_matches m
+        WHERE m.event_name = d.event_name
+          AND m.player_id = d.player_id
+          AND m.won = 1
+      ), 0),
+      losses = COALESCE((
+        SELECT COUNT(*) FROM matches_matches m
+        WHERE m.event_name = d.event_name
+          AND m.player_id = d.player_id
+          AND m.won = 0
+      ), 0),
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+    """)
+
+    :ok
   end
 
   def handle_extra_info({:match_updated, match_id}, state) do

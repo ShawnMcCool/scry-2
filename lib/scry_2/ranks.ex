@@ -91,7 +91,10 @@ defmodule Scry2.Ranks do
       |> Snapshot.changeset(Map.new(attrs))
       |> Repo.insert!()
 
-    Topics.broadcast(Topics.ranks_updates(), {:rank_updated, snapshot.id})
+    unless Scry2.Events.SilentMode.silent?() do
+      Topics.broadcast(Topics.ranks_updates(), {:rank_updated, snapshot.id})
+    end
+
     snapshot
   end
 
