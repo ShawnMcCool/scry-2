@@ -69,6 +69,7 @@ defmodule Scry2Web.MatchesLive do
 
   defp assign_index(socket, params) do
     player_id = socket.assigns[:active_player_id]
+    category = category_from_slug(params["category"])
     format = params["format"]
     bo = params["bo"]
     result = params["result"]
@@ -76,12 +77,14 @@ defmodule Scry2Web.MatchesLive do
 
     filter_opts =
       [player_id: player_id]
+      |> maybe_add(:category, category)
       |> maybe_add(:format, format)
       |> maybe_add(:bo, bo)
       |> maybe_add(:won, parse_result(result))
 
     stats = Matches.aggregate_stats(filter_opts)
     cumulative_series = Matches.cumulative_win_rate(filter_opts)
+    category_counts = Matches.category_counts(filter_opts)
     format_counts = Matches.format_counts(Keyword.delete(filter_opts, :format))
 
     matches =
@@ -94,15 +97,18 @@ defmodule Scry2Web.MatchesLive do
       matches: matches,
       stats: stats,
       cumulative_series: cumulative_series,
+      category_counts: category_counts,
       format_counts: format_counts,
       page: page,
       total_pages: total_pages,
       filter_params: %{
+        "category" => params["category"],
         "format" => format,
         "bo" => bo,
         "result" => result,
         "page" => to_string(page)
       },
+      active_category: category,
       active_format: format,
       active_bo: bo,
       active_result: result
@@ -164,7 +170,9 @@ defmodule Scry2Web.MatchesLive do
 
       <%!-- Filter bar --%>
       <.filter_bar
+        category_counts={@category_counts}
         format_counts={@format_counts}
+        active_category={@active_category}
         active_format={@active_format}
         active_bo={@active_bo}
         active_result={@active_result}
@@ -208,6 +216,7 @@ defmodule Scry2Web.MatchesLive do
         :if={@total_pages > 1}
         page={@page}
         total_pages={@total_pages}
+        active_category={@active_category}
         active_format={@active_format}
         active_bo={@active_bo}
         active_result={@active_result}
@@ -374,71 +383,106 @@ defmodule Scry2Web.MatchesLive do
 
   # ── Filter bar ───────────────────────────────────────────────────────
 
+  # Tier-1 categories rendered in a fixed order so the chips don't reflow as
+  # match counts shift between categories.
+  @category_order [:limited, :constructed, :other]
+
   defp filter_bar(assigns) do
+    assigns = assign(assigns, :category_order, @category_order)
+
     ~H"""
-    <div class="flex items-center gap-2 flex-wrap py-3 mb-4 border-t border-b border-base-content/5">
-      <%!-- Format chips --%>
-      <.link
-        patch={filter_path(nil, @active_bo, @active_result)}
-        class={["btn btn-xs", if(!@active_format, do: "btn-soft btn-primary", else: "btn-ghost")]}
-      >
-        All Formats
-      </.link>
-      <.link
-        :for={{format, count} <- Enum.sort_by(@format_counts, fn {_, c} -> -c end)}
-        patch={filter_path(format, @active_bo, @active_result)}
-        class={[
-          "btn btn-xs",
-          if(@active_format == format, do: "btn-soft btn-primary", else: "btn-ghost")
-        ]}
-      >
-        {format_label(format)}
-        <span class="badge badge-xs badge-ghost ml-1">{count}</span>
-      </.link>
+    <div class="flex flex-col gap-2 py-3 mb-4 border-t border-b border-base-content/5">
+      <%!-- Tier 1: category chips + BO/Result toggles --%>
+      <div class="flex items-center gap-2 flex-wrap">
+        <.link
+          patch={filter_path(nil, nil, @active_bo, @active_result)}
+          class={[
+            "btn btn-xs",
+            if(!@active_category && !@active_format, do: "btn-soft btn-primary", else: "btn-ghost")
+          ]}
+        >
+          All Formats
+        </.link>
+        <.link
+          :for={category <- @category_order}
+          :if={Map.get(@category_counts, category, 0) > 0}
+          patch={filter_path(category, nil, @active_bo, @active_result)}
+          class={[
+            "btn btn-xs",
+            if(@active_category == category, do: "btn-soft btn-primary", else: "btn-ghost")
+          ]}
+        >
+          {category_label(category)}
+          <span class="badge badge-xs badge-ghost ml-1">
+            {Map.get(@category_counts, category, 0)}
+          </span>
+        </.link>
 
-      <div class="flex-1" />
+        <div class="flex-1" />
 
-      <%!-- BO toggle --%>
-      <div class="join">
-        <.link
-          patch={filter_path(@active_format, nil, @active_result)}
-          class={["btn btn-xs join-item", if(!@active_bo, do: "btn-active", else: "")]}
-        >
-          All
-        </.link>
-        <.link
-          patch={filter_path(@active_format, "1", @active_result)}
-          class={["btn btn-xs join-item", if(@active_bo == "1", do: "btn-active", else: "")]}
-        >
-          BO1
-        </.link>
-        <.link
-          patch={filter_path(@active_format, "3", @active_result)}
-          class={["btn btn-xs join-item", if(@active_bo == "3", do: "btn-active", else: "")]}
-        >
-          BO3
-        </.link>
+        <%!-- BO toggle --%>
+        <div class="join">
+          <.link
+            patch={filter_path(@active_category, @active_format, nil, @active_result)}
+            class={["btn btn-xs join-item", if(!@active_bo, do: "btn-active", else: "")]}
+          >
+            All
+          </.link>
+          <.link
+            patch={filter_path(@active_category, @active_format, "1", @active_result)}
+            class={["btn btn-xs join-item", if(@active_bo == "1", do: "btn-active", else: "")]}
+          >
+            BO1
+          </.link>
+          <.link
+            patch={filter_path(@active_category, @active_format, "3", @active_result)}
+            class={["btn btn-xs join-item", if(@active_bo == "3", do: "btn-active", else: "")]}
+          >
+            BO3
+          </.link>
+        </div>
+
+        <%!-- Result toggle --%>
+        <div class="join">
+          <.link
+            patch={filter_path(@active_category, @active_format, @active_bo, nil)}
+            class={["btn btn-xs join-item", if(!@active_result, do: "btn-active", else: "")]}
+          >
+            All
+          </.link>
+          <.link
+            patch={filter_path(@active_category, @active_format, @active_bo, "won")}
+            class={["btn btn-xs join-item", if(@active_result == "won", do: "btn-active", else: "")]}
+          >
+            Wins
+          </.link>
+          <.link
+            patch={filter_path(@active_category, @active_format, @active_bo, "lost")}
+            class={["btn btn-xs join-item", if(@active_result == "lost", do: "btn-active", else: "")]}
+          >
+            Losses
+          </.link>
+        </div>
       </div>
 
-      <%!-- Result toggle --%>
-      <div class="join">
+      <%!-- Tier 2: format chips inside the active category --%>
+      <div :if={@active_category} class="flex items-center gap-2 flex-wrap pl-1">
         <.link
-          patch={filter_path(@active_format, @active_bo, nil)}
-          class={["btn btn-xs join-item", if(!@active_result, do: "btn-active", else: "")]}
+          patch={filter_path(@active_category, nil, @active_bo, @active_result)}
+          class={["btn btn-xs", if(!@active_format, do: "btn-soft btn-primary", else: "btn-ghost")]}
         >
-          All
+          All in {category_label(@active_category)}
         </.link>
         <.link
-          patch={filter_path(@active_format, @active_bo, "won")}
-          class={["btn btn-xs join-item", if(@active_result == "won", do: "btn-active", else: "")]}
+          :for={{format, count} <- Enum.sort_by(@format_counts, fn {_, c} -> -c end)}
+          patch={filter_path(@active_category, format, @active_bo, @active_result)}
+          class={[
+            "btn btn-xs",
+            if(@active_format == format, do: "btn-soft btn-primary", else: "btn-ghost")
+          ]}
         >
-          Wins
-        </.link>
-        <.link
-          patch={filter_path(@active_format, @active_bo, "lost")}
-          class={["btn btn-xs join-item", if(@active_result == "lost", do: "btn-active", else: "")]}
-        >
-          Losses
+          {format_label(format)}
+          <span class="badge badge-xs badge-ghost ml-1">{count}</span>
         </.link>
       </div>
     </div>
@@ -551,7 +595,7 @@ defmodule Scry2Web.MatchesLive do
     <div class="flex items-center justify-center gap-1 mt-6">
       <.link
         :for={p <- 1..@total_pages}
-        patch={filter_path(@active_format, @active_bo, @active_result, p)}
+        patch={filter_path(@active_category, @active_format, @active_bo, @active_result, p)}
         class={["btn btn-xs", if(p == @page, do: "btn-active", else: "btn-ghost")]}
       >
         {p}
@@ -679,9 +723,10 @@ defmodule Scry2Web.MatchesLive do
 
   # ── Private helpers ──────────────────────────────────────────────────
 
-  defp filter_path(format, bo, result, page \\ nil) do
+  defp filter_path(category, format, bo, result, page \\ nil) do
     params =
       %{}
+      |> maybe_put("category", category && category_slug(category))
       |> maybe_put("format", format)
       |> maybe_put("bo", bo)
       |> maybe_put("result", result)

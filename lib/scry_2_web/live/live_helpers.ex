@@ -37,6 +37,36 @@ defmodule Scry2Web.LiveHelpers do
   end
 
   @doc """
+  Maps an MTGA `format_type` string to a higher-level filter category atom
+  used by the matches page. `Traditional` collapses into `:constructed`
+  because BO1/BO3 is already a separate filter dimension on that page.
+  """
+  @spec format_category(String.t() | nil) :: :limited | :constructed | :other
+  def format_category("Limited"), do: :limited
+  def format_category("Constructed"), do: :constructed
+  def format_category("Traditional"), do: :constructed
+  def format_category(_), do: :other
+
+  @doc "Human label for a category atom."
+  @spec category_label(atom()) :: String.t()
+  def category_label(:limited), do: "Limited"
+  def category_label(:constructed), do: "Constructed"
+  def category_label(:other), do: "Other"
+
+  @doc "URL-safe slug for a category atom."
+  @spec category_slug(atom()) :: String.t()
+  def category_slug(:limited), do: "limited"
+  def category_slug(:constructed), do: "constructed"
+  def category_slug(:other), do: "other"
+
+  @doc "Inverse of category_slug/1. Returns nil for unknown values."
+  @spec category_from_slug(String.t() | nil) :: :limited | :constructed | :other | nil
+  def category_from_slug("limited"), do: :limited
+  def category_from_slug("constructed"), do: :constructed
+  def category_from_slug("other"), do: :other
+  def category_from_slug(_), do: nil
+
+  @doc """
   Returns a human label for a snake_case format string
   (e.g. `"premier_draft"` → `"Premier Draft"`).
   """

@@ -21,7 +21,11 @@ defmodule Scry2.Matches do
   @doc """
   Returns the most recent matches, newest first.
 
-  Options: `:limit`, `:offset`, `:player_id`, `:format`, `:bo`, `:won`.
+  Options: `:limit`, `:offset`, `:player_id`, `:format`, `:category`,
+  `:bo`, `:won`. The `:category` filter accepts `:limited`, `:constructed`,
+  or `:other` and groups by `format_type` — `:constructed` includes both
+  `Constructed` and `Traditional` rows because BO1/BO3 is already a
+  separate filter dimension.
   """
   def list_matches(opts \\ []) do
     limit_count = Keyword.get(opts, :limit, 50)
@@ -298,7 +302,8 @@ defmodule Scry2.Matches do
 
   @doc """
   Returns match counts grouped by format for filter badge display.
-  Respects `:player_id`, `:bo`, `:won` filters (not `:format` — that's what we're counting).
+  Respects `:player_id`, `:bo`, `:won`, `:category` filters (not `:format` —
+  that's what we're counting).
   """
   def format_counts(opts \\ []) do
     opts
@@ -309,6 +314,27 @@ defmodule Scry2.Matches do
     |> select([m], {m.format, count(m.id)})
     |> Repo.all()
     |> Map.new()
+  end
+
+  @doc """
+  Returns match counts grouped into the three filter categories
+  (`:limited`, `:constructed`, `:other`) for the top-tier filter chips.
+
+  Respects `:player_id`, `:bo`, `:won` opts. Ignores its own `:category`
+  and `:format` opts so the totals always reflect every bucket — the
+  caller needs to render counts on every chip even when one is selected.
+  """
+  def category_counts(opts \\ []) do
+    opts
+    |> Keyword.drop([:category, :format])
+    |> base_query()
+    |> select([m], {m.format_type, count(m.id)})
+    |> group_by([m], m.format_type)
+    |> Repo.all()
+    |> Enum.reduce(%{}, fn {format_type, count}, acc ->
+      category = Scry2Web.LiveHelpers.format_category(format_type)
+      Map.update(acc, category, count, &(&1 + count))
+    end)
   end
 
   @doc """
@@ -359,6 +385,7 @@ defmodule Scry2.Matches do
   defp base_query(opts) do
     Match
     |> maybe_filter_by_player(Keyword.get(opts, :player_id))
+    |> maybe_filter_by_category(Keyword.get(opts, :category))
     |> maybe_filter_by_format(Keyword.get(opts, :format))
     |> maybe_filter_by_bo(Keyword.get(opts, :bo))
     |> maybe_filter_by_won(Keyword.get(opts, :won))
@@ -366,6 +393,22 @@ defmodule Scry2.Matches do
 
   defp maybe_filter_by_player(query, nil), do: query
   defp maybe_filter_by_player(query, player_id), do: where(query, [m], m.player_id == ^player_id)
+
+  defp maybe_filter_by_category(query, nil), do: query
+
+  defp maybe_filter_by_category(query, :limited),
+    do: where(query, [m], m.format_type == "Limited")
+
+  defp maybe_filter_by_category(query, :constructed),
+    do: where(query, [m], m.format_type in ["Constructed", "Traditional"])
+
+  defp maybe_filter_by_category(query, :other),
+    do:
+      where(
+        query,
+        [m],
+        is_nil(m.format_type) or m.format_type not in ["Limited", "Constructed", "Traditional"]
+      )
 
   defp maybe_filter_by_format(query, nil), do: query
   defp maybe_filter_by_format(query, format), do: where(query, [m], m.format == ^format)

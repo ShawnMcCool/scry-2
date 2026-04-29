@@ -422,4 +422,148 @@ defmodule Scry2.MatchesTest do
       assert results == []
     end
   end
+
+  describe "category_counts/1" do
+    test "groups matches into :limited / :constructed / :other based on format_type" do
+      TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
+      TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
+      TestFactory.create_match(%{format: "Premier Draft", format_type: "Limited"})
+      TestFactory.create_match(%{format: "Ranked", format_type: "Constructed"})
+      TestFactory.create_match(%{format: "Ranked BO3", format_type: "Traditional"})
+      TestFactory.create_match(%{format: "Mystery_Event", format_type: nil})
+
+      counts = Matches.category_counts()
+
+      assert counts[:limited] == 3
+      assert counts[:constructed] == 2
+      assert counts[:other] == 1
+    end
+
+    test "Traditional collapses into :constructed" do
+      TestFactory.create_match(%{format: "Ranked BO3", format_type: "Traditional"})
+      TestFactory.create_match(%{format: "Play BO3", format_type: "Traditional"})
+
+      counts = Matches.category_counts()
+
+      assert counts[:constructed] == 2
+      refute Map.has_key?(counts, :traditional)
+    end
+
+    test "ignores its own :category opt so the totals always reflect every category" do
+      TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
+      TestFactory.create_match(%{format: "Ranked", format_type: "Constructed"})
+
+      # Even when called with :category, the per-category totals should not be
+      # filtered down — the chip badge needs to show the size of each bucket.
+      counts = Matches.category_counts(category: :limited)
+      assert counts[:limited] == 1
+      assert counts[:constructed] == 1
+    end
+
+    test "respects :player_id, :bo, :won opts" do
+      player = Scry2.Players.get_or_create!("p-cat", "Player Cat")
+      other = Scry2.Players.get_or_create!("p-cat-other", "Other")
+
+      TestFactory.create_match(%{
+        format_type: "Limited",
+        player_id: player.id,
+        won: true
+      })
+
+      TestFactory.create_match(%{
+        format_type: "Limited",
+        player_id: other.id,
+        won: true
+      })
+
+      counts = Matches.category_counts(player_id: player.id)
+      assert counts[:limited] == 1
+
+      counts = Matches.category_counts(player_id: player.id, won: false)
+      assert Map.get(counts, :limited, 0) == 0
+    end
+  end
+
+  describe "format_counts/1 with :category" do
+    test "returns only formats inside the requested category" do
+      TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
+      TestFactory.create_match(%{format: "Premier Draft", format_type: "Limited"})
+      TestFactory.create_match(%{format: "Ranked", format_type: "Constructed"})
+
+      counts = Matches.format_counts(category: :limited)
+
+      assert Map.has_key?(counts, "Quick Draft")
+      assert Map.has_key?(counts, "Premier Draft")
+      refute Map.has_key?(counts, "Ranked")
+    end
+
+    test ":category=:constructed includes Traditional formats" do
+      TestFactory.create_match(%{format: "Ranked", format_type: "Constructed"})
+      TestFactory.create_match(%{format: "Ranked BO3", format_type: "Traditional"})
+
+      counts = Matches.format_counts(category: :constructed)
+
+      assert Map.has_key?(counts, "Ranked")
+      assert Map.has_key?(counts, "Ranked BO3")
+    end
+
+    test ":category=:other surfaces unrecognized format_types" do
+      TestFactory.create_match(%{format: "WeirdEvent", format_type: nil})
+      TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
+
+      counts = Matches.format_counts(category: :other)
+
+      assert Map.has_key?(counts, "WeirdEvent")
+      refute Map.has_key?(counts, "Quick Draft")
+    end
+
+    test "without :category, returns the full set (existing behavior preserved)" do
+      TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
+      TestFactory.create_match(%{format: "Ranked", format_type: "Constructed"})
+
+      counts = Matches.format_counts()
+
+      assert Map.has_key?(counts, "Quick Draft")
+      assert Map.has_key?(counts, "Ranked")
+    end
+  end
+
+  describe "list_matches/1 with :category" do
+    test ":category=:limited filters to Limited matches only" do
+      TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
+      TestFactory.create_match(%{format: "Ranked", format_type: "Constructed"})
+      TestFactory.create_match(%{format: "Ranked BO3", format_type: "Traditional"})
+
+      results = Matches.list_matches(category: :limited)
+      formats = Enum.map(results, & &1.format)
+
+      assert "Quick Draft" in formats
+      refute "Ranked" in formats
+      refute "Ranked BO3" in formats
+    end
+
+    test ":category=:constructed includes both Constructed and Traditional" do
+      TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
+      TestFactory.create_match(%{format: "Ranked", format_type: "Constructed"})
+      TestFactory.create_match(%{format: "Ranked BO3", format_type: "Traditional"})
+
+      results = Matches.list_matches(category: :constructed)
+      formats = Enum.map(results, & &1.format)
+
+      assert "Ranked" in formats
+      assert "Ranked BO3" in formats
+      refute "Quick Draft" in formats
+    end
+
+    test ":category=:other returns matches with nil format_type" do
+      TestFactory.create_match(%{format: "Quirk", format_type: nil})
+      TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
+
+      results = Matches.list_matches(category: :other)
+      formats = Enum.map(results, & &1.format)
+
+      assert "Quirk" in formats
+      refute "Quick Draft" in formats
+    end
+  end
 end
