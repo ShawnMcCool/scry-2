@@ -45,34 +45,84 @@ defmodule Scry2.Cards.BootstrapTest do
   end
 
   describe "decide/4" do
-    test "enqueues both when both sources are empty" do
-      timestamps = %{lands17_updated_at: nil, scryfall_updated_at: nil}
-      assert Bootstrap.decide(0, 0, timestamps, @now) == [:lands17, :scryfall]
+    @empty_counts %{lands17: 0, scryfall: 0, mtga_client: 0}
+    @fresh_timestamps %{
+      lands17_updated_at: @fresh,
+      scryfall_updated_at: @fresh,
+      mtga_client_updated_at: @fresh
+    }
+
+    test "enqueues all sources when all are empty" do
+      timestamps = %{
+        lands17_updated_at: nil,
+        scryfall_updated_at: nil,
+        mtga_client_updated_at: nil
+      }
+
+      assert Bootstrap.decide(@empty_counts, timestamps, @now) ==
+               [:lands17, :scryfall, :mtga_client]
     end
 
-    test "enqueues neither when both are fresh" do
-      timestamps = %{lands17_updated_at: @fresh, scryfall_updated_at: @fresh}
-      assert Bootstrap.decide(100, 100, timestamps, @now) == []
+    test "enqueues nothing when all sources are fresh" do
+      counts = %{lands17: 100, scryfall: 100, mtga_client: 100}
+      assert Bootstrap.decide(counts, @fresh_timestamps, @now) == []
     end
 
-    test "enqueues only 17lands when Scryfall is fresh but 17lands is missing" do
-      timestamps = %{lands17_updated_at: nil, scryfall_updated_at: @fresh}
-      assert Bootstrap.decide(0, 100, timestamps, @now) == [:lands17]
+    test "enqueues only 17lands when only its source is missing" do
+      timestamps = %{
+        lands17_updated_at: nil,
+        scryfall_updated_at: @fresh,
+        mtga_client_updated_at: @fresh
+      }
+
+      counts = %{lands17: 0, scryfall: 100, mtga_client: 100}
+      assert Bootstrap.decide(counts, timestamps, @now) == [:lands17]
     end
 
-    test "enqueues only Scryfall when 17lands is fresh but Scryfall is missing" do
-      timestamps = %{lands17_updated_at: @fresh, scryfall_updated_at: nil}
-      assert Bootstrap.decide(100, 0, timestamps, @now) == [:scryfall]
+    test "enqueues only Scryfall when only its source is missing" do
+      timestamps = %{
+        lands17_updated_at: @fresh,
+        scryfall_updated_at: nil,
+        mtga_client_updated_at: @fresh
+      }
+
+      counts = %{lands17: 100, scryfall: 0, mtga_client: 100}
+      assert Bootstrap.decide(counts, timestamps, @now) == [:scryfall]
     end
 
-    test "enqueues both when both are stale" do
-      timestamps = %{lands17_updated_at: @old, scryfall_updated_at: @old}
-      assert Bootstrap.decide(100, 100, timestamps, @now) == [:lands17, :scryfall]
+    test "enqueues only mtga_client when only its source is missing" do
+      timestamps = %{
+        lands17_updated_at: @fresh,
+        scryfall_updated_at: @fresh,
+        mtga_client_updated_at: nil
+      }
+
+      counts = %{lands17: 100, scryfall: 100, mtga_client: 0}
+      assert Bootstrap.decide(counts, timestamps, @now) == [:mtga_client]
     end
 
-    test "enqueues only the stale one when the other is fresh" do
-      timestamps = %{lands17_updated_at: @old, scryfall_updated_at: @fresh}
-      assert Bootstrap.decide(100, 100, timestamps, @now) == [:lands17]
+    test "enqueues all stale sources" do
+      timestamps = %{
+        lands17_updated_at: @old,
+        scryfall_updated_at: @old,
+        mtga_client_updated_at: @old
+      }
+
+      counts = %{lands17: 100, scryfall: 100, mtga_client: 100}
+
+      assert Bootstrap.decide(counts, timestamps, @now) ==
+               [:lands17, :scryfall, :mtga_client]
+    end
+
+    test "enqueues only the stale one when others are fresh" do
+      timestamps = %{
+        lands17_updated_at: @old,
+        scryfall_updated_at: @fresh,
+        mtga_client_updated_at: @fresh
+      }
+
+      counts = %{lands17: 100, scryfall: 100, mtga_client: 100}
+      assert Bootstrap.decide(counts, timestamps, @now) == [:lands17]
     end
   end
 end

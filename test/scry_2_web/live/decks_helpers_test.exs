@@ -130,6 +130,32 @@ defmodule Scry2Web.DecksHelpersTest do
       deck = %{current_main_deck: %{"cards" => []}}
       assert DecksHelpers.group_deck_cards(deck, %{}) == []
     end
+
+    test "merges entries with the same name (alt-art duplicates)" do
+      deck = %{
+        current_main_deck: %{
+          "cards" => [
+            %{"arena_id" => 100, "count" => 1},
+            %{"arena_id" => 200, "count" => 1},
+            %{"arena_id" => 300, "count" => 4}
+          ]
+        }
+      }
+
+      cards_by_arena_id = %{
+        100 => %{name: "Breeding Pool", types: "Land", mana_value: 0},
+        200 => %{name: "Breeding Pool", types: "Land", mana_value: 0},
+        300 => %{name: "Lightning Bolt", types: "Instant", mana_value: 1}
+      }
+
+      groups = DecksHelpers.group_deck_cards(deck, cards_by_arena_id)
+
+      lands = groups |> Enum.find(fn {label, _} -> label == "Lands" end) |> elem(1)
+      assert length(lands) == 1
+      [pool] = lands
+      assert pool.name == "Breeding Pool"
+      assert pool.count == 2
+    end
   end
 
   describe "mana_curve_series/2" do

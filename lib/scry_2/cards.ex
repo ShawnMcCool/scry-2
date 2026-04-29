@@ -18,6 +18,7 @@ defmodule Scry2.Cards do
 
   @lands17_refresh_key "cards_lands17_last_refresh_at"
   @scryfall_refresh_key "cards_scryfall_last_refresh_at"
+  @mtga_client_refresh_key "cards_mtga_client_last_refresh_at"
 
   # ── Sets ────────────────────────────────────────────────────────────────
 
@@ -146,7 +147,8 @@ defmodule Scry2.Cards do
   def import_timestamps do
     %{
       lands17_updated_at: read_refresh_timestamp(@lands17_refresh_key),
-      scryfall_updated_at: read_refresh_timestamp(@scryfall_refresh_key)
+      scryfall_updated_at: read_refresh_timestamp(@scryfall_refresh_key),
+      mtga_client_updated_at: read_refresh_timestamp(@mtga_client_refresh_key)
     }
   end
 
@@ -169,6 +171,21 @@ defmodule Scry2.Cards do
     Settings.put!(@scryfall_refresh_key, DateTime.to_iso8601(now))
     :ok
   end
+
+  @doc """
+  Records a successful MTGA client database import at the current UTC
+  time. Called from `Scry2.Workers.PeriodicallyImportMtgaClientCards`
+  after a successful run.
+  """
+  @spec record_mtga_client_refresh!(DateTime.t()) :: :ok
+  def record_mtga_client_refresh!(now \\ DateTime.utc_now()) do
+    Settings.put!(@mtga_client_refresh_key, DateTime.to_iso8601(now))
+    :ok
+  end
+
+  @doc "Returns the count of MTGA client cards currently in the database."
+  @spec mtga_client_count() :: non_neg_integer()
+  def mtga_client_count, do: Repo.aggregate(MtgaCard, :count)
 
   defp read_refresh_timestamp(key) do
     case Settings.get(key) do

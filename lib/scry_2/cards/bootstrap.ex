@@ -31,11 +31,12 @@ defmodule Scry2.Cards.Bootstrap do
   alias Scry2.Cards
   alias Scry2.Config
   alias Scry2.Workers.PeriodicallyBackfillArenaIds
+  alias Scry2.Workers.PeriodicallyImportMtgaClientCards
   alias Scry2.Workers.PeriodicallyUpdateCards
 
   @stale_threshold_days 7
 
-  @type job_tag :: :lands17 | :scryfall
+  @type job_tag :: :lands17 | :scryfall | :mtga_client
 
   @doc """
   Enqueues card refresh jobs if needed. Returns the list of job tags
@@ -47,13 +48,13 @@ defmodule Scry2.Cards.Bootstrap do
       Log.info(:importer, "card bootstrap skipped (start_importer=false)")
       []
     else
-      to_enqueue =
-        decide(
-          Cards.count(),
-          Cards.scryfall_count(),
-          Cards.import_timestamps(),
-          DateTime.utc_now()
-        )
+      counts = %{
+        lands17: Cards.count(),
+        scryfall: Cards.scryfall_count(),
+        mtga_client: Cards.mtga_client_count()
+      }
+
+      to_enqueue = decide(counts, Cards.import_timestamps(), DateTime.utc_now())
 
       Enum.each(to_enqueue, &dispatch/1)
       to_enqueue
@@ -66,28 +67,37 @@ defmodule Scry2.Cards.Bootstrap do
 
   ## Arguments
 
-    * `lands17_count` — `Scry2.Cards.count/0` result
-    * `scryfall_count` — `Scry2.Cards.scryfall_count/0` result
+    * `counts` — `%{lands17: int, scryfall: int, mtga_client: int}`
     * `timestamps` — `Scry2.Cards.import_timestamps/0` result
     * `now` — current time (injected for determinism)
   """
   @spec decide(
-          non_neg_integer(),
-          non_neg_integer(),
+          %{
+            lands17: non_neg_integer(),
+            scryfall: non_neg_integer(),
+            mtga_client: non_neg_integer()
+          },
           %{
             lands17_updated_at: DateTime.t() | nil,
-            scryfall_updated_at: DateTime.t() | nil
+            scryfall_updated_at: DateTime.t() | nil,
+            mtga_client_updated_at: DateTime.t() | nil
           },
           DateTime.t()
         ) :: [job_tag()]
-  def decide(lands17_count, scryfall_count, timestamps, now)
-      when is_integer(lands17_count) and is_integer(scryfall_count) do
-    %{lands17_updated_at: lands17_at, scryfall_updated_at: scryfall_at} = timestamps
+  def decide(counts, timestamps, now) do
+    %{lands17: lands17_count, scryfall: scryfall_count, mtga_client: mtga_client_count} = counts
+
+    %{
+      lands17_updated_at: lands17_at,
+      scryfall_updated_at: scryfall_at,
+      mtga_client_updated_at: mtga_client_at
+    } = timestamps
 
     lands17 = if needs?(lands17_count, lands17_at, now), do: :lands17
     scryfall = if needs?(scryfall_count, scryfall_at, now), do: :scryfall
+    mtga_client = if needs?(mtga_client_count, mtga_client_at, now), do: :mtga_client
 
-    [lands17, scryfall] |> Enum.reject(&is_nil/1)
+    [lands17, scryfall, mtga_client] |> Enum.reject(&is_nil/1)
   end
 
   @doc """
@@ -128,6 +138,16 @@ defmodule Scry2.Cards.Bootstrap do
 
       {:error, reason} ->
         Log.warning(:importer, "card bootstrap Scryfall enqueue failed: #{inspect(reason)}")
+    end
+  end
+
+  defp dispatch(:mtga_client) do
+    case Oban.insert(PeriodicallyImportMtgaClientCards.new(%{})) do
+      {:ok, _job} ->
+        Log.info(:importer, "card bootstrap enqueued MTGA client import")
+
+      {:error, reason} ->
+        Log.warning(:importer, "card bootstrap MTGA client enqueue failed: #{inspect(reason)}")
     end
   end
 end

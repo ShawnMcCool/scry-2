@@ -113,9 +113,23 @@ defmodule Scry2Web.DecksHelpers do
         mana_value: mana_value
       }
     end)
+    |> merge_by_name()
     |> Enum.sort_by(&{type_order(&1.type), &1.mana_value, &1.name})
     |> Enum.group_by(& &1.type)
     |> Enum.sort_by(fn {type, _} -> type_order(type) end)
+  end
+
+  # Collapses entries with identical names (alt-art prints share a name but
+  # have distinct arena_ids) into a single entry whose count is the sum.
+  # The earliest-encountered arena_id is kept for image lookups.
+  defp merge_by_name(cards) do
+    cards
+    |> Enum.group_by(& &1.name)
+    |> Enum.map(fn {_name, group} ->
+      total = group |> Enum.map(& &1.count) |> Enum.sum()
+      first = List.first(group)
+      %{first | count: total}
+    end)
   end
 
   @doc """
@@ -180,6 +194,7 @@ defmodule Scry2Web.DecksHelpers do
         cmc_key: cmc_key
       }
     end)
+    |> merge_by_name()
     |> Enum.sort_by(&{&1.cmc_key, &1.name})
     |> Enum.group_by(& &1.cmc_key)
     |> Enum.map(fn {cmc_key, group_cards} -> {cmc_label(cmc_key), group_cards} end)
@@ -215,6 +230,7 @@ defmodule Scry2Web.DecksHelpers do
             mana_value: mana_value
           }
         end)
+        |> merge_by_name()
         |> Enum.sort_by(&{&1.mana_value, &1.name})
 
       _ ->

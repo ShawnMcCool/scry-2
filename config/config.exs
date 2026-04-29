@@ -33,6 +33,9 @@ config :scry_2, Oban,
      crontab: [
        # Daily 04:00 UTC — refresh 17lands card reference data.
        {"0 4 * * *", Scry2.Workers.PeriodicallyUpdateCards},
+       # Daily 04:30 UTC — re-import the MTGA client card database so
+       # new sets get picked up shortly after MTGA's content patch.
+       {"30 4 * * *", Scry2.Workers.PeriodicallyImportMtgaClientCards},
        # Weekly Sunday 05:00 UTC — backfill arena_id from Scryfall bulk data.
        {"0 5 * * 0", Scry2.Workers.PeriodicallyBackfillArenaIds},
        # Hourly at :17 — check GitHub Releases for a new Scry2 version.
