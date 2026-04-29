@@ -56,6 +56,14 @@ defmodule Scry2.Events.EventNameTest do
       assert result.set_code == "TMT"
     end
 
+    test "PickTwoDraft with set code and date" do
+      result = EventName.parse("PickTwoDraft_SOS_20260421")
+
+      assert result.format == "Pick Two Draft"
+      assert result.format_type == "Limited"
+      assert result.set_code == "SOS"
+    end
+
     # ── Wrapper events ──────────────────────────────────────────────────
 
     test "MWM wrapper with BotDraft" do

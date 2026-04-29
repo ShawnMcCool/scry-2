@@ -48,6 +48,7 @@ defmodule Scry2.Events.EventName do
     "TradDraft" => {"Traditional Draft", "Limited"},
     "BotDraft" => {"Bot Draft", "Limited"},
     "CompDraft" => {"Comp Draft", "Limited"},
+    "PickTwoDraft" => {"Pick Two Draft", "Limited"},
     "Sealed" => {"Sealed", "Limited"}
   }
 
