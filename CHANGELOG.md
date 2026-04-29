@@ -11,6 +11,26 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **The Matches page filter is now organized by category.** A new
+  top row groups your formats into **Limited**, **Constructed**, and
+  **Other** with match counts on each. Clicking a category narrows the
+  per-format chips below it, so you can drill from "all my Limited" to
+  a specific event without scanning a long flat row. The BO1/BO3 and
+  Wins/Losses toggles still work in combination, and the URL
+  round-trips so reloads keep your filter.
+
+### Fixed
+
+- **Pick Two Draft matches are now labeled correctly.** Previously
+  they appeared as **PickTwoDraft** under **Other** in the matches
+  filter; they now show as **Pick Two Draft** under **Limited**
+  alongside Premier Draft, Quick Draft, and Sealed. New Pick Two
+  matches will be correct automatically. To relabel matches you've
+  already played, run **Settings → Operations → Reingest** on this
+  version.
+
 ## v0.25.10 — 2026-04-29
 
 ### Fixed
