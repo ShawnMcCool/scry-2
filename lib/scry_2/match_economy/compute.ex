@@ -36,6 +36,17 @@ defmodule Scry2.MatchEconomy.Compute do
     Map.put(integer_deltas, :vault, vault_sub(post.vault_progress, pre.vault_progress))
   end
 
+  @doc """
+  Per-currency `memory − log`. Returns nil for any currency where either
+  side is nil. Vault has no log analog and is not included.
+  """
+  @spec diffs(map(), map()) :: map()
+  def diffs(memory, log) do
+    for key <- @currency_keys, into: %{} do
+      {key, sub(Map.get(memory, key), Map.get(log, key))}
+    end
+  end
+
   defp sub(nil, _), do: nil
   defp sub(_, nil), do: nil
   defp sub(a, b), do: a - b

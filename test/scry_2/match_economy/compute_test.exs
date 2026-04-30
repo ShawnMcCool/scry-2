@@ -91,6 +91,87 @@ defmodule Scry2.MatchEconomy.ComputeTest do
     end
   end
 
+  describe "diffs/2" do
+    test "subtracts log delta from memory delta per currency" do
+      memory = %{
+        gold: 250,
+        gems: 0,
+        wildcards_common: 1,
+        wildcards_uncommon: 0,
+        wildcards_rare: 0,
+        wildcards_mythic: 0,
+        vault: 0.05
+      }
+
+      log = %{
+        gold: 250,
+        gems: 0,
+        wildcards_common: 1,
+        wildcards_uncommon: 0,
+        wildcards_rare: 0,
+        wildcards_mythic: 0
+      }
+
+      assert Compute.diffs(memory, log) == %{
+               gold: 0,
+               gems: 0,
+               wildcards_common: 0,
+               wildcards_uncommon: 0,
+               wildcards_rare: 0,
+               wildcards_mythic: 0
+             }
+    end
+
+    test "returns nil for currencies missing on either side" do
+      memory = %{
+        gold: 250,
+        gems: 0,
+        wildcards_common: nil,
+        wildcards_uncommon: 0,
+        wildcards_rare: 0,
+        wildcards_mythic: 0,
+        vault: 0.0
+      }
+
+      log = %{
+        gold: nil,
+        gems: 0,
+        wildcards_common: 1,
+        wildcards_uncommon: 0,
+        wildcards_rare: 0,
+        wildcards_mythic: 0
+      }
+
+      result = Compute.diffs(memory, log)
+      assert result.gold == nil
+      assert result.wildcards_common == nil
+      assert result.gems == 0
+    end
+
+    test "non-zero diff signals memory accounting more than logs do" do
+      memory = %{
+        gold: 300,
+        gems: 0,
+        wildcards_common: 0,
+        wildcards_uncommon: 0,
+        wildcards_rare: 0,
+        wildcards_mythic: 0,
+        vault: 0.0
+      }
+
+      log = %{
+        gold: 250,
+        gems: 0,
+        wildcards_common: 0,
+        wildcards_uncommon: 0,
+        wildcards_rare: 0,
+        wildcards_mythic: 0
+      }
+
+      assert Compute.diffs(memory, log).gold == 50
+    end
+  end
+
   defp nil_delta_map do
     %{
       gold: nil,
