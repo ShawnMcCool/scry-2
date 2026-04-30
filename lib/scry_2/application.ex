@@ -217,6 +217,11 @@ defmodule Scry2.Application do
           # callbacks. Must start after the ingester so the first
           # MatchCreated of the session lands in its mailbox.
           Scry2.LiveState.Server,
+          # Match-economy capture: subscribes to domain:events for
+          # MatchCreated/MatchCompleted, spawns Task.Supervisor tasks for
+          # synchronous Collection.Reader.read/1 calls.
+          {Task.Supervisor, name: Scry2.MatchEconomy.TaskSupervisor},
+          Scry2.MatchEconomy.Trigger,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.
           Scry2.MtgaLogIngestion.Watcher
         ]
