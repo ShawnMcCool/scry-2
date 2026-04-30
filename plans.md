@@ -52,11 +52,11 @@ is clean.
 - Pending packs by set and source — **reader+**
 - Build / version metadata (build GUID, asset version, server region) — **walker**
 
-## B. Reconciliation (memory-vs-log truth diffing)  ← FOCUS
+## B. Reconciliation (memory-vs-log truth diffing)
 
-- Currency reconciliation (memory wildcards/gold/gems vs log `InventoryUpdated`) — **walker**
+- Currency reconciliation (memory wildcards/gold/gems vs log `InventoryUpdated`) — **✅ shipped** (per-match, see C below)
 - Booster-count reconciliation (memory pack inventory vs log pack events) — **walker** + **reader+**
-- Log-gap detector (currency change observed in memory but no matching log event) — **walker**
+- Log-gap detector (currency change observed in memory but no matching log event) — **✅ shipped** (per-match `reconciliation_state`)
 - Deck-list reconciliation (memory deck vs log-submitted deck) — **reader+**
 - "Verify everything" admin button (runs every reconciliation) — composes above
 
@@ -64,7 +64,8 @@ is clean.
 
 - Pre-match deck snapshot when log fires `MatchCreated` — **reader+**
 - Pre-match opponent snapshot from lobby memory — **reader+**
-- Post-match economy delta (memory snapshot before/after match) — **walker**
+- Post-match economy delta (memory snapshot before/after match) — **✅ shipped** (`Scry2.MatchEconomy`, ADR-036)
+- Per-match economy timeline + dashboard ticker + match-detail card — **✅ shipped** (`/match-economy`)
 - Pack-open card capture (memory snapshot before/after pack open) — **today**
 - Companion legality verification — **reader+**
 
