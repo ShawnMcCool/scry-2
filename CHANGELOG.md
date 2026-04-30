@@ -11,6 +11,12 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Maintenance
+
+- Internal fix for a development-mode routing crash on URLs containing colon characters. Does not affect the installed production app.
+
+- Removed an unused database table (`cards_cards_archive`) that held a one-time forensic snapshot from the April 2026 card-data migration. Your installed app will run a small cleanup migration on first launch — no user-visible behavior change.
+
 ## v0.27.1 — 2026-04-30
 
 ### Fixed
