@@ -25,6 +25,7 @@ defmodule Scry2Web.SettingsLive do
   @refresh_cron_key "cards_refresh_cron"
   @poll_interval_key "mtga_logs_poll_interval_ms"
   @live_polling_key "live_match_polling_enabled"
+  @economy_capture_key "match_economy_capture_enabled"
 
   @impl true
   def mount(_params, _session, socket) do
@@ -65,7 +66,8 @@ defmodule Scry2Web.SettingsLive do
       data_dir: current_value(@data_dir_key, :mtga_data_dir),
       refresh_cron: current_value(@refresh_cron_key, :cards_refresh_cron),
       poll_interval_ms: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms),
-      live_polling_enabled: Scry2.LiveState.enabled?()
+      live_polling_enabled: Scry2.LiveState.enabled?(),
+      economy_capture_enabled: Scry2.MatchEconomy.capture_enabled?()
     }
 
     {:noreply,
@@ -196,6 +198,23 @@ defmodule Scry2Web.SettingsLive do
     {:noreply,
      socket
      |> put_field_value(:live_polling_enabled, next)
+     |> put_flash(:info, flash_message)}
+  end
+
+  def handle_event("toggle_economy_capture", _params, socket) do
+    next = not socket.assigns.field_values.economy_capture_enabled
+    Settings.put!(@economy_capture_key, next)
+
+    flash_message =
+      if next do
+        "Match-economy capture enabled — Scry 2 will tag pre/post-match memory snapshots and reconcile them against log events."
+      else
+        "Match-economy capture disabled — no new per-match economy summaries will be created."
+      end
+
+    {:noreply,
+     socket
+     |> put_field_value(:economy_capture_enabled, next)
      |> put_flash(:info, flash_message)}
   end
 
@@ -482,6 +501,29 @@ defmodule Scry2Web.SettingsLive do
                 checked={@field_values.live_polling_enabled}
                 phx-click="toggle_live_polling"
                 aria-label="Enable memory reading during matches"
+              />
+            </div>
+
+            <div class="divider my-2"></div>
+
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1">
+                <h3 class="text-sm font-semibold">Match-economy capture</h3>
+                <p class="text-sm text-base-content/70 mt-1">
+                  At every match start and end, capture a memory snapshot of your
+                  gold, gems, wildcards, and vault progress. Cross-checks against
+                  log events to surface what each match earned you (and to flag
+                  categories of MTGA economy state not yet modelled in events).
+                  Requires "Memory reading" above to be on; disabling here turns
+                  off only the per-match capture, not the in-match memory polling.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1"
+                checked={@field_values.economy_capture_enabled}
+                phx-click="toggle_economy_capture"
+                aria-label="Enable per-match economy capture"
               />
             </div>
           </div>
