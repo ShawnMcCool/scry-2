@@ -172,6 +172,29 @@ defmodule Scry2.MatchEconomy.ComputeTest do
     end
   end
 
+  describe "reconciliation_state/3" do
+    test "complete when both pre and post and window present" do
+      assert Compute.reconciliation_state(%Snapshot{}, %Snapshot{}, true) == "complete"
+    end
+
+    test "log_only when pre missing but window present" do
+      assert Compute.reconciliation_state(nil, %Snapshot{}, true) == "log_only"
+    end
+
+    test "log_only when post missing but window present" do
+      assert Compute.reconciliation_state(%Snapshot{}, nil, true) == "log_only"
+    end
+
+    test "log_only when both snapshots missing but window present" do
+      assert Compute.reconciliation_state(nil, nil, true) == "log_only"
+    end
+
+    test "incomplete when window missing regardless of snapshots" do
+      assert Compute.reconciliation_state(%Snapshot{}, %Snapshot{}, false) == "incomplete"
+      assert Compute.reconciliation_state(nil, nil, false) == "incomplete"
+    end
+  end
+
   defp nil_delta_map do
     %{
       gold: nil,

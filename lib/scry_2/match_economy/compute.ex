@@ -47,6 +47,15 @@ defmodule Scry2.MatchEconomy.Compute do
     end
   end
 
+  @doc """
+  Reconciliation state from the presence of pre/post snapshots and a
+  bounded window (started_at + ended_at both set).
+  """
+  @spec reconciliation_state(Snapshot.t() | nil, Snapshot.t() | nil, boolean()) :: String.t()
+  def reconciliation_state(_, _, false), do: "incomplete"
+  def reconciliation_state(%Snapshot{}, %Snapshot{}, true), do: "complete"
+  def reconciliation_state(_, _, true), do: "log_only"
+
   defp sub(nil, _), do: nil
   defp sub(_, nil), do: nil
   defp sub(a, b), do: a - b
