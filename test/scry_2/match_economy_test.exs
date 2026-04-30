@@ -58,6 +58,54 @@ defmodule Scry2.MatchEconomyTest do
     end
   end
 
+  describe "recent_summaries/1 — pagination & filtering" do
+    test "respects offset" do
+      create_match_economy_summary(mtga_match_id: "p-1", ended_at: ~U[2026-04-30 10:00:00Z])
+      create_match_economy_summary(mtga_match_id: "p-2", ended_at: ~U[2026-04-29 10:00:00Z])
+      create_match_economy_summary(mtga_match_id: "p-3", ended_at: ~U[2026-04-28 10:00:00Z])
+
+      ids = MatchEconomy.recent_summaries(limit: 2, offset: 1) |> Enum.map(& &1.mtga_match_id)
+      assert ids == ["p-2", "p-3"]
+    end
+
+    test "filters by since/until" do
+      create_match_economy_summary(mtga_match_id: "f-old", ended_at: ~U[2026-04-29 10:00:00Z])
+      create_match_economy_summary(mtga_match_id: "f-mid", ended_at: ~U[2026-04-30 10:00:00Z])
+      create_match_economy_summary(mtga_match_id: "f-new", ended_at: ~U[2026-05-01 10:00:00Z])
+
+      ids =
+        MatchEconomy.recent_summaries(
+          since: ~U[2026-04-30 00:00:00Z],
+          until: ~U[2026-04-30 23:59:59Z],
+          limit: 50
+        )
+        |> Enum.map(& &1.mtga_match_id)
+
+      assert ids == ["f-mid"]
+    end
+  end
+
+  describe "count_summaries/1" do
+    test "returns total when no filter" do
+      create_match_economy_summary(mtga_match_id: "c-1", ended_at: ~U[2026-04-30 10:00:00Z])
+      create_match_economy_summary(mtga_match_id: "c-2", ended_at: ~U[2026-04-30 11:00:00Z])
+      assert MatchEconomy.count_summaries([]) == 2
+    end
+
+    test "counts within a window" do
+      create_match_economy_summary(mtga_match_id: "w-out", ended_at: ~U[2026-04-29 10:00:00Z])
+      create_match_economy_summary(mtga_match_id: "w-in", ended_at: ~U[2026-04-30 10:00:00Z])
+
+      count =
+        MatchEconomy.count_summaries(
+          since: ~U[2026-04-30 00:00:00Z],
+          until: ~U[2026-04-30 23:59:59Z]
+        )
+
+      assert count == 1
+    end
+  end
+
   describe "capture_enabled?/0" do
     test "returns true when setting is absent" do
       assert MatchEconomy.capture_enabled?() == true

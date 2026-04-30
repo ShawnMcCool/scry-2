@@ -6,7 +6,8 @@ defmodule Scry2.MatchEconomy do
 
     * `upsert_summary!/1` — insert-or-update a `Summary` row by `mtga_match_id`
     * `get_summary/1` — load a single summary
-    * `recent_summaries/1` — last N matches by `ended_at`
+    * `recent_summaries/1` — last N matches by `ended_at`, with optional offset/since/until
+    * `count_summaries/1` — count of summaries matching the given filter
     * `timeline/1` — daily-rollup aggregation for the timeline page
   """
 
@@ -62,13 +63,33 @@ defmodule Scry2.MatchEconomy do
   @spec recent_summaries(keyword()) :: [Summary.t()]
   def recent_summaries(opts \\ []) do
     limit = Keyword.get(opts, :limit, 10)
+    offset = Keyword.get(opts, :offset, 0)
+    since = Keyword.get(opts, :since)
+    until_dt = Keyword.get(opts, :until)
 
-    from(s in Summary,
-      where: not is_nil(s.ended_at),
-      order_by: [desc: s.ended_at],
-      limit: ^limit
-    )
-    |> Repo.all()
+    base =
+      from(s in Summary,
+        where: not is_nil(s.ended_at),
+        order_by: [desc: s.ended_at]
+      )
+
+    base = if since, do: from(s in base, where: s.ended_at >= ^since), else: base
+    base = if until_dt, do: from(s in base, where: s.ended_at <= ^until_dt), else: base
+
+    base |> limit(^limit) |> offset(^offset) |> Repo.all()
+  end
+
+  @doc "Returns the count of summaries matching the given filter (mirrors recent_summaries/1)."
+  @spec count_summaries(keyword()) :: non_neg_integer()
+  def count_summaries(opts \\ []) do
+    since = Keyword.get(opts, :since)
+    until_dt = Keyword.get(opts, :until)
+
+    base = from(s in Summary, where: not is_nil(s.ended_at))
+    base = if since, do: from(s in base, where: s.ended_at >= ^since), else: base
+    base = if until_dt, do: from(s in base, where: s.ended_at <= ^until_dt), else: base
+
+    Repo.aggregate(base, :count)
   end
 
   @doc """
