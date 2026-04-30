@@ -14,6 +14,28 @@ defmodule Scry2.MatchEconomy do
   alias Scry2.Repo
   alias Scry2.MatchEconomy.Summary
 
+  @enabled_settings_key "match_economy_capture_enabled"
+
+  @doc "Settings key for the match-economy capture feature flag."
+  @spec enabled_settings_key() :: String.t()
+  def enabled_settings_key, do: @enabled_settings_key
+
+  @doc """
+  Read the current value of the match-economy capture feature flag.
+  Defaults to true when the setting is absent.
+  """
+  @spec capture_enabled?() :: boolean()
+  def capture_enabled? do
+    case Scry2.Settings.get(@enabled_settings_key) do
+      nil -> true
+      true -> true
+      "true" -> true
+      false -> false
+      "false" -> false
+      _ -> true
+    end
+  end
+
   @doc """
   Idempotent upsert by `mtga_match_id`.
   """

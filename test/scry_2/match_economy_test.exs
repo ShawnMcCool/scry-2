@@ -58,6 +58,22 @@ defmodule Scry2.MatchEconomyTest do
     end
   end
 
+  describe "capture_enabled?/0" do
+    test "returns true when setting is absent" do
+      assert MatchEconomy.capture_enabled?() == true
+    end
+
+    test "returns false when setting is the boolean false" do
+      Scry2.Settings.put!(MatchEconomy.enabled_settings_key(), false)
+      assert MatchEconomy.capture_enabled?() == false
+    end
+
+    test "returns true when setting is the boolean true" do
+      Scry2.Settings.put!(MatchEconomy.enabled_settings_key(), true)
+      assert MatchEconomy.capture_enabled?() == true
+    end
+  end
+
   describe "timeline/1" do
     test "buckets summaries by UTC date and sums memory gold delta" do
       create_match_economy_summary(
