@@ -122,6 +122,7 @@ defmodule Scry2.Collection do
         entries: result.entries
       }
       |> Map.merge(walker_fields(result))
+      |> Map.merge(match_tag_fields(result))
 
     snapshot_changeset = Snapshot.changeset(%Snapshot{}, attrs)
     previous = current()
@@ -257,4 +258,11 @@ defmodule Scry2.Collection do
       :vault_progress
     ])
   end
+
+  defp match_tag_fields(%{mtga_match_id: id, match_phase: phase})
+       when not is_nil(id) and not is_nil(phase) do
+    %{mtga_match_id: id, match_phase: phase}
+  end
+
+  defp match_tag_fields(_), do: %{}
 end

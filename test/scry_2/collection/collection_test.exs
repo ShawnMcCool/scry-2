@@ -95,6 +95,34 @@ defmodule Scry2.CollectionTest do
       assert snapshot.mtga_build_hint == "2026.03.01.12345"
     end
 
+    test "persists mtga_match_id and match_phase when both supplied" do
+      result = %{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "fallback_scan",
+        mtga_match_id: "match-tag-test",
+        match_phase: "pre"
+      }
+
+      assert {:ok, snapshot} = Collection.save_snapshot(result)
+      assert snapshot.mtga_match_id == "match-tag-test"
+      assert snapshot.match_phase == "pre"
+    end
+
+    test "omits match_tag fields when mtga_match_id is absent" do
+      result = %{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "fallback_scan"
+      }
+
+      assert {:ok, snapshot} = Collection.save_snapshot(result)
+      assert snapshot.mtga_match_id == nil
+      assert snapshot.match_phase == nil
+    end
+
     test "creates a baseline diff (from_snapshot_id=nil) on the first snapshot" do
       Scry2.Topics.subscribe(Scry2.Topics.collection_diffs())
 
