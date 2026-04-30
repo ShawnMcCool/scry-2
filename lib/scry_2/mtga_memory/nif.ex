@@ -1,6 +1,6 @@
-defmodule Scry2.Collection.Mem.Nif do
+defmodule Scry2.MtgaMemory.Nif do
   @moduledoc """
-  Rustler NIF bridge implementing `Scry2.Collection.Mem`.
+  Rustler NIF bridge implementing `Scry2.MtgaMemory`.
 
   The NIF crate exposes four primitives (`ping`, `read_bytes`,
   `list_maps_nif`, `list_processes_nif`); this module wraps them into
@@ -12,7 +12,7 @@ defmodule Scry2.Collection.Mem.Nif do
   `{:error, :not_implemented}`; see ADR 034 for the roadmap.
   """
 
-  @behaviour Scry2.Collection.Mem
+  @behaviour Scry2.MtgaMemory
 
   use Rustler, otp_app: :scry_2, crate: "scry2_collection_reader"
 
@@ -55,6 +55,9 @@ defmodule Scry2.Collection.Mem.Nif do
 
   @impl true
   def walk_collection(_pid), do: :erlang.nif_error(:nif_not_loaded)
+
+  @impl true
+  def walk_match_info(_pid), do: :erlang.nif_error(:nif_not_loaded)
 
   @doc false
   @spec walker_debug_classes_matching(non_neg_integer(), String.t()) ::

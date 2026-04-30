@@ -1,7 +1,7 @@
 defmodule Scry2.Collection.Reader.SelfCheckTest do
   use ExUnit.Case, async: true
 
-  alias Scry2.Collection.Mem.TestBackend
+  alias Scry2.MtgaMemory.TestBackend
   alias Scry2.Collection.Reader.SelfCheck
 
   setup do

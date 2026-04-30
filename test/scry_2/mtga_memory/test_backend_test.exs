@@ -1,7 +1,7 @@
-defmodule Scry2.Collection.Mem.TestBackendTest do
+defmodule Scry2.MtgaMemory.TestBackendTest do
   use ExUnit.Case, async: true
 
-  alias Scry2.Collection.Mem.TestBackend
+  alias Scry2.MtgaMemory.TestBackend
 
   setup do
     TestBackend.clear_fixture()

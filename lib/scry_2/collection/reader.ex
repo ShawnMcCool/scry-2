@@ -25,8 +25,8 @@ defmodule Scry2.Collection.Reader do
 
   require Scry2.Log, as: Log
 
-  alias Scry2.Collection.Mem
   alias Scry2.Collection.Reader.{Discovery, Scanner, SelfCheck}
+  alias Scry2.MtgaMemory
 
   @default_chunk_size 4 * 1024 * 1024
   @default_max_regions 48
@@ -48,7 +48,7 @@ defmodule Scry2.Collection.Reader do
   Options:
 
     * `:mem` — Mem backend module (defaults to the Application config,
-      `Scry2.Collection.Mem.impl/0`).
+      `Scry2.MtgaMemory.impl/0`).
     * `:scanner` — keyword opts forwarded to `Scanner.initial_state/1`,
       notably `:min_run`.
     * `:chunk_size` — bytes per `read_bytes` call (default 4 MiB).
@@ -63,7 +63,7 @@ defmodule Scry2.Collection.Reader do
   """
   @spec read(keyword()) :: {:ok, result()} | {:error, term()}
   def read(opts \\ []) do
-    mem = Keyword.get(opts, :mem, Mem.impl())
+    mem = Keyword.get(opts, :mem, MtgaMemory.impl())
     scanner_opts = Keyword.get(opts, :scanner, [])
     chunk_size = Keyword.get(opts, :chunk_size, @default_chunk_size)
     max_regions = Keyword.get(opts, :max_regions, @default_max_regions)

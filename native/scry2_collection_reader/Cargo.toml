@@ -7,7 +7,12 @@ publish = false
 [lib]
 name = "scry2_collection_reader"
 path = "src/lib.rs"
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "match-manager-spike"
+path = "src/bin/match_manager_spike.rs"
+required-features = []
 
 [dependencies]
 rustler = "0.37"

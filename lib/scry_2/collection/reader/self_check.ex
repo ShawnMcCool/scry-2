@@ -16,7 +16,7 @@ defmodule Scry2.Collection.Reader.SelfCheck do
   can route it to the Console drawer unchanged.
   """
 
-  alias Scry2.Collection.Mem
+  alias Scry2.MtgaMemory, as: Mem
 
   @mono_module_suffix "mono-2.0-bdwgc.dll"
   @unity_player_suffix "UnityPlayer.dll"

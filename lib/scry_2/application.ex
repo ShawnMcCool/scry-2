@@ -212,6 +212,11 @@ defmodule Scry2.Application do
           # Auto-triggers a collection refresh on log activity. Subscribes
           # to domain:events so it must start after projectors + ingester.
           Scry2.Collection.ActivityTrigger,
+          # Live in-match memory polling. Subscribes to domain:events for
+          # MatchCreated/MatchCompleted; consumes Scry2.MtgaMemory in tick
+          # callbacks. Must start after the ingester so the first
+          # MatchCreated of the session lands in its mailbox.
+          Scry2.LiveState.Server,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.
           Scry2.MtgaLogIngestion.Watcher
         ]

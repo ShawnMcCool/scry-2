@@ -36,9 +36,9 @@ config :scry_2, :auto_check_updates_on_mount, false
 # unless a test explicitly opts in via Application.put_env/3.
 config :scry_2, skip_user_config: true
 
-# Swap Scry2.Collection's memory backend for the in-memory fixture in tests
-# so reader/walker unit tests don't need a live MTGA. See ADR 034.
-config :scry_2, Scry2.Collection, mem: Scry2.Collection.Mem.TestBackend
+# Swap MtgaMemory's backend for the in-memory fixture in tests so
+# reader/walker/live-state unit tests don't need a live MTGA. See ADR 034.
+config :scry_2, Scry2.MtgaMemory, impl: Scry2.MtgaMemory.TestBackend
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

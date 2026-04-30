@@ -57,6 +57,249 @@ mono_get_root_domain()                  -> MonoDomain *
    `vtable->data[field->offset]`; instance reads from
    `obj_ptr + field->offset`.
 
+## Match-state pointer chains (verified 2026-04-30)
+
+Beyond the inventory chain, the walker has two more chains for
+in-match data. Both were validated end-to-end against MTGA build
+timestamp `Fri Apr 11 17:22:20 2025` on 2026-04-30 — see
+`mtga-duress/experiments/spikes/spike16_match_manager/FINDING.md`
+for the full evidence.
+
+**Two-source coverage** for these chains:
+1. Untapped's decompiled TypeScript sources in
+   `mtga-duress/experiments/untapped-analysis/source-maps/` (clean-room
+   rule per DOSSIER.md — idea, not code).
+2. Live disassembly + offset dump via `match-manager-spike` (sibling
+   binary in the production crate, `src/bin/match_manager_spike.rs`).
+
+### Chain 1 — match info (rank, commander) — VERIFIED
+
+Anchored at the same `PAPA._instance` static the inventory walker
+uses. Provides what the log can never deliver — opponent rank and
+real screen name.
+
+**PAPA instance fields** (47 total; only the relevant ones listed):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0000` | `_instance` | STATIC, attrs `0x0011` — singleton anchor |
+| **`0x0138`** | **`<MatchManager>k__BackingField`** | instance, attrs `0x0001` |
+| `0x00e8` | `<InventoryManager>k__BackingField` | (existing inventory walker uses this) |
+
+**MatchManager instance fields** (43 total; relevant to rank/commander
+extraction):
+
+| Offset | Field | Type |
+|---:|---|---|
+| `0x0048` | `<MatchID>k__BackingField` | string ref |
+| `0x0058` | `<LocalPlayerInfo>k__BackingField` | `PlayerInfo *` |
+| `0x0060` | `<OpponentInfo>k__BackingField` | `PlayerInfo *` |
+| `0x0068` | `Players` | collection (List/Dict) of all PlayerInfo |
+| `0x0098` | `<Event>k__BackingField` | `EventContext *`, null when not in event |
+| `0x0108` | `<LocalPlayerSeatId>k__BackingField` | i32 |
+| `0x010c` | `<WinCondition>k__BackingField` | i32 enum |
+| `0x0110` | `<CurrentGameNumber>k__BackingField` | i32 |
+| `0x0114` | `<MatchState>k__BackingField` | i32 enum |
+| `0x0118` | `<Format>k__BackingField` | i32 enum |
+| `0x011c` | `<Variant>k__BackingField` | i32 enum |
+| `0x0120` | `<SessionType>k__BackingField` | i32 enum |
+| `0x0125` | `<IsPracticeGame>k__BackingField` | bool (1 byte) |
+| `0x0126` | `<IsPrivateGame>k__BackingField` | bool |
+
+**PlayerInfo class** (used for both `LocalPlayerInfo` and
+`OpponentInfo` — same class, 19 fields):
+
+| Offset | Field | Type | Notes |
+|---:|---|---|---|
+| `0x0000` | `PrivateMatchOpponentNotJoinedYet` | STATIC | skip in instance reads |
+| `0x0010` | `_screenName` | `MonoString *` | real opponent username (closes log gap) |
+| `0x0018` | `WizardsAccountIdForPrivateGaming` | string ref | |
+| `0x0040` | `_deckCards` | `List<???>*` | private readonly. **Empty for OpponentInfo** — client never has opponent's submitted deck |
+| `0x0048` | `_sideboardCards` | `List<???>*` | same as above |
+| `0x0050` | `_cardStyles` | `List<???>*` | |
+| `0x0058` | `<CommanderGrpIds>k__BackingField` | `List<i32>*` | populated for Brawl/Commander |
+| `0x0060` | `<EmoteSelection>k__BackingField` | ref | |
+| `0x0068` | `SeatId` | i32 | |
+| `0x006c` | `TeamId` | i32 | |
+| `0x0070` | `IsWotc` | bool | |
+| **`0x0074`** | **`RankingClass`** | **i32 enum** | `[None, Bronze, Silver, Gold, Platinum, Diamond, Mythic]` (index 0..6) |
+| **`0x0078`** | **`RankingTier`** | **i32** | 1..4 within each class |
+| **`0x007c`** | **`MythicPercentile`** | **i32 (probable)** | 0 for sub-Mythic; live verification with a Mythic player needed to disambiguate i32 vs f32 |
+| **`0x0080`** | **`MythicPlacement`** | **i32** | leaderboard placement for top players |
+
+**Tear-down behaviour (critical):** after a match completes, MTGA
+**resets both `LocalPlayerInfo` and `OpponentInfo` to placeholder
+defaults** — `_screenName` reverts to `"Local Player"` / `"Opponent"`,
+all rank ints zero, `_deckCards._size = 0`, `Event` becomes null. The
+underlying objects persist; only the values are wiped. **A one-shot
+read at `MatchCompleted` log-event time is too late.** Read at
+`MatchCreated` instead — the opponent's PlayerInfo is populated from
+the moment ConnectResp arrives.
+
+```
+PAPA._instance                                       (existing anchor)
+  .MatchManager                                      (instance)
+    .Event.PlayerEvent.Format.UseRebalancedCards   : bool  (nullable chain)
+    .LocalPlayerInfo
+      .RankingClass                                : enum [None, Bronze,
+                                                          Silver, Gold,
+                                                          Platinum,
+                                                          Diamond, Mythic]
+      .RankingTier                                 : i32
+      .MythicPercentile                            : f32 / f64 (TBD)
+      .MythicPlacement                             : i32
+      .CommanderGrpIds                             : List<i32>
+    .OpponentInfo
+      .RankingClass, .RankingTier,
+      .MythicPercentile, .MythicPlacement,
+      .CommanderGrpIds                             : (same shape as above)
+```
+
+`OpponentInfo` is the gap-filler — MTGA does not include opponent
+rank in match-room log events. `CommanderGrpIds` is the Brawl/
+Commander commander identity.
+
+Source: `ScryIpcHandler-x0rjOwCx/src/scry/readers/mtga/ScryMtgaMatchInfo.ts`.
+
+### Chain 2 — board state (every card, every zone, both players) — VERIFIED
+
+Anchored at the `MatchSceneManager` class's static `Instance` field —
+distinct from the PAPA anchor used by Chain 1.
+
+**MatchSceneManager class** (looked up by name in the loaded images;
+addr varies per build):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0000` | `Instance` | STATIC, attrs `0x0016` — **becomes NULL after match scene tears down** |
+| `0x0078` | `_gameManager` | instance, attrs `0x0001` — `GameManager *` |
+
+**GameManager instance fields** (50 total; relevant fields):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0050` | `<CardHolderManager>k__BackingField` | instance |
+| `0x00c0` | `<MatchManager>k__BackingField` | instance — alternative path to MatchManager (PAPA path is simpler) |
+| `0x0118` | `_gameStateManager` | instance, attrs `0x0021` — additional state worth probing |
+
+**CardHolderManager class** (5 fields):
+
+| Offset | Field |
+|---:|---|
+| `0x0010` | `<DefaultBrowser>k__BackingField` |
+| `0x0018` | `<Examine>k__BackingField` |
+| `0x0020` | `_provider` (private, attrs `0x0021`) — `MutableCardHolderProvider *` |
+| `0x0028` | `_builder` |
+| `0x0030` | `_zoneCardHolderCreated` |
+
+**MutableCardHolderProvider class** (4 fields, all `Dictionary\`2`):
+
+| Offset | Field |
+|---:|---|
+| `0x0010` | `ZoneIdToCardHolder` |
+| `0x0018` | `SubCardHolderMap` |
+| **`0x0020`** | **`PlayerTypeMap`** ← `Dict<GREPlayerNum, Dict<CardHolderType, ICardHolder>>` |
+| `0x0028` | `AllCardHolders` |
+
+```
+GREPlayerNum   = { Invalid=0, LocalPlayer=1, Opponent=2, Teammate=3 }
+CardHolderType = { Invalid=0, Library=1, OffCameraLibrary=2, Hand=3,
+                   Battlefield=4, Graveyard=5, Exile=6, Stack=9,
+                   Command=10, CardBrowserDefault=12,
+                   CardBrowserViewDismiss=13, Examine=16,
+                   Deckbuilder=17, CardViewer=18, Store=19,
+                   RolloverZoom=20, Reveal=21, None=-1 }
+```
+
+**Tear-down behaviour:** the `MatchSceneManager.Instance` static is
+nulled out as soon as MTGA exits the match scene — verified post-
+match via `match-manager-spike`. The class definition stays loaded;
+only the singleton pointer goes to zero. Reads must complete during
+the match.
+
+For non-battlefield zones, each holder is a `BaseCardHolder`:
+
+```
+BaseCardHolder._previousLayoutData : List<CardLayoutData>
+
+CardLayoutData
+  .IsVisibleInLayout : bool
+  .Card : BaseCDC
+    ._model : CardDataAdapter
+      ._printing : CardPrintingData       (Scryfall-shape — large)
+      ._instance
+        .BaseGrpId             : i32      ← arena_id
+        .OverlayGrpId.value    : i32      (alt-art arena_id; nullable)
+        .IsTapped              : bool
+        .FaceDownState._reasonFaceDown : enum
+```
+
+Battlefield is the special case — it's split into regions instead of
+a flat list:
+
+```
+BattlefieldCardHolder.Layout
+  ._localCreatureRegion       : BattlefieldRegion
+  ._localLandRegion           : BattlefieldRegion
+  ._localArtifactRegion       : BattlefieldRegion
+  ._localPlaneswalkerRegion   : BattlefieldRegion
+  ._opponentCreatureRegion    : BattlefieldRegion
+  ._opponentLandRegion        : BattlefieldRegion
+  ._opponentArtifactRegion    : BattlefieldRegion
+  ._opponentPlaneswalkerRegion: BattlefieldRegion
+
+BattlefieldRegion
+  ._stacksByShape  : Dict<i32, List<BattlefieldStack>>
+  .CardBounds      : { m_Height, m_Width, m_XMin, m_YMin } (f32)
+
+BattlefieldStack
+  .AllCards         : List<BaseCDC>     ← cards in this stack
+  .AttachmentCount  : i32
+  .CardCount        : i32
+  .ExileCount       : i32
+  .IsAttackStack    : bool
+  .IsBlockStack     : bool
+```
+
+For "what cards has the opponent revealed" the minimum traversal is:
+
+1. Battlefield → opponent regions → stacks → `AllCards`
+2. `(Opponent, Graveyard) → _previousLayoutData`
+3. `(Opponent, Exile) → _previousLayoutData`
+4. `(Opponent, Stack) → _previousLayoutData`
+5. `(Opponent, Command) → _previousLayoutData`
+6. `(Opponent, Hand) → _previousLayoutData` filtered to entries with
+   `IsVisibleInLayout = true` and no `FaceDownState` — i.e. revealed-
+   in-hand cards (Thoughtseize, Duress, etc.).
+
+Library is opaque — the client never has unrevealed identities; its
+holder will have entries with face-down state set and no `BaseGrpId`.
+
+Sources:
+- `ScryIpcHandler-x0rjOwCx/src/scry/readers/mtga/ScryMtgaMatchReader.ts`
+- `ScryIpcHandler-x0rjOwCx/src/scry/utils/types/mtga/MatchSceneManager.ts`
+- `ScryIpcHandler-x0rjOwCx/src/scry/utils/mtga/ScryBattlefieldStacks.ts`
+- `ScryIpcHandler-x0rjOwCx/src/scry/utils/mtga/ScryMatchZone.ts`
+
+### Generic types the walker doesn't yet handle
+
+Both chains use Mono `List<T>` (`T[] _items + i32 _size + i32 _version`)
+and `Dictionary<K, V>` with non-`int` generic parameters. The current
+walker's `dict.rs` is hardcoded to `Dictionary<int, int>` (the
+inventory cards collection). Reuse it for the new chains will require
+parameterising the value-size and pointer-vs-inline read.
+
+`List<T>` has no walker module yet. It's straightforward — header
+fields then dereference `_items` as a Mono `MonoArray<T>` (`obj` +
+`bounds` + `max_length` + flex `vector[]` per the existing
+`MonoArray` offsets) — but it's a new module nonetheless.
+
+### Research note
+
+Full feasibility analysis, capture-model trade-offs (one-shot at
+`MatchCompleted` vs `Scry2.LiveState` polling), and recommended
+implementation contour: `decisions/research/2026-04-30-001-opponent-game-state-memory-read.md`.
+
 ## Canonical sources
 
 Walker offsets must be confirmed against **at least two independent

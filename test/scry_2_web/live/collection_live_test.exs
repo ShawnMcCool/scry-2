@@ -4,7 +4,7 @@ defmodule Scry2Web.CollectionLiveTest do
   import Phoenix.LiveViewTest
 
   alias Scry2.Collection
-  alias Scry2.Collection.Mem.TestBackend
+  alias Scry2.MtgaMemory.TestBackend
   alias Scry2.Settings
   alias Scry2.TestFactory, as: Factory
 

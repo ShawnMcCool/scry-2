@@ -20,21 +20,21 @@
 use rustler::{Atom, Binary, Env, NifMap, NifTaggedEnum, NifTuple, OwnedBinary};
 
 #[cfg(target_os = "linux")]
-mod linux;
+pub mod linux;
 #[cfg(target_os = "linux")]
-use linux as platform;
+pub use linux as platform;
 
-mod walker;
+pub mod walker;
 
 #[cfg(target_os = "macos")]
-mod macos;
+pub mod macos;
 #[cfg(target_os = "macos")]
-use macos as platform;
+pub use macos as platform;
 
 #[cfg(target_os = "windows")]
-mod windows;
+pub mod windows;
 #[cfg(target_os = "windows")]
-use windows as platform;
+pub use windows as platform;
 
 mod atoms {
     rustler::atoms! {
@@ -322,6 +322,89 @@ fn walker_debug_class_fields(
     Ok(out)
 }
 
+// ============================================================
+// walk_match_info NIF — Chain 1 (rank, screen-name, commander)
+// per decisions/research/2026-04-30-001-...md
+// ============================================================
+
+/// One PlayerInfo (local or opponent) for the wire format.
+#[derive(NifMap)]
+pub struct WirePlayerInfo {
+    pub screen_name: Option<String>,
+    pub seat_id: i32,
+    pub team_id: i32,
+    pub ranking_class: i32,
+    pub ranking_tier: i32,
+    pub mythic_percentile: i32,
+    pub mythic_placement: i32,
+    pub commander_grp_ids: Vec<i32>,
+}
+
+/// Wire shape returned to Elixir for a single MatchManager snapshot.
+/// `nil` when there's no active match (PAPA._instance.MatchManager
+/// is null).
+#[derive(NifMap)]
+pub struct WireMatchInfo {
+    pub local: WirePlayerInfo,
+    pub opponent: WirePlayerInfo,
+    pub match_id: Option<String>,
+    pub format: i32,
+    pub variant: i32,
+    pub session_type: i32,
+    pub current_game_number: i32,
+    pub match_state: i32,
+    pub local_player_seat_id: i32,
+    pub is_practice_game: bool,
+    pub is_private_game: bool,
+    pub reader_version: String,
+}
+
+fn match_info_to_wire(v: walker::match_info::MatchInfoValues) -> WireMatchInfo {
+    WireMatchInfo {
+        local: player_info_to_wire(v.local),
+        opponent: player_info_to_wire(v.opponent),
+        match_id: v.match_id,
+        format: v.format,
+        variant: v.variant,
+        session_type: v.session_type,
+        current_game_number: v.current_game_number,
+        match_state: v.match_state,
+        local_player_seat_id: v.local_player_seat_id,
+        is_practice_game: v.is_practice_game,
+        is_private_game: v.is_private_game,
+        reader_version: READER_VERSION.to_string(),
+    }
+}
+
+fn player_info_to_wire(p: walker::match_info::PlayerInfoValues) -> WirePlayerInfo {
+    WirePlayerInfo {
+        screen_name: p.screen_name,
+        seat_id: p.seat_id,
+        team_id: p.team_id,
+        ranking_class: p.ranking_class,
+        ranking_tier: p.ranking_tier,
+        mythic_percentile: p.mythic_percentile,
+        mythic_placement: p.mythic_placement,
+        commander_grp_ids: p.commander_grp_ids,
+    }
+}
+
+/// Read a single MatchManager snapshot from the target MTGA process.
+///
+/// Returns `{:ok, nil}` when MTGA is running but no match is active
+/// (PAPA._instance.MatchManager is null). Returns `{:ok, %{...}}`
+/// with the populated values when a match is in flight.
+///
+/// Live polling state machine (`Scry2.LiveState`, planned) calls this
+/// every 250 ms while a match is active.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walk_match_info(pid: i32) -> Result<Option<WireMatchInfo>, WalkErrorWire> {
+    let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
+    let read_mem = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let snap = walker::run::walk_match_info(&maps, read_mem).map_err(WalkErrorWire::from)?;
+    Ok(snap.map(match_info_to_wire))
+}
+
 /// Diagnostic NIF — list every loaded assembly's
 /// `{name, image_addr}`.
 #[rustler::nif(schedule = "DirtyIo")]
@@ -339,4 +422,4 @@ fn walker_debug_list_assemblies(pid: i32) -> Result<Vec<(String, u64)>, Atom> {
         .ok_or(atoms::io_error())
 }
 
-rustler::init!("Elixir.Scry2.Collection.Mem.Nif");
+rustler::init!("Elixir.Scry2.MtgaMemory.Nif");

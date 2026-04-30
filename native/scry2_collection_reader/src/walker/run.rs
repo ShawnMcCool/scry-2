@@ -25,9 +25,12 @@ use super::chain;
 use super::class_lookup;
 use super::dict::DictEntry;
 use super::domain;
+use super::field;
 use super::image_lookup;
 use super::inventory::InventoryValues;
-use super::mono::MonoOffsets;
+use super::match_info::{self, MatchInfoValues};
+use super::mono::{self, MonoOffsets};
+use super::vtable;
 
 /// Bytes to read for each `MonoClassDef` blob the walker consumes.
 /// Must cover:
@@ -165,6 +168,68 @@ where
         inventory: walk.inventory,
         mtga_build_hint: build_hint(),
     })
+}
+
+/// Run the match-info walker (Chain 1) against a target process.
+///
+/// Resolves PAPA, reads its singleton via vtable static storage, then
+/// delegates to [`super::match_info::from_papa_singleton`].
+///
+/// Returns `Ok(None)` when the chain reaches PAPA but `MatchManager`
+/// is null (no active match) — this is a normal state, not an error.
+/// Returns `Err(WalkError)` for upstream failures (mono DLL missing,
+/// PAPA class missing, etc.).
+pub fn walk_match_info<F>(maps: &[MapEntry], read_mem: F) -> Result<Option<MatchInfoValues>, WalkError>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let offsets = MonoOffsets::mtga_default();
+
+    let (mono_base, mono_bytes) =
+        read_mono_image(maps, &read_mem).ok_or(WalkError::MonoDllReadFailed)?;
+    if mono_bytes.is_empty() {
+        return Err(WalkError::MonoDllNotFound);
+    }
+
+    let domain_addr = domain::find_root_domain(&mono_bytes, mono_base, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+
+    let images = image_lookup::list_all_images(&offsets, domain_addr, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    if images.is_empty() {
+        return Err(WalkError::RootDomainNotFound);
+    }
+
+    let papa_addr = find_class_in_images(&offsets, &images, "PAPA", read_mem)
+        .ok_or(WalkError::ClassNotFound("PAPA"))?;
+    let papa_bytes =
+        read_mem(papa_addr, CLASS_DEF_BLOB_LEN).ok_or(WalkError::ClassReadFailed("PAPA"))?;
+
+    // PAPA._instance — static field via vtable storage.
+    let instance_field =
+        field::find_by_name(&offsets, &papa_bytes, 0, "_instance", read_mem)
+            .ok_or(WalkError::ChainFailed)?;
+    if !instance_field.is_static || instance_field.offset < 0 {
+        return Err(WalkError::ChainFailed);
+    }
+    let storage = vtable::static_storage_base(&offsets, papa_addr, domain_addr, read_mem)
+        .ok_or(WalkError::ChainFailed)?;
+    let static_addr = storage + instance_field.offset as u64;
+    let papa_singleton = read_mem(static_addr, 8)
+        .and_then(|b| mono::read_u64(&b, 0, 0))
+        .ok_or(WalkError::ChainFailed)?;
+    if papa_singleton == 0 {
+        // PAPA exists but its singleton hasn't been initialised — not
+        // an active match, return None.
+        return Ok(None);
+    }
+
+    Ok(match_info::from_papa_singleton(
+        &offsets,
+        papa_singleton,
+        &papa_bytes,
+        read_mem,
+    ))
 }
 
 /// Locate the mono DLL in `maps`, stitch all its mapped sections

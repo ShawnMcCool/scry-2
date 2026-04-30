@@ -1,6 +1,6 @@
 defmodule Scry2.Collection.Reader.Discovery do
   @moduledoc """
-  Locates the running MTGA process via the `Scry2.Collection.Mem`
+  Locates the running MTGA process via the `Scry2.MtgaMemory`
   backend. Cross-platform: the predicate is applied to every candidate
   process, so Linux `/proc` iteration, Windows `CreateToolhelp32Snapshot`,
   and the test fixture all funnel through the same entry point.
@@ -14,7 +14,7 @@ defmodule Scry2.Collection.Reader.Discovery do
 
   @doc """
   Returns `{:ok, pid}` for the first MTGA process found, or a tagged
-  error. `mem` is a module implementing `Scry2.Collection.Mem`.
+  error. `mem` is a module implementing `Scry2.MtgaMemory`.
   """
   @spec find_mtga(module()) :: {:ok, non_neg_integer()} | {:error, atom()}
   def find_mtga(mem) do

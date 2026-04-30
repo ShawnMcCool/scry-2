@@ -3,7 +3,7 @@ defmodule Scry2.Collection.RefreshJobTest do
   use Oban.Testing, repo: Scry2.Repo
 
   alias Scry2.Collection
-  alias Scry2.Collection.Mem.TestBackend
+  alias Scry2.MtgaMemory.TestBackend
   alias Scry2.Collection.RefreshJob
 
   setup do
