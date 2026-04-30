@@ -12,7 +12,7 @@ defmodule Scry2Web.MatchesLive do
   """
   use Scry2Web, :live_view
 
-  alias Scry2.{Cards, Matches}
+  alias Scry2.{Cards, MatchEconomy, Matches}
   alias Scry2.Topics
   alias Scry2Web.MatchesHelpers
 
@@ -22,7 +22,10 @@ defmodule Scry2Web.MatchesLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Topics.subscribe(Topics.matches_updates())
+    if connected?(socket) do
+      Topics.subscribe(Topics.matches_updates())
+      Topics.subscribe(Topics.match_economy_updates())
+    end
 
     {:ok, assign(socket, reload_timer: nil, show_all_formats: false)}
   end
@@ -79,6 +82,16 @@ defmodule Scry2Web.MatchesLive do
       {:noreply, assign_detail(socket, match)}
     else
       {:noreply, assign_index(socket, socket.assigns.filter_params)}
+    end
+  end
+
+  def handle_info({:match_economy_updated, summary}, socket) do
+    case socket.assigns[:match] do
+      %{mtga_match_id: id} when id == summary.mtga_match_id ->
+        {:noreply, assign(socket, :match_economy_summary, summary)}
+
+      _ ->
+        {:noreply, socket}
     end
   end
 
@@ -167,7 +180,8 @@ defmodule Scry2Web.MatchesLive do
       matches: [],
       opponent_history: opponent_history,
       deck_submission: deck_submission,
-      cards_by_arena_id: cards_by_arena_id
+      cards_by_arena_id: cards_by_arena_id,
+      match_economy_summary: MatchEconomy.get_summary(match.mtga_match_id)
     )
   end
 
@@ -265,6 +279,12 @@ defmodule Scry2Web.MatchesLive do
 
       <%!-- Rich match header --%>
       <.match_header match={@match} />
+
+      <%!-- Economy delta card --%>
+      <Scry2Web.Components.MatchEconomyCard.card
+        :if={@match_economy_summary}
+        summary={@match_economy_summary}
+      />
 
       <%!-- Game-by-game breakdown --%>
       <.game_breakdown :if={@match.games != []} games={@match.games} />
