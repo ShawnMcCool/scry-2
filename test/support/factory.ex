@@ -649,6 +649,42 @@ defmodule Scry2.TestFactory do
     struct(InventorySnapshot, Map.merge(defaults, Map.new(attrs)))
   end
 
+  def create_economy_transaction(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    defaults = %{
+      player_id: 1,
+      source: "EventClaimPrize",
+      source_id: nil,
+      gold_delta: 0,
+      gems_delta: 0,
+      boosters: nil,
+      gold_balance: nil,
+      gems_balance: nil,
+      occurred_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    }
+
+    Scry2.Economy.insert_transaction!(Map.merge(defaults, attrs))
+  end
+
+  def create_inventory_snapshot(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    defaults = %{
+      player_id: nil,
+      gold: 5000,
+      gems: 1200,
+      vault_progress: 42.5,
+      wildcards_common: 25,
+      wildcards_uncommon: 18,
+      wildcards_rare: 6,
+      wildcards_mythic: 3,
+      occurred_at: DateTime.utc_now() |> DateTime.truncate(:second)
+    }
+
+    Scry2.Economy.insert_inventory_snapshot!(Map.merge(defaults, attrs))
+  end
+
   def build_quest_status(attrs \\ %{}) do
     defaults = %{
       player_id: nil,
