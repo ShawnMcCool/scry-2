@@ -86,13 +86,23 @@ defmodule Scry2Web.MatchesLive do
   end
 
   def handle_info({:match_economy_updated, summary}, socket) do
-    case socket.assigns[:match] do
-      %{mtga_match_id: id} when id == summary.mtga_match_id ->
-        {:noreply, assign(socket, :match_economy_summary, summary)}
+    socket =
+      case socket.assigns[:match] do
+        %{mtga_match_id: id} when id == summary.mtga_match_id ->
+          assign(socket, :match_economy_summary, summary)
 
-      _ ->
-        {:noreply, socket}
-    end
+        _ ->
+          socket
+      end
+
+    socket =
+      if Map.has_key?(socket.assigns, :recent_match_economies) do
+        assign(socket, :recent_match_economies, MatchEconomy.recent_summaries(limit: 10))
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   def handle_info(_other, socket), do: {:noreply, socket}
@@ -148,7 +158,8 @@ defmodule Scry2Web.MatchesLive do
       active_category: category,
       active_format: format,
       active_bo: bo,
-      active_result: result
+      active_result: result,
+      recent_match_economies: MatchEconomy.recent_summaries(limit: 10)
     )
   end
 
@@ -205,6 +216,12 @@ defmodule Scry2Web.MatchesLive do
         cumulative_series={@cumulative_series}
         show_all_formats={@show_all_formats}
         winrate_period={@winrate_period}
+      />
+
+      <%!-- Recent-match economy ticker --%>
+      <Scry2Web.Components.MatchEconomyTicker.ticker
+        :if={Map.has_key?(assigns, :recent_match_economies)}
+        summaries={@recent_match_economies}
       />
 
       <%!-- Filter bar --%>

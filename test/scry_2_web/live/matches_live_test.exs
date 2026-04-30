@@ -12,6 +12,26 @@ defmodule Scry2Web.MatchesLiveTest do
     %{player: player}
   end
 
+  describe "matches dashboard — economy ticker" do
+    test "shows match economy ticker on the dashboard when summaries exist", %{conn: conn} do
+      Factory.create_match_economy_summary(
+        mtga_match_id: "ticker-1",
+        ended_at: DateTime.utc_now(),
+        memory_gold_delta: 100
+      )
+
+      Factory.create_match_economy_summary(
+        mtga_match_id: "ticker-2",
+        ended_at: DateTime.utc_now() |> DateTime.add(-3600),
+        memory_gold_delta: 250
+      )
+
+      {:ok, _view, html} = live(conn, "/matches")
+      assert html =~ "Last "
+      assert html =~ "matches"
+    end
+  end
+
   describe "match detail — economy card" do
     test "shows match economy card when summary exists for the match", %{conn: conn} do
       match = Factory.create_match(mtga_match_id: "econ-card-smoke-1")
