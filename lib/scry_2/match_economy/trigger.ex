@@ -13,6 +13,9 @@ defmodule Scry2.MatchEconomy.Trigger do
 
   use GenServer
 
+  alias Scry2.Events.Match.{MatchCompleted, MatchCreated}
+  alias Scry2.MatchEconomy
+  alias Scry2.MatchEconomy.Capture
   alias Scry2.Topics
 
   def start_link(opts \\ []) do
@@ -28,7 +31,27 @@ defmodule Scry2.MatchEconomy.Trigger do
   end
 
   @impl true
-  def handle_info({:domain_event, _id, _type}, state), do: {:noreply, state}
+  def handle_info({:domain_event, _id, %MatchCreated{} = event}, state) do
+    if MatchEconomy.capture_enabled?() do
+      Task.Supervisor.start_child(state.task_sup, fn ->
+        Capture.handle_match_created(event)
+      end)
+    end
+
+    {:noreply, state}
+  end
+
+  def handle_info({:domain_event, _id, %MatchCompleted{} = event}, state) do
+    if MatchEconomy.capture_enabled?() do
+      Task.Supervisor.start_child(state.task_sup, fn ->
+        Capture.handle_match_completed(event)
+      end)
+    end
+
+    {:noreply, state}
+  end
+
+  def handle_info({:domain_event, _id, _other}, state), do: {:noreply, state}
 
   def handle_info(_other, state), do: {:noreply, state}
 end
