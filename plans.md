@@ -70,10 +70,15 @@ is clean.
 
 ## D. Live tracking (continuous reads — new architectural mode)
 
-Requires a `Scry2.LiveState` GenServer polling at ~4 Hz during active match
-or draft. New PubSub topic. New isolation gate (settings flag, like the
-reader-enabled flag).
+`Scry2.LiveState` plumbing **shipped (Chain 1)**: GenServer polls 500 ms
+on `MatchCreated → MatchCompleted`, persists `live_state_snapshots`,
+broadcasts `live_match:updates` / `live_match:final`. Settings toggle
++ setup-tour step ship the kill switch. The walker NIF currently
+returns the rank/screen-name/commander chain only — every "Chain 2"
+item below (board state) is still gated on `walker/card_holder.rs`
+(blocked on parent-class + GRE captures, see task #22).
 
+- LiveView UI consuming `live_match:updates` (rank/screen-name/commander) — **today** (unblocked)
 - Active match HUD feed (life, hand, library, gy, exile, mana, stack) — **live** + **reader+**
 - Real-time draft pack reader (cards seen but passed) — **live** + **reader+**
 - Real-time mana / card-advantage tracker — **live** + **reader+**
@@ -118,9 +123,12 @@ All gated on walker phase 6 producing a stream of currency/progression rows.
   on every `Scry2.Collection` snapshot. See "Walker phase 6 — shipped" at
   the top of this file for refs. B/E/F items can now be picked up on top
   of real walker data.
-- **Live-state GenServer** — does not exist. Currently snapshots are one-shot.
-  Adding a poll loop is a deliberate architectural step (settings flag, kill
-  switch, isolation gate) — not a casual addition.
+- **Live-state GenServer — ✅ shipped (Chain 1).** `Scry2.LiveState.Server`
+  polls every 500 ms while a match is active, gated by the
+  `live_match_polling_enabled` Settings flag (on by default, configurable
+  in setup tour and Settings → Memory Reading). Chain 1 reads
+  rank/screen-name/commander via `MtgaMemory.walk_match_info/1`. Chain 2
+  (board state) is still gated on `walker/card_holder.rs` — see task #22.
 - **Reader extensions** (`reader+`) — each new memory structure (rank object,
   deck list, quest list, etc.) needs its own walker-style traversal. Current
   scanner only finds the cards dictionary. Each extension is its own ADR.
