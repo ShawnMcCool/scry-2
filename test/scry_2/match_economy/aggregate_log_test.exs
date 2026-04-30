@@ -94,4 +94,41 @@ defmodule Scry2.MatchEconomy.AggregateLogTest do
              }
     end
   end
+
+  describe "over/2" do
+    test "returns combined log delta map for gold/gems/wildcards" do
+      create_economy_transaction(
+        occurred_at: ~U[2026-04-30 10:30:00Z],
+        gold_delta: 100,
+        gems_delta: 5
+      )
+
+      create_inventory_snapshot(
+        occurred_at: ~U[2026-04-30 09:50:00Z],
+        wildcards_common: 10,
+        wildcards_uncommon: 5,
+        wildcards_rare: 2,
+        wildcards_mythic: 1
+      )
+
+      create_inventory_snapshot(
+        occurred_at: ~U[2026-04-30 11:00:00Z],
+        wildcards_common: 11,
+        wildcards_uncommon: 5,
+        wildcards_rare: 2,
+        wildcards_mythic: 1
+      )
+
+      result = AggregateLog.over(~U[2026-04-30 10:00:00Z], ~U[2026-04-30 11:00:00Z])
+
+      assert result == %{
+               gold: 100,
+               gems: 5,
+               wildcards_common: 1,
+               wildcards_uncommon: 0,
+               wildcards_rare: 0,
+               wildcards_mythic: 0
+             }
+    end
+  end
 end
