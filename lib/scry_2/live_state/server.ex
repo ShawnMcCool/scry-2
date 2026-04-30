@@ -10,7 +10,7 @@ defmodule Scry2.LiveState.Server do
     • every @poll_interval_ms: walk_match_info(pid)
     •   {:ok, snap} → broadcast {:tick, snap} on live_match:updates
     •   {:ok, nil}  → MatchSceneManager.Instance NULL → WINDING_DOWN
-    •   {:error, _} → log; continue ticking (transient)
+    •   {:error, _} → MTGA gone or memory layout broken → WINDING_DOWN
     • on MatchCompleted domain event for this match → WINDING_DOWN
     • on @match_timeout_ms safety timer → WINDING_DOWN
                          ↓
@@ -19,6 +19,15 @@ defmodule Scry2.LiveState.Server do
     • broadcast {:final, %Snapshot{}} on live_match:final
     • return to IDLE
   ```
+
+  Wind-down on `{:error, _}` is structural, not a transient retry.
+  When MTGA quits mid-match the cached `mtga_pid` is invalid: best
+  case the NIF returns `{:error, _}` quickly and we'd otherwise log-
+  and-tick forever; worst case a re-used pid leads the walker into
+  a non-terminating pointer chase on garbage memory and pegs a
+  dirty-IO scheduler at 100% CPU. Either way, the right move is to
+  stop polling — the next match's `MatchCreated` event will
+  re-resolve the pid from a fresh process listing.
 
   See `decisions/research/2026-04-30-001-opponent-game-state-memory-read.md`.
 
@@ -144,12 +153,14 @@ defmodule Scry2.LiveState.Server do
         {:noreply, new_state}
 
       {:error, reason} ->
+        # MTGA gone or memory layout broken — wind down rather than
+        # re-polling indefinitely. See @moduledoc for rationale.
         Log.warning(
           :ingester,
-          "live_state: walk_match_info failed: #{inspect(reason)} (continuing tick)"
+          "live_state: walk_match_info failed: #{inspect(reason)}; winding down"
         )
 
-        {:noreply, %{state | poll_timer: schedule_poll(state)}}
+        {:noreply, wind_down(state, {:walk_error, reason})}
     end
   end
 

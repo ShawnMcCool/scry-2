@@ -24,7 +24,11 @@ pub mod linux;
 #[cfg(target_os = "linux")]
 pub use linux as platform;
 
+pub mod read_budget;
 pub mod walker;
+
+use read_budget::{bounded, WALK_READ_BUDGET};
+use std::sync::atomic::AtomicU64;
 
 #[cfg(target_os = "macos")]
 pub mod macos;
@@ -199,7 +203,9 @@ fn snapshot_to_wire(snap: walker::run::Snapshot) -> WalkSnapshot {
 #[rustler::nif(schedule = "DirtyIo")]
 fn walk_collection(pid: i32) -> Result<WalkSnapshot, WalkErrorWire> {
     let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
-    let read_mem = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
     let snap = walker::run::walk_collection(&maps, read_mem, || {
         walker::build_hint::find_mtga_root(&maps)
             .and_then(|root| walker::build_hint::read_build_guid(&root))
@@ -224,7 +230,9 @@ fn walker_debug_classes_matching(
     use walker::mono::MonoOffsets;
     let offsets = MonoOffsets::mtga_default();
     let maps = platform::list_maps(pid).map_err(err_atom)?;
-    let read_mem = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
 
     let (mono_base, mono_bytes) =
         walker::run::read_mono_image(&maps, &read_mem).ok_or(atoms::io_error())?;
@@ -260,7 +268,9 @@ fn walker_debug_class_fields(
     use walker::mono::{self as mono_mod, MonoOffsets, MONO_CLASS_FIELD_SIZE};
     let offsets = MonoOffsets::mtga_default();
     let maps = platform::list_maps(pid).map_err(err_atom)?;
-    let read_mem = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
 
     let (mono_base, mono_bytes) =
         walker::run::read_mono_image(&maps, &read_mem).ok_or(atoms::io_error())?;
@@ -400,7 +410,9 @@ fn player_info_to_wire(p: walker::match_info::PlayerInfoValues) -> WirePlayerInf
 #[rustler::nif(schedule = "DirtyIo")]
 fn walk_match_info(pid: i32) -> Result<Option<WireMatchInfo>, WalkErrorWire> {
     let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
-    let read_mem = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
     let snap = walker::run::walk_match_info(&maps, read_mem).map_err(WalkErrorWire::from)?;
     Ok(snap.map(match_info_to_wire))
 }
@@ -412,7 +424,9 @@ fn walker_debug_list_assemblies(pid: i32) -> Result<Vec<(String, u64)>, Atom> {
     use walker::mono::MonoOffsets;
     let offsets = MonoOffsets::mtga_default();
     let maps = platform::list_maps(pid).map_err(err_atom)?;
-    let read_mem = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
 
     let (mono_base, mono_bytes) =
         walker::run::read_mono_image(&maps, &read_mem).ok_or(atoms::io_error())?;

@@ -221,5 +221,24 @@ defmodule Scry2.LiveState.ServerTest do
       refute_receive {:tick, _}, 100
       refute_receive {:final, _}, 100
     end
+
+    test "winds down when walk_match_info returns an error (MTGA gone mid-match)" do
+      # Simulates MTGA quitting mid-match: the cached mtga_pid is still
+      # in our state, but reads against it now fail. Without this gate
+      # the GenServer keeps re-polling indefinitely; if the walker hits
+      # a non-terminating pointer chase on garbage memory it pegs a
+      # dirty-IO scheduler at 100% CPU and the GenServer can never
+      # process its own match_timeout.
+      _server =
+        start_server_with_fixture(%{
+          processes: [%{pid: @mtga_pid, name: "MTGA.exe", cmdline: "MTGA.exe"}],
+          match_info: {:error, :mono_dll_read_failed}
+        })
+
+      send_match_created(@match_id)
+
+      assert_receive {:final, %Snapshot{mtga_match_id: @match_id}}, 500
+      refute_receive {:tick, _}, 100
+    end
   end
 end
