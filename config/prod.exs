@@ -22,6 +22,8 @@ config :scry_2, Scry2Web.Endpoint,
 # Do not print debug messages in production
 config :logger, level: :info
 
+config :scry_2, Scry2.Repo, log: :warning
+
 # Use the same component-aware formatter as dev so thinking logs show [component]
 config :logger, :default_formatter,
   format: {Scry2.Log.FormatForStdout, :format},
