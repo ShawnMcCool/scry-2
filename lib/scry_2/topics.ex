@@ -40,6 +40,10 @@ defmodule Scry2.Topics do
   @doc "Economy projection updates (event entries, inventory, transactions)."
   def economy_updates, do: "economy:updates"
 
+  # ── MatchEconomy ──────────────────────────────────────────────────
+  @doc "Match-economy summary inserts and updates."
+  def match_economy_updates, do: "match_economy:updates"
+
   # ── Cards ────────────────────────────────────────────────────────────────
   @doc "Card reference data refreshed (Scryfall import or synthesis ran)."
   def cards_updates, do: "cards:updates"
