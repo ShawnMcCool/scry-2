@@ -11,6 +11,36 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Match economy capture.** Scry now records the gold,
+  gems, wildcards, and vault progress that change across each
+  match. The match detail page shows what you earned (or lost),
+  and the **Matches** dashboard shows a running ticker of recent
+  earnings.
+
+- **New Match economy page.** The nav link **Match economy**
+  opens a sortable, date-filtered timeline of every match's
+  currency delta — quick way to see how a session, a draft, or a
+  whole week shook out.
+
+- **Reconciliation status per match.** Each match's economy entry
+  shows whether the memory reading and MTGA's log events agreed,
+  whether one source was missing, or whether the data is
+  incomplete — so you can spot when MTGA dropped a log event.
+
+- **Live opponent info during a match.** While a match is
+  running, Scry now reads the opponent's rank and screen name
+  (and your commander, in Brawl) directly from MTGA's memory.
+  New toggles in **Settings → Memory Reading** and the first-run
+  setup tour let you turn live polling and economy capture off.
+
+### Improved
+
+- **Smoother economy charts.** The currency-over-time chart on
+  the **Economy** page skips data points where nothing changed,
+  giving you cleaner step lines and faster page loads.
+
 ## v0.26.0 — 2026-04-30
 
 ### Improved
