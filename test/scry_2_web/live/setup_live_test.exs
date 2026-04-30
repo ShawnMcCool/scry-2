@@ -87,6 +87,28 @@ defmodule Scry2Web.SetupLiveTest do
     end
   end
 
+  describe "economy capture toggle on the tour" do
+    test "is on by default and persists off when clicked", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/setup")
+
+      # Advance to the memory_reading step (4 clicks from welcome).
+      view |> element("button", "I've enabled Detailed Logs") |> render_click()
+      view |> element("button[phx-click='next']") |> render_click()
+      view |> element("button[phx-click='next']") |> render_click()
+      view |> element("button[phx-click='next']") |> render_click()
+
+      assert has_element?(view, "input[phx-click='toggle_economy_capture']")
+      assert Scry2.MatchEconomy.capture_enabled?()
+
+      view
+      |> element("input[phx-click='toggle_economy_capture']")
+      |> render_click()
+
+      assert Settings.get("match_economy_capture_enabled") == false
+      refute Scry2.MatchEconomy.capture_enabled?()
+    end
+  end
+
   describe "manual path entry" do
     @tag :tmp_dir
     test "persists a valid manual path", %{conn: conn, tmp_dir: tmp_dir} do

@@ -265,6 +265,7 @@ defmodule Scry2Web.SetupLive.Steps do
   # ── Step 5: Memory reading ────────────────────────────────────────────────
 
   attr :live_polling_enabled, :boolean, required: true
+  attr :economy_capture_enabled, :boolean, required: true
 
   def memory_reading_step(assigns) do
     ~H"""
@@ -293,6 +294,24 @@ defmodule Scry2Web.SetupLive.Steps do
           checked={@live_polling_enabled}
           phx-click="toggle_live_polling"
           aria-label="Enable memory reading during matches"
+        />
+      </div>
+
+      <div class="flex items-start justify-between gap-4 rounded-lg bg-base-300/40 px-4 py-3">
+        <div class="flex-1">
+          <p class="font-semibold text-base-content">Capture per-match economy</p>
+          <p class="text-xs text-base-content/70 mt-1">
+            At each match start/end, capture your gold/gems/wildcards/vault and
+            reconcile against log events. Surfaces "this match earned you X"
+            and flags log gaps. On by default.
+          </p>
+        </div>
+        <input
+          type="checkbox"
+          class="toggle toggle-primary mt-1"
+          checked={@economy_capture_enabled}
+          phx-click="toggle_economy_capture"
+          aria-label="Enable per-match economy capture"
         />
       </div>
     </div>

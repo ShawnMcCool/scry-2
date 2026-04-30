@@ -36,7 +36,8 @@ defmodule Scry2Web.SetupLive do
      |> assign(:scryfall_count, 0)
      |> assign(:synthesized_updated_at, nil)
      |> assign(:scryfall_updated_at, nil)
-     |> assign(:live_polling_enabled, Scry2.LiveState.enabled?())}
+     |> assign(:live_polling_enabled, Scry2.LiveState.enabled?())
+     |> assign(:economy_capture_enabled, Scry2.MatchEconomy.capture_enabled?())}
   end
 
   @impl true
@@ -105,6 +106,12 @@ defmodule Scry2Web.SetupLive do
     next = not socket.assigns.live_polling_enabled
     Scry2.Settings.put!(Scry2.LiveState.enabled_settings_key(), next)
     {:noreply, assign(socket, :live_polling_enabled, next)}
+  end
+
+  def handle_event("toggle_economy_capture", _params, socket) do
+    next = not socket.assigns.economy_capture_enabled
+    Scry2.Settings.put!(Scry2.MatchEconomy.enabled_settings_key(), next)
+    {:noreply, assign(socket, :economy_capture_enabled, next)}
   end
 
   def handle_event("finish", _params, socket) do
