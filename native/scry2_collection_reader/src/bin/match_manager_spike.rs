@@ -24,7 +24,7 @@ use std::process::ExitCode;
 
 use scry2_collection_reader::platform::{list_maps, read_bytes};
 use scry2_collection_reader::walker::{
-    domain, field, image_lookup,
+    dict_kv, domain, field, image_lookup,
     mono::{self, MonoOffsets, MONO_CLASS_FIELD_SIZE},
     run::{read_mono_image, CLASS_DEF_BLOB_LEN},
     vtable,
@@ -663,23 +663,371 @@ fn main() -> ExitCode {
             }
             _ => None,
         };
-    match ptm_addr {
+
+    let ptm_addr = match ptm_addr {
         Some(p) if p != 0 => {
             println!("\n[spike] _provider.PlayerTypeMap = 0x{:x}", p);
-            if let Some(c) = read_object_class(p, &read_mem) {
-                if let Some(b) = read_mem(c, CLASS_DEF_BLOB_LEN) {
-                    println!(
-                        "[spike]   runtime class = '{}'",
-                        read_class_name(&b, &read_mem).unwrap_or_default()
-                    );
-                }
-            }
+            p
         }
-        _ => println!("\n[spike] PlayerTypeMap not resolved or NULL"),
-    }
+        _ => {
+            println!("\n[spike] PlayerTypeMap not resolved or NULL");
+            return ExitCode::SUCCESS;
+        }
+    };
+
+    // ─── Chain 2 deep dive ───────────────────────────────────────────
+    // Walks PlayerTypeMap entries → inner zone dicts → individual
+    // CardHolder objects, dumping each holder's runtime class +
+    // field manifest. The data produced here is the input for
+    // designing the holder walker.
+    chain2_deep_dive(&offsets, ptm_addr, &read_mem);
 
     println!("\n[spike] done.");
     ExitCode::SUCCESS
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Chain 2 deep dive
+// ─────────────────────────────────────────────────────────────────────
+
+const SEAT_NAMES: &[(i32, &str)] = &[
+    (0, "Invalid"),
+    (1, "LocalPlayer"),
+    (2, "Opponent"),
+    (3, "Teammate"),
+];
+
+fn seat_name(id: i32) -> String {
+    SEAT_NAMES
+        .iter()
+        .find_map(|(k, v)| if *k == id { Some(v.to_string()) } else { None })
+        .unwrap_or_else(|| format!("seat_{}", id))
+}
+
+fn chain2_deep_dive<F>(offsets: &MonoOffsets, ptm_addr: u64, read_mem: &F)
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    println!("\n# Chain 2 — PlayerTypeMap entry walk\n");
+
+    let outer_class_bytes = match read_class_def_for_object(ptm_addr, read_mem) {
+        Some(b) => b,
+        None => {
+            println!("[chain2] could not read PlayerTypeMap class def");
+            return;
+        }
+    };
+
+    let outer_entries_array =
+        match dict_kv::entries_array_addr(offsets, &outer_class_bytes, ptm_addr, read_mem) {
+            Some(a) => a,
+            None => {
+                println!("[chain2] PlayerTypeMap._entries not resolved or null");
+                return;
+            }
+        };
+
+    let outer_entries =
+        match dict_kv::read_int_ptr_entries(offsets, outer_entries_array, read_mem) {
+            Some(e) => e,
+            None => {
+                println!("[chain2] could not read PlayerTypeMap entries");
+                return;
+            }
+        };
+
+    println!("[chain2] PlayerTypeMap has {} seat(s)", outer_entries.len());
+
+    for entry in outer_entries {
+        let seat_id = entry.key;
+        let inner_dict = entry.value;
+        println!(
+            "\n## seat={} (id={}) inner_dict=0x{:x}",
+            seat_name(seat_id),
+            seat_id,
+            inner_dict
+        );
+
+        if inner_dict == 0 {
+            println!("  inner dict is null — skipping");
+            continue;
+        }
+
+        let inner_class_bytes = match read_class_def_for_object(inner_dict, read_mem) {
+            Some(b) => b,
+            None => {
+                println!("  could not read inner dict class def");
+                continue;
+            }
+        };
+
+        let inner_class_name =
+            read_class_name(&inner_class_bytes, read_mem).unwrap_or_else(|| "?".to_string());
+        println!("  runtime class = '{}'", inner_class_name);
+
+        let inner_entries_array =
+            match dict_kv::entries_array_addr(offsets, &inner_class_bytes, inner_dict, read_mem)
+            {
+                Some(a) => a,
+                None => {
+                    println!("  inner dict ._entries not resolved");
+                    continue;
+                }
+            };
+
+        let inner_entries =
+            match dict_kv::read_int_ptr_entries(offsets, inner_entries_array, read_mem) {
+                Some(e) => e,
+                None => {
+                    println!("  could not read inner dict entries");
+                    continue;
+                }
+            };
+
+        println!("  {} zone(s):", inner_entries.len());
+
+        for inner in &inner_entries {
+            let zone_id = inner.key;
+            let holder = inner.value;
+            println!("\n  ─── zone_id={} holder=0x{:x}", zone_id, holder);
+
+            if holder == 0 {
+                println!("       holder is null — skipping");
+                continue;
+            }
+
+            dump_holder(offsets, holder, read_mem);
+        }
+    }
+}
+
+fn dump_holder<F>(offsets: &MonoOffsets, holder_addr: u64, read_mem: &F)
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let class_bytes = match read_class_def_for_object(holder_addr, read_mem) {
+        Some(b) => b,
+        None => {
+            println!("       could not read holder class def");
+            return;
+        }
+    };
+
+    let class_name = read_class_name(&class_bytes, read_mem).unwrap_or_else(|| "?".to_string());
+    println!("       runtime class = '{}'", class_name);
+
+    // Address of the class_addr is at vtable.klass — re-read for the dump_class signature.
+    let vtable = read_mem(holder_addr, 8).and_then(|b| read_u64(&b)).unwrap_or(0);
+    let class_addr = if vtable != 0 {
+        read_mem(vtable, 8).and_then(|b| read_u64(&b)).unwrap_or(0)
+    } else {
+        0
+    };
+
+    if class_addr == 0 {
+        println!("       could not resolve class_addr; skipping field dump");
+        return;
+    }
+
+    println!("       fields:");
+    dump_fields_summary(offsets, &class_bytes, read_mem);
+
+    // For each instance field that names a List<T> or that resembles
+    // a known card-bearing field, drill one level deeper.
+    let fields_ptr = mono::class_fields_ptr(offsets, &class_bytes, 0).unwrap_or(0);
+    let count = mono::class_def_field_count(offsets, &class_bytes, 0).unwrap_or(0) as usize;
+
+    if fields_ptr == 0 || count == 0 {
+        return;
+    }
+
+    for i in 0..count {
+        let entry_addr = match (i as u64).checked_mul(MONO_CLASS_FIELD_SIZE as u64) {
+            Some(off) => fields_ptr + off,
+            None => continue,
+        };
+        let entry_bytes = match read_mem(entry_addr, MONO_CLASS_FIELD_SIZE) {
+            Some(b) => b,
+            None => continue,
+        };
+
+        let name_ptr = mono::field_name_ptr(offsets, &entry_bytes, 0).unwrap_or(0);
+        let type_ptr = mono::field_type_ptr(offsets, &entry_bytes, 0).unwrap_or(0);
+        let offset_val = mono::field_offset_value(offsets, &entry_bytes, 0).unwrap_or(0);
+        let name = read_c_string(name_ptr, READ_NAME_MAX, read_mem).unwrap_or_default();
+
+        let (_attrs, is_static) = if type_ptr != 0 {
+            match read_mem(type_ptr, 16) {
+                Some(tb) => {
+                    let a = mono::type_attrs(offsets, &tb, 0).unwrap_or(0);
+                    (a, mono::attrs_is_static(a))
+                }
+                None => (0, false),
+            }
+        } else {
+            (0, false)
+        };
+
+        if is_static || offset_val < 0 {
+            continue;
+        }
+
+        // Drill into pointer-shaped fields whose names suggest card data.
+        let interesting = name.contains("Card")
+            || name.contains("Layout")
+            || name.contains("Cdc")
+            || name.contains("CDC")
+            || name.contains("Region")
+            || name.contains("Stack")
+            || name.contains("Zone")
+            || name == "_items"
+            || name == "AllCards";
+
+        if !interesting {
+            continue;
+        }
+
+        let slot_addr = holder_addr + offset_val as u64;
+        let inner = read_mem(slot_addr, 8).and_then(|b| read_u64(&b)).unwrap_or(0);
+        if inner == 0 {
+            continue;
+        }
+
+        // Identify the inner object's runtime class.
+        let inner_class_bytes = match read_class_def_for_object(inner, read_mem) {
+            Some(b) => b,
+            None => continue,
+        };
+        let inner_name =
+            read_class_name(&inner_class_bytes, read_mem).unwrap_or_else(|| "?".to_string());
+
+        println!(
+            "         drill: {} (offset 0x{:x}) → 0x{:x} class='{}'",
+            name, offset_val as u32, inner, inner_name
+        );
+
+        // If it's a List<T>, peek _size and _items.
+        if inner_name.starts_with("List`1") {
+            let size = field::find_by_name(offsets, &inner_class_bytes, 0, "_size", read_mem)
+                .and_then(|f| read_mem(inner + f.offset as u64, 4))
+                .and_then(|b| {
+                    if b.len() < 4 {
+                        None
+                    } else {
+                        Some(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                    }
+                })
+                .unwrap_or(-1);
+            let items_ptr = field::find_by_name(offsets, &inner_class_bytes, 0, "_items", read_mem)
+                .and_then(|f| read_mem(inner + f.offset as u64, 8))
+                .and_then(|b| read_u64(&b))
+                .unwrap_or(0);
+
+            println!(
+                "           List._size={} _items=0x{:x}",
+                size, items_ptr
+            );
+
+            // For a populated List<T>, peek the first element's runtime
+            // class so we know what T is.
+            if size > 0 && items_ptr != 0 {
+                // Element 0 of the MonoArray<T> for a reference T lives
+                // at items_ptr + 0x20.
+                let elem_ptr = read_mem(items_ptr + 0x20, 8)
+                    .and_then(|b| read_u64(&b))
+                    .unwrap_or(0);
+
+                if elem_ptr != 0 {
+                    if let Some(eb) = read_class_def_for_object(elem_ptr, read_mem) {
+                        let en = read_class_name(&eb, read_mem)
+                            .unwrap_or_else(|| "?".to_string());
+                        println!(
+                            "           first element 0x{:x} class='{}'",
+                            elem_ptr, en
+                        );
+
+                        // One level deeper: dump the element's fields too.
+                        // This is where CardLayoutData → BaseCDC drill lives.
+                        println!("           element fields:");
+                        dump_fields_summary(offsets, &eb, read_mem);
+                    } else {
+                        // Element might be a value type (struct), not a
+                        // reference. The bytes at items_ptr+0x20 are the
+                        // first field of the struct, not a pointer.
+                        println!(
+                            "           first element bytes (val-type? first 8 bytes are 0x{:016x})",
+                            elem_ptr
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Compact form of `dump_class` — just instance fields, no header.
+fn dump_fields_summary<F>(offsets: &MonoOffsets, class_bytes: &[u8], read_mem: &F)
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    let fields_ptr = mono::class_fields_ptr(offsets, class_bytes, 0).unwrap_or(0);
+    let count = mono::class_def_field_count(offsets, class_bytes, 0).unwrap_or(0) as usize;
+
+    if fields_ptr == 0 || count == 0 {
+        return;
+    }
+
+    for i in 0..count {
+        let entry_addr = match (i as u64).checked_mul(MONO_CLASS_FIELD_SIZE as u64) {
+            Some(off) => fields_ptr + off,
+            None => continue,
+        };
+        let entry_bytes = match read_mem(entry_addr, MONO_CLASS_FIELD_SIZE) {
+            Some(b) => b,
+            None => continue,
+        };
+        let name_ptr = mono::field_name_ptr(offsets, &entry_bytes, 0).unwrap_or(0);
+        let type_ptr = mono::field_type_ptr(offsets, &entry_bytes, 0).unwrap_or(0);
+        let offset_val = mono::field_offset_value(offsets, &entry_bytes, 0).unwrap_or(0);
+        let name = read_c_string(name_ptr, READ_NAME_MAX, read_mem).unwrap_or_default();
+
+        let (attrs, is_static) = if type_ptr != 0 {
+            match read_mem(type_ptr, 16) {
+                Some(tb) => {
+                    let a = mono::type_attrs(offsets, &tb, 0).unwrap_or(0);
+                    (a, mono::attrs_is_static(a))
+                }
+                None => (0, false),
+            }
+        } else {
+            (0, false)
+        };
+
+        println!(
+            "           [{:2}] offset=0x{:04x} {} attrs=0x{:04x} name='{}'",
+            i,
+            offset_val as u32,
+            if is_static { "STATIC  " } else { "instance" },
+            attrs,
+            name,
+        );
+    }
+}
+
+/// Fetch a `MonoClassDef` blob for whatever class an object's vtable points to.
+fn read_class_def_for_object<F>(obj_addr: u64, read_mem: &F) -> Option<Vec<u8>>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    let vtable = read_mem(obj_addr, 8).and_then(|b| read_u64(&b))?;
+    if vtable == 0 {
+        return None;
+    }
+    let klass = read_mem(vtable, 8).and_then(|b| read_u64(&b))?;
+    if klass == 0 {
+        return None;
+    }
+    read_mem(klass, CLASS_DEF_BLOB_LEN)
 }
 
 // ─────────────────────────────────────────────────────────────────────
