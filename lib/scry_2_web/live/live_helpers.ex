@@ -7,6 +7,7 @@ defmodule Scry2Web.LiveHelpers do
   - PubSub debounce helper (`schedule_reload/2`) per ADR-023
   - Shared display formatters extracted from domain-specific helpers
   - Win-rate chart period toggle component
+  - Step-series compression for `step: "end"` line charts
   """
 
   use Phoenix.Component
@@ -348,4 +349,33 @@ defmodule Scry2Web.LiveHelpers do
   defp month_name(12), do: "December"
 
   defp pad(value), do: value |> Integer.to_string() |> String.pad_leading(2, "0")
+
+  @doc """
+  Compresses a `[[ts, value], ...]` series for `step: "end"` line charts
+  by dropping points whose value equals the previous kept point's value.
+
+  Step charts hold a value flat between data points, so consecutive
+  identical values are visually redundant. We keep:
+
+  - the first point (anchor),
+  - every point where the value differs from the previous kept point,
+  - the last point (so the step extends to the right edge of the data
+    range — without it, ECharts stops drawing at the last change).
+
+  Apply per series independently when each series in a multi-series
+  chart has its own change cadence (e.g. gold and gems on the economy
+  currency chart).
+
+  Do **not** use this on continuous-rate charts (winrate, percentile,
+  climb) where intermediate points carry information.
+  """
+  @spec compress_step_series([[term()]]) :: [[term()]]
+  def compress_step_series([]), do: []
+  def compress_step_series([_only] = points), do: points
+
+  def compress_step_series(points) do
+    changes = Enum.dedup_by(points, fn [_ts, value] -> value end)
+    last = List.last(points)
+    if List.last(changes) == last, do: changes, else: changes ++ [last]
+  end
 end

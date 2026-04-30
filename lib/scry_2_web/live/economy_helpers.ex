@@ -3,6 +3,8 @@ defmodule Scry2Web.EconomyHelpers do
   Pure helper functions for `Scry2Web.EconomyLive`. Extracted per ADR-013.
   """
 
+  alias Scry2Web.LiveHelpers
+
   @doc "Formats a currency amount with a label (e.g. '1,500 Gold')."
   @spec format_currency(integer() | nil, String.t()) :: String.t()
   def format_currency(nil, _label), do: "—"
@@ -99,18 +101,28 @@ defmodule Scry2Web.EconomyHelpers do
   @doc """
   Builds gold and gems time series from inventory snapshots.
 
+  Each series is compressed independently via
+  `LiveHelpers.compress_step_series/1` because gold and gems change on
+  independent cadences — login snapshots that don't move a series
+  contribute redundant points to the step chart.
+
   Returns `%{gold: [[iso8601, int], ...], gems: [[iso8601, int], ...]}`.
   """
   @spec currency_series([map()]) :: %{gold: list(), gems: list()}
   def currency_series(snapshots) do
     %{
-      gold: Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.gold || 0]),
-      gems: Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.gems || 0])
+      gold: snapshots |> series_for(:gold) |> LiveHelpers.compress_step_series(),
+      gems: snapshots |> series_for(:gems) |> LiveHelpers.compress_step_series()
     }
   end
 
   @doc """
   Builds wildcard time series from inventory snapshots.
+
+  Each rarity series is compressed independently via
+  `LiveHelpers.compress_step_series/1` — most snapshots leave wildcard
+  counts unchanged, so plotting every snapshot per rarity is wasted
+  data on the step chart.
 
   Returns `%{common: [...], uncommon: [...], rare: [...], mythic: [...]}`.
   """
@@ -122,14 +134,16 @@ defmodule Scry2Web.EconomyHelpers do
         }
   def wildcards_series(snapshots) do
     %{
-      common:
-        Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.wildcards_common || 0]),
+      common: snapshots |> series_for(:wildcards_common) |> LiveHelpers.compress_step_series(),
       uncommon:
-        Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.wildcards_uncommon || 0]),
-      rare: Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.wildcards_rare || 0]),
-      mythic:
-        Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), &1.wildcards_mythic || 0])
+        snapshots |> series_for(:wildcards_uncommon) |> LiveHelpers.compress_step_series(),
+      rare: snapshots |> series_for(:wildcards_rare) |> LiveHelpers.compress_step_series(),
+      mythic: snapshots |> series_for(:wildcards_mythic) |> LiveHelpers.compress_step_series()
     }
+  end
+
+  defp series_for(snapshots, field) do
+    Enum.map(snapshots, &[DateTime.to_iso8601(&1.occurred_at), Map.get(&1, field) || 0])
   end
 
   @doc """

@@ -165,6 +165,30 @@ defmodule Scry2Web.EconomyHelpersTest do
       assert result.gold == [["2026-04-10T12:00:00Z", 0]]
       assert result.gems == [["2026-04-10T12:00:00Z", 0]]
     end
+
+    test "compresses gold and gems independently per their own change cadence" do
+      # Three snapshots: gold changes between t1→t3 only; gems changes between
+      # t1→t2 only. Each series should compress on its own change points,
+      # and the last snapshot is appended so the step extends to the right.
+      snapshots = [
+        snapshot(%{gold: 5000, gems: 200, occurred_at: ~U[2026-04-10 10:00:00Z]}),
+        snapshot(%{gold: 5000, gems: 250, occurred_at: ~U[2026-04-10 12:00:00Z]}),
+        snapshot(%{gold: 6000, gems: 250, occurred_at: ~U[2026-04-10 14:00:00Z]})
+      ]
+
+      result = EconomyHelpers.currency_series(snapshots)
+
+      assert result.gold == [
+               ["2026-04-10T10:00:00Z", 5000],
+               ["2026-04-10T14:00:00Z", 6000]
+             ]
+
+      assert result.gems == [
+               ["2026-04-10T10:00:00Z", 200],
+               ["2026-04-10T12:00:00Z", 250],
+               ["2026-04-10T14:00:00Z", 250]
+             ]
+    end
   end
 
   describe "wildcards_series/1" do

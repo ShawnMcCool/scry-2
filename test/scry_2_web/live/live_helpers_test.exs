@@ -107,4 +107,54 @@ defmodule Scry2Web.LiveHelpersTest do
       assert H.category_from_slug("bogus") == nil
     end
   end
+
+  describe "compress_step_series/1" do
+    test "returns empty list unchanged" do
+      assert H.compress_step_series([]) == []
+    end
+
+    test "returns single point unchanged" do
+      assert H.compress_step_series([["t1", 5]]) == [["t1", 5]]
+    end
+
+    test "all-same values keeps first and last" do
+      points = [["t1", 5], ["t2", 5], ["t3", 5]]
+      assert H.compress_step_series(points) == [["t1", 5], ["t3", 5]]
+    end
+
+    test "every value different keeps every point" do
+      points = [["t1", 1], ["t2", 2], ["t3", 3]]
+      assert H.compress_step_series(points) == [["t1", 1], ["t2", 2], ["t3", 3]]
+    end
+
+    test "drops middle duplicates, keeps first, change points, and last" do
+      points = [
+        ["t1", 5],
+        ["t2", 5],
+        ["t3", 5],
+        ["t4", 7],
+        ["t5", 7],
+        ["t6", 9],
+        ["t7", 9],
+        ["t8", 9]
+      ]
+
+      assert H.compress_step_series(points) == [
+               ["t1", 5],
+               ["t4", 7],
+               ["t6", 9],
+               ["t8", 9]
+             ]
+    end
+
+    test "last point that is itself a change is not duplicated" do
+      points = [["t1", 5], ["t2", 5], ["t3", 7]]
+      assert H.compress_step_series(points) == [["t1", 5], ["t3", 7]]
+    end
+
+    test "two-point series with identical values keeps both" do
+      points = [["t1", 5], ["t2", 5]]
+      assert H.compress_step_series(points) == [["t1", 5], ["t2", 5]]
+    end
+  end
 end
