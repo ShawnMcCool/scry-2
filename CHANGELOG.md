@@ -11,6 +11,29 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Card data is now built from your MTGA install + Scryfall.**
+  Names, rarities, types, and oracle text come straight from the game's
+  local card database and Scryfall's bulk data — no longer relying on
+  17lands' CSV. Scry sees exactly what's in your Arena, including
+  alt-art printings, and refreshes automatically when MTGA pushes a new
+  set.
+
+- **Alt-art printings now merge into one card entry.** Showcase,
+  borderless, anime, and other unique art treatments of the same card
+  collapse into a single entry on the **Cards** and **Decks** pages,
+  instead of cluttering the list as separate rows.
+
+- **The MTGA card database imports automatically.** New sets are picked
+  up shortly after MTGA pushes a content patch, so newly opened cards
+  show up without you having to trigger a refresh.
+
+- **Win-rate charts now use a rolling window for smoother trend
+  lines.** New period toggles let you switch between weekly, monthly,
+  and longer windows to see how your performance evolves over
+  different time scales.
+
 ## v0.25.11 — 2026-04-29
 
 ### New
