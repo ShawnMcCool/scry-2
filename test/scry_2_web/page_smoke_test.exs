@@ -96,6 +96,18 @@ defmodule Scry2Web.PageSmokeTest do
       assert {:ok, _view, html} = live_within!(conn, "/decks/#{deck.mtga_deck_id}")
       assert is_binary(html)
     end
+
+    # Synthetic deck IDs use the form "<match_id>:seat<n>" when the player is
+    # on a Momir-style deck whose identity can't be resolved (see
+    # `Scry2.Events.IngestionState`). The colon must survive routing — Plug.Static
+    # rejects path segments with colons when `raise_on_missing_only` is true,
+    # so this guards against re-introducing that endpoint flag.
+    test "renders deck detail when mtga_deck_id contains a colon", %{conn: conn} do
+      synthetic_id = "match-#{System.unique_integer([:positive])}:seat1"
+      deck = TestFactory.create_deck(%{mtga_deck_id: synthetic_id})
+      assert {:ok, _view, html} = live(conn, "/decks/#{deck.mtga_deck_id}")
+      assert is_binary(html)
+    end
   end
 
   describe "/drafts/:id" do
