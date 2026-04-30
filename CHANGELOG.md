@@ -11,6 +11,10 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reduced background log churn during gameplay.** Scry was writing every database query to its log file at full verbosity in production, producing several megabytes of log data per minute while you played. Logs now only record warnings and errors, so the `~/.local/share/scry_2/log/` directory fills up much more slowly and disk activity is lower.
+
 ## v0.27.0 — 2026-04-30
 
 ### New
