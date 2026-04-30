@@ -92,6 +92,30 @@ defmodule Scry2.Collection.SnapshotTest do
     end
   end
 
+  describe "changeset with match-tag columns" do
+    test "accepts mtga_match_id and match_phase" do
+      attrs = base_attrs(%{mtga_match_id: "abc-123", match_phase: "pre"})
+      cs = Snapshot.changeset(%Snapshot{}, attrs)
+      assert cs.valid?
+      assert Ecto.Changeset.get_change(cs, :mtga_match_id) == "abc-123"
+      assert Ecto.Changeset.get_change(cs, :match_phase) == "pre"
+    end
+
+    test "leaves both nil when neither given (background snapshot)" do
+      cs = Snapshot.changeset(%Snapshot{}, base_attrs(%{}))
+      assert cs.valid?
+      assert Ecto.Changeset.get_change(cs, :mtga_match_id) == nil
+      assert Ecto.Changeset.get_change(cs, :match_phase) == nil
+    end
+
+    test "rejects match_phase outside the allowed set" do
+      attrs = base_attrs(%{mtga_match_id: "x", match_phase: "garbage"})
+      cs = Snapshot.changeset(%Snapshot{}, attrs)
+      refute cs.valid?
+      assert {:match_phase, _} = List.keyfind(cs.errors, :match_phase, 0)
+    end
+  end
+
   describe "create_collection_snapshot factory" do
     test "persists via changeset and round-trips cards_json" do
       snapshot = TestFactory.create_collection_snapshot(entries: [{30_001, 3}, {91_234, 1}])
@@ -102,5 +126,17 @@ defmodule Scry2.Collection.SnapshotTest do
       assert reloaded.total_copies == 4
       assert Snapshot.decode_entries(reloaded.cards_json) == [{30_001, 3}, {91_234, 1}]
     end
+  end
+
+  defp base_attrs(extra) do
+    Map.merge(
+      %{
+        snapshot_ts: DateTime.utc_now(),
+        reader_version: "test",
+        reader_confidence: "walker",
+        entries: [{30_001, 1}]
+      },
+      extra
+    )
   end
 end

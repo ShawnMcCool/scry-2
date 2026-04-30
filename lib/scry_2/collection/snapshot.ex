@@ -19,6 +19,7 @@ defmodule Scry2.Collection.Snapshot do
   @type t :: %__MODULE__{}
 
   @reader_confidences ~w(walker fallback_scan)
+  @match_phases ~w(pre post)
 
   @cast_fields [
     :snapshot_ts,
@@ -34,7 +35,9 @@ defmodule Scry2.Collection.Snapshot do
     :wildcards_mythic,
     :gold,
     :gems,
-    :vault_progress
+    :vault_progress,
+    :mtga_match_id,
+    :match_phase
   ]
 
   @required_fields [
@@ -61,6 +64,8 @@ defmodule Scry2.Collection.Snapshot do
     field :gold, :integer
     field :gems, :integer
     field :vault_progress, :float
+    field :mtga_match_id, :string
+    field :match_phase, :string
 
     timestamps(type: :utc_datetime_usec)
   end
@@ -80,6 +85,7 @@ defmodule Scry2.Collection.Snapshot do
     |> cast(attrs, @cast_fields)
     |> validate_required(@required_fields)
     |> validate_inclusion(:reader_confidence, @reader_confidences)
+    |> validate_inclusion(:match_phase, @match_phases)
     |> validate_number(:card_count, greater_than_or_equal_to: 0)
     |> validate_number(:total_copies, greater_than_or_equal_to: 0)
   end
