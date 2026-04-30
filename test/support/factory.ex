@@ -78,6 +78,7 @@ defmodule Scry2.TestFactory do
   alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
   alias Scry2.Collection
   alias Scry2.Collection.Snapshot
+  alias Scry2.MatchEconomy.Summary, as: MeSummary
   alias Scry2.Players
   alias Scry2.Players.Player
 
@@ -1093,12 +1094,50 @@ defmodule Scry2.TestFactory do
     snapshot
   end
 
+  # ── MatchEconomy summaries ───────────────────────────────────────────────
+
+  def build_match_economy_summary(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    defaults = %{
+      mtga_match_id: "test-match-#{random_suffix()}",
+      started_at: DateTime.utc_now(),
+      ended_at: DateTime.utc_now(),
+      reconciliation_state: "complete",
+      memory_gold_delta: 0,
+      memory_gems_delta: 0,
+      log_gold_delta: 0,
+      log_gems_delta: 0,
+      diff_gold: 0,
+      diff_gems: 0
+    }
+
+    struct(MeSummary, Map.merge(defaults, attrs))
+  end
+
+  def create_match_economy_summary(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    full =
+      attrs
+      |> Map.put_new(:mtga_match_id, "test-match-#{random_suffix()}")
+      |> Map.put_new(:reconciliation_state, "complete")
+
+    {:ok, row} =
+      %MeSummary{}
+      |> MeSummary.changeset(full)
+      |> Scry2.Repo.insert()
+
+    row
+  end
+
   defp random_suffix, do: Integer.to_string(:rand.uniform(1_000_000_000), 36)
 
   # Silence unused-alias warnings for test support code.
   @compile {:no_warn_unused,
             [
               Collection,
+              MeSummary,
               CardsAcquired,
               CardsRemoved,
               Cursor,
