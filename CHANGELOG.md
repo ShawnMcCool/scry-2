@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.27.2 — 2026-05-01
+
 ### Maintenance
 
 - Internal fix for a development-mode routing crash on URLs containing colon characters. Does not affect the installed production app.
