@@ -881,7 +881,8 @@ where
             || name.contains("Stack")
             || name.contains("Zone")
             || name == "_items"
-            || name == "AllCards";
+            || name == "AllCards"
+            || name == "<TopCard>k__BackingField";
 
         if !interesting {
             continue;
@@ -905,6 +906,18 @@ where
             "         drill: {} (offset 0x{:x}) → 0x{:x} class='{}'",
             name, offset_val as u32, inner, inner_name
         );
+
+        // For a curated set of "card-bearing" classes, dump their
+        // field manifests too — the next walker module needs to know
+        // what fields these structures expose.
+        if is_deep_dive_class(&inner_name) {
+            println!("           {} fields:", inner_name);
+            dump_fields_summary(offsets, &inner_class_bytes, read_mem);
+            // Recurse one more level for List<T> fields inside the
+            // deep-dive class (e.g. BattlefieldRegionDefinition might
+            // have a _stacks list whose elements are CardLayoutData).
+            drill_lists_inside(offsets, inner, &inner_class_bytes, read_mem);
+        }
 
         // If it's a List<T>, peek _size and _items.
         if inner_name.starts_with("List`1") {
@@ -965,8 +978,209 @@ where
     }
 }
 
+/// True when `class_name` is one of the curated MTGA classes whose
+/// internal layout is needed to reach `BaseGrpId` / per-card data.
+fn is_deep_dive_class(class_name: &str) -> bool {
+    matches!(
+        class_name,
+        "DuelScene_CDC"
+            | "BattlefieldRegionDefinition"
+            | "BattlefieldLayout"
+            | "BattlefieldRegion"
+            | "CardLayout_Hand"
+            | "CardLayout_HalfFan"
+            | "CardLayout_General"
+            | "MutationsLayout"
+            | "BaseCDC"
+            | "CardDataAdapter"
+            | "CardPrintingData"
+            | "CardInstanceData"
+            | "CardLayoutData"
+            | "BattlefieldStack"
+    )
+}
+
+/// Inside `obj_addr`'s class blob, find every `List<>` instance field,
+/// peek `_size` / `_items`, and if non-empty, dump the first element's
+/// runtime class + fields. This is the "one more level" recursion used
+/// after a `is_deep_dive_class` hit.
+fn drill_lists_inside<F>(
+    offsets: &MonoOffsets,
+    obj_addr: u64,
+    class_bytes: &[u8],
+    read_mem: &F,
+) where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let fields_ptr = mono::class_fields_ptr(offsets, class_bytes, 0).unwrap_or(0);
+    let count = mono::class_def_field_count(offsets, class_bytes, 0).unwrap_or(0) as usize;
+
+    if fields_ptr == 0 || count == 0 {
+        return;
+    }
+
+    for i in 0..count {
+        let entry_addr = match (i as u64).checked_mul(MONO_CLASS_FIELD_SIZE as u64) {
+            Some(off) => fields_ptr + off,
+            None => continue,
+        };
+        let entry_bytes = match read_mem(entry_addr, MONO_CLASS_FIELD_SIZE) {
+            Some(b) => b,
+            None => continue,
+        };
+        let name_ptr = mono::field_name_ptr(offsets, &entry_bytes, 0).unwrap_or(0);
+        let type_ptr = mono::field_type_ptr(offsets, &entry_bytes, 0).unwrap_or(0);
+        let offset_val = mono::field_offset_value(offsets, &entry_bytes, 0).unwrap_or(0);
+        let name = read_c_string(name_ptr, READ_NAME_MAX, read_mem).unwrap_or_default();
+
+        let (_attrs, is_static) = if type_ptr != 0 {
+            match read_mem(type_ptr, 16) {
+                Some(tb) => {
+                    let a = mono::type_attrs(offsets, &tb, 0).unwrap_or(0);
+                    (a, mono::attrs_is_static(a))
+                }
+                None => (0, false),
+            }
+        } else {
+            (0, false)
+        };
+
+        if is_static || offset_val < 0 {
+            continue;
+        }
+
+        let slot = obj_addr + offset_val as u64;
+        let inner = read_mem(slot, 8).and_then(|b| read_u64(&b)).unwrap_or(0);
+        if inner == 0 {
+            continue;
+        }
+
+        let inner_class_bytes = match read_class_def_for_object(inner, read_mem) {
+            Some(b) => b,
+            None => continue,
+        };
+        let inner_name =
+            read_class_name(&inner_class_bytes, read_mem).unwrap_or_else(|| "?".to_string());
+
+        // Only recurse on List<T> from this point — keep output bounded.
+        if !inner_name.starts_with("List`1") && !inner_name.starts_with("Dictionary`2") {
+            continue;
+        }
+
+        let size = field::find_by_name(offsets, &inner_class_bytes, 0, "_size", read_mem)
+            .and_then(|f| read_mem(inner + f.offset as u64, 4))
+            .and_then(|b| {
+                if b.len() < 4 {
+                    None
+                } else {
+                    Some(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                }
+            })
+            .unwrap_or(-1);
+
+        println!(
+            "             nested {} ('{}'): size={}",
+            inner_name, name, size
+        );
+
+        if !inner_name.starts_with("List`1") || size <= 0 {
+            continue;
+        }
+
+        let items_ptr = field::find_by_name(offsets, &inner_class_bytes, 0, "_items", read_mem)
+            .and_then(|f| read_mem(inner + f.offset as u64, 8))
+            .and_then(|b| read_u64(&b))
+            .unwrap_or(0);
+        if items_ptr == 0 {
+            continue;
+        }
+
+        let elem_ptr = read_mem(items_ptr + 0x20, 8)
+            .and_then(|b| read_u64(&b))
+            .unwrap_or(0);
+        if elem_ptr == 0 {
+            continue;
+        }
+
+        let elem_class_bytes = match read_class_def_for_object(elem_ptr, read_mem) {
+            Some(b) => b,
+            None => continue,
+        };
+        let elem_name = read_class_name(&elem_class_bytes, read_mem)
+            .unwrap_or_else(|| "?".to_string());
+
+        println!(
+            "               first element 0x{:x} class='{}'",
+            elem_ptr, elem_name
+        );
+
+        if is_deep_dive_class(&elem_name) {
+            println!("               {} fields:", elem_name);
+            dump_fields_summary(offsets, &elem_class_bytes, read_mem);
+        }
+    }
+}
+
 /// Compact form of `dump_class` — just instance fields, no header.
+/// Walks up the parent class chain (max depth 4) so we see fields
+/// declared on the base class too — `DuelScene_CDC` puts most of its
+/// useful fields on its `BaseCDC` parent.
 fn dump_fields_summary<F>(offsets: &MonoOffsets, class_bytes: &[u8], read_mem: &F)
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    dump_class_chain(offsets, class_bytes, 0, read_mem);
+}
+
+const MAX_PARENT_DEPTH: usize = 4;
+const CLASS_PARENT_OFFSET: usize = 0x30;
+
+fn dump_class_chain<F>(offsets: &MonoOffsets, class_bytes: &[u8], depth: usize, read_mem: &F)
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    if depth > MAX_PARENT_DEPTH {
+        return;
+    }
+
+    let prefix = if depth == 0 { "this".to_string() } else { format!("parent^{}", depth) };
+    let class_name =
+        read_class_name(class_bytes, read_mem).unwrap_or_else(|| "?".to_string());
+    println!("           [{}] class='{}'", prefix, class_name);
+
+    dump_class_own_fields(offsets, class_bytes, read_mem);
+
+    // Walk to parent.
+    if class_bytes.len() < CLASS_PARENT_OFFSET + 8 {
+        return;
+    }
+    let parent_addr = u64::from_le_bytes([
+        class_bytes[CLASS_PARENT_OFFSET],
+        class_bytes[CLASS_PARENT_OFFSET + 1],
+        class_bytes[CLASS_PARENT_OFFSET + 2],
+        class_bytes[CLASS_PARENT_OFFSET + 3],
+        class_bytes[CLASS_PARENT_OFFSET + 4],
+        class_bytes[CLASS_PARENT_OFFSET + 5],
+        class_bytes[CLASS_PARENT_OFFSET + 6],
+        class_bytes[CLASS_PARENT_OFFSET + 7],
+    ]);
+    if parent_addr == 0 {
+        return;
+    }
+    let Some(parent_bytes) = read_mem(parent_addr, CLASS_DEF_BLOB_LEN) else {
+        return;
+    };
+    // Stop at System.Object — its name is "Object" and it has no
+    // useful instance fields for our purposes.
+    let parent_name =
+        read_class_name(&parent_bytes, read_mem).unwrap_or_default();
+    if parent_name == "Object" || parent_name == "MonoBehaviour" {
+        return;
+    }
+    dump_class_chain(offsets, &parent_bytes, depth + 1, read_mem);
+}
+
+fn dump_class_own_fields<F>(offsets: &MonoOffsets, class_bytes: &[u8], read_mem: &F)
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
