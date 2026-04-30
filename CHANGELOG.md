@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.27.0 — 2026-04-30
+
 ### New
 
 - **Match economy capture.** Scry now records the gold,
