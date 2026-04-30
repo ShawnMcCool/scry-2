@@ -112,6 +112,33 @@ defmodule Scry2Web.SettingsLiveTest do
     end
   end
 
+  describe "memory reading toggle" do
+    test "is on by default and persists off when clicked", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      assert Scry2.LiveState.enabled?()
+
+      view
+      |> element("input[phx-click='toggle_live_polling']")
+      |> render_click()
+
+      assert Settings.get("live_match_polling_enabled") == false
+      refute Scry2.LiveState.enabled?()
+    end
+
+    test "toggles back on after a second click", %{conn: conn} do
+      Settings.put!("live_match_polling_enabled", false)
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      view
+      |> element("input[phx-click='toggle_live_polling']")
+      |> render_click()
+
+      assert Settings.get("live_match_polling_enabled") == true
+      assert Scry2.LiveState.enabled?()
+    end
+  end
+
   describe "refresh_cron form" do
     test "saves a valid cron expression", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings")

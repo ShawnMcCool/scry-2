@@ -7,7 +7,7 @@ defmodule Scry2Web.SetupLive.Steps do
   All informational by default; fallback action controls (manual path
   input, retry buttons) only render when a step has a live failure.
 
-  Tour shape (5 steps):
+  Tour shape (6 steps):
     1. `welcome_step/1` — one paragraph explaining Scry2 and asking
        the user to enable MTGA's "Detailed Logs (Plugin Support)".
     2. `locate_log_step/1` — shows the auto-detected Player.log path,
@@ -17,7 +17,10 @@ defmodule Scry2Web.SetupLive.Steps do
        data auto-imports on boot.
     4. `verify_events_step/1` — live-waits for the first raw event.
        "Launch MTGA now" prompt; skippable.
-    5. `done_step/1` — summary + link to the dashboard.
+    5. `memory_reading_step/1` — explains in-match memory reading
+       (opponent rank/screen-name/commander) and exposes the on/off
+       toggle that drives `Scry2.LiveState`.
+    6. `done_step/1` — summary + link to the dashboard.
   """
   use Phoenix.Component
 
@@ -259,7 +262,44 @@ defmodule Scry2Web.SetupLive.Steps do
     """
   end
 
-  # ── Step 5: Done ──────────────────────────────────────────────────────────
+  # ── Step 5: Memory reading ────────────────────────────────────────────────
+
+  attr :live_polling_enabled, :boolean, required: true
+
+  def memory_reading_step(assigns) do
+    ~H"""
+    <div class="space-y-3 text-sm leading-relaxed text-base-content/80">
+      <h2 class="text-lg font-semibold text-base-content">Memory reading</h2>
+
+      <p>
+        While you're playing, Scry 2 can read MTGA's running process to capture
+        a few facts that the log file leaves out — your opponent's <strong>rank</strong>, their actual
+        <strong>display name</strong>
+        (instead of the placeholder <code>Opponent</code>), and their <strong>commander</strong>
+        identity in Brawl. Reading is one-way; nothing is written to MTGA, and
+        the read pauses the moment your match ends.
+      </p>
+
+      <div class="flex items-start justify-between gap-4 rounded-lg bg-base-300/40 px-4 py-3">
+        <div class="flex-1">
+          <p class="font-semibold text-base-content">Enable memory reading</p>
+          <p class="text-xs text-base-content/70 mt-1">
+            On by default. You can change this anytime under <strong>Settings → Memory reading</strong>.
+          </p>
+        </div>
+        <input
+          type="checkbox"
+          class="toggle toggle-primary mt-1"
+          checked={@live_polling_enabled}
+          phx-click="toggle_live_polling"
+          aria-label="Enable memory reading during matches"
+        />
+      </div>
+    </div>
+    """
+  end
+
+  # ── Step 6: Done ──────────────────────────────────────────────────────────
 
   attr :state, State, required: true
   attr :raw_event_count, :integer, required: true

@@ -43,8 +43,6 @@ defmodule Scry2.LiveState.Server do
   @default_poll_interval_ms 500
   @default_match_timeout_ms 90 * 60 * 1000
 
-  @settings_key "live_match_polling_enabled"
-
   defmodule State do
     @moduledoc false
     @enforce_keys [:phase, :poll_interval_ms, :match_timeout_ms, :memory]
@@ -272,14 +270,5 @@ defmodule Scry2.LiveState.Server do
     end)
   end
 
-  defp enabled? do
-    case Scry2.Settings.get(@settings_key) do
-      nil -> true
-      true -> true
-      "true" -> true
-      false -> false
-      "false" -> false
-      _ -> true
-    end
-  end
+  defp enabled?, do: LiveState.enabled?()
 end

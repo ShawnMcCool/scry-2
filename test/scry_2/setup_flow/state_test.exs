@@ -4,9 +4,17 @@ defmodule Scry2.SetupFlow.StateTest do
   alias Scry2.SetupFlow.State
 
   describe "steps/0 and total_steps/0" do
-    test "has exactly five canonical steps in order" do
-      assert State.steps() == [:welcome, :locate_log, :card_status, :verify_events, :done]
-      assert State.total_steps() == 5
+    test "has exactly six canonical steps in order" do
+      assert State.steps() == [
+               :welcome,
+               :locate_log,
+               :card_status,
+               :verify_events,
+               :memory_reading,
+               :done
+             ]
+
+      assert State.total_steps() == 6
     end
   end
 
@@ -16,7 +24,8 @@ defmodule Scry2.SetupFlow.StateTest do
       assert State.step_number(:locate_log) == 2
       assert State.step_number(:card_status) == 3
       assert State.step_number(:verify_events) == 4
-      assert State.step_number(:done) == 5
+      assert State.step_number(:memory_reading) == 5
+      assert State.step_number(:done) == 6
     end
   end
 
@@ -32,6 +41,7 @@ defmodule Scry2.SetupFlow.StateTest do
     test "walks through every step to :done" do
       %State{step: step} =
         %State{step: :welcome}
+        |> State.advance()
         |> State.advance()
         |> State.advance()
         |> State.advance()

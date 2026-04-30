@@ -35,7 +35,8 @@ defmodule Scry2Web.SetupLive do
      |> assign(:synthesized_count, 0)
      |> assign(:scryfall_count, 0)
      |> assign(:synthesized_updated_at, nil)
-     |> assign(:scryfall_updated_at, nil)}
+     |> assign(:scryfall_updated_at, nil)
+     |> assign(:live_polling_enabled, Scry2.LiveState.enabled?())}
   end
 
   @impl true
@@ -98,6 +99,12 @@ defmodule Scry2Web.SetupLive do
 
         {:noreply, assign(socket, :state, new_state)}
     end
+  end
+
+  def handle_event("toggle_live_polling", _params, socket) do
+    next = not socket.assigns.live_polling_enabled
+    Scry2.Settings.put!(Scry2.LiveState.enabled_settings_key(), next)
+    {:noreply, assign(socket, :live_polling_enabled, next)}
   end
 
   def handle_event("finish", _params, socket) do
@@ -216,6 +223,7 @@ defmodule Scry2Web.SetupLive do
   defp next_label(:locate_log), do: "Continue"
   defp next_label(:card_status), do: "Continue"
   defp next_label(:verify_events), do: "Continue"
+  defp next_label(:memory_reading), do: "Continue"
   defp next_label(_), do: "Continue"
 
   # Dispatch to the right step component based on current state.
@@ -233,6 +241,10 @@ defmodule Scry2Web.SetupLive do
 
   defp render_step(%{state: %SetupFlow.State{step: :verify_events}} = assigns) do
     Steps.verify_events_step(assigns)
+  end
+
+  defp render_step(%{state: %SetupFlow.State{step: :memory_reading}} = assigns) do
+    Steps.memory_reading_step(assigns)
   end
 
   defp render_step(%{state: %SetupFlow.State{step: :done}} = assigns) do

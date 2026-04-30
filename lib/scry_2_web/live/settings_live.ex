@@ -24,6 +24,7 @@ defmodule Scry2Web.SettingsLive do
   @data_dir_key "mtga_logs_data_dir"
   @refresh_cron_key "cards_refresh_cron"
   @poll_interval_key "mtga_logs_poll_interval_ms"
+  @live_polling_key "live_match_polling_enabled"
 
   @impl true
   def mount(_params, _session, socket) do
@@ -63,7 +64,8 @@ defmodule Scry2Web.SettingsLive do
       player_log_path: current_value(@player_log_path_key, :mtga_logs_player_log_path),
       data_dir: current_value(@data_dir_key, :mtga_data_dir),
       refresh_cron: current_value(@refresh_cron_key, :cards_refresh_cron),
-      poll_interval_ms: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms)
+      poll_interval_ms: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms),
+      live_polling_enabled: Scry2.LiveState.enabled?()
     }
 
     {:noreply,
@@ -178,6 +180,23 @@ defmodule Scry2Web.SettingsLive do
          |> put_field_value(:poll_interval_ms, value)
          |> put_field_error(:poll_interval_ms, Form.error_message(:poll_interval_ms, reason))}
     end
+  end
+
+  def handle_event("toggle_live_polling", _params, socket) do
+    next = not socket.assigns.field_values.live_polling_enabled
+    Settings.put!(@live_polling_key, next)
+
+    flash_message =
+      if next do
+        "Memory reading enabled — Scry 2 will read MTGA's process memory during your matches."
+      else
+        "Memory reading disabled — no in-match memory reads will run."
+      end
+
+    {:noreply,
+     socket
+     |> put_field_value(:live_polling_enabled, next)
+     |> put_flash(:info, flash_message)}
   end
 
   def handle_event("save_refresh_cron", %{"value" => value}, socket) do
@@ -439,6 +458,31 @@ defmodule Scry2Web.SettingsLive do
                   </button>
                 </:extra_buttons>
               </.setting_form>
+            </div>
+          </div>
+        </section>
+
+        <section class="card bg-base-200">
+          <div class="card-body">
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1">
+                <h2 class="card-title text-base">Memory reading</h2>
+                <p class="text-sm text-base-content/70 mt-1">
+                  Reads MTGA's running process during your matches to capture
+                  data the log file leaves out — your opponent's rank, their
+                  display name (vs. the placeholder <code>Opponent</code>), and
+                  their commander identity in Brawl. Read-only; nothing is
+                  written to MTGA. Polls every 500&nbsp;ms while a match is in
+                  progress and stops on its own when the match ends.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1"
+                checked={@field_values.live_polling_enabled}
+                phx-click="toggle_live_polling"
+                aria-label="Enable memory reading during matches"
+              />
             </div>
           </div>
         </section>

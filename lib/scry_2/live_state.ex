@@ -33,6 +33,7 @@ defmodule Scry2.LiveState do
 
   @updates_topic "live_match:updates"
   @final_topic "live_match:final"
+  @enabled_settings_key "live_match_polling_enabled"
 
   @doc "PubSub topic for in-flight tick broadcasts."
   @spec updates_topic() :: String.t()
@@ -41,6 +42,29 @@ defmodule Scry2.LiveState do
   @doc "PubSub topic for final-snapshot broadcasts."
   @spec final_topic() :: String.t()
   def final_topic, do: @final_topic
+
+  @doc """
+  Settings key for the live-polling feature flag. Default behaviour is
+  ON when the key is absent or set to anything truthy.
+  """
+  @spec enabled_settings_key() :: String.t()
+  def enabled_settings_key, do: @enabled_settings_key
+
+  @doc """
+  Read the current value of the live-polling feature flag. Defaults to
+  true when the setting is absent (e.g. fresh install).
+  """
+  @spec enabled?() :: boolean()
+  def enabled? do
+    case Scry2.Settings.get(@enabled_settings_key) do
+      nil -> true
+      true -> true
+      "true" -> true
+      false -> false
+      "false" -> false
+      _ -> true
+    end
+  end
 
   @doc """
   Persist the final snapshot for a match (or upsert if one already

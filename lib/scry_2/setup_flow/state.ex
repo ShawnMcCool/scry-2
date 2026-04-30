@@ -18,7 +18,13 @@ defmodule Scry2.SetupFlow.State do
             manual_path_error: nil,
             completed_steps: MapSet.new()
 
-  @type step :: :welcome | :locate_log | :card_status | :verify_events | :done
+  @type step ::
+          :welcome
+          | :locate_log
+          | :card_status
+          | :verify_events
+          | :memory_reading
+          | :done
 
   @type t :: %__MODULE__{
           step: step(),
@@ -29,7 +35,7 @@ defmodule Scry2.SetupFlow.State do
         }
 
   # Step order — single source of truth for traversal.
-  @steps [:welcome, :locate_log, :card_status, :verify_events, :done]
+  @steps [:welcome, :locate_log, :card_status, :verify_events, :memory_reading, :done]
 
   @doc "Returns the canonical list of steps in order."
   @spec steps() :: [step()]

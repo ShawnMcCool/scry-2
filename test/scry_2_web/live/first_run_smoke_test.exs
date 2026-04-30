@@ -3,7 +3,7 @@ defmodule Scry2Web.FirstRunSmokeTest do
   End-to-end smoke test for the first-run experience. Covers:
 
     1. A fresh install with no setup flag redirects `/` → `/setup`.
-    2. The setup tour walks through all five steps and dismisses itself.
+    2. The setup tour walks through all six steps and dismisses itself.
     3. After the tour, `/` renders `HealthLive` without redirecting.
     4. The health screen's "Run setup tour again" link brings the user
        back into the tour.
@@ -31,7 +31,8 @@ defmodule Scry2Web.FirstRunSmokeTest do
     {:ok, view, _html} = live(conn, ~p"/setup")
     assert has_element?(view, "button", "I've enabled Detailed Logs")
 
-    # Four Next clicks → final step
+    # Five Next clicks → final step
+    view |> element("button[phx-click='next']") |> render_click()
     view |> element("button[phx-click='next']") |> render_click()
     view |> element("button[phx-click='next']") |> render_click()
     view |> element("button[phx-click='next']") |> render_click()

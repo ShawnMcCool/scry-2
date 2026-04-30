@@ -16,14 +16,15 @@ defmodule Scry2Web.SetupLiveTest do
   end
 
   describe "navigation" do
-    test "clicking through the Next button walks all five steps", %{conn: conn} do
+    test "clicking through the Next button walks all six steps", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/setup")
 
       # Welcome → Locate Log
       view |> element("button", "I've enabled Detailed Logs") |> render_click()
       refute has_element?(view, "button", "I've enabled Detailed Logs")
 
-      # Locate Log → Card Status → Verify Events → Done
+      # Locate Log → Card Status → Verify Events → Memory Reading → Done
+      view |> element("button[phx-click='next']") |> render_click()
       view |> element("button[phx-click='next']") |> render_click()
       view |> element("button[phx-click='next']") |> render_click()
       view |> element("button[phx-click='next']") |> render_click()
@@ -52,8 +53,8 @@ defmodule Scry2Web.SetupLiveTest do
     test "marks setup completed and navigates to /", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/setup")
 
-      # Click Next 4 times to reach Done.
-      for _ <- 1..4 do
+      # Click Next 5 times to reach Done.
+      for _ <- 1..5 do
         view |> element("button[phx-click='next']") |> render_click()
       end
 
@@ -61,6 +62,28 @@ defmodule Scry2Web.SetupLiveTest do
                view |> element("button", "Go to dashboard") |> render_click()
 
       assert is_binary(Settings.get("setup_completed_at"))
+    end
+  end
+
+  describe "memory reading toggle on the tour" do
+    test "is on by default and persists off when clicked", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/setup")
+
+      # Advance to the memory_reading step (4 clicks from welcome).
+      view |> element("button", "I've enabled Detailed Logs") |> render_click()
+      view |> element("button[phx-click='next']") |> render_click()
+      view |> element("button[phx-click='next']") |> render_click()
+      view |> element("button[phx-click='next']") |> render_click()
+
+      assert has_element?(view, "input[phx-click='toggle_live_polling']")
+      assert Scry2.LiveState.enabled?()
+
+      view
+      |> element("input[phx-click='toggle_live_polling']")
+      |> render_click()
+
+      assert Settings.get("live_match_polling_enabled") == false
+      refute Scry2.LiveState.enabled?()
     end
   end
 
