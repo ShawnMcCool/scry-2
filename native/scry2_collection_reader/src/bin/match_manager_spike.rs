@@ -457,6 +457,123 @@ fn main() -> ExitCode {
         }
     }
 
+    // ─── GRE message history probe (open question 4 from spike 17) ───
+    //
+    // FINDING.md hypothesised the in-process GRE message stream could
+    // be a cleaner card-identity source than walking Unity's transform
+    // tree. Walk MatchManager's `_greInterface` and
+    // `<MessageHistory>k__BackingField` one level deep so the next live
+    // capture exposes the type behind each — likely a `List<T>` or a
+    // ring buffer.
+    println!("\n# GRE message history probe");
+    for inner in &[
+        "<MessageHistory>k__BackingField",
+        "MessageHistory",
+        "_messageHistory",
+        "_greInterface",
+        "GREInterface",
+    ] {
+        let f = match field::find_by_name(&offsets, &mm_class_bytes, 0, inner, read_mem) {
+            Some(f) if !f.is_static => f,
+            Some(_) => {
+                println!("  '{}' is STATIC — skipping", inner);
+                continue;
+            }
+            None => continue,
+        };
+        let slot = mm_addr + f.offset as u64;
+        let target = match read_mem(slot, 8).and_then(|b| read_u64(&b)) {
+            Some(0) => {
+                println!("  '{}' field present but pointer is NULL", inner);
+                continue;
+            }
+            Some(p) => p,
+            None => {
+                println!("  '{}' could not read pointer slot", inner);
+                continue;
+            }
+        };
+        let target_class = match read_object_class(target, &read_mem) {
+            Some(c) => c,
+            None => {
+                println!("  '{}' addr=0x{:x} could not read runtime class", inner, target);
+                continue;
+            }
+        };
+        let target_bytes = match read_mem(target_class, CLASS_DEF_BLOB_LEN) {
+            Some(b) => b,
+            None => {
+                println!("  '{}' addr=0x{:x} could not read class def", inner, target);
+                continue;
+            }
+        };
+        let cls_name = read_class_name(&target_bytes, &read_mem)
+            .unwrap_or_else(|| "<unreadable>".to_string());
+        println!(
+            "\n[MatchManager.{}] addr=0x{:x} runtime_class='{}' (class addr 0x{:x})",
+            inner, target, cls_name, target_class
+        );
+        // Walk the parent chain too — most useful state on these
+        // wrapper classes lives on the base class.
+        dump_class_chain(&offsets, &target_bytes, 0, &read_mem);
+
+        if cls_name.starts_with("List`1") {
+            if let Some(size_field) =
+                field::find_by_name(&offsets, &target_bytes, 0, "_size", read_mem)
+            {
+                let sz = read_mem(target + size_field.offset as u64, 4)
+                    .and_then(|b| {
+                        if b.len() < 4 {
+                            None
+                        } else {
+                            Some(i32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+                        }
+                    })
+                    .unwrap_or(-1);
+                println!("    List._size = {}", sz);
+            }
+            if let Some(items_field) =
+                field::find_by_name(&offsets, &target_bytes, 0, "_items", read_mem)
+            {
+                let items_ptr = read_mem(target + items_field.offset as u64, 8)
+                    .and_then(|b| read_u64(&b))
+                    .unwrap_or(0);
+                println!("    List._items pointer = 0x{:x}", items_ptr);
+                if items_ptr != 0 {
+                    if let Some(b) = read_mem(items_ptr + 0x18, 8) {
+                        if b.len() >= 8 {
+                            let max_len = u64::from_le_bytes([
+                                b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+                            ]);
+                            println!("    Array.max_length = {}", max_len);
+                        }
+                    }
+                    // First element address + class.
+                    let elem_addr = items_ptr + 0x20;
+                    if let Some(b) = read_mem(elem_addr, 8) {
+                        if let Some(elem_ptr) = read_u64(&b) {
+                            if elem_ptr != 0 {
+                                if let Some(elem_class) = read_object_class(elem_ptr, &read_mem) {
+                                    if let Some(elem_bytes) =
+                                        read_mem(elem_class, CLASS_DEF_BLOB_LEN)
+                                    {
+                                        let elem_name = read_class_name(&elem_bytes, &read_mem)
+                                            .unwrap_or_else(|| "?".to_string());
+                                        println!(
+                                            "    first element 0x{:x} class='{}'",
+                                            elem_ptr, elem_name
+                                        );
+                                        dump_class_chain(&offsets, &elem_bytes, 0, &read_mem);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ─── Chain 2 probe: MatchSceneManager / GameManager / CardHolder ───
     println!("\n# Chain 2 — MatchSceneManager probe");
     let scene_candidates = [
