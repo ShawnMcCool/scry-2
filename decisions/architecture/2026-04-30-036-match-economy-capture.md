@@ -120,7 +120,20 @@ ingestion supervisor branch (only when `start_watcher: true`). It:
   5. Compute memory deltas from `post.field − pre.field` for each
      currency. Where pre or post is missing, leave deltas nil.
   6. Compute log deltas via `MatchEconomy.AggregateLog.over(started_at,
-     ended_at)` — sums `Economy.Transaction` rows by currency type.
+     ended_at)`:
+     - **Gold / gems:** sum `Economy.Transaction.gold_delta` /
+       `gems_delta` over rows with `occurred_at` in
+       `[started_at, ended_at]`. (`Economy.Transaction` is produced
+       from `InventoryChanged` events; it does not carry wildcard
+       deltas.)
+     - **Wildcards:** diff the most-recent
+       `Economy.InventorySnapshot` rows on either side of the window
+       (last snapshot at or before `started_at` vs last snapshot at or
+       before `ended_at`). If a snapshot is missing on either side,
+       leave the wildcard log deltas nil — they're not computable, and
+       the diff column stays nil too. (`InventoryUpdated` events fire
+       sporadically — typically on login or store interactions — so
+       the snapshots may not bracket every match.)
   7. Compute diffs (`memory − log`) for each currency where both sides
      are non-nil.
   8. Set `reconciliation_state` per the table below.
@@ -141,10 +154,14 @@ is known. The audit trail is preserved either way: any captured
 snapshot is referenced by `pre_snapshot_id` / `post_snapshot_id` even
 when we can't compute the corresponding delta.
 
-`log_*_delta` is **0**, not nil, when the window is bounded but
-contained no transactions — zero is a real fact. `log_*_delta` is
-**nil** only when the window itself is unbounded (orphan summary).
-`memory_*_delta` is nil whenever pre or post is missing.
+`log_gold_delta` / `log_gems_delta` are **0**, not nil, when the
+window is bounded but contained no `InventoryChanged` rows — zero is
+a real fact. They are **nil** only when the window itself is unbounded
+(orphan summary). `log_wildcards_*_delta` are nil whenever there is no
+`InventorySnapshot` on either side of the window (since wildcards are
+read from snapshot diffs, not transaction sums); when both snapshots
+exist they're an integer (possibly 0). `memory_*_delta` is nil
+whenever pre or post is missing.
 
 **Why synchronous Task, not Oban:** match transitions need timing
 accuracy at the second-or-better level. An Oban job runs whenever the
