@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.27.3 — 2026-05-01
+
 ### Fixed
 
 - **Stopped Scry from pinning a CPU core after MTGA quits mid-match.** If you quit MTGA while a match was still in flight, Scry could get stuck inside its memory-reader and keep one CPU core busy until you manually restarted the app. Polling now stops cleanly when the read fails, and the memory reader has a hard ceiling on how much work a single read can do — so any future failure mode terminates promptly instead of looping.
