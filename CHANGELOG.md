@@ -11,6 +11,10 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Pack-opens and other unattributed cards now show up on the Economy page.** Recent Card Grants now also includes cards that arrived in your collection without a matching MTGA event-log row — most notably booster pack opens, but also any other grant the log doesn't (yet) carry. These rows are labelled **Detected from collection** so you can tell them apart from event prizes, vouchers, and draft pool grants. Detection runs whenever Scry takes a fresh memory snapshot of your collection.
+
 ## v0.28.3 — 2026-05-02
 
 ### New
