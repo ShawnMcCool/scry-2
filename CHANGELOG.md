@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.28.1 — 2026-05-02
+
 ### New
 
 - **An "Active match" card on the Matches page now shows your opponent live during a match.** While a match is in flight, the **Matches** dashboard surfaces both players' screen names, ranks, current game number, and (in Brawl) commander identities — pulled from MTGA's memory and refreshing every half-second. The card disappears as soon as the match ends. Live polling can still be turned off in **Settings → Memory Reading**.
