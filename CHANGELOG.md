@@ -11,6 +11,9 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+- The **Recent Card Grants** card on the Economy page now shows which set you opened — e.g. "BLB pack opened" instead of "Pack opened" — so you can see the source of pack rewards at a glance.
+
 ## v0.28.5 — 2026-05-02
 
 ### New

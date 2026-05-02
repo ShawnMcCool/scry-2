@@ -210,6 +210,52 @@ defmodule Scry2.EconomyTest do
       assert source == "MemoryDiff:PackOpen"
     end
 
+    test "stamps source_id with the dropped booster's set_code when known" do
+      alias Scry2.Cards.BoosterCollation
+      alias Scry2.Collection.Snapshot
+
+      BoosterCollation.put_for_test(%{100_046 => "BLB"})
+      on_exit(fn -> BoosterCollation.put_for_test(%{}) end)
+
+      prev =
+        create_collection_snapshot(
+          entries: [],
+          boosters_json: Snapshot.encode_boosters([%{collation_id: 100_046, count: 3}])
+        )
+
+      next =
+        create_collection_snapshot(
+          entries: [{42, 1}],
+          boosters_json: Snapshot.encode_boosters([%{collation_id: 100_046, count: 2}])
+        )
+
+      assert {:ok, %CardGrant{source: "MemoryDiff:PackOpen", source_id: "BLB"}} =
+               Economy.record_memory_grants_from_snapshot_pair(prev, next)
+    end
+
+    test "leaves source_id nil when the dropped collation_id is unknown" do
+      alias Scry2.Cards.BoosterCollation
+      alias Scry2.Collection.Snapshot
+
+      BoosterCollation.put_for_test(%{})
+      on_exit(fn -> BoosterCollation.put_for_test(%{}) end)
+
+      prev =
+        create_collection_snapshot(
+          entries: [],
+          boosters_json: Snapshot.encode_boosters([%{collation_id: 999_999, count: 3}])
+        )
+
+      next =
+        create_collection_snapshot(
+          entries: [{42, 1}],
+          boosters_json: Snapshot.encode_boosters([%{collation_id: 999_999, count: 2}])
+        )
+
+      assert {:ok, %CardGrant{source: "MemoryDiff:PackOpen", source_id: nil}} =
+               Economy.record_memory_grants_from_snapshot_pair(prev, next)
+    end
+
     test "stays as plain MemoryDiff when no booster count dropped" do
       alias Scry2.Collection.Snapshot
 

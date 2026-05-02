@@ -27,7 +27,7 @@ defmodule Scry2Web.Components.RecentCardGrantsCard do
       <ul class="rounded-lg border border-base-content/5 divide-y divide-base-content/5">
         <li :for={grant <- @grants} class="flex flex-col gap-1 px-4 py-3">
           <div class="flex items-center gap-2 text-sm">
-            <span class="font-medium">{source_label(grant.source)}</span>
+            <span class="font-medium">{grant_label(grant)}</span>
             <span class="text-base-content/40 text-xs">·</span>
             <span class="text-xs text-base-content/50">{relative_time(grant.occurred_at)}</span>
             <span class="text-base-content/40 text-xs">·</span>
@@ -48,6 +48,23 @@ defmodule Scry2Web.Components.RecentCardGrantsCard do
     </section>
     """
   end
+
+  @doc """
+  Renders the player-facing header for a grant row, combining the
+  grant's `source` with its `source_id` where appropriate.
+
+  Pack-open grants stamp `source_id` with the booster's set code
+  (e.g., `"BLB"`); when present, render as `"BLB pack opened"` so
+  the player knows which set was opened. Falls through to
+  `source_label/1` for everything else.
+  """
+  @spec grant_label(%{source: String.t() | nil, source_id: String.t() | nil}) :: String.t()
+  def grant_label(%{source: "MemoryDiff:PackOpen", source_id: set_code})
+      when is_binary(set_code) and set_code != "" do
+    "#{set_code} pack opened"
+  end
+
+  def grant_label(%{source: source}), do: source_label(source)
 
   @doc """
   Map MTGA's verbatim `Source` code to a player-readable label.

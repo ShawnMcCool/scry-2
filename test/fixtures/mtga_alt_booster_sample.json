@@ -1,0 +1,90 @@
+{
+  "ALT_Booster.Background": {
+    "Root": "00000000-0000-0000-0000-000000000000",
+    "Nodes": [],
+    "Connections": []
+  },
+  "ALT_Booster.Logo": {
+    "Root": "00000000-0000-0000-0000-000000000000",
+    "Nodes": [
+      {
+        "NodeType": 2,
+        "NodeId": "evaluator-blb",
+        "EvaluatorType": "AssetLookupTree.Evaluators.General.Booster_CollationMapping",
+        "Evaluator": {
+          "ExpectedValues": [100060, 200060],
+          "Operation": 0
+        }
+      },
+      {
+        "NodeId": "payload-blb-en",
+        "Payload": {
+          "TextureRef": {
+            "RelativePath": "Assets/Core/Art/Shared/Images/SetLogos/SetLogo_BLB.png"
+          }
+        }
+      },
+      {
+        "NodeType": 2,
+        "NodeId": "evaluator-dft",
+        "EvaluatorType": "AssetLookupTree.Evaluators.General.Booster_CollationMapping",
+        "Evaluator": {
+          "ExpectedValues": [100052],
+          "Operation": 0
+        }
+      },
+      {
+        "NodeType": 4,
+        "NodeId": "lang-extractor",
+        "ExtractorType": "AssetLookupTree.Extractors.General.CurrentLanguage"
+      },
+      {
+        "NodeId": "payload-dft-en",
+        "Payload": {
+          "TextureRef": {
+            "RelativePath": "Assets/Core/Art/Shared/Images/SetLogos/SetLogo_DFT_EN.png"
+          }
+        }
+      },
+      {
+        "NodeId": "payload-dft-de",
+        "Payload": {
+          "TextureRef": {
+            "RelativePath": "Assets/Core/Art/Shared/Images/SetLogos/SetLogo_DFT_DE.png"
+          }
+        }
+      },
+      {
+        "NodeType": 2,
+        "NodeId": "evaluator-list",
+        "EvaluatorType": "AssetLookupTree.Evaluators.General.Booster_CollationMapping",
+        "Evaluator": {
+          "ExpectedValues": [400055],
+          "Operation": 0
+        }
+      },
+      {
+        "NodeId": "payload-list-eoe",
+        "Payload": {
+          "TextureRef": {
+            "RelativePath": "Assets/Core/Art/Shared/Images/SetLogos/SetLogo_EOE.png"
+          }
+        }
+      },
+      {
+        "NodeId": "payload-list-extra",
+        "Payload": {
+          "TextureRef": {
+            "RelativePath": "Assets/Core/Art/Shared/Images/SetLogos/SetLogo_EOE_DE.png"
+          }
+        }
+      }
+    ],
+    "Connections": [
+      {"Parent": "evaluator-blb", "Child": "payload-blb-en"},
+      {"Parent": "evaluator-dft", "Child": "lang-extractor"},
+      {"Parent": "lang-extractor", "Child": {"en-US": "payload-dft-en", "de-DE": "payload-dft-de"}},
+      {"Parent": "evaluator-list", "Child": ["payload-list-eoe", "payload-list-extra"]}
+    ]
+  }
+}

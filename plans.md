@@ -67,7 +67,7 @@ is clean.
 - Pre-match opponent snapshot from lobby memory — **reader+**
 - Post-match economy delta (memory snapshot before/after match) — **✅ shipped** (`Scry2.MatchEconomy`, ADR-036)
 - Per-match economy timeline + dashboard ticker + match-detail card — **✅ shipped** (`/match-economy`)
-- Pack-open card capture via memory snapshot diff — **✅ shipped** (`Scry2.Economy.AttributeMemoryGrants` + `IngestMemoryGrants`; surfaces as `source: "MemoryDiff:PackOpen"` rows in Recent Card Grants when a booster count dropped in the diff window, otherwise `source: "MemoryDiff"`)
+- Pack-open card capture via memory snapshot diff — **✅ shipped** (`Scry2.Economy.AttributeMemoryGrants` + `IngestMemoryGrants`; surfaces as `source: "MemoryDiff:PackOpen"` rows in Recent Card Grants when a booster count dropped in the diff window, otherwise `source: "MemoryDiff"`. Set code resolved via `Scry2.Cards.BoosterCollation` reading `MTGA_Data/Downloads/ALT/ALT_Booster_*.mtga` and stamped as `source_id` so the UI renders e.g. "BLB pack opened" instead of generic "Pack opened")
 - Companion legality verification — **reader+**
 
 ## D. Live tracking (continuous reads — new architectural mode)

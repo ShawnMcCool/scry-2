@@ -208,10 +208,11 @@ defmodule Scry2.Economy do
       {:ok, nil}
     else
       stringified = Enum.map(grant_rows, &stringify_keys/1)
+      dropped_collation_id = dropped_collation_id(prev, next)
 
       attrs = %{
-        source: source_for_pair(prev, next),
-        source_id: nil,
+        source: source_for_drop(dropped_collation_id),
+        source_id: source_id_for_drop(dropped_collation_id),
         cards: CardGrant.wrap_cards(stringified),
         card_count: length(stringified),
         occurred_at: next.snapshot_ts,
@@ -236,28 +237,30 @@ defmodule Scry2.Economy do
   # When a booster count dropped between snapshots, the cards in this
   # diff are highly likely to be a pack-open — label the row so the
   # UI can show "Pack opened" instead of the generic "Detected from
-  # collection" label. Pre-spike-18 snapshots have no booster data
-  # (`boosters_json` is nil) and fall through to the generic label.
-  defp source_for_pair(prev, next) do
-    if booster_count_decreased?(prev, next) do
-      @memory_diff_pack_open_source
-    else
-      @memory_diff_source
-    end
-  end
+  # collection" label, and stamp source_id with the booster's set
+  # code (resolved via Scry2.Cards.BoosterCollation). Pre-spike-18
+  # snapshots have no booster data (`boosters_json` is nil) and fall
+  # through to the generic label with nil source_id.
+  defp source_for_drop(nil), do: @memory_diff_source
+  defp source_for_drop(_collation_id), do: @memory_diff_pack_open_source
 
-  defp booster_count_decreased?(nil, _next), do: false
+  defp source_id_for_drop(nil), do: nil
 
-  defp booster_count_decreased?(
+  defp source_id_for_drop(collation_id) when is_integer(collation_id),
+    do: Scry2.Cards.BoosterCollation.lookup(collation_id)
+
+  defp dropped_collation_id(nil, _next), do: nil
+
+  defp dropped_collation_id(
          %Scry2.Collection.Snapshot{} = prev,
          %Scry2.Collection.Snapshot{} = next
        ) do
     prev_map = boosters_map(prev)
     next_map = boosters_map(next)
 
-    Enum.any?(prev_map, fn {collation_id, prev_count} ->
+    Enum.find_value(prev_map, fn {collation_id, prev_count} ->
       next_count = Map.get(next_map, collation_id, 0)
-      prev_count > next_count
+      if prev_count > next_count, do: collation_id
     end)
   end
 

@@ -18,6 +18,23 @@ defmodule Scry2Web.Components.RecentCardGrantsCardTest do
     test "maps the MemoryDiff:PackOpen sentinel to 'Pack opened'" do
       assert RecentCardGrantsCard.source_label("MemoryDiff:PackOpen") == "Pack opened"
     end
+  end
+
+  describe "grant_label/1" do
+    test "renders MemoryDiff:PackOpen with a known set code as 'BLB pack opened'" do
+      grant = %{source: "MemoryDiff:PackOpen", source_id: "BLB"}
+      assert RecentCardGrantsCard.grant_label(grant) == "BLB pack opened"
+    end
+
+    test "falls back to plain 'Pack opened' when source_id is nil" do
+      grant = %{source: "MemoryDiff:PackOpen", source_id: nil}
+      assert RecentCardGrantsCard.grant_label(grant) == "Pack opened"
+    end
+
+    test "delegates to source_label for non-pack-open sources" do
+      grant = %{source: "EventReward", source_id: "Some_Event_Name"}
+      assert RecentCardGrantsCard.grant_label(grant) == "Event prize"
+    end
 
     test "nil source falls through to 'Unknown source'" do
       assert RecentCardGrantsCard.source_label(nil) == "Unknown source"
