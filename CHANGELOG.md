@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.28.2 — 2026-05-02
+
 ### New
 
 - **Heads-up when MTGA gets updated.** Scry's memory reader is tied to MTGA's process layout, which can shift when MTGA patches. **Settings → Memory Reading** now shows a one-click "MTGA was updated — acknowledge" warning the next time your collection is read after a new MTGA build, so you know to open MTGA and refresh to confirm cards are still being read correctly. Click **Acknowledge** once everything looks right and the alert stays quiet until the next update.
