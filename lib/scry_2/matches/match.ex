@@ -2,6 +2,8 @@ defmodule Scry2.Matches.Match do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   schema "matches_matches" do
     field :player_id, :integer
     field :mtga_match_id, :string

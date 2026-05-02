@@ -730,6 +730,97 @@ defmodule Scry2.MatchesTest do
     end
   end
 
+  describe "merge_opponent_observation/1" do
+    alias Scry2.LiveState.Snapshot
+
+    test "writes all gap-filler fields and broadcasts on matches:updates" do
+      match =
+        TestFactory.create_match(%{
+          mtga_match_id: "M-100",
+          opponent_screen_name: "Opponent",
+          opponent_rank: nil
+        })
+
+      # Subscribe AFTER create_match so we don't see the factory's own broadcast.
+      Topics.subscribe(Topics.matches_updates())
+
+      snapshot = %Snapshot{
+        mtga_match_id: "M-100",
+        opponent_screen_name: "RealName#12345",
+        opponent_ranking_class: 5,
+        opponent_ranking_tier: 2,
+        opponent_mythic_percentile: nil,
+        opponent_mythic_placement: nil,
+        local_ranking_class: 4,
+        local_ranking_tier: 4
+      }
+
+      assert {:ok, updated} = Matches.merge_opponent_observation(snapshot)
+      assert updated.opponent_screen_name == "RealName#12345"
+      assert updated.opponent_rank == "Diamond 2"
+      assert updated.player_rank == "Platinum 4"
+
+      assert_receive {:match_updated, match_id}, 100
+      assert match_id == match.id
+    end
+
+    test "preserves log-derived non-nil fields when memory only fills some" do
+      TestFactory.create_match(%{
+        mtga_match_id: "M-200",
+        opponent_screen_name: "LogDerived",
+        opponent_rank: "Bronze 1"
+      })
+
+      snapshot = %Snapshot{
+        mtga_match_id: "M-200",
+        opponent_screen_name: "MemoryName",
+        opponent_ranking_class: nil,
+        opponent_ranking_tier: nil
+      }
+
+      assert {:ok, updated} = Matches.merge_opponent_observation(snapshot)
+      assert updated.opponent_screen_name == "MemoryName"
+      assert updated.opponent_rank == "Bronze 1"
+    end
+
+    test "no-ops with all-nil enrichable fields" do
+      TestFactory.create_match(%{mtga_match_id: "M-300"})
+
+      # Subscribe AFTER create_match so we don't see the factory's own broadcast.
+      Topics.subscribe(Topics.matches_updates())
+
+      snapshot = %Snapshot{mtga_match_id: "M-300", reader_version: "unknown"}
+      assert :ok = Matches.merge_opponent_observation(snapshot)
+      refute_receive {:match_updated, _}, 50
+    end
+
+    test "logs and returns :ok when match not found" do
+      snapshot = %Snapshot{
+        mtga_match_id: "M-MISSING",
+        opponent_screen_name: "Someone"
+      }
+
+      assert :ok = Matches.merge_opponent_observation(snapshot)
+    end
+
+    test "writes mythic percentile and placement when present" do
+      TestFactory.create_match(%{mtga_match_id: "M-400"})
+
+      snapshot = %Snapshot{
+        mtga_match_id: "M-400",
+        opponent_ranking_class: 6,
+        opponent_ranking_tier: nil,
+        opponent_mythic_percentile: 88,
+        opponent_mythic_placement: 142
+      }
+
+      assert {:ok, updated} = Matches.merge_opponent_observation(snapshot)
+      assert updated.opponent_rank == "Mythic"
+      assert updated.opponent_rank_mythic_percentile == 88
+      assert updated.opponent_rank_mythic_placement == 142
+    end
+  end
+
   describe "list_matches/1 with :category" do
     test ":category=:limited filters to Limited matches only" do
       TestFactory.create_match(%{format: "Quick Draft", format_type: "Limited"})
