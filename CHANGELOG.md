@@ -11,6 +11,12 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.28.3 — 2026-05-02
+
+### New
+
+- **Recent card grants on the Economy page.** Scry now shows the individual cards you got from event prizes, vouchers, and draft pool grants — pulled directly from MTGA's event log. Each row tells you where the card came from (e.g. "Event prize", "Draft pool grant", "Voucher") and which cards landed in your collection. Duplicates that converted to vault progress are marked with **(vault)**. Pack-opens will appear here automatically the first time you crack a booster after this update.
+
 ## v0.28.2 — 2026-05-02
 
 ### New
