@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.28.7 — 2026-05-02
+
 ### New
 
 - **Pending Packs card on the Economy page.** Scry now shows your unopened booster inventory grouped by set — one row per set with the count, plus a total. Reads directly from MTGA's memory in every collection snapshot, so pack counts stay current as you crack and earn boosters.
