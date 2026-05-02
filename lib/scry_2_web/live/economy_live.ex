@@ -6,13 +6,18 @@ defmodule Scry2Web.EconomyLive do
   use Scry2Web, :live_view
 
   alias Scry2.Cards
+  alias Scry2.Collection
+  alias Scry2.Collection.PendingPacks
   alias Scry2.Crafts
   alias Scry2.Economy
+  alias Scry2.Economy.Forecast
   alias Scry2.Topics
   alias Scry2Web.EconomyHelpers
 
   import Scry2Web.RecentCraftsCard
   import Scry2Web.Components.RecentCardGrantsCard
+  import Scry2Web.Components.PendingPacksCard
+  import Scry2Web.Components.ForecastStrip
 
   @valid_ranges ~w(today 3d week 2w season)
   @default_range "2w"
@@ -24,6 +29,7 @@ defmodule Scry2Web.EconomyLive do
     if connected?(socket) do
       Topics.subscribe(Topics.economy_updates())
       Topics.subscribe(Topics.crafts_updates())
+      Topics.subscribe(Topics.collection_snapshots())
     end
 
     {:ok,
@@ -35,9 +41,16 @@ defmodule Scry2Web.EconomyLive do
        crafts_cards_by_arena_id: %{},
        card_grants: [],
        grants_cards_by_arena_id: %{},
+       pending_packs: [],
        time_range: @default_range,
        currency_series: "{}",
        wildcards_series: "{}",
+       forecast_visible: false,
+       gold_net: 0,
+       gold_rate: 0.0,
+       gems_net: 0,
+       gems_rate: 0.0,
+       vault_eta: :insufficient_data,
        reload_timer: nil
      )}
   end
@@ -64,6 +77,10 @@ defmodule Scry2Web.EconomyLive do
     {:noreply, schedule_reload(socket)}
   end
 
+  def handle_info({:snapshot_saved, _}, socket) do
+    {:noreply, schedule_reload(socket)}
+  end
+
   def handle_info(:reload_data, socket) do
     {:noreply, load_data(socket) |> assign(:reload_timer, nil)}
   end
@@ -87,7 +104,8 @@ defmodule Scry2Web.EconomyLive do
       crafts: crafts,
       crafts_cards_by_arena_id: crafts_cards,
       card_grants: card_grants,
-      grants_cards_by_arena_id: grants_cards
+      grants_cards_by_arena_id: grants_cards,
+      pending_packs: PendingPacks.summarize(Collection.current())
     )
     |> build_chart_assigns()
   end
@@ -124,7 +142,13 @@ defmodule Scry2Web.EconomyLive do
 
     assign(socket,
       currency_series: Jason.encode!(EconomyHelpers.currency_series(filtered)),
-      wildcards_series: Jason.encode!(EconomyHelpers.wildcards_series(filtered))
+      wildcards_series: Jason.encode!(EconomyHelpers.wildcards_series(filtered)),
+      forecast_visible: length(filtered) >= 2,
+      gold_net: Forecast.net_change(filtered, :gold),
+      gold_rate: Forecast.daily_rate(filtered, :gold),
+      gems_net: Forecast.net_change(filtered, :gems),
+      gems_rate: Forecast.daily_rate(filtered, :gems),
+      vault_eta: Forecast.vault_eta(filtered, DateTime.utc_now())
     )
   end
 
@@ -178,7 +202,7 @@ defmodule Scry2Web.EconomyLive do
 
         <%!-- Charts --%>
         <section :if={length(@snapshots) >= 2} class="space-y-4">
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="join">
               <button
                 :for={
@@ -200,6 +224,15 @@ defmodule Scry2Web.EconomyLive do
                 {label}
               </button>
             </div>
+
+            <.forecast_strip
+              gold_net={@gold_net}
+              gold_rate={@gold_rate}
+              gems_net={@gems_net}
+              gems_rate={@gems_rate}
+              vault_eta={@vault_eta}
+              visible={@forecast_visible}
+            />
           </div>
 
           <div>
@@ -230,6 +263,9 @@ defmodule Scry2Web.EconomyLive do
             />
           </div>
         </section>
+
+        <%!-- Pending booster inventory by set --%>
+        <.pending_packs_card rows={@pending_packs} />
 
         <%!-- Recent crafts (ADR-037) --%>
         <.recent_crafts_card crafts={@crafts} cards_by_arena_id={@crafts_cards_by_arena_id} />
