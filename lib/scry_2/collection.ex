@@ -24,6 +24,7 @@ defmodule Scry2.Collection do
   """
 
   alias Ecto.Multi
+  alias Scry2.Collection.BuildChange
   alias Scry2.Collection.Diff
   alias Scry2.Collection.RefreshJob
   alias Scry2.Collection.Snapshot
@@ -36,6 +37,7 @@ defmodule Scry2.Collection do
   import Ecto.Query
 
   @reader_enabled_key "collection.reader_enabled"
+  @acknowledged_build_hint_key "collection.acknowledged_build_hint"
 
   @doc "Returns the most recent collection snapshot, or `nil`."
   @spec current() :: Snapshot.t() | nil
@@ -146,6 +148,7 @@ defmodule Scry2.Collection do
 
     case Repo.transaction(multi) do
       {:ok, %{snapshot: snapshot, diff: diff}} ->
+        maybe_auto_acknowledge_first_build_hint(snapshot)
         Topics.broadcast(Topics.collection_snapshots(), {:snapshot_saved, snapshot})
         Topics.broadcast(Topics.collection_diffs(), {:diff_saved, diff})
         {:ok, snapshot}
@@ -153,6 +156,62 @@ defmodule Scry2.Collection do
       {:error, _step, changeset, _changes} ->
         {:error, changeset}
     end
+  end
+
+  @doc """
+  The MTGA build the user has acknowledged as known-good for the
+  memory reader. `nil` means no acknowledgement has been made yet.
+  """
+  @spec acknowledged_build_hint() :: String.t() | nil
+  def acknowledged_build_hint do
+    Settings.get(@acknowledged_build_hint_key)
+  end
+
+  @doc """
+  Acknowledge the build_hint stamped on the most recent snapshot.
+  Use after the user has verified that the memory reader is still
+  returning correct data following an MTGA update.
+
+  Returns `:no_data` when there is no walker snapshot to acknowledge.
+  """
+  @spec acknowledge_current_build!() :: :ok | :no_data
+  def acknowledge_current_build! do
+    case current_build_hint() do
+      nil ->
+        :no_data
+
+      hint ->
+        Settings.put!(@acknowledged_build_hint_key, hint)
+        :ok
+    end
+  end
+
+  @doc """
+  Compare the latest snapshot's `mtga_build_hint` against the
+  acknowledged value. See `Scry2.Collection.BuildChange.detect/2` for
+  the result type.
+  """
+  @spec build_change_status() :: BuildChange.t()
+  def build_change_status do
+    BuildChange.detect(acknowledged_build_hint(), current_build_hint())
+  end
+
+  defp current_build_hint do
+    case current() do
+      %Snapshot{mtga_build_hint: hint} -> hint
+      _ -> nil
+    end
+  end
+
+  defp maybe_auto_acknowledge_first_build_hint(%Snapshot{mtga_build_hint: nil}), do: :ok
+
+  defp maybe_auto_acknowledge_first_build_hint(%Snapshot{mtga_build_hint: hint})
+       when is_binary(hint) do
+    if is_nil(acknowledged_build_hint()) do
+      Settings.put!(@acknowledged_build_hint_key, hint)
+    end
+
+    :ok
   end
 
   @doc "Returns the most recent diff, or `nil` if none exist yet."

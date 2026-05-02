@@ -289,6 +289,144 @@ defmodule Scry2.CollectionTest do
     end
   end
 
+  describe "build-change tracking" do
+    test "acknowledged_build_hint/0 starts nil" do
+      assert Collection.acknowledged_build_hint() == nil
+    end
+
+    test "save_snapshot/1 auto-acknowledges the first observed build_hint" do
+      assert Collection.acknowledged_build_hint() == nil
+
+      assert {:ok, _} =
+               Collection.save_snapshot(%{
+                 entries: [{30_001, 1}],
+                 card_count: 1,
+                 total_copies: 1,
+                 reader_confidence: "walker",
+                 mtga_build_hint: "BUILD-2026.04.30"
+               })
+
+      assert Collection.acknowledged_build_hint() == "BUILD-2026.04.30"
+    end
+
+    test "save_snapshot/1 does not overwrite an existing acknowledgement when build matches" do
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-A"
+      })
+
+      Collection.save_snapshot(%{
+        entries: [{30_001, 2}],
+        card_count: 1,
+        total_copies: 2,
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-A"
+      })
+
+      assert Collection.acknowledged_build_hint() == "BUILD-A"
+    end
+
+    test "save_snapshot/1 does NOT auto-update acknowledged when build_hint changes" do
+      # First snapshot establishes the acknowledged baseline.
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-A"
+      })
+
+      # MTGA gets a patch — new snapshot stamps a different build.
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-B"
+      })
+
+      # The user must explicitly acknowledge — the system must not
+      # silently move the goalpost.
+      assert Collection.acknowledged_build_hint() == "BUILD-A"
+    end
+
+    test "save_snapshot/1 ignores nil build_hint (no walker data)" do
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "fallback_scan"
+      })
+
+      assert Collection.acknowledged_build_hint() == nil
+    end
+
+    test "build_change_status/0 returns :no_data with no snapshot" do
+      assert Collection.build_change_status() == :no_data
+    end
+
+    test "build_change_status/0 returns :current after first observation auto-acks" do
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-X"
+      })
+
+      assert Collection.build_change_status() == :current
+    end
+
+    test "build_change_status/0 returns {:changed, prev, current} when build differs" do
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-OLD"
+      })
+
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-NEW"
+      })
+
+      assert Collection.build_change_status() == {:changed, "BUILD-OLD", "BUILD-NEW"}
+    end
+
+    test "acknowledge_current_build!/0 sets the acknowledged hint to the latest snapshot's build" do
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-OLD"
+      })
+
+      Collection.save_snapshot(%{
+        entries: [{30_001, 1}],
+        card_count: 1,
+        total_copies: 1,
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-NEW"
+      })
+
+      assert :ok = Collection.acknowledge_current_build!()
+      assert Collection.acknowledged_build_hint() == "BUILD-NEW"
+      assert Collection.build_change_status() == :current
+    end
+
+    test "acknowledge_current_build!/0 returns :no_data with no walker snapshot" do
+      assert Collection.acknowledge_current_build!() == :no_data
+    end
+  end
+
   defp save(opts) do
     entries = Keyword.fetch!(opts, :entries)
 
