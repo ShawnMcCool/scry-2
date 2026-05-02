@@ -774,6 +774,7 @@ defmodule Scry2.Events do
     "rank_match_recorded" => Scry2.Events.Progression.RankMatchRecorded,
     "rank_snapshot" => Scry2.Events.Progression.RankSnapshot,
     "cards_acquired" => Scry2.Events.Economy.CardsAcquired,
+    "cards_granted" => Scry2.Events.Economy.CardsGranted,
     "cards_removed" => Scry2.Events.Economy.CardsRemoved,
     "collection_updated" => Scry2.Events.Economy.CollectionUpdated,
     "daily_win_earned" => Scry2.Events.Progression.DailyWinEarned,

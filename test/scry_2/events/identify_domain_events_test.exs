@@ -11,7 +11,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     HumanDraftPickMade
   }
 
-  alias Scry2.Events.Economy.{InventoryChanged, InventoryUpdated}
+  alias Scry2.Events.Economy.{CardsGranted, InventoryChanged, InventoryUpdated}
   alias Scry2.Events.Event.{EventCourseUpdated, EventJoined, EventRewardClaimed, PairingEntered}
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.Match.{DieRolled, GameCompleted, MatchCompleted, MatchCreated}
@@ -919,6 +919,164 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert inv.gems == 4900
       assert inv.wildcards_common == 2
       assert inv.vault_progress == 15.0
+    end
+  end
+
+  # ── EventClaimPrize → CardsGranted (per-change with GrantedCards) ───
+
+  describe "translate/2 — EventClaimPrize with GrantedCards → CardsGranted" do
+    test "emits one CardsGranted per change with non-empty GrantedCards (real-log fixture)" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "EventClaimPrize",
+        mtga_timestamp: ~U[2026-04-08 11:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Course" => %{
+              "CourseId" => "fa72e9b8-ec18-4479-9aff-5a2ee9455334",
+              "InternalEventName" => "MWM_TMT_BotDraft_20260407",
+              "CurrentWins" => 2,
+              "CurrentLosses" => 2,
+              "CardPool" => [100_602, 100_639]
+            },
+            "InventoryInfo" => %{
+              "Changes" => [
+                %{
+                  "Source" => "EventReward",
+                  "SourceId" => "fa72e9b8-ec18-4479-9aff-5a2ee9455334",
+                  "GrantedCards" => [
+                    %{"GrpId" => 86745, "CardAdded" => true, "SetCode" => "WOE"}
+                  ]
+                }
+              ],
+              "Gold" => 3300,
+              "Gems" => 4900,
+              "WildCardCommons" => 65,
+              "WildCardUnCommons" => 77,
+              "WildCardRares" => 3,
+              "WildCardMythics" => 12,
+              "TotalVaultProgress" => 102
+            }
+          }),
+        processed: false
+      }
+
+      assert {events, []} = IdentifyDomainEvents.translate(record, nil)
+
+      grants = Enum.filter(events, &match?(%CardsGranted{}, &1))
+      assert length(grants) == 1
+
+      [grant] = grants
+      assert grant.source == "EventReward"
+      assert grant.source_id == "fa72e9b8-ec18-4479-9aff-5a2ee9455334"
+      assert grant.occurred_at == ~U[2026-04-08 11:00:00Z]
+
+      assert grant.cards == [
+               %{arena_id: 86745, set_code: "WOE", card_added: true, vault_progress: 0}
+             ]
+    end
+
+    test "emits no CardsGranted when every Change has empty GrantedCards" do
+      record = %EventRecord{
+        id: 2,
+        event_type: "EventClaimPrize",
+        mtga_timestamp: ~U[2026-04-08 11:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Course" => %{
+              "CourseId" => "course-1",
+              "InternalEventName" => "QuickDraft_FDN_20260323",
+              "CurrentWins" => 3,
+              "CurrentLosses" => 3,
+              "CardPool" => []
+            },
+            "InventoryInfo" => %{
+              "Changes" => [
+                %{
+                  "Source" => "EventReward",
+                  "SourceId" => "course-1",
+                  "GrantedCards" => []
+                }
+              ],
+              "Gold" => 100,
+              "Gems" => 0,
+              "WildCardCommons" => 0,
+              "WildCardUnCommons" => 0,
+              "WildCardRares" => 0,
+              "WildCardMythics" => 0,
+              "TotalVaultProgress" => 0
+            }
+          }),
+        processed: false
+      }
+
+      assert {events, []} = IdentifyDomainEvents.translate(record, nil)
+      assert Enum.find(events, &match?(%CardsGranted{}, &1)) == nil
+    end
+
+    test "emits one CardsGranted per Changes entry across multiple changes" do
+      record = %EventRecord{
+        id: 3,
+        event_type: "EventClaimPrize",
+        mtga_timestamp: ~U[2026-04-08 11:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "Course" => %{
+              "CourseId" => "course-2",
+              "InternalEventName" => "Some_Event",
+              "CurrentWins" => 1,
+              "CurrentLosses" => 0,
+              "CardPool" => []
+            },
+            "InventoryInfo" => %{
+              "Changes" => [
+                %{
+                  "Source" => "EventReward",
+                  "SourceId" => "course-2",
+                  "GrantedCards" => [
+                    %{"GrpId" => 11111, "CardAdded" => true, "SetCode" => "DSK"}
+                  ]
+                },
+                %{
+                  "Source" => "RedeemVoucher",
+                  "SourceId" => nil,
+                  "GrantedCards" => [
+                    %{"GrpId" => 22222, "SetCode" => "EOE", "VaultProgress" => 1}
+                  ]
+                }
+              ],
+              "Gold" => 0,
+              "Gems" => 0,
+              "WildCardCommons" => 0,
+              "WildCardUnCommons" => 0,
+              "WildCardRares" => 0,
+              "WildCardMythics" => 0,
+              "TotalVaultProgress" => 0
+            }
+          }),
+        processed: false
+      }
+
+      assert {events, []} = IdentifyDomainEvents.translate(record, nil)
+      grants = Enum.filter(events, &match?(%CardsGranted{}, &1))
+      assert length(grants) == 2
+
+      reward = Enum.find(grants, &(&1.source == "EventReward"))
+      voucher = Enum.find(grants, &(&1.source == "RedeemVoucher"))
+
+      assert reward.cards == [
+               %{arena_id: 11111, set_code: "DSK", card_added: true, vault_progress: 0}
+             ]
+
+      assert voucher.cards == [
+               %{arena_id: 22222, set_code: "EOE", card_added: false, vault_progress: 1}
+             ]
     end
   end
 

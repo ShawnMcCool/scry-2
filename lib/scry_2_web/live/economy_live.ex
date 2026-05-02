@@ -12,10 +12,12 @@ defmodule Scry2Web.EconomyLive do
   alias Scry2Web.EconomyHelpers
 
   import Scry2Web.RecentCraftsCard
+  import Scry2Web.Components.RecentCardGrantsCard
 
   @valid_ranges ~w(today 3d week 2w season)
   @default_range "2w"
   @recent_crafts_limit 25
+  @recent_card_grants_limit 25
 
   @impl true
   def mount(_params, _session, socket) do
@@ -31,6 +33,8 @@ defmodule Scry2Web.EconomyLive do
        snapshots: [],
        crafts: [],
        crafts_cards_by_arena_id: %{},
+       card_grants: [],
+       grants_cards_by_arena_id: %{},
        time_range: @default_range,
        currency_series: "{}",
        wildcards_series: "{}",
@@ -72,13 +76,18 @@ defmodule Scry2Web.EconomyLive do
     crafts = Crafts.list_recent(limit: @recent_crafts_limit)
     crafts_cards = load_crafts_cards(crafts)
 
+    card_grants = Economy.list_card_grants(limit: @recent_card_grants_limit)
+    grants_cards = load_grants_cards(card_grants)
+
     socket
     |> assign(
       entries: Economy.list_event_entries(player_id: player_id),
       inventory: Economy.latest_inventory(player_id: player_id),
       snapshots: Economy.list_inventory_snapshots(player_id: player_id),
       crafts: crafts,
-      crafts_cards_by_arena_id: crafts_cards
+      crafts_cards_by_arena_id: crafts_cards,
+      card_grants: card_grants,
+      grants_cards_by_arena_id: grants_cards
     )
     |> build_chart_assigns()
   end
@@ -87,6 +96,22 @@ defmodule Scry2Web.EconomyLive do
 
   defp load_crafts_cards(crafts) do
     arena_ids = Enum.map(crafts, & &1.arena_id) |> Enum.uniq()
+    Cards.list_by_arena_ids(arena_ids)
+  end
+
+  defp load_grants_cards([]), do: %{}
+
+  defp load_grants_cards(grants) do
+    arena_ids =
+      grants
+      |> Enum.flat_map(fn grant ->
+        grant.cards
+        |> Scry2.Economy.CardGrant.unwrap_cards()
+        |> Enum.map(fn row -> row["arena_id"] || row[:arena_id] end)
+      end)
+      |> Enum.filter(&is_integer/1)
+      |> Enum.uniq()
+
     Cards.list_by_arena_ids(arena_ids)
   end
 
@@ -208,6 +233,12 @@ defmodule Scry2Web.EconomyLive do
 
         <%!-- Recent crafts (ADR-037) --%>
         <.recent_crafts_card crafts={@crafts} cards_by_arena_id={@crafts_cards_by_arena_id} />
+
+        <%!-- Recent card grants from MTGA event log --%>
+        <.recent_card_grants_card
+          grants={@card_grants}
+          cards_by_arena_id={@grants_cards_by_arena_id}
+        />
 
         <%!-- Event history --%>
         <section :if={@entries != []}>

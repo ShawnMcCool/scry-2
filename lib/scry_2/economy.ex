@@ -11,7 +11,7 @@ defmodule Scry2.Economy do
 
   import Ecto.Query
 
-  alias Scry2.Economy.{EventEntry, InventorySnapshot, Transaction}
+  alias Scry2.Economy.{CardGrant, EventEntry, InventorySnapshot, Transaction}
   alias Scry2.Repo
   alias Scry2.Topics
 
@@ -115,6 +115,39 @@ defmodule Scry2.Economy do
 
     broadcast({:economy_updated, :transaction})
     transaction
+  end
+
+  # ── Card grants ────────────────────────────────────────────────────
+
+  @doc "Lists recent card grants, newest first."
+  @spec list_card_grants(keyword()) :: [CardGrant.t()]
+  def list_card_grants(opts \\ []) do
+    limit_count = Keyword.get(opts, :limit, 25)
+
+    CardGrant
+    |> order_by([g], desc: g.occurred_at)
+    |> limit(^limit_count)
+    |> Repo.all()
+  end
+
+  @doc "Inserts a card-grant batch."
+  @spec insert_card_grant!(map()) :: CardGrant.t()
+  def insert_card_grant!(attrs) do
+    attrs = Map.new(attrs)
+    cards = Map.get(attrs, :cards, [])
+
+    full_attrs =
+      attrs
+      |> Map.put(:cards, CardGrant.wrap_cards(cards))
+      |> Map.put_new(:card_count, length(cards))
+
+    grant =
+      %CardGrant{}
+      |> CardGrant.changeset(full_attrs)
+      |> Repo.insert!()
+
+    broadcast({:economy_updated, :card_grant})
+    grant
   end
 
   # ── Helpers ────────────────────────────────────────────────────────

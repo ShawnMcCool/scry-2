@@ -122,6 +122,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   }
 
   alias Scry2.Events.Economy.{
+    CardsGranted,
     CollectionUpdated,
     InventoryChanged,
     InventorySnapshot,
@@ -704,7 +705,10 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
     with {:ok, payload} <- Jason.decode(record.raw_json),
          %{"Course" => course, "InventoryInfo" => inventory} <- payload do
-      changes = (inventory["Changes"] || []) |> List.first() || %{}
+      all_changes = inventory["Changes"] || []
+      changes = List.first(all_changes) || %{}
+
+      grant_events = grant_events_from_changes(all_changes, occurred_at)
 
       reward_event = %EventRewardClaimed{
         event_name: course["InternalEventName"],
@@ -749,7 +753,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
             []
         end
 
-      {[reward_event, inventory_event] ++ draft_events, []}
+      {[reward_event, inventory_event] ++ draft_events ++ grant_events, []}
     else
       %{"request" => _} -> {[], []}
       _ -> {[], translation_warning(record, "failed to decode EventClaimPrize response")}
@@ -1363,4 +1367,35 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   defp safe_divide(nil, _divisor), do: nil
   defp safe_divide(value, divisor) when is_number(value), do: value / divisor
+
+  # Extract one CardsGranted domain event per Changes entry whose
+  # GrantedCards array is non-empty. Empty changes (no card grant —
+  # only currency or boosters changed) produce nothing.
+  defp grant_events_from_changes(changes, occurred_at) when is_list(changes) do
+    Enum.flat_map(changes, fn change ->
+      case change["GrantedCards"] do
+        cards when is_list(cards) and cards != [] ->
+          [
+            %CardsGranted{
+              source: change["Source"],
+              source_id: change["SourceId"],
+              cards: Enum.map(cards, &normalise_grant_row/1),
+              occurred_at: occurred_at
+            }
+          ]
+
+        _ ->
+          []
+      end
+    end)
+  end
+
+  defp normalise_grant_row(row) do
+    %{
+      arena_id: row["GrpId"],
+      set_code: row["SetCode"],
+      card_added: row["CardAdded"] || false,
+      vault_progress: row["VaultProgress"] || 0
+    }
+  end
 end

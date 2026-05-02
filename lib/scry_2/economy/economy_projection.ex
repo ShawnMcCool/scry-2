@@ -8,17 +8,20 @@ defmodule Scry2.Economy.EconomyProjection do
     * `"event_reward_claimed"` → enrich event entry with prizes
     * `"inventory_updated"` → insert inventory balance snapshot
     * `"inventory_changed"` → insert transaction delta
+    * `"cards_granted"` → insert per-grant card-batch row
   """
   use Scry2.Events.Projector,
-    claimed_slugs: ~w(event_joined event_reward_claimed inventory_updated inventory_changed),
+    claimed_slugs:
+      ~w(event_joined event_reward_claimed inventory_updated inventory_changed cards_granted),
     projection_tables: [
       Scry2.Economy.Transaction,
       Scry2.Economy.InventorySnapshot,
-      Scry2.Economy.EventEntry
+      Scry2.Economy.EventEntry,
+      Scry2.Economy.CardGrant
     ]
 
   alias Scry2.Economy
-  alias Scry2.Events.Economy.{InventoryChanged, InventoryUpdated}
+  alias Scry2.Events.Economy.{CardsGranted, InventoryChanged, InventoryUpdated}
   alias Scry2.Events.Event.{EventJoined, EventRewardClaimed}
 
   defp project(%EventJoined{entry_fee: fee} = event) when is_integer(fee) and fee > 0 do
@@ -93,6 +96,23 @@ defmodule Scry2.Economy.EconomyProjection do
     })
 
     Log.info(:ingester, "projected InventoryChanged source=#{event.source}")
+    :ok
+  end
+
+  defp project(%CardsGranted{} = event) do
+    Economy.insert_card_grant!(%{
+      source: event.source,
+      source_id: event.source_id,
+      cards: event.cards,
+      card_count: length(event.cards),
+      occurred_at: event.occurred_at
+    })
+
+    Log.info(
+      :ingester,
+      "projected CardsGranted source=#{event.source} count=#{length(event.cards)}"
+    )
+
     :ok
   end
 
