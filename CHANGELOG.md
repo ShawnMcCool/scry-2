@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.28.0 — 2026-05-02
+
 ### New
 
 - **See which cards you crafted on the Economy page.** A new **Recent Crafts** card lists every wildcard spend with the card you made — image, name, rarity, and when. Tracking starts the first time Scry reads your collection from memory; older crafts can't be recovered, since MTGA stopped writing them to its log in 2021.
