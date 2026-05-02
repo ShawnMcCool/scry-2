@@ -11,6 +11,10 @@ defmodule Scry2Web.Components.RecentCardGrantsCardTest do
       assert RecentCardGrantsCard.source_label("EventPayEntry") == "Event entry refund"
     end
 
+    test "maps the MemoryDiff sentinel to its memory-detected label" do
+      assert RecentCardGrantsCard.source_label("MemoryDiff") == "Detected from collection"
+    end
+
     test "nil source falls through to 'Unknown source'" do
       assert RecentCardGrantsCard.source_label(nil) == "Unknown source"
     end

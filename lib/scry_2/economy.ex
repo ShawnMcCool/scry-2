@@ -150,6 +150,80 @@ defmodule Scry2.Economy do
     grant
   end
 
+  @memory_diff_source "MemoryDiff"
+
+  @doc """
+  Source code stamped on memory-diff-derived card grants. Stable —
+  the UI's source-label table maps this to a player-friendly label.
+  """
+  @spec memory_diff_source() :: String.t()
+  def memory_diff_source, do: @memory_diff_source
+
+  @doc """
+  Records memory-diff-derived card grants for one consecutive
+  snapshot pair.
+
+  Pure attribution lives in `Scry2.Economy.AttributeMemoryGrants`;
+  this function persists its output as a single
+  `economy_card_grants` row stamped with `source: "MemoryDiff"` and
+  the snapshot pair's ids for traceability + idempotency.
+
+  Idempotent: the unique partial index on `to_snapshot_id` (where
+  `to_snapshot_id IS NOT NULL`) means re-running on the same pair
+  upserts nothing new (`on_conflict: :nothing`).
+
+  Returns `{:ok, %CardGrant{}}` on insert, `{:ok, nil}` if there
+  was nothing to record or the row already exists.
+  """
+  @spec record_memory_grants_from_snapshot_pair(
+          Scry2.Collection.Snapshot.t() | nil,
+          Scry2.Collection.Snapshot.t(),
+          MapSet.t(integer())
+        ) :: {:ok, CardGrant.t() | nil}
+  def record_memory_grants_from_snapshot_pair(
+        prev,
+        %Scry2.Collection.Snapshot{} = next,
+        exclude \\ MapSet.new()
+      ) do
+    case Scry2.Economy.AttributeMemoryGrants.attribute(prev, next, exclude) do
+      [] ->
+        {:ok, nil}
+
+      grant_rows ->
+        persist_memory_grant(grant_rows, prev, next)
+    end
+  end
+
+  defp persist_memory_grant(grant_rows, prev, next) do
+    if Repo.exists?(from(g in CardGrant, where: g.to_snapshot_id == ^next.id)) do
+      {:ok, nil}
+    else
+      stringified = Enum.map(grant_rows, &stringify_keys/1)
+
+      attrs = %{
+        source: @memory_diff_source,
+        source_id: nil,
+        cards: CardGrant.wrap_cards(stringified),
+        card_count: length(stringified),
+        occurred_at: next.snapshot_ts,
+        from_snapshot_id: prev && prev.id,
+        to_snapshot_id: next.id
+      }
+
+      grant =
+        %CardGrant{}
+        |> CardGrant.changeset(attrs)
+        |> Repo.insert!()
+
+      broadcast({:economy_updated, :card_grant})
+      {:ok, grant}
+    end
+  end
+
+  defp stringify_keys(row) when is_map(row) do
+    Map.new(row, fn {k, v} -> {to_string(k), v} end)
+  end
+
   # ── Helpers ────────────────────────────────────────────────────────
 
   # ── Event name parsing ─────────────────────────────────────────────

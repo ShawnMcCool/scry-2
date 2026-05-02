@@ -225,6 +225,10 @@ defmodule Scry2.Application do
           # Wildcard craft attribution: subscribes to collection:diffs and
           # writes to the `crafts` table. ADR-037.
           Scry2.Crafts.IngestCollectionDiffs,
+          # Memory-diff card-grant attribution: subscribes to
+          # collection:diffs and writes to economy_card_grants when the
+          # collection grew without an explanation (pack-opens etc.).
+          Scry2.Economy.IngestMemoryGrants,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.
           Scry2.MtgaLogIngestion.Watcher
         ]

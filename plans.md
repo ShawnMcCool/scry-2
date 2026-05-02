@@ -66,7 +66,7 @@ is clean.
 - Pre-match opponent snapshot from lobby memory — **reader+**
 - Post-match economy delta (memory snapshot before/after match) — **✅ shipped** (`Scry2.MatchEconomy`, ADR-036)
 - Per-match economy timeline + dashboard ticker + match-detail card — **✅ shipped** (`/match-economy`)
-- Pack-open card capture (memory snapshot before/after pack open) — **today**
+- Pack-open card capture via memory snapshot diff — **✅ shipped** (`Scry2.Economy.AttributeMemoryGrants` + `IngestMemoryGrants`; surfaces as `source: "MemoryDiff"` rows in Recent Card Grants — captures pack-opens *and* any other unattributed collection growth, since walker doesn't read booster counts yet)
 - Companion legality verification — **reader+**
 
 ## D. Live tracking (continuous reads — new architectural mode)

@@ -44,6 +44,8 @@ defmodule Scry2.Economy.CardGrant do
     field :cards, :map
     field :card_count, :integer
     field :occurred_at, :utc_datetime_usec
+    field :from_snapshot_id, :id
+    field :to_snapshot_id, :id
 
     timestamps(type: :utc_datetime_usec)
   end
@@ -53,7 +55,9 @@ defmodule Scry2.Economy.CardGrant do
     :source_id,
     :cards,
     :card_count,
-    :occurred_at
+    :occurred_at,
+    :from_snapshot_id,
+    :to_snapshot_id
   ]
 
   @required [:source, :cards, :card_count, :occurred_at]

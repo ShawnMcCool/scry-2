@@ -119,4 +119,73 @@ defmodule Scry2.EconomyTest do
       assert hd(results).source == "Event5"
     end
   end
+
+  describe "record_memory_grants_from_snapshot_pair/3" do
+    import Scry2.TestFactory
+
+    alias Scry2.Economy.CardGrant
+
+    test "returns {:ok, nil} when there are no unattributed gains" do
+      prev = create_collection_snapshot(entries: [{1, 1}])
+      next = create_collection_snapshot(entries: [{1, 1}])
+
+      assert {:ok, nil} = Economy.record_memory_grants_from_snapshot_pair(prev, next)
+      assert Economy.list_card_grants() == []
+    end
+
+    test "returns {:ok, nil} when prev is nil (bootstrap snapshot)" do
+      next = create_collection_snapshot(entries: [{42, 1}])
+
+      assert {:ok, nil} = Economy.record_memory_grants_from_snapshot_pair(nil, next)
+      assert Economy.list_card_grants() == []
+    end
+
+    test "persists one grant row carrying every gained copy" do
+      Topics.subscribe(Topics.economy_updates())
+      prev = create_collection_snapshot(entries: [{1, 1}])
+      next = create_collection_snapshot(entries: [{1, 1}, {42, 1}, {99, 2}])
+
+      assert {:ok, %CardGrant{} = grant} =
+               Economy.record_memory_grants_from_snapshot_pair(prev, next)
+
+      assert grant.source == Economy.memory_diff_source()
+      assert grant.from_snapshot_id == prev.id
+      assert grant.to_snapshot_id == next.id
+      assert grant.card_count == 3
+
+      arena_ids =
+        grant.cards
+        |> CardGrant.unwrap_cards()
+        |> Enum.map(& &1["arena_id"])
+        |> Enum.sort()
+
+      assert arena_ids == [42, 99, 99]
+      assert_received {:economy_updated, :card_grant}
+    end
+
+    test "is idempotent — re-running on the same snapshot pair upserts nothing" do
+      prev = create_collection_snapshot(entries: [])
+      next = create_collection_snapshot(entries: [{42, 1}])
+
+      assert {:ok, %CardGrant{}} = Economy.record_memory_grants_from_snapshot_pair(prev, next)
+      assert {:ok, nil} = Economy.record_memory_grants_from_snapshot_pair(prev, next)
+
+      assert length(Economy.list_card_grants()) == 1
+    end
+
+    test "skips arena_ids in the exclude set (already attributed by other sources)" do
+      prev = create_collection_snapshot(entries: [])
+      next = create_collection_snapshot(entries: [{42, 1}, {99, 1}])
+
+      assert {:ok, %CardGrant{} = grant} =
+               Economy.record_memory_grants_from_snapshot_pair(prev, next, MapSet.new([42]))
+
+      arena_ids =
+        grant.cards
+        |> CardGrant.unwrap_cards()
+        |> Enum.map(& &1["arena_id"])
+
+      assert arena_ids == [99]
+    end
+  end
 end
