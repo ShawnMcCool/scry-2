@@ -5,22 +5,32 @@ defmodule Scry2Web.EconomyLive do
   """
   use Scry2Web, :live_view
 
+  alias Scry2.Cards
+  alias Scry2.Crafts
   alias Scry2.Economy
   alias Scry2.Topics
   alias Scry2Web.EconomyHelpers
 
+  import Scry2Web.RecentCraftsCard
+
   @valid_ranges ~w(today 3d week 2w season)
   @default_range "2w"
+  @recent_crafts_limit 25
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Topics.subscribe(Topics.economy_updates())
+    if connected?(socket) do
+      Topics.subscribe(Topics.economy_updates())
+      Topics.subscribe(Topics.crafts_updates())
+    end
 
     {:ok,
      assign(socket,
        entries: [],
        inventory: nil,
        snapshots: [],
+       crafts: [],
+       crafts_cards_by_arena_id: %{},
        time_range: @default_range,
        currency_series: "{}",
        wildcards_series: "{}",
@@ -46,6 +56,10 @@ defmodule Scry2Web.EconomyLive do
     {:noreply, schedule_reload(socket)}
   end
 
+  def handle_info({:crafts_recorded, _}, socket) do
+    {:noreply, schedule_reload(socket)}
+  end
+
   def handle_info(:reload_data, socket) do
     {:noreply, load_data(socket) |> assign(:reload_timer, nil)}
   end
@@ -55,13 +69,25 @@ defmodule Scry2Web.EconomyLive do
   defp load_data(socket) do
     player_id = socket.assigns[:active_player_id]
 
+    crafts = Crafts.list_recent(limit: @recent_crafts_limit)
+    crafts_cards = load_crafts_cards(crafts)
+
     socket
     |> assign(
       entries: Economy.list_event_entries(player_id: player_id),
       inventory: Economy.latest_inventory(player_id: player_id),
-      snapshots: Economy.list_inventory_snapshots(player_id: player_id)
+      snapshots: Economy.list_inventory_snapshots(player_id: player_id),
+      crafts: crafts,
+      crafts_cards_by_arena_id: crafts_cards
     )
     |> build_chart_assigns()
+  end
+
+  defp load_crafts_cards([]), do: %{}
+
+  defp load_crafts_cards(crafts) do
+    arena_ids = Enum.map(crafts, & &1.arena_id) |> Enum.uniq()
+    Cards.list_by_arena_ids(arena_ids)
   end
 
   defp build_chart_assigns(socket) do
@@ -179,6 +205,9 @@ defmodule Scry2Web.EconomyLive do
             />
           </div>
         </section>
+
+        <%!-- Recent crafts (ADR-037) --%>
+        <.recent_crafts_card crafts={@crafts} cards_by_arena_id={@crafts_cards_by_arena_id} />
 
         <%!-- Event history --%>
         <section :if={@entries != []}>

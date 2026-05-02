@@ -222,6 +222,9 @@ defmodule Scry2.Application do
           # synchronous Collection.Reader.read/1 calls.
           {Task.Supervisor, name: Scry2.MatchEconomy.TaskSupervisor},
           Scry2.MatchEconomy.Trigger,
+          # Wildcard craft attribution: subscribes to collection:diffs and
+          # writes to the `crafts` table. ADR-037.
+          Scry2.Crafts.IngestCollectionDiffs,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.
           Scry2.MtgaLogIngestion.Watcher
         ]

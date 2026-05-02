@@ -1131,6 +1131,70 @@ defmodule Scry2.TestFactory do
     row
   end
 
+  # ── Crafts (ADR 037) ─────────────────────────────────────────────────────
+
+  alias Scry2.Crafts.{Attribution, Craft}
+
+  @doc """
+  Builds a `Scry2.Crafts.Attribution` struct with sensible defaults.
+  """
+  def build_attribution(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    defaults = %{
+      arena_id: 70_000 + :rand.uniform(9_999),
+      rarity: :rare,
+      quantity: 1
+    }
+
+    struct(Attribution, Map.merge(defaults, attrs))
+  end
+
+  @doc """
+  Builds a `Scry2.Crafts.Craft` struct with sensible defaults. No DB.
+  """
+  def build_craft(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    now = DateTime.utc_now()
+
+    defaults = %{
+      occurred_at_lower: DateTime.add(now, -60, :second),
+      occurred_at_upper: now,
+      arena_id: 70_000 + :rand.uniform(9_999),
+      rarity: "rare",
+      quantity: 1,
+      from_snapshot_id: nil,
+      to_snapshot_id: nil
+    }
+
+    struct(Craft, Map.merge(defaults, attrs))
+  end
+
+  @doc """
+  Persists a `Scry2.Crafts.Craft` row via the changeset and returns
+  the loaded record. Requires `to_snapshot_id` (and ideally
+  `from_snapshot_id`) to be set; pass real `Collection.Snapshot` ids.
+  """
+  def create_craft(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    now = DateTime.utc_now()
+
+    full =
+      attrs
+      |> Map.put_new(:occurred_at_lower, DateTime.add(now, -60, :second))
+      |> Map.put_new(:occurred_at_upper, now)
+      |> Map.put_new(:arena_id, 70_000 + :rand.uniform(9_999))
+      |> Map.put_new(:rarity, "rare")
+      |> Map.put_new(:quantity, 1)
+
+    {:ok, row} =
+      %Craft{}
+      |> Craft.changeset(full)
+      |> Scry2.Repo.insert()
+
+    row
+  end
+
   defp random_suffix, do: Integer.to_string(:rand.uniform(1_000_000_000), 36)
 
   # Silence unused-alias warnings for test support code.

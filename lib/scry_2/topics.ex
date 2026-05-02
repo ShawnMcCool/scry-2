@@ -68,6 +68,17 @@ defmodule Scry2.Topics do
   """
   def collection_diffs, do: "collection:diffs"
 
+  # ── Crafts ───────────────────────────────────────────────────────────────
+  @doc """
+  Wildcard crafts attributed from collection snapshot diffs. Subscribers
+  receive:
+
+    * `{:crafts_recorded, [%Scry2.Crafts.Craft{}]}` — one or more crafts
+      written from the latest snapshot pair. Empty batches are not
+      broadcast.
+  """
+  def crafts_updates, do: "crafts:updates"
+
   # ── Settings ─────────────────────────────────────────────────────────────
   @doc "Runtime configuration changed."
   def settings_updates, do: "settings:updates"
