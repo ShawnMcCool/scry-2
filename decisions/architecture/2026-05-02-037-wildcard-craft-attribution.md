@@ -396,7 +396,5 @@ Each step ends with `mix precommit` clean.
   card component, tested as pure functions
 * ADR-009 (GenServer API encapsulation) — `IngestCollectionDiffs`
   tested through public API only
-* `plans/read-wildcard-spends-from-runtime.md` — research note that
-  preceded this ADR (now superseded by it)
 * Memory note `project_mtga_collection_not_in_log` — confirms the
   Aug 2021 log-fidelity reduction this design works around
