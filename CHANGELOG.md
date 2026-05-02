@@ -11,6 +11,14 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Pending Packs card on the Economy page.** Scry now shows your unopened booster inventory grouped by set — one row per set with the count, plus a total. Reads directly from MTGA's memory in every collection snapshot, so pack counts stay current as you crack and earn boosters.
+
+### Improved
+
+- **Trends strip on the Economy charts.** Above the Currency and Wildcards charts, a new strip shows your net gold and gem change over the selected time range (with a per-day rate) and an estimated **Vault opens …** date based on your recent rate of accumulating duplicate cards. The strip hides itself until enough snapshots exist to estimate.
+
 ## v0.28.6 — 2026-05-02
 
 ### Improved
