@@ -11,6 +11,10 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Pack-opens are now labelled as "Pack opened" in Recent Card Grants.** When the cards Scry sees arrive in your collection coincide with one of your booster counts dropping, the grant row is now labelled **Pack opened** instead of the generic "Detected from collection" label. Memory-only grants that aren't pack-opens (or where the booster signal isn't present yet) keep the generic label. Scry now reads your unopened booster inventory directly from MTGA's memory in every collection snapshot.
+
 ## v0.28.4 — 2026-05-02
 
 ### New
