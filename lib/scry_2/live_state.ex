@@ -30,18 +30,17 @@ defmodule Scry2.LiveState do
 
   alias Scry2.LiveState.Snapshot
   alias Scry2.Repo
+  alias Scry2.Topics
 
-  @updates_topic "live_match:updates"
-  @final_topic "live_match:final"
   @enabled_settings_key "live_match_polling_enabled"
 
   @doc "PubSub topic for in-flight tick broadcasts."
   @spec updates_topic() :: String.t()
-  def updates_topic, do: @updates_topic
+  def updates_topic, do: Topics.live_match_updates()
 
   @doc "PubSub topic for final-snapshot broadcasts."
   @spec final_topic() :: String.t()
-  def final_topic, do: @final_topic
+  def final_topic, do: Topics.live_match_final()
 
   @doc """
   Settings key for the live-polling feature flag. Default behaviour is
@@ -86,7 +85,7 @@ defmodule Scry2.LiveState do
 
     case existing |> Snapshot.changeset(full_attrs) |> Repo.insert_or_update() do
       {:ok, snapshot} ->
-        Phoenix.PubSub.broadcast(Scry2.PubSub, @final_topic, {:final, snapshot})
+        Phoenix.PubSub.broadcast(Scry2.PubSub, Topics.live_match_final(), {:final, snapshot})
         {:ok, snapshot}
 
       {:error, _} = err ->
@@ -107,6 +106,6 @@ defmodule Scry2.LiveState do
   """
   @spec broadcast_tick(map()) :: :ok
   def broadcast_tick(payload) when is_map(payload) do
-    Phoenix.PubSub.broadcast(Scry2.PubSub, @updates_topic, {:tick, payload})
+    Phoenix.PubSub.broadcast(Scry2.PubSub, Topics.live_match_updates(), {:tick, payload})
   end
 end

@@ -68,6 +68,22 @@ defmodule Scry2.Topics do
   """
   def collection_diffs, do: "collection:diffs"
 
+  # ── LiveState (memory-observation, in-match) ───────────────────────
+  @doc """
+  In-flight memory observations broadcast every poll tick during an
+  active match. Payload: `{:tick, %{...}}` mirroring `walk_match_info`.
+  """
+  def live_match_updates, do: "live_match:updates"
+
+  @doc """
+  Final memory observation persisted at match wind-down. Payload:
+  `{:final, %Scry2.LiveState.Snapshot{}}`. Subscribed to by
+  `Scry2.Matches.MergeOpponentObservation` and
+  `Scry2.Decks.MergeMatchResultObservation` to enrich the persistent
+  match record with gap-filler fields the log can never deliver.
+  """
+  def live_match_final, do: "live_match:final"
+
   # ── Crafts ───────────────────────────────────────────────────────────────
   @doc """
   Wildcard crafts attributed from collection snapshot diffs. Subscribers
