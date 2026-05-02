@@ -36,6 +36,7 @@ defmodule Scry2.Collection.Snapshot do
     :gold,
     :gems,
     :vault_progress,
+    :boosters_json,
     :mtga_match_id,
     :match_phase
   ]
@@ -64,10 +65,36 @@ defmodule Scry2.Collection.Snapshot do
     field :gold, :integer
     field :gems, :integer
     field :vault_progress, :float
+    field :boosters_json, :string
     field :mtga_match_id, :string
     field :match_phase, :string
 
     timestamps(type: :utc_datetime_usec)
+  end
+
+  @doc """
+  Encodes a list of `%{collation_id, count}` rows as the canonical
+  JSON blob for the `boosters_json` column.
+  """
+  @spec encode_boosters([%{collation_id: integer(), count: integer()}]) :: String.t()
+  def encode_boosters(boosters) when is_list(boosters) do
+    boosters
+    |> Enum.map(fn
+      %{collation_id: cid, count: cnt} -> %{"collation_id" => cid, "count" => cnt}
+      %{"collation_id" => cid, "count" => cnt} -> %{"collation_id" => cid, "count" => cnt}
+    end)
+    |> Jason.encode!()
+  end
+
+  @doc "Decodes `boosters_json` back into a list of plain `{collation_id, count}` tuples."
+  @spec decode_boosters(String.t() | nil) :: [{integer(), integer()}]
+  def decode_boosters(nil), do: []
+  def decode_boosters("null"), do: []
+
+  def decode_boosters(json) when is_binary(json) do
+    json
+    |> Jason.decode!()
+    |> Enum.map(fn %{"collation_id" => cid, "count" => cnt} -> {cid, cnt} end)
   end
 
   @doc """

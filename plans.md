@@ -51,6 +51,7 @@ is clean.
 - Store inventory (daily deal, rotating bundles, cosmetic packs) — **reader+**
 - Pending packs by set and source — **reader+**
 - Build / version metadata (build GUID, asset version, server region) — **walker**
+- Booster inventory (per-set unopened pack counts) — **✅ shipped** (`Scry2.Collection.Snapshot.boosters_json`; walker reads `ClientPlayerInventory.boosters: List<ClientBoosterInfo>` per spike 18)
 
 ## B. Reconciliation (memory-vs-log truth diffing)
 
@@ -66,7 +67,7 @@ is clean.
 - Pre-match opponent snapshot from lobby memory — **reader+**
 - Post-match economy delta (memory snapshot before/after match) — **✅ shipped** (`Scry2.MatchEconomy`, ADR-036)
 - Per-match economy timeline + dashboard ticker + match-detail card — **✅ shipped** (`/match-economy`)
-- Pack-open card capture via memory snapshot diff — **✅ shipped** (`Scry2.Economy.AttributeMemoryGrants` + `IngestMemoryGrants`; surfaces as `source: "MemoryDiff"` rows in Recent Card Grants — captures pack-opens *and* any other unattributed collection growth, since walker doesn't read booster counts yet)
+- Pack-open card capture via memory snapshot diff — **✅ shipped** (`Scry2.Economy.AttributeMemoryGrants` + `IngestMemoryGrants`; surfaces as `source: "MemoryDiff:PackOpen"` rows in Recent Card Grants when a booster count dropped in the diff window, otherwise `source: "MemoryDiff"`)
 - Companion legality verification — **reader+**
 
 ## D. Live tracking (continuous reads — new architectural mode)

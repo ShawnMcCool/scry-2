@@ -126,6 +126,13 @@ pub struct Wildcards {
     pub mythic: i32,
 }
 
+/// One booster row — `{collation_id, count}` pair.
+#[derive(NifMap)]
+pub struct BoosterRow {
+    pub collation_id: i32,
+    pub count: i32,
+}
+
 /// Wire shape returned to Elixir on success — matches the contract
 /// in `decisions/architecture/2026-04-22-034-memory-read-collection.md`
 /// (Revision 2026-04-25). `vault_progress` is the live percentage
@@ -137,6 +144,7 @@ pub struct WalkSnapshot {
     pub gold: i32,
     pub gems: i32,
     pub vault_progress: f64,
+    pub boosters: Vec<BoosterRow>,
     pub build_hint: Option<String>,
     pub reader_version: String,
 }
@@ -195,6 +203,14 @@ fn snapshot_to_wire(snap: walker::run::Snapshot) -> WalkSnapshot {
         gold: snap.inventory.gold,
         gems: snap.inventory.gems,
         vault_progress: snap.inventory.vault_progress,
+        boosters: snap
+            .boosters
+            .into_iter()
+            .map(|b| BoosterRow {
+                collation_id: b.collation_id,
+                count: b.count,
+            })
+            .collect(),
         build_hint: snap.mtga_build_hint,
         reader_version: READER_VERSION.to_string(),
     }

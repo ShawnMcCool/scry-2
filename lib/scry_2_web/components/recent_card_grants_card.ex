@@ -62,6 +62,7 @@ defmodule Scry2Web.Components.RecentCardGrantsCard do
   def source_label("LoginGrant"), do: "Login bonus"
   def source_label("EventPayEntry"), do: "Event entry refund"
   def source_label("MemoryDiff"), do: "Detected from collection"
+  def source_label("MemoryDiff:PackOpen"), do: "Pack opened"
   def source_label(nil), do: "Unknown source"
 
   def source_label(other) when is_binary(other) do

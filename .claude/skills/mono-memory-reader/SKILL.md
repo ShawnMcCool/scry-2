@@ -44,8 +44,40 @@ mono_get_root_domain()                  -> MonoDomain *
           m_inventory                   -> ClientPlayerInventory
                                             { wcCommon, wcUncommon,
                                               wcRare,  wcMythic,
-                                              gold, gems, vaultProgress }
+                                              gold, gems, vaultProgress,
+                                              boosters: List<ClientBoosterInfo> }
 ```
+
+**`ClientPlayerInventory` instance fields** (16 total; verified
+2026-05-02 via `inventory-field-spike` —
+`mtga-duress/experiments/spikes/spike18_booster_inventory/FINDING.md`):
+
+| Offset | Field | Type | Notes |
+|---:|---|---|---|
+| `0x0010` | `boosters` | `List<ClientBoosterInfo>` | booster inventory; element layout below |
+| `0x0018` | `vouchers` | reference | (shape unverified — likely a list/dict) |
+| `0x0020` | `prizeWallsUnlocked` | reference | (cosmetic) |
+| `0x0028` | `basicLandSet` | reference | (cosmetic) |
+| `0x0030` | `latestBasicLandSet` | reference | (cosmetic) |
+| `0x0038` | `starterDecks` | reference | |
+| `0x0040` | `tickets` | reference | (event entry tokens) |
+| `0x0048` | `CustomTokens` | reference | |
+| `0x0050` | `wcCommon` | i32 | walker phase 6 |
+| `0x0054` | `wcUncommon` | i32 | walker phase 6 |
+| `0x0058` | `wcRare` | i32 | walker phase 6 |
+| `0x005c` | `wcMythic` | i32 | walker phase 6 |
+| `0x0060` | `gold` | i32 | walker phase 6 |
+| `0x0064` | `gems` | i32 | walker phase 6 |
+| `0x0068` | `wcTrackPosition` | i32 | wildcard track progress |
+| `0x0070` | `vaultProgress` | f64 | walker phase 6 (System.Double) |
+
+**`ClientBoosterInfo` element fields** (verified 2026-05-02; same
+spike):
+
+| Offset | Field | Type |
+|---:|---|---|
+| `0x0010` | `collationId` | i32 (matches MTGA's log `Changes[*].Boosters[].collationId`) |
+| `0x0014` | `count` | i32 |
 
 **Field resolution rule** (from spike 5):
 1. Exact name match first.

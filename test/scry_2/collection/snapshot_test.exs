@@ -92,6 +92,34 @@ defmodule Scry2.Collection.SnapshotTest do
     end
   end
 
+  describe "boosters round-trip via encode/decode" do
+    test "re-materialises booster rows unchanged from atom-keyed walker output" do
+      boosters = [
+        %{collation_id: 100_060, count: 99},
+        %{collation_id: 100_345, count: 1}
+      ]
+
+      decoded = boosters |> Snapshot.encode_boosters() |> Snapshot.decode_boosters()
+      assert decoded == [{100_060, 99}, {100_345, 1}]
+    end
+
+    test "re-materialises booster rows unchanged from string-keyed input" do
+      boosters = [%{"collation_id" => 100_060, "count" => 99}]
+      decoded = boosters |> Snapshot.encode_boosters() |> Snapshot.decode_boosters()
+      assert decoded == [{100_060, 99}]
+    end
+
+    test "decode_boosters handles nil and the literal 'null' JSON" do
+      assert Snapshot.decode_boosters(nil) == []
+      assert Snapshot.decode_boosters("null") == []
+    end
+
+    test "encode_boosters of an empty list is a valid empty JSON array" do
+      assert Snapshot.encode_boosters([]) == "[]"
+      assert Snapshot.decode_boosters("[]") == []
+    end
+  end
+
   describe "changeset with match-tag columns" do
     test "accepts mtga_match_id and match_phase" do
       attrs = base_attrs(%{mtga_match_id: "abc-123", match_phase: "pre"})

@@ -88,6 +88,8 @@ pub struct Snapshot {
     pub entries: Vec<DictEntry>,
     /// Wildcards / currencies / vault progress.
     pub inventory: InventoryValues,
+    /// Booster inventory — `(collation_id, count)` rows.
+    pub boosters: Vec<super::boosters::BoosterRow>,
     /// MTGA build GUID from `boot.config`, or `None` if the file
     /// couldn't be located or parsed. Useful as a sanity check on
     /// top of walker output: when the GUID changes between runs the
@@ -166,6 +168,7 @@ where
     Ok(Snapshot {
         entries: walk.entries,
         inventory: walk.inventory,
+        boosters: walk.boosters,
         mtga_build_hint: build_hint(),
     })
 }

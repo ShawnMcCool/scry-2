@@ -27,6 +27,7 @@
 //!   `_inventoryServiceWrapper`), and delegates to
 //!   [`from_service_wrapper`].
 
+use super::boosters::{self, BoosterRow};
 use super::dict::{self, DictEntry};
 use super::field::{self, ResolvedField};
 use super::inventory::{self, InventoryValues};
@@ -44,6 +45,8 @@ pub struct WalkResult {
     pub entries: Vec<DictEntry>,
     /// Wildcards / currencies / vault progress.
     pub inventory: InventoryValues,
+    /// Booster inventory — `(collation_id, count)` rows.
+    pub boosters: Vec<BoosterRow>,
 }
 
 /// Walk from a resolved `InventoryServiceWrapper` object, deriving
@@ -106,9 +109,20 @@ where
     let inventory_values =
         inventory::read_inventory(offsets, &inventory_class_bytes, 0, inv_addr, read_mem)?;
 
+    // Boosters are a separate `boosters` field on the same
+    // ClientPlayerInventory object — read here so the walker delivers
+    // a single combined snapshot per call.
+    //
+    // A failure to read boosters does **not** fail the entire walk —
+    // primary inventory is the harder requirement and pre-spike-18
+    // builds already shipped without booster data. An empty Vec
+    // signals "boosters not read" and the Elixir side stores nil.
+    let boosters = boosters::read_boosters(offsets, &inventory_class_bytes, inv_addr, read_mem);
+
     Some(WalkResult {
         entries,
         inventory: inventory_values,
+        boosters,
     })
 }
 

@@ -187,5 +187,66 @@ defmodule Scry2.EconomyTest do
 
       assert arena_ids == [99]
     end
+
+    test "labels grants as MemoryDiff:PackOpen when a booster count dropped in the window" do
+      alias Scry2.Collection.Snapshot
+
+      prev =
+        create_collection_snapshot(
+          entries: [],
+          boosters_json: Snapshot.encode_boosters([%{collation_id: 100_060, count: 5}])
+        )
+
+      next =
+        create_collection_snapshot(
+          entries: [{42, 1}],
+          boosters_json: Snapshot.encode_boosters([%{collation_id: 100_060, count: 4}])
+        )
+
+      assert {:ok, %CardGrant{source: source}} =
+               Economy.record_memory_grants_from_snapshot_pair(prev, next)
+
+      assert source == Economy.memory_diff_pack_open_source()
+      assert source == "MemoryDiff:PackOpen"
+    end
+
+    test "stays as plain MemoryDiff when no booster count dropped" do
+      alias Scry2.Collection.Snapshot
+
+      prev =
+        create_collection_snapshot(
+          entries: [],
+          boosters_json: Snapshot.encode_boosters([%{collation_id: 100_060, count: 5}])
+        )
+
+      next =
+        create_collection_snapshot(
+          entries: [{42, 1}],
+          boosters_json: Snapshot.encode_boosters([%{collation_id: 100_060, count: 5}])
+        )
+
+      assert {:ok, %CardGrant{source: source}} =
+               Economy.record_memory_grants_from_snapshot_pair(prev, next)
+
+      assert source == Economy.memory_diff_source()
+      assert source == "MemoryDiff"
+    end
+
+    test "stays as plain MemoryDiff when prev has no booster data (pre-spike-18 snapshot)" do
+      alias Scry2.Collection.Snapshot
+
+      prev = create_collection_snapshot(entries: [], boosters_json: nil)
+
+      next =
+        create_collection_snapshot(
+          entries: [{42, 1}],
+          boosters_json: Snapshot.encode_boosters([%{collation_id: 100_060, count: 4}])
+        )
+
+      assert {:ok, %CardGrant{source: source}} =
+               Economy.record_memory_grants_from_snapshot_pair(prev, next)
+
+      assert source == Economy.memory_diff_source()
+    end
   end
 end

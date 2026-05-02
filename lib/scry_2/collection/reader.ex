@@ -102,14 +102,17 @@ defmodule Scry2.Collection.Reader do
     end
   end
 
-  defp summarize_walker(%{
-         cards: cards,
-         wildcards: %{common: c, uncommon: u, rare: r, mythic: m},
-         gold: gold,
-         gems: gems,
-         vault_progress: vault,
-         build_hint: build_hint
-       }) do
+  defp summarize_walker(walker_result) do
+    %{
+      cards: cards,
+      wildcards: %{common: c, uncommon: u, rare: r, mythic: m},
+      gold: gold,
+      gems: gems,
+      vault_progress: vault,
+      build_hint: build_hint
+    } = walker_result
+
+    boosters = Map.get(walker_result, :boosters, [])
     total_copies = Enum.reduce(cards, 0, fn {_, count}, acc -> acc + count end)
 
     %{
@@ -124,6 +127,7 @@ defmodule Scry2.Collection.Reader do
       gold: gold,
       gems: gems,
       vault_progress: vault,
+      boosters_json: Scry2.Collection.Snapshot.encode_boosters(boosters),
       mtga_build_hint: build_hint
     }
   end

@@ -151,6 +151,7 @@ defmodule Scry2.Economy do
   end
 
   @memory_diff_source "MemoryDiff"
+  @memory_diff_pack_open_source "MemoryDiff:PackOpen"
 
   @doc """
   Source code stamped on memory-diff-derived card grants. Stable —
@@ -158,6 +159,14 @@ defmodule Scry2.Economy do
   """
   @spec memory_diff_source() :: String.t()
   def memory_diff_source, do: @memory_diff_source
+
+  @doc """
+  Source code stamped on memory-diff grants that correlate with a
+  booster-count decrease in the same diff window — the strong
+  signal that the player opened a pack from inventory.
+  """
+  @spec memory_diff_pack_open_source() :: String.t()
+  def memory_diff_pack_open_source, do: @memory_diff_pack_open_source
 
   @doc """
   Records memory-diff-derived card grants for one consecutive
@@ -201,7 +210,7 @@ defmodule Scry2.Economy do
       stringified = Enum.map(grant_rows, &stringify_keys/1)
 
       attrs = %{
-        source: @memory_diff_source,
+        source: source_for_pair(prev, next),
         source_id: nil,
         cards: CardGrant.wrap_cards(stringified),
         card_count: length(stringified),
@@ -222,6 +231,40 @@ defmodule Scry2.Economy do
 
   defp stringify_keys(row) when is_map(row) do
     Map.new(row, fn {k, v} -> {to_string(k), v} end)
+  end
+
+  # When a booster count dropped between snapshots, the cards in this
+  # diff are highly likely to be a pack-open — label the row so the
+  # UI can show "Pack opened" instead of the generic "Detected from
+  # collection" label. Pre-spike-18 snapshots have no booster data
+  # (`boosters_json` is nil) and fall through to the generic label.
+  defp source_for_pair(prev, next) do
+    if booster_count_decreased?(prev, next) do
+      @memory_diff_pack_open_source
+    else
+      @memory_diff_source
+    end
+  end
+
+  defp booster_count_decreased?(nil, _next), do: false
+
+  defp booster_count_decreased?(
+         %Scry2.Collection.Snapshot{} = prev,
+         %Scry2.Collection.Snapshot{} = next
+       ) do
+    prev_map = boosters_map(prev)
+    next_map = boosters_map(next)
+
+    Enum.any?(prev_map, fn {collation_id, prev_count} ->
+      next_count = Map.get(next_map, collation_id, 0)
+      prev_count > next_count
+    end)
+  end
+
+  defp boosters_map(%Scry2.Collection.Snapshot{boosters_json: json}) do
+    json
+    |> Scry2.Collection.Snapshot.decode_boosters()
+    |> Map.new()
   end
 
   # ── Helpers ────────────────────────────────────────────────────────

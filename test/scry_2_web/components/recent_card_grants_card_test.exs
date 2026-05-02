@@ -15,6 +15,10 @@ defmodule Scry2Web.Components.RecentCardGrantsCardTest do
       assert RecentCardGrantsCard.source_label("MemoryDiff") == "Detected from collection"
     end
 
+    test "maps the MemoryDiff:PackOpen sentinel to 'Pack opened'" do
+      assert RecentCardGrantsCard.source_label("MemoryDiff:PackOpen") == "Pack opened"
+    end
+
     test "nil source falls through to 'Unknown source'" do
       assert RecentCardGrantsCard.source_label(nil) == "Unknown source"
     end
