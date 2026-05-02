@@ -89,31 +89,7 @@ mod tests {
     const EXP_ADDRESS_OF_NAMES_OFFSET: usize = 32;
     const EXP_ADDRESS_OF_NAME_ORDINALS_OFFSET: usize = 36;
 
-    /// FakeMem fixture (same shape as in `field`/`image_lookup`/
-    /// `class_lookup` tests).
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
+    use crate::walker::test_support::FakeMem;
 
     /// Build a minimal PE32+ image that exports `mono_get_root_domain`
     /// at `FN_RVA`, with the prologue body installed at that offset
@@ -271,15 +247,20 @@ mod tests {
         Ok(())
     }
 
+    /// Real RVA of `mono_root_domain` static slot in MTGA build
+    /// `Fri Apr 11 17:22:20 2025`. Documented here so a future reader
+    /// of this fixture can correlate it back to the disassembly recipe
+    /// in the `mono-memory-reader` skill.
+    #[allow(dead_code)]
+    const MTGA_REAL_STATIC_PTR_RVA: u32 = 0x746020;
+
     #[test]
     fn realistic_high_base_address() -> Result<(), String> {
         // MTGA's mono DLL ImageBase is 0x180000000; verify the
-        // composite produces the same answer at a high base.
-        let static_ptr_rva: u32 = 0x746020;
-        let image_size_for_test = static_ptr_rva as usize + 8;
-        // Our build_image fixture caps at 0x2000, but the composite
-        // doesn't need bytes past the prologue. Build with a smaller
-        // RVA and verify shape only:
+        // composite produces the same answer at a high base. The
+        // build_image fixture caps at 0x2000 so we test with a
+        // smaller RVA — see MTGA_REAL_STATIC_PTR_RVA above for the
+        // production value.
         let small_static: u32 = 0x900;
         let image = build_image(small_static);
         let base: u64 = 0x1_8000_0000;
@@ -291,9 +272,6 @@ mod tests {
 
         let domain = run(&image, base, &mem).ok_or("high base must resolve")?;
         assert_eq!(domain, domain_addr);
-        // Silence unused-variable warning while keeping the
-        // mtga-style RVA documented for future readers.
-        let _ = image_size_for_test;
         Ok(())
     }
 }

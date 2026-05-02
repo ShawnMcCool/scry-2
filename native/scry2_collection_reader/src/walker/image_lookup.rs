@@ -10,25 +10,14 @@
 //! to the `MonoImage *` of `Core.dll` (where the `PAPA` class lives),
 //! then later from there to `Assembly-CSharp.dll` for inventory types.
 //!
-//! The `find_by_assembly_name` function takes a remote `MonoDomain *`
+//! The `find_image_by_name` function takes a remote `MonoDomain *`
 //! and a `read_mem` closure (so the same code can run against a live
 //! process via `process_vm_readv` or against a `FakeMem` stub in
 //! tests). On a successful match it returns the `MonoImage *` for the
 //! first assembly whose short name equals `target_name`.
 
+use super::limits::{MAX_ASSEMBLIES, MAX_NAME_LEN};
 use super::mono::{self, MonoOffsets};
-
-/// Maximum bytes to read from an assembly-name C string. MTGA's
-/// assembly short names are uniformly small (longest expected:
-/// `"SharedClientCore"` at 16 chars). 256 leaves comfortable headroom
-/// without paying for unbounded reads on a malformed pointer.
-pub const MAX_NAME_LEN: usize = 256;
-
-/// Hard cap on how many `GSList` nodes the walker will dereference.
-/// MTGA's root domain typically holds ~30 assemblies; a runaway loop
-/// on a corrupted `next` pointer must be bounded so the NIF returns
-/// in finite time. 1024 is far above any realistic assembly count.
-pub const MAX_ASSEMBLIES: usize = 1024;
 
 /// Walk `domain->domain_assemblies` and return the `MonoImage *` for
 /// every assembly the runtime has loaded. Returns the list in
@@ -134,11 +123,11 @@ where
 ///
 /// A read miss on an individual node — or on the name string of a
 /// candidate assembly — is treated as a non-match for *that* entry;
-/// iteration continues. This mirrors `field::find_by_name`'s posture.
+/// iteration continues. This mirrors `field::find_field_by_name`'s posture.
 ///
 /// `read_mem(addr, len)` fetches `len` bytes from the target process
 /// at remote address `addr`. In tests this is a `FakeMem`-style stub.
-pub fn find_by_assembly_name<F>(
+pub fn find_image_by_name<F>(
     offsets: &MonoOffsets,
     domain_addr: u64,
     target_name: &str,
@@ -239,33 +228,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// FakeMem fixture identical in spirit to the one in `field.rs`
-    /// tests — maps remote addresses to byte blocks; reads return up
-    /// to `len` bytes from the block that contains `addr`.
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
+    use crate::walker::test_support::FakeMem;
 
     /// Lay out a chain of `n` GSList nodes pointing at MonoAssembly
     /// blocks at deterministic addresses, with the given short
@@ -330,7 +293,7 @@ mod tests {
 
     fn run(mem: &FakeMem, domain_addr: u64, target: &str) -> Option<u64> {
         let offsets = MonoOffsets::mtga_default();
-        find_by_assembly_name(&offsets, domain_addr, target, |addr, len| {
+        find_image_by_name(&offsets, domain_addr, target, |addr, len| {
             mem.read(addr, len)
         })
     }

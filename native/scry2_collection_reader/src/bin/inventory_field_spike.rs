@@ -96,7 +96,7 @@ fn main() -> ExitCode {
     };
 
     // Resolve PAPA._instance (static) → singleton.
-    let instance_field = field::find_by_name(&offsets, &papa_bytes, 0, "_instance", read_mem)
+    let instance_field = field::find_field_by_name(&offsets, &papa_bytes, "_instance", read_mem)
         .filter(|f| f.is_static)
         .expect("PAPA._instance must be static");
     let storage = vtable::static_storage_base(&offsets, papa_addr, domain_addr, read_mem)
@@ -110,7 +110,7 @@ fn main() -> ExitCode {
     }
 
     // PAPA.<InventoryManager>k__BackingField
-    let im_field = field::find_by_name(&offsets, &papa_bytes, 0, "InventoryManager", read_mem)
+    let im_field = field::find_field_by_name(&offsets, &papa_bytes, "InventoryManager", read_mem)
         .filter(|f| !f.is_static)
         .expect("InventoryManager field on PAPA");
     let im_addr = read_u64(
@@ -127,7 +127,7 @@ fn main() -> ExitCode {
     let im_class_bytes = read_mem(im_class_addr, CLASS_DEF_BLOB_LEN).expect("im class def");
 
     let wrap_field =
-        field::find_by_name(&offsets, &im_class_bytes, 0, "_inventoryServiceWrapper", read_mem)
+        field::find_field_by_name(&offsets, &im_class_bytes, "_inventoryServiceWrapper", read_mem)
             .filter(|f| !f.is_static)
             .expect("_inventoryServiceWrapper field");
     let wrap_addr = read_u64(
@@ -143,7 +143,7 @@ fn main() -> ExitCode {
     let wrap_class_addr = read_object_class(wrap_addr, &read_mem).expect("wrapper class");
     let wrap_class_bytes = read_mem(wrap_class_addr, CLASS_DEF_BLOB_LEN).expect("wrapper class def");
 
-    let inv_field = field::find_by_name(&offsets, &wrap_class_bytes, 0, "m_inventory", read_mem)
+    let inv_field = field::find_field_by_name(&offsets, &wrap_class_bytes, "m_inventory", read_mem)
         .filter(|f| !f.is_static)
         .expect("m_inventory field");
     let inv_addr = read_u64(
@@ -182,7 +182,7 @@ fn main() -> ExitCode {
         "PendingBoosters",
         "pendingBoosters",
     ] {
-        match field::find_by_name(&offsets, &inv_class_bytes, 0, candidate, read_mem) {
+        match field::find_field_by_name(&offsets, &inv_class_bytes, candidate, read_mem) {
             Some(f) => {
                 let kind = if f.is_static { "STATIC  " } else { "instance" };
                 println!(
@@ -396,7 +396,7 @@ where
 {
     for img in images {
         if let Some(addr) =
-            scry2_collection_reader::walker::class_lookup::find_by_name(offsets, *img, target, read_mem)
+            scry2_collection_reader::walker::class_lookup::find_class_by_name(offsets, *img, target, read_mem)
         {
             return Some(addr);
         }

@@ -15,13 +15,15 @@
 //! at `array_base + 0x20` (per the `MonoArray` offsets pinned in
 //! `mono.rs`).
 //!
-//! Field names are resolved dynamically via [`super::field::find_by_name`]
+//! Field names are resolved dynamically via [`super::field::find_field_by_name`]
 //! against the list's runtime class — different closed-generic
 //! instantiations share the same field layout, but resolving by name
 //! is cheap and keeps the walker resilient to layout shifts.
 
-use super::field::{self, ResolvedField};
-use super::mono::{self, MonoOffsets};
+use super::instance_field;
+use super::mono::MonoOffsets;
+use super::mono_array;
+use super::object;
 
 /// Read the `_size` (used count) of a `List<T>` instance.
 pub fn read_size<F>(
@@ -33,7 +35,7 @@ pub fn read_size<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    read_i32_field(offsets, list_class_bytes, list_addr, "_size", read_mem)
+    instance_field::read_instance_i32(offsets, list_class_bytes, list_addr, "_size", read_mem)
 }
 
 /// Read the `_items` pointer (the `T[]` array) of a `List<T>` instance.
@@ -48,19 +50,7 @@ pub fn read_items_ptr<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    let resolved: ResolvedField =
-        field::find_by_name(offsets, list_class_bytes, 0, "_items", read_mem)?;
-    if resolved.is_static || resolved.offset < 0 {
-        return None;
-    }
-    let addr = list_addr.checked_add(resolved.offset as u64)?;
-    let bytes = read_mem(addr, 8)?;
-    let ptr = mono::read_u64(&bytes, 0, 0)?;
-    if ptr == 0 {
-        None
-    } else {
-        Some(ptr)
-    }
+    object::read_instance_pointer(offsets, list_class_bytes, list_addr, "_items", read_mem)
 }
 
 /// Read a `List<int>` (or `List<i32>`) into a `Vec<i32>`.
@@ -87,8 +77,9 @@ where
     let Some(items_ptr) = read_items_ptr(offsets, list_class_bytes, list_addr, read_mem) else {
         return Vec::new();
     };
-    let elements_addr = items_ptr.saturating_add(MONO_ARRAY_VECTOR_OFFSET);
-    let Some(bytes) = read_mem(elements_addr, count * 4) else {
+    let Some(bytes) =
+        mono_array::read_array_elements(items_ptr, MONO_ARRAY_VECTOR_OFFSET, count, 4, read_mem)
+    else {
         return Vec::new();
     };
     bytes
@@ -119,8 +110,9 @@ where
     let Some(items_ptr) = read_items_ptr(offsets, list_class_bytes, list_addr, read_mem) else {
         return Vec::new();
     };
-    let elements_addr = items_ptr.saturating_add(MONO_ARRAY_VECTOR_OFFSET);
-    let Some(bytes) = read_mem(elements_addr, count * 8) else {
+    let Some(bytes) =
+        mono_array::read_array_elements(items_ptr, MONO_ARRAY_VECTOR_OFFSET, count, 8, read_mem)
+    else {
         return Vec::new();
     };
     bytes
@@ -141,85 +133,17 @@ where
 /// `mono.rs` for the inventory walker; mirrored here for clarity.
 const MONO_ARRAY_VECTOR_OFFSET: u64 = 0x20;
 
-/// Cap on element count read from any list. Real lists in MTGA are
-/// well under this (deck size ≤ 250, layout data ≤ ~150). The cap
-/// guards against a torn read producing a garbage `_size` triggering
-/// a multi-GB allocation.
-pub const MAX_ELEMENTS: usize = 1024;
-
-// ─── private helpers ────────────────────────────────────────────────
-
-fn read_i32_field<F>(
-    offsets: &MonoOffsets,
-    class_bytes: &[u8],
-    object_addr: u64,
-    field_name: &str,
-    read_mem: &F,
-) -> Option<i32>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let resolved: ResolvedField =
-        field::find_by_name(offsets, class_bytes, 0, field_name, read_mem)?;
-    if resolved.is_static || resolved.offset < 0 {
-        return None;
-    }
-    let addr = object_addr.checked_add(resolved.offset as u64)?;
-    let bytes = read_mem(addr, 4)?;
-    mono::read_u32(&bytes, 0, 0).map(|v| v as i32)
-}
+/// Re-export of the centralized cap. Defined in [`super::limits`].
+pub use super::limits::MAX_LIST_ELEMENTS as MAX_ELEMENTS;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::walker::mono::MONO_CLASS_FIELD_SIZE;
-
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
-
-    fn make_class_def(fields_ptr: u64, field_count: u32) -> Vec<u8> {
-        let offsets = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; super::super::run::CLASS_DEF_BLOB_LEN];
-        buf[offsets.class_fields..offsets.class_fields + 8]
-            .copy_from_slice(&fields_ptr.to_le_bytes());
-        buf[offsets.class_def_field_count..offsets.class_def_field_count + 4]
-            .copy_from_slice(&field_count.to_le_bytes());
-        buf
-    }
+    use crate::walker::test_support::{make_class_def, make_type_block, FakeMem};
 
     fn make_field_entry(name_ptr: u64, type_ptr: u64, offset: i32) -> Vec<u8> {
-        let o = MonoOffsets::mtga_default();
-        let mut v = vec![0u8; MONO_CLASS_FIELD_SIZE];
-        v[o.field_type..o.field_type + 8].copy_from_slice(&type_ptr.to_le_bytes());
-        v[o.field_name..o.field_name + 8].copy_from_slice(&name_ptr.to_le_bytes());
-        v[o.field_offset..o.field_offset + 4].copy_from_slice(&(offset as u32).to_le_bytes());
-        v
-    }
-
-    fn make_type_block(attrs: u16) -> Vec<u8> {
-        let mut v = vec![0u8; 16];
-        v[8..12].copy_from_slice(&(attrs as u32).to_le_bytes());
-        v
+        crate::walker::test_support::make_field_entry(name_ptr, type_ptr, 0, offset)
     }
 
     /// Build a List<T> class def with `_items @ 0x10` and `_size @ 0x18`.

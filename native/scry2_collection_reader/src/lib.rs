@@ -280,7 +280,6 @@ fn walker_debug_class_fields(
     pid: i32,
     class_name: String,
 ) -> Result<Vec<(String, String, i32, bool)>, Atom> {
-    use walker::field;
     use walker::mono::{self as mono_mod, MonoOffsets, MONO_CLASS_FIELD_SIZE};
     let offsets = MonoOffsets::mtga_default();
     let maps = platform::list_maps(pid).map_err(err_atom)?;
@@ -305,7 +304,7 @@ fn walker_debug_class_fields(
             if cname != class_name {
                 continue;
             }
-            let Some(class_bytes) = read_mem(class_addr, 0x110) else {
+            let Some(class_bytes) = read_mem(class_addr, walker::mono::CLASS_DEF_BLOB_LEN) else {
                 continue;
             };
             let Some(fields_ptr) = mono_mod::class_fields_ptr(&offsets, &class_bytes, 0) else {
@@ -323,7 +322,7 @@ fn walker_debug_class_fields(
                 let Some(name_ptr) = mono_mod::field_name_ptr(&offsets, &entry_buf, 0) else {
                     continue;
                 };
-                let Some(name_buf) = read_mem(name_ptr, field::MAX_NAME_LEN) else {
+                let Some(name_buf) = read_mem(name_ptr, walker::limits::MAX_NAME_LEN) else {
                     continue;
                 };
                 let end = name_buf

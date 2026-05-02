@@ -71,7 +71,7 @@ pub fn find_scene_singleton<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
-    let instance_field = field::find_by_name(offsets, scene_class_bytes, 0, "Instance", read_mem)?;
+    let instance_field = field::find_field_by_name(offsets, scene_class_bytes, "Instance", read_mem)?;
     if !instance_field.is_static || instance_field.offset < 0 {
         return None;
     }
@@ -184,98 +184,16 @@ where
     )
 }
 
-// ─── small helpers shared with match_info.rs but kept private here ───
-//
-// Keeping these as private duplicates rather than promoting to a shared
-// module: the helpers are tiny, the shape is stable, and the duplicate
-// shows up clearly in coverage. If a third walker needs them, promote.
-
-fn read_instance_pointer<F>(
-    offsets: &MonoOffsets,
-    class_bytes: &[u8],
-    object_addr: u64,
-    field_name: &str,
-    read_mem: &F,
-) -> Option<u64>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let resolved = field::find_by_name(offsets, class_bytes, 0, field_name, read_mem)?;
-    if resolved.is_static || resolved.offset < 0 {
-        return None;
-    }
-    let addr = object_addr.checked_add(resolved.offset as u64)?;
-    let bytes = read_mem(addr, 8)?;
-    let ptr = mono::read_u64(&bytes, 0, 0)?;
-    if ptr == 0 { None } else { Some(ptr) }
-}
-
-fn read_object_class_def<F>(obj_addr: u64, read_mem: &F) -> Option<Vec<u8>>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let vtable_addr = read_mem(obj_addr, 8).and_then(|b| mono::read_u64(&b, 0, 0))?;
-    if vtable_addr == 0 {
-        return None;
-    }
-    let klass_addr = read_mem(vtable_addr, 8).and_then(|b| mono::read_u64(&b, 0, 0))?;
-    if klass_addr == 0 {
-        return None;
-    }
-    read_mem(klass_addr, super::run::CLASS_DEF_BLOB_LEN)
-}
+use super::object::{read_instance_pointer, read_runtime_class_bytes as read_object_class_def};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::walker::mono::MONO_CLASS_FIELD_SIZE;
-
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
-
-    fn make_class_def(fields_ptr: u64, field_count: u32) -> Vec<u8> {
-        let offsets = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; super::super::run::CLASS_DEF_BLOB_LEN];
-        buf[offsets.class_fields..offsets.class_fields + 8]
-            .copy_from_slice(&fields_ptr.to_le_bytes());
-        buf[offsets.class_def_field_count..offsets.class_def_field_count + 4]
-            .copy_from_slice(&field_count.to_le_bytes());
-        buf
-    }
+    use crate::walker::test_support::{make_class_def, make_type_block, FakeMem};
 
     fn make_field_entry(name_ptr: u64, type_ptr: u64, offset: i32) -> Vec<u8> {
-        let o = MonoOffsets::mtga_default();
-        let mut v = vec![0u8; MONO_CLASS_FIELD_SIZE];
-        v[o.field_type..o.field_type + 8].copy_from_slice(&type_ptr.to_le_bytes());
-        v[o.field_name..o.field_name + 8].copy_from_slice(&name_ptr.to_le_bytes());
-        v[o.field_offset..o.field_offset + 4].copy_from_slice(&(offset as u32).to_le_bytes());
-        v
-    }
-
-    fn make_type_block(attrs: u16) -> Vec<u8> {
-        let mut v = vec![0u8; 16];
-        v[8..12].copy_from_slice(&(attrs as u32).to_le_bytes());
-        v
+        crate::walker::test_support::make_field_entry(name_ptr, type_ptr, 0, offset)
     }
 
     /// Build a class with the listed `(name, offset, attrs)` fields.
@@ -506,7 +424,7 @@ mod tests {
 
         // Read PTM class bytes — same construct used by walker production code.
         let ptm_class_bytes = mem
-            .read(ptm_class, super::super::run::CLASS_DEF_BLOB_LEN)
+            .read(ptm_class, crate::walker::mono::CLASS_DEF_BLOB_LEN)
             .ok_or("read ptm class bytes")?;
 
         let result = read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, |a, l| {
@@ -553,7 +471,7 @@ mod tests {
         );
 
         let ptm_class_bytes = mem
-            .read(ptm_class, super::super::run::CLASS_DEF_BLOB_LEN)
+            .read(ptm_class, crate::walker::mono::CLASS_DEF_BLOB_LEN)
             .ok_or("read ptm class bytes")?;
 
         let result = read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, |a, l| {

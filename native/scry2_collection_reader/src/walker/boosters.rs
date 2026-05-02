@@ -17,7 +17,7 @@
 //! `Fri Apr 11 17:22:20 2025` — see
 //! `mtga-duress/experiments/spikes/spike18_booster_inventory/FINDING.md`.
 
-use super::field::{self, ResolvedField};
+use super::field;
 use super::list_t;
 use super::mono::{self, MonoOffsets};
 
@@ -74,12 +74,12 @@ where
     };
 
     let Some(collation_field) =
-        field::find_by_name(offsets, &elem_class_bytes, 0, "collationId", read_mem)
+        field::find_field_by_name(offsets, &elem_class_bytes, "collationId", read_mem)
     else {
         return Vec::new();
     };
     let Some(count_field) =
-        field::find_by_name(offsets, &elem_class_bytes, 0, "count", read_mem)
+        field::find_field_by_name(offsets, &elem_class_bytes, "count", read_mem)
     else {
         return Vec::new();
     };
@@ -108,47 +108,10 @@ where
     rows
 }
 
-fn read_pointer_field<F>(
-    offsets: &MonoOffsets,
-    class_bytes: &[u8],
-    object_addr: u64,
-    field_name: &str,
-    read_mem: &F,
-) -> Option<u64>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let resolved: ResolvedField =
-        field::find_by_name(offsets, class_bytes, 0, field_name, read_mem)?;
-    if resolved.is_static || resolved.offset < 0 {
-        return None;
-    }
-    let slot = object_addr.checked_add(resolved.offset as u64)?;
-    let bytes = read_mem(slot, 8)?;
-    let ptr = mono::read_u64(&bytes, 0, 0)?;
-    if ptr == 0 {
-        None
-    } else {
-        Some(ptr)
-    }
-}
-
-fn read_object_class_def<F>(obj_addr: u64, read_mem: &F) -> Option<Vec<u8>>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let vtable_buf = read_mem(obj_addr, 8)?;
-    let vtable_addr = mono::read_u64(&vtable_buf, 0, 0)?;
-    if vtable_addr == 0 {
-        return None;
-    }
-    let klass_buf = read_mem(vtable_addr, 8)?;
-    let klass_addr = mono::read_u64(&klass_buf, 0, 0)?;
-    if klass_addr == 0 {
-        return None;
-    }
-    read_mem(klass_addr, 0x110)
-}
+use super::object::{
+    read_instance_pointer as read_pointer_field,
+    read_runtime_class_bytes as read_object_class_def,
+};
 
 fn read_i32_at<F>(addr: u64, read_mem: &F) -> Option<i32>
 where
@@ -161,56 +124,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::walker::mono::MONO_CLASS_FIELD_SIZE;
+    use crate::walker::test_support::{make_class_def, make_type_block, FakeMem};
 
-    /// Tiny FakeMem keyed by absolute address.
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
-
-    /// 32-byte MonoClassField entry.
     fn make_field_entry(name_ptr: u64, type_ptr: u64, offset: i32) -> Vec<u8> {
-        let o = MonoOffsets::mtga_default();
-        let mut v = vec![0u8; MONO_CLASS_FIELD_SIZE];
-        v[o.field_type..o.field_type + 8].copy_from_slice(&type_ptr.to_le_bytes());
-        v[o.field_name..o.field_name + 8].copy_from_slice(&name_ptr.to_le_bytes());
-        v[o.field_offset..o.field_offset + 4].copy_from_slice(&(offset as u32).to_le_bytes());
-        v
-    }
-
-    fn make_type_block(attrs: u16) -> Vec<u8> {
-        let mut v = vec![0u8; 16];
-        v[8..12].copy_from_slice(&(attrs as u32).to_le_bytes());
-        v
-    }
-
-    fn make_class_def(fields_ptr: u64, field_count: u32) -> Vec<u8> {
-        let offsets = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; 0x110];
-        buf[offsets.class_fields..offsets.class_fields + 8]
-            .copy_from_slice(&fields_ptr.to_le_bytes());
-        buf[offsets.class_def_field_count..offsets.class_def_field_count + 4]
-            .copy_from_slice(&field_count.to_le_bytes());
-        buf
+        crate::walker::test_support::make_field_entry(name_ptr, type_ptr, 0, offset)
     }
 
     /// Wire up a minimal scenario: an inventory object with a `boosters`
@@ -320,20 +237,21 @@ mod tests {
         inv_addr
     }
 
-    fn read_inventory_class_bytes(mem: &FakeMem, inv_addr: u64) -> Vec<u8> {
-        let vtable_buf = mem.read(inv_addr, 8).unwrap();
-        let vtable_addr = u64::from_le_bytes(vtable_buf[..8].try_into().unwrap());
-        let klass_buf = mem.read(vtable_addr, 8).unwrap();
-        let klass_addr = u64::from_le_bytes(klass_buf[..8].try_into().unwrap());
-        mem.read(klass_addr, 0x110).unwrap()
+    fn read_inventory_class_bytes(mem: &FakeMem, inv_addr: u64) -> Option<Vec<u8>> {
+        let vtable_buf = mem.read(inv_addr, 8)?;
+        let vtable_addr = u64::from_le_bytes(vtable_buf.get(..8)?.try_into().ok()?);
+        let klass_buf = mem.read(vtable_addr, 8)?;
+        let klass_addr = u64::from_le_bytes(klass_buf.get(..8)?.try_into().ok()?);
+        mem.read(klass_addr, mono::CLASS_DEF_BLOB_LEN)
     }
 
     #[test]
-    fn read_boosters_returns_all_elements() {
+    fn read_boosters_returns_all_elements() -> Result<(), String> {
         let offsets = MonoOffsets::mtga_default();
         let mut mem = FakeMem::default();
         let inv_addr = install_scenario(&mut mem, &[(100_060, 99), (100_345, 1)]);
-        let inv_class_bytes = read_inventory_class_bytes(&mem, inv_addr);
+        let inv_class_bytes =
+            read_inventory_class_bytes(&mem, inv_addr).ok_or("read inv class bytes")?;
 
         let rows = read_boosters(&offsets, &inv_class_bytes, inv_addr, |a, l| mem.read(a, l));
 
@@ -350,32 +268,84 @@ mod tests {
                 },
             ]
         );
+        Ok(())
     }
 
     #[test]
-    fn read_boosters_returns_empty_for_null_pointer_field() {
+    fn read_boosters_returns_empty_for_null_pointer_field() -> Result<(), String> {
         let offsets = MonoOffsets::mtga_default();
         let mut mem = FakeMem::default();
         let inv_addr = install_scenario(&mut mem, &[]);
 
         // Overwrite the boosters slot with NULL.
-        let mut zeroed = mem.read(inv_addr, 0x40).unwrap();
+        let mut zeroed = mem.read(inv_addr, 0x40).ok_or("read inv obj")?;
         zeroed[0x10..0x18].copy_from_slice(&0u64.to_le_bytes());
-        mem.add(inv_addr, zeroed);
+        mem.replace(inv_addr, zeroed);
 
-        let inv_class_bytes = read_inventory_class_bytes(&mem, inv_addr);
+        let inv_class_bytes =
+            read_inventory_class_bytes(&mem, inv_addr).ok_or("read inv class bytes")?;
         let rows = read_boosters(&offsets, &inv_class_bytes, inv_addr, |a, l| mem.read(a, l));
         assert!(rows.is_empty());
+        Ok(())
     }
 
     #[test]
-    fn read_boosters_returns_empty_when_list_is_empty() {
+    fn read_boosters_returns_empty_when_list_is_empty() -> Result<(), String> {
         let offsets = MonoOffsets::mtga_default();
         let mut mem = FakeMem::default();
         let inv_addr = install_scenario(&mut mem, &[]);
-        let inv_class_bytes = read_inventory_class_bytes(&mem, inv_addr);
+        let inv_class_bytes =
+            read_inventory_class_bytes(&mem, inv_addr).ok_or("read inv class bytes")?;
 
         let rows = read_boosters(&offsets, &inv_class_bytes, inv_addr, |a, l| mem.read(a, l));
         assert!(rows.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn read_boosters_handles_single_element_list() -> Result<(), String> {
+        // Boundary case: list contains exactly one ClientBoosterInfo.
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+        let inv_addr = install_scenario(&mut mem, &[(100_001, 7)]);
+        let inv_class_bytes =
+            read_inventory_class_bytes(&mem, inv_addr).ok_or("read inv class bytes")?;
+
+        let rows = read_boosters(&offsets, &inv_class_bytes, inv_addr, |a, l| mem.read(a, l));
+        assert_eq!(
+            rows,
+            vec![BoosterRow {
+                collation_id: 100_001,
+                count: 7
+            }]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn read_boosters_returns_empty_when_element_class_lacks_collation_field() -> Result<(), String>
+    {
+        // The "loud failure" rule per module doc: any partial failure
+        // collapses to empty. Drop the `collationId` field name on the
+        // element class; the walker should refuse to emit a half-truth
+        // even for a populated list.
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+        let inv_addr = install_scenario(&mut mem, &[(100_060, 99)]);
+        let inv_class_bytes =
+            read_inventory_class_bytes(&mem, inv_addr).ok_or("read inv class bytes")?;
+
+        // Replace the element-class fields name string ("collationId")
+        // with a name that find_by_name will not match. The element
+        // class lives at 0x600_000 with a name pointer at 0x620_000.
+        let bogus_name = b"notCollationId\0".to_vec();
+        mem.replace(0x620_000, bogus_name);
+
+        let rows = read_boosters(&offsets, &inv_class_bytes, inv_addr, |a, l| mem.read(a, l));
+        assert!(
+            rows.is_empty(),
+            "loud-failure rule: any partial failure collapses to empty"
+        );
+        Ok(())
     }
 }

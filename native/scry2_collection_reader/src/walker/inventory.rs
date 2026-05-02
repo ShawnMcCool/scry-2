@@ -16,7 +16,7 @@
 //! | `vaultProgress` | progress toward the next vault opening (0–100 %) |
 //!
 //! Per spike 5 every one of these is a literal field name (no
-//! `<...>k__BackingField` decoration), so `field::find_by_name`
+//! `<...>k__BackingField` decoration), so `field::find_field_by_name`
 //! resolves each with its exact-match pass.
 //!
 //! Wildcard counts and currencies are 32-bit little-endian integers.
@@ -27,8 +27,8 @@
 //! C# compiler inserts ahead of the 8-byte aligned double.
 //! Confirmed against MTGA's live UI on 2026-04-25.
 
-use super::field::{self, ResolvedField};
-use super::mono::{self, MonoOffsets};
+use super::instance_field;
+use super::mono::MonoOffsets;
 
 /// Snapshot of one `ClientPlayerInventory` read.
 ///
@@ -73,30 +73,25 @@ pub const FIELD_NAMES: [&str; 7] = [
 pub fn read_inventory<F>(
     offsets: &MonoOffsets,
     class_bytes: &[u8],
-    class_base: usize,
     object_remote_addr: u64,
     read_mem: F,
 ) -> Option<InventoryValues>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    // First six fields: 32-bit integers.
     let mut values = [0i32; 6];
     for (i, name) in FIELD_NAMES.iter().take(6).enumerate() {
-        values[i] = resolve_and_read_i32(
+        values[i] = instance_field::read_instance_i32(
             offsets,
             class_bytes,
-            class_base,
             object_remote_addr,
             name,
             &read_mem,
         )?;
     }
-    // vaultProgress is a System.Double.
-    let vault_progress = resolve_and_read_f64(
+    let vault_progress = instance_field::read_instance_f64(
         offsets,
         class_bytes,
-        class_base,
         object_remote_addr,
         "vaultProgress",
         &read_mem,
@@ -112,107 +107,16 @@ where
     })
 }
 
-fn resolve_and_read_i32<F>(
-    offsets: &MonoOffsets,
-    class_bytes: &[u8],
-    class_base: usize,
-    object_remote_addr: u64,
-    field_name: &str,
-    read_mem: &F,
-) -> Option<i32>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let resolved: ResolvedField =
-        field::find_by_name(offsets, class_bytes, class_base, field_name, read_mem)?;
-    if resolved.is_static || resolved.offset < 0 {
-        return None;
-    }
-    let value_addr = object_remote_addr.checked_add(resolved.offset as u64)?;
-    let bytes = read_mem(value_addr, 4)?;
-    mono::read_u32(&bytes, 0, 0).map(|v| v as i32)
-}
-
-fn resolve_and_read_f64<F>(
-    offsets: &MonoOffsets,
-    class_bytes: &[u8],
-    class_base: usize,
-    object_remote_addr: u64,
-    field_name: &str,
-    read_mem: &F,
-) -> Option<f64>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let resolved: ResolvedField =
-        field::find_by_name(offsets, class_bytes, class_base, field_name, read_mem)?;
-    if resolved.is_static || resolved.offset < 0 {
-        return None;
-    }
-    let value_addr = object_remote_addr.checked_add(resolved.offset as u64)?;
-    let bytes = read_mem(value_addr, 8)?;
-    mono::read_u64(&bytes, 0, 0).map(f64::from_bits)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::walker::mono::MONO_CLASS_FIELD_SIZE;
+    use crate::walker::mono::{self, MONO_CLASS_FIELD_SIZE};
+    use crate::walker::test_support::{make_class_def, make_type_block, FakeMem};
 
-    /// FakeMem that honours `(addr + offset, len) → slice_of_block`
-    /// lookups, picking the block whose base most closely precedes
-    /// `addr`.
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
-
-    /// Build the MonoClassDef buffer for an inventory class. `fields_ptr`
-    /// and `field_count` reflect the array the test will populate.
-    fn make_class_def(fields_ptr: u64, field_count: u32) -> Vec<u8> {
-        let offsets = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; 0x110];
-        buf[offsets.class_fields..offsets.class_fields + 8]
-            .copy_from_slice(&fields_ptr.to_le_bytes());
-        buf[offsets.class_def_field_count..offsets.class_def_field_count + 4]
-            .copy_from_slice(&field_count.to_le_bytes());
-        buf
-    }
-
-    /// Build a 32-byte MonoClassField entry.
+    /// Local helper: 3-arg field-entry shape (no parent_ptr — tests
+    /// here don't read it). Wraps the canonical 4-arg builder.
     fn make_field_entry(name_ptr: u64, type_ptr: u64, offset: i32) -> Vec<u8> {
-        let o = MonoOffsets::mtga_default();
-        let mut v = vec![0u8; MONO_CLASS_FIELD_SIZE];
-        v[o.field_type..o.field_type + 8].copy_from_slice(&type_ptr.to_le_bytes());
-        v[o.field_name..o.field_name + 8].copy_from_slice(&name_ptr.to_le_bytes());
-        v[o.field_offset..o.field_offset + 4].copy_from_slice(&(offset as u32).to_le_bytes());
-        v
-    }
-
-    /// Build a 16-byte MonoType block (non-static).
-    fn make_type_block(attrs: u16) -> Vec<u8> {
-        let mut v = vec![0u8; 16];
-        v[8..12].copy_from_slice(&(attrs as u32).to_le_bytes());
-        v
+        crate::walker::test_support::make_field_entry(name_ptr, type_ptr, 0, offset)
     }
 
     /// Populate FakeMem with the seven required inventory fields at
@@ -281,7 +185,7 @@ mod tests {
         let class_bytes =
             populate_inventory(&mut mem, int_field_offsets, 0x30, 30.1, object_addr);
 
-        let inv = read_inventory(&offsets, &class_bytes, 0, object_addr, |a, l| {
+        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| {
             mem.read(a, l)
         })
         .ok_or("all seven fields should resolve")?;
@@ -329,7 +233,7 @@ mod tests {
         mem.add(object_addr, vec![0u8; 0x40]);
 
         let class_bytes = make_class_def(fields_array_addr, present_names.len() as u32);
-        let inv = read_inventory(&offsets, &class_bytes, 0, object_addr, |a, l| {
+        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| {
             mem.read(a, l)
         });
         assert_eq!(inv, None);
@@ -373,7 +277,7 @@ mod tests {
         mem.add(object_addr, vec![0u8; 0x40]);
 
         let class_bytes = make_class_def(fields_array_addr, FIELD_NAMES.len() as u32);
-        let inv = read_inventory(&offsets, &class_bytes, 0, object_addr, |a, l| {
+        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| {
             mem.read(a, l)
         });
         assert_eq!(inv, None);
@@ -411,7 +315,7 @@ mod tests {
         mem.add(object_addr, vec![0u8; 0x40]);
 
         let class_bytes = make_class_def(fields_array_addr, FIELD_NAMES.len() as u32);
-        let inv = read_inventory(&offsets, &class_bytes, 0, object_addr, |a, l| {
+        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| {
             mem.read(a, l)
         });
         assert_eq!(inv, None);

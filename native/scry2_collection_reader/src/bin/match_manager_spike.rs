@@ -108,7 +108,7 @@ fn main() -> ExitCode {
 
     // Resolve PAPA._instance — handles both literal `_instance` and
     // `<Instance>k__BackingField` per spike 5.
-    let instance_field = match field::find_by_name(&offsets, &papa_bytes, 0, "_instance", read_mem)
+    let instance_field = match field::find_field_by_name(&offsets, &papa_bytes, "_instance", read_mem)
     {
         Some(f) => f,
         None => {
@@ -154,7 +154,7 @@ fn main() -> ExitCode {
     // variants are tried by find_by_name automatically.
     println!("\n# Probing PAPA for MatchManager");
     for candidate in &["MatchManager", "_matchManager", "matchManager"] {
-        match field::find_by_name(&offsets, &papa_bytes, 0, candidate, read_mem) {
+        match field::find_field_by_name(&offsets, &papa_bytes, candidate, read_mem) {
             Some(f) => {
                 println!(
                     "  candidate '{}' → resolved as '{}' (offset 0x{:04x}, {})",
@@ -172,7 +172,7 @@ fn main() -> ExitCode {
 
     // Use the canonical name MatchManager and proceed if it resolves
     // as an instance field.
-    let mm_field = match field::find_by_name(&offsets, &papa_bytes, 0, "MatchManager", read_mem) {
+    let mm_field = match field::find_field_by_name(&offsets, &papa_bytes, "MatchManager", read_mem) {
         Some(f) if !f.is_static => f,
         Some(f) => {
             println!(
@@ -234,7 +234,7 @@ fn main() -> ExitCode {
         "_opponentInfo",
         "_event",
     ] {
-        match field::find_by_name(&offsets, &mm_class_bytes, 0, candidate, read_mem) {
+        match field::find_field_by_name(&offsets, &mm_class_bytes, candidate, read_mem) {
             Some(f) => println!(
                 "  '{}' → resolved as '{}' (offset 0x{:04x}, {})",
                 candidate,
@@ -250,7 +250,7 @@ fn main() -> ExitCode {
     // the runtime class field manifest one level deeper.
     let mut player_addrs: Vec<(&str, u64)> = Vec::new();
     for candidate in &["LocalPlayerInfo", "OpponentInfo", "Event"] {
-        if let Some(f) = field::find_by_name(&offsets, &mm_class_bytes, 0, candidate, read_mem) {
+        if let Some(f) = field::find_field_by_name(&offsets, &mm_class_bytes, candidate, read_mem) {
             if f.is_static {
                 continue;
             }
@@ -314,7 +314,7 @@ fn main() -> ExitCode {
             ("IsWotc", 1),
         ] {
             let resolved =
-                match field::find_by_name(&offsets, &player_bytes, 0, name, read_mem) {
+                match field::find_field_by_name(&offsets, &player_bytes, name, read_mem) {
                     Some(r) if !r.is_static => r,
                     _ => {
                         println!("  {} → not resolved", name);
@@ -362,7 +362,7 @@ fn main() -> ExitCode {
             None => continue,
         };
         for inner in &["_deckCards", "_sideboardCards", "CommanderGrpIds", "_screenName"] {
-            let f = match field::find_by_name(&offsets, &player_bytes, 0, inner, read_mem) {
+            let f = match field::find_field_by_name(&offsets, &player_bytes, inner, read_mem) {
                 Some(f) if !f.is_static => f,
                 _ => continue,
             };
@@ -404,7 +404,7 @@ fn main() -> ExitCode {
             // the class looks like List`1.
             if cls_name.starts_with("List`1") {
                 if let Some(size_field) =
-                    field::find_by_name(&offsets, &inner_bytes, 0, "_size", read_mem)
+                    field::find_field_by_name(&offsets, &inner_bytes, "_size", read_mem)
                 {
                     let sz = read_mem(inner_addr + size_field.offset as u64, 4)
                         .and_then(|b| {
@@ -418,7 +418,7 @@ fn main() -> ExitCode {
                     println!("    List._size = {}", sz);
                 }
                 if let Some(items_field) =
-                    field::find_by_name(&offsets, &inner_bytes, 0, "_items", read_mem)
+                    field::find_field_by_name(&offsets, &inner_bytes, "_items", read_mem)
                 {
                     let items_ptr = read_mem(inner_addr + items_field.offset as u64, 8)
                         .and_then(|b| read_u64(&b))
@@ -473,7 +473,7 @@ fn main() -> ExitCode {
         "_greInterface",
         "GREInterface",
     ] {
-        let f = match field::find_by_name(&offsets, &mm_class_bytes, 0, inner, read_mem) {
+        let f = match field::find_field_by_name(&offsets, &mm_class_bytes, inner, read_mem) {
             Some(f) if !f.is_static => f,
             Some(_) => {
                 println!("  '{}' is STATIC — skipping", inner);
@@ -519,7 +519,7 @@ fn main() -> ExitCode {
 
         if cls_name.starts_with("List`1") {
             if let Some(size_field) =
-                field::find_by_name(&offsets, &target_bytes, 0, "_size", read_mem)
+                field::find_field_by_name(&offsets, &target_bytes, "_size", read_mem)
             {
                 let sz = read_mem(target + size_field.offset as u64, 4)
                     .and_then(|b| {
@@ -533,7 +533,7 @@ fn main() -> ExitCode {
                 println!("    List._size = {}", sz);
             }
             if let Some(items_field) =
-                field::find_by_name(&offsets, &target_bytes, 0, "_items", read_mem)
+                field::find_field_by_name(&offsets, &target_bytes, "_items", read_mem)
             {
                 let items_ptr = read_mem(target + items_field.offset as u64, 8)
                     .and_then(|b| read_u64(&b))
@@ -621,7 +621,7 @@ fn main() -> ExitCode {
     let anchor_field = ["Instance", "_instance", "<Instance>k__BackingField"]
         .iter()
         .find_map(|name| {
-            field::find_by_name(&offsets, &scene_class_bytes, 0, name, read_mem)
+            field::find_field_by_name(&offsets, &scene_class_bytes, name, read_mem)
                 .map(|f| (*name, f))
         });
 
@@ -687,7 +687,7 @@ fn main() -> ExitCode {
 
     // Try to follow _gameManager → CardHolderManager → _provider → PlayerTypeMap.
     let game_manager_addr =
-        match field::find_by_name(&offsets, &scene_runtime_bytes, 0, "_gameManager", read_mem) {
+        match field::find_field_by_name(&offsets, &scene_runtime_bytes, "_gameManager", read_mem) {
             Some(f) if !f.is_static => {
                 read_mem(scene_singleton + f.offset as u64, 8).and_then(|b| read_u64(&b))
             }
@@ -719,7 +719,7 @@ fn main() -> ExitCode {
 
     // CardHolderManager.
     let chm_addr =
-        match field::find_by_name(&offsets, &gm_bytes, 0, "CardHolderManager", read_mem) {
+        match field::find_field_by_name(&offsets, &gm_bytes, "CardHolderManager", read_mem) {
             Some(f) if !f.is_static => {
                 read_mem(game_manager_addr + f.offset as u64, 8).and_then(|b| read_u64(&b))
             }
@@ -748,7 +748,7 @@ fn main() -> ExitCode {
 
     // _provider → PlayerTypeMap.
     let provider_addr =
-        match field::find_by_name(&offsets, &chm_bytes, 0, "_provider", read_mem) {
+        match field::find_field_by_name(&offsets, &chm_bytes, "_provider", read_mem) {
             Some(f) if !f.is_static => {
                 read_mem(chm_addr + f.offset as u64, 8).and_then(|b| read_u64(&b))
             }
@@ -774,7 +774,7 @@ fn main() -> ExitCode {
     dump_class(&offsets, prov_class, &prov_bytes, &read_mem);
 
     let ptm_addr =
-        match field::find_by_name(&offsets, &prov_bytes, 0, "PlayerTypeMap", read_mem) {
+        match field::find_field_by_name(&offsets, &prov_bytes, "PlayerTypeMap", read_mem) {
             Some(f) if !f.is_static => {
                 read_mem(provider_addr + f.offset as u64, 8).and_then(|b| read_u64(&b))
             }
@@ -1038,7 +1038,7 @@ where
 
         // If it's a List<T>, peek _size and _items.
         if inner_name.starts_with("List`1") {
-            let size = field::find_by_name(offsets, &inner_class_bytes, 0, "_size", read_mem)
+            let size = field::find_field_by_name(offsets, &inner_class_bytes, "_size", read_mem)
                 .and_then(|f| read_mem(inner + f.offset as u64, 4))
                 .and_then(|b| {
                     if b.len() < 4 {
@@ -1048,7 +1048,7 @@ where
                     }
                 })
                 .unwrap_or(-1);
-            let items_ptr = field::find_by_name(offsets, &inner_class_bytes, 0, "_items", read_mem)
+            let items_ptr = field::find_field_by_name(offsets, &inner_class_bytes, "_items", read_mem)
                 .and_then(|f| read_mem(inner + f.offset as u64, 8))
                 .and_then(|b| read_u64(&b))
                 .unwrap_or(0);
@@ -1184,7 +1184,7 @@ fn drill_lists_inside<F>(
             continue;
         }
 
-        let size = field::find_by_name(offsets, &inner_class_bytes, 0, "_size", read_mem)
+        let size = field::find_field_by_name(offsets, &inner_class_bytes, "_size", read_mem)
             .and_then(|f| read_mem(inner + f.offset as u64, 4))
             .and_then(|b| {
                 if b.len() < 4 {
@@ -1204,7 +1204,7 @@ fn drill_lists_inside<F>(
             continue;
         }
 
-        let items_ptr = field::find_by_name(offsets, &inner_class_bytes, 0, "_items", read_mem)
+        let items_ptr = field::find_field_by_name(offsets, &inner_class_bytes, "_items", read_mem)
             .and_then(|f| read_mem(inner + f.offset as u64, 8))
             .and_then(|b| read_u64(&b))
             .unwrap_or(0);
@@ -1531,7 +1531,7 @@ where
 {
     for img in images {
         if let Some(addr) =
-            scry2_collection_reader::walker::class_lookup::find_by_name(offsets, *img, target, read_mem)
+            scry2_collection_reader::walker::class_lookup::find_class_by_name(offsets, *img, target, read_mem)
         {
             return Some(addr);
         }

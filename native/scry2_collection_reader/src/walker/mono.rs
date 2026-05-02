@@ -32,129 +32,20 @@ pub const POINTER_SIZE: usize = 8;
 /// on 2026-04-25.
 pub const MONO_CLASS_FIELD_SIZE: usize = 32;
 
+/// Bytes to read for each `MonoClassDef` blob the walker consumes.
+/// Must cover:
+/// - `MonoClass.runtime_info` @ `0xd0`
+/// - `MonoClass.vtable_size`  @ `0x5c`
+/// - `MonoClass.fields`       @ `0x98`
+/// - `MonoClassDef.field_count` @ `0x100`
+///
+/// 0x110 is the smallest power-of-16 size that covers all four.
+pub const CLASS_DEF_BLOB_LEN: usize = 0x110;
+
 /// Size of one `Dictionary<int, int>.Entry` struct on .NET reference
 /// types: `(hashCode: i32, next: i32, key: i32, value: i32)` — four
 /// 32-bit words.
 pub const DICT_INT_INT_ENTRY_SIZE: usize = 16;
-
-/// Identifier for each struct offset the walker consumes. The variant
-/// name encodes the owning Mono struct and field; doc comments note
-/// each offset's verification evidence on MTGA's 2026-04-25 build.
-/// Every offset is confirmed via `offsets_probe/` unless marked
-/// otherwise.
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum OffsetKey {
-    /// `MonoClass.fields` (pointer to `MonoClassField` array).
-    /// Offset `0x98`, matches `[rdi+0x98]` load in
-    /// `mono_class_get_field_from_name`.
-    ClassFields,
-    /// `MonoClass.runtime_info` (pointer to `MonoClassRuntimeInfo`).
-    /// Offset `0xd0`, matches `mov rsi,[rdi+0xd0]` load in
-    /// `mono_class_vtable`'s non-failure path.
-    ClassRuntimeInfo,
-    /// `MonoClass` flags bitfield cluster (one u32 covering
-    /// `packing_size`, `ghcimpl`, `has_finalize`, `delegate`, …,
-    /// `has_failure` at bit 20). Offset `0x28`, matches
-    /// `test dword [rdi+0x28], 0x100000` (= `has_failure` check) in
-    /// `mono_class_vtable`.
-    ClassFlagsCluster,
-    /// `MonoClassDef.field_count` (u32). Offset `0x100` from the start
-    /// of the enclosing `MonoClassDef` (which embeds `MonoClass` at
-    /// offset 0). Only valid when `MonoClass.class_kind` indicates a
-    /// `MonoClassDef`-shaped layout.
-    ClassDefFieldCount,
-    /// `MonoClassField.type` (`MonoType *`). Offset `0x00`.
-    FieldType,
-    /// `MonoClassField.name` (`const char *`). Offset `0x08`.
-    FieldName,
-    /// `MonoClassField.parent` (`MonoClass *`). Offset `0x10`.
-    FieldParent,
-    /// `MonoClassField.offset` (i32 — instance byte offset or static
-    /// offset into the vtable's static storage). Offset `0x18`.
-    FieldOffset,
-    /// `MonoType.attrs` — the u32 bitfield word at offset `0x08` of
-    /// `MonoType`. Low 16 bits are the ECMA-335 field-attribute flags
-    /// (`FIELD_ATTRIBUTE_STATIC = 0x10`, etc.); bits 16-23 are
-    /// `MonoTypeEnum type`; bits 24-26 are `has_cmods / byref /
-    /// pinned`.
-    TypeAttrs,
-    /// `MonoArray.max_length` — `uintptr_t` capacity of the array.
-    /// Offset `0x18` on MBE / MSVC x86-64.
-    ArrayMaxLength,
-    /// `MonoArray.vector` — start of element storage. Offset `0x20`.
-    ArrayVector,
-    /// `MonoClass.vtable_size` (i32, slot count). Offset `0x5c`. The
-    /// static-storage pointer lives at `vtable[vtable_size]` — i.e. at
-    /// the end of `MonoVTable`'s flexible method-slot array.
-    ClassVtableSize,
-    /// `MonoDomain.domain_id` (i32). Offset `0x94`, verified by
-    /// `movsxd rcx,[r14+0x94]` in `mono_class_vtable`'s fast path.
-    DomainId,
-    /// `MonoClassRuntimeInfo.max_domain` (u16). Offset `0x00` — first
-    /// field of the struct, verified by `movzx eax, WORD PTR [rsi]`
-    /// bounds check in `mono_class_vtable`.
-    RuntimeInfoMaxDomain,
-    /// `MonoClassRuntimeInfo.domain_vtables` — start of the
-    /// `MonoVTable *` array indexed by `domain_id`. Offset `0x08`,
-    /// verified by `[rsi+rcx*8+0x8]` load in `mono_class_vtable`.
-    RuntimeInfoDomainVtables,
-    /// `MonoVTable.vtable` — start of the flexible method-slot
-    /// array. Offset `0x48` (end of the fixed header fields). The
-    /// static-storage slot lives at
-    /// `vtable_method_slots + vtable_size * 8`.
-    VtableMethodSlots,
-    /// `MonoDomain.domain_assemblies` (`GSList *` head). Offset
-    /// `0xa0`, verified by `mov r14,[r13+0xa0]` in
-    /// `mono_domain_assembly_open_internal` followed by the
-    /// `[r14]; [r14+0x8]` GSList loop, plus source order from
-    /// `domain-internals.h` (8-byte aligned slot after `domain_id`
-    /// at `0x94` and `shadow_serial` at `0x98`).
-    DomainAssemblies,
-    /// `GSList.data` (gpointer to the node's payload — a
-    /// `MonoAssembly *` when iterating `domain_assemblies`).
-    /// Offset `0x00`, verified by `mov rsi,[r14]` against the
-    /// GSList head reload in `mono_domain_assembly_open_internal`.
-    GSListData,
-    /// `GSList.next` (pointer to the next node, or NULL at the end
-    /// of the list). Offset `0x08`, verified by
-    /// `mov r14,[r14+0x8]` in the same loop.
-    GSListNext,
-    /// `MonoAssembly.aname.name` — the assembly short name.
-    /// Composite offset: `aname` lives at `MonoAssembly+0x10` and
-    /// its first field is `name` (a `const char *`), so reading
-    /// `[asm+0x10]` yields the name pointer directly. Verified by
-    /// `mov rax,[rbx+0x10]` (rbx = MonoAssembly *) in
-    /// `mono_domain_assembly_open_internal`.
-    AssemblyAnameName,
-    /// `MonoAssembly.image` (`MonoImage *`). Offset `0x60`,
-    /// verified by `mov rsi,[rsi+0x60]` reading the image pointer
-    /// after dereferencing a GSList node's data slot.
-    AssemblyImage,
-    /// `MonoClass.name` (`const char *`). Offset `0x48`, verified
-    /// by `offsets_probe/dump.c`.
-    ClassName,
-    /// `MonoImage.class_cache` — start of the embedded
-    /// `MonoInternalHashTable`. Offset `0x4d0`, verified by
-    /// `lea rcx, [r13+0x4d0]; call mono_internal_hash_table_lookup`
-    /// at `1800c83b3..1800c83bc` in MTGA's mono DLL.
-    ImageClassCache,
-    /// `MonoInternalHashTable.size` (i32, bucket count). Offset
-    /// `0x18`, verified by `div DWORD PTR [rdi+0x18]` in
-    /// `mono_internal_hash_table_lookup` (rdi = table).
-    HashTableSize,
-    /// `MonoInternalHashTable.num_entries` (i32). Offset `0x1c`,
-    /// per dumper (source order between `size` at 0x18 and
-    /// `table` at 0x20; both gint with no padding).
-    HashTableNumEntries,
-    /// `MonoInternalHashTable.table` (`gpointer *` — heap-allocated
-    /// array of `size` chain heads). Offset `0x20`, verified by
-    /// `mov rbx, [rdi+0x20]` in `mono_internal_hash_table_lookup`.
-    HashTableTable,
-    /// `MonoClassDef.next_class_cache` — chain pointer for entries
-    /// in `MonoImage.class_cache`. Offset `0x108`, verified by the
-    /// `offsets_probe/` dumper.
-    ClassDefNextClassCache,
-}
 
 /// ECMA-335 `FIELD_ATTRIBUTE_STATIC` flag — set on a field's `type`
 /// to mark it as a static field rather than an instance field. Used
@@ -163,35 +54,117 @@ pub enum OffsetKey {
 pub const MONO_FIELD_ATTR_STATIC: u16 = 0x10;
 
 /// Table of struct offsets the walker uses. Constructed per build; see
-/// `mtga_default` for verified values on MTGA's 2026-04-25 build.
+/// [`MonoOffsets::mtga_default`] for verified values on MTGA's
+/// 2026-04-25 build.
+///
+/// Field names mirror Mono's header-struct paths verbatim
+/// (`gslist_*`, `aname_*`, etc. are not abbreviations — they're the
+/// names Mono itself uses).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct MonoOffsets {
+    /// `MonoClass.fields` (pointer to `MonoClassField` array).
+    /// Verified at `0x98`: matches `[rdi+0x98]` load in
+    /// `mono_class_get_field_from_name`.
     pub class_fields: usize,
+    /// `MonoClass.runtime_info` (pointer to `MonoClassRuntimeInfo`).
+    /// Verified at `0xd0`: matches `mov rsi,[rdi+0xd0]` in
+    /// `mono_class_vtable`'s non-failure path.
     pub class_runtime_info: usize,
+    /// `MonoClass` flags bitfield cluster (one u32 covering
+    /// `packing_size`, `ghcimpl`, `has_finalize`, `delegate`, …,
+    /// `has_failure` at bit 20). Verified at `0x28`: matches
+    /// `test dword [rdi+0x28], 0x100000` (the `has_failure` check)
+    /// in `mono_class_vtable`.
     pub class_flags_cluster: usize,
+    /// `MonoClassDef.field_count` (u32). Verified at `0x100` from the
+    /// start of the enclosing `MonoClassDef` (which embeds `MonoClass`
+    /// at offset 0). Only valid when `MonoClass.class_kind` indicates
+    /// a `MonoClassDef`-shaped layout.
     pub class_def_field_count: usize,
+    /// `MonoClassField.type` (`MonoType *`). Offset `0x00`.
     pub field_type: usize,
+    /// `MonoClassField.name` (`const char *`). Offset `0x08`.
     pub field_name: usize,
+    /// `MonoClassField.parent` (`MonoClass *`). Offset `0x10`.
     pub field_parent: usize,
+    /// `MonoClassField.offset` (i32 — instance byte offset or static
+    /// offset into the vtable's static storage). Offset `0x18`.
     pub field_offset: usize,
+    /// `MonoType.attrs` — the u32 bitfield word at offset `0x08` of
+    /// `MonoType`. Low 16 bits are the ECMA-335 field-attribute flags
+    /// ([`MONO_FIELD_ATTR_STATIC`] = 0x10, etc.); bits 16-23 are
+    /// `MonoTypeEnum type`; bits 24-26 are `has_cmods / byref /
+    /// pinned`.
     pub type_attrs: usize,
+    /// `MonoArray.max_length` — `uintptr_t` capacity of the array.
+    /// Offset `0x18` on MBE / MSVC x86-64.
     pub array_max_length: usize,
+    /// `MonoArray.vector` — start of element storage. Offset `0x20`.
     pub array_vector: usize,
+    /// `MonoClass.vtable_size` (i32, slot count). Verified at `0x5c`.
+    /// The static-storage pointer lives at `vtable[vtable_size]` —
+    /// i.e. at the end of `MonoVTable`'s flexible method-slot array.
     pub class_vtable_size: usize,
+    /// `MonoDomain.domain_id` (i32). Verified at `0x94`:
+    /// `movsxd rcx,[r14+0x94]` in `mono_class_vtable`'s fast path.
     pub domain_id: usize,
+    /// `MonoClassRuntimeInfo.max_domain` (u16). Offset `0x00` — first
+    /// field of the struct, verified by `movzx eax, WORD PTR [rsi]`
+    /// bounds check in `mono_class_vtable`.
     pub runtime_info_max_domain: usize,
+    /// `MonoClassRuntimeInfo.domain_vtables` — start of the
+    /// `MonoVTable *` array indexed by `domain_id`. Verified at
+    /// `0x08`: `[rsi+rcx*8+0x8]` load in `mono_class_vtable`.
     pub runtime_info_domain_vtables: usize,
+    /// `MonoVTable.vtable` — start of the flexible method-slot array.
+    /// Verified at `0x48` (end of the fixed header fields). The
+    /// static-storage slot lives at
+    /// `vtable_method_slots + vtable_size * 8`.
     pub vtable_method_slots: usize,
+    /// `MonoDomain.domain_assemblies` (`GSList *` head). Verified at
+    /// `0xa0`: `mov r14,[r13+0xa0]` in
+    /// `mono_domain_assembly_open_internal`, plus source order from
+    /// `domain-internals.h`.
     pub domain_assemblies: usize,
+    /// `GSList.data` (gpointer to the node's payload — a
+    /// `MonoAssembly *` when iterating `domain_assemblies`).
+    /// Offset `0x00`: `mov rsi,[r14]` against the GSList head reload
+    /// in `mono_domain_assembly_open_internal`.
     pub gslist_data: usize,
+    /// `GSList.next` (pointer to the next node, or NULL at the end of
+    /// the list). Offset `0x08`: `mov r14,[r14+0x8]` in the same loop.
     pub gslist_next: usize,
+    /// `MonoAssembly.aname.name` — the assembly short name. Composite
+    /// offset: `aname` lives at `MonoAssembly+0x10` and its first
+    /// field is `name` (a `const char *`), so reading `[asm+0x10]`
+    /// yields the name pointer directly. Verified by
+    /// `mov rax,[rbx+0x10]` in `mono_domain_assembly_open_internal`.
     pub assembly_aname_name: usize,
+    /// `MonoAssembly.image` (`MonoImage *`). Verified at `0x60`:
+    /// `mov rsi,[rsi+0x60]` reading the image pointer after
+    /// dereferencing a GSList node's data slot.
     pub assembly_image: usize,
+    /// `MonoClass.name` (`const char *`). Verified at `0x48` by
+    /// `offsets_probe/dump.c`.
     pub class_name: usize,
+    /// `MonoImage.class_cache` — start of the embedded
+    /// `MonoInternalHashTable`. Verified at `0x4d0`:
+    /// `lea rcx, [r13+0x4d0]; call mono_internal_hash_table_lookup`.
     pub image_class_cache: usize,
+    /// `MonoInternalHashTable.size` (i32, bucket count). Verified at
+    /// `0x18`: `div DWORD PTR [rdi+0x18]` in
+    /// `mono_internal_hash_table_lookup`.
     pub hash_table_size: usize,
+    /// `MonoInternalHashTable.num_entries` (i32). Offset `0x1c` per
+    /// dumper.
     pub hash_table_num_entries: usize,
+    /// `MonoInternalHashTable.table` (`gpointer *` — heap-allocated
+    /// array of `size` chain heads). Verified at `0x20`:
+    /// `mov rbx, [rdi+0x20]` in `mono_internal_hash_table_lookup`.
     pub hash_table_table: usize,
+    /// `MonoClassDef.next_class_cache` — chain pointer for entries in
+    /// `MonoImage.class_cache`. Offset `0x108` per `offsets_probe/`
+    /// dumper.
     pub class_def_next_class_cache: usize,
 }
 
@@ -237,39 +210,6 @@ impl MonoOffsets {
             hash_table_num_entries: 0x1c,
             hash_table_table: 0x20,
             class_def_next_class_cache: 0x108,
-        }
-    }
-
-    /// Return the offset for a named struct field.
-    pub fn get(&self, key: OffsetKey) -> usize {
-        match key {
-            OffsetKey::ClassFields => self.class_fields,
-            OffsetKey::ClassRuntimeInfo => self.class_runtime_info,
-            OffsetKey::ClassFlagsCluster => self.class_flags_cluster,
-            OffsetKey::ClassDefFieldCount => self.class_def_field_count,
-            OffsetKey::FieldType => self.field_type,
-            OffsetKey::FieldName => self.field_name,
-            OffsetKey::FieldParent => self.field_parent,
-            OffsetKey::FieldOffset => self.field_offset,
-            OffsetKey::TypeAttrs => self.type_attrs,
-            OffsetKey::ArrayMaxLength => self.array_max_length,
-            OffsetKey::ArrayVector => self.array_vector,
-            OffsetKey::ClassVtableSize => self.class_vtable_size,
-            OffsetKey::DomainId => self.domain_id,
-            OffsetKey::RuntimeInfoMaxDomain => self.runtime_info_max_domain,
-            OffsetKey::RuntimeInfoDomainVtables => self.runtime_info_domain_vtables,
-            OffsetKey::VtableMethodSlots => self.vtable_method_slots,
-            OffsetKey::DomainAssemblies => self.domain_assemblies,
-            OffsetKey::GSListData => self.gslist_data,
-            OffsetKey::GSListNext => self.gslist_next,
-            OffsetKey::AssemblyAnameName => self.assembly_aname_name,
-            OffsetKey::AssemblyImage => self.assembly_image,
-            OffsetKey::ClassName => self.class_name,
-            OffsetKey::ImageClassCache => self.image_class_cache,
-            OffsetKey::HashTableSize => self.hash_table_size,
-            OffsetKey::HashTableNumEntries => self.hash_table_num_entries,
-            OffsetKey::HashTableTable => self.hash_table_table,
-            OffsetKey::ClassDefNextClassCache => self.class_def_next_class_cache,
         }
     }
 }
@@ -408,6 +348,62 @@ pub fn array_max_length(offsets: &MonoOffsets, bytes: &[u8], array_base: usize) 
 pub fn array_vector_addr(offsets: &MonoOffsets, array_remote_addr: u64) -> Option<u64> {
     array_remote_addr.checked_add(offsets.array_vector as u64)
 }
+
+/// Decode a `MonoString` at `str_addr` into a Rust `String`.
+///
+/// Layout: `vtable(8) + sync(8) + length:i32 + chars[length]` where
+/// `chars` is UTF-16 LE and `length` is the code-unit count.
+///
+/// Returns `None` when:
+/// - `str_addr` is null (caller likely already checked, but we re-check),
+/// - the header is unreadable or short,
+/// - `length` exceeds `max_chars` (sanity guard against torn reads —
+///   pass 1024 for screen names, larger for free-form text), or
+/// - the chars blob is unreadable / not valid UTF-16.
+///
+/// Returns `Some("")` for a valid zero-length string.
+pub fn read_mono_string<F>(str_addr: u64, max_chars: usize, read_mem: &F) -> Option<String>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>>,
+{
+    if str_addr == 0 {
+        return None;
+    }
+    let header = read_mem(str_addr, MONO_STRING_HEADER_LEN)?;
+    if header.len() < MONO_STRING_HEADER_LEN {
+        return None;
+    }
+    let length = i32::from_le_bytes([
+        header[MONO_STRING_LENGTH_OFFSET],
+        header[MONO_STRING_LENGTH_OFFSET + 1],
+        header[MONO_STRING_LENGTH_OFFSET + 2],
+        header[MONO_STRING_LENGTH_OFFSET + 3],
+    ])
+    .max(0) as usize;
+    if length == 0 {
+        return Some(String::new());
+    }
+    if length > max_chars {
+        return None;
+    }
+    let chars_addr = str_addr.checked_add(MONO_STRING_CHARS_OFFSET as u64)?;
+    let chars_bytes = read_mem(chars_addr, length.checked_mul(2)?)?;
+    if chars_bytes.len() < length * 2 {
+        return None;
+    }
+    let utf16: Vec<u16> = chars_bytes
+        .chunks_exact(2)
+        .map(|c| u16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    String::from_utf16(&utf16).ok()
+}
+
+/// `MonoString.length` lives at offset `0x10` (after `vtable` and `sync`).
+const MONO_STRING_LENGTH_OFFSET: usize = 0x10;
+/// `MonoString` header length — `vtable + sync + length:i32`.
+const MONO_STRING_HEADER_LEN: usize = 0x14;
+/// First UTF-16 code unit of a `MonoString` lives at `0x14`.
+const MONO_STRING_CHARS_OFFSET: usize = 0x14;
 
 /// Read `MonoClass.vtable_size` (i32 number of method slots) at
 /// `class_base`.
@@ -612,66 +608,6 @@ mod tests {
     fn read_ptr_arithmetic_overflow_is_none() {
         let buf = vec![0u8; 8];
         assert_eq!(read_ptr(&buf, usize::MAX, 1), None);
-    }
-
-    #[test]
-    fn offsets_get_returns_configured_value() {
-        let offsets = MonoOffsets {
-            class_fields: 0xaa,
-            class_runtime_info: 0xbb,
-            class_flags_cluster: 0xcc,
-            class_def_field_count: 0xdd,
-            field_type: 0xee,
-            field_name: 0xff,
-            field_parent: 0x11,
-            field_offset: 0x22,
-            type_attrs: 0x33,
-            array_max_length: 0x44,
-            array_vector: 0x55,
-            class_vtable_size: 0x66,
-            domain_id: 0x77,
-            runtime_info_max_domain: 0x88,
-            runtime_info_domain_vtables: 0x99,
-            vtable_method_slots: 0xa1,
-            domain_assemblies: 0xb1,
-            gslist_data: 0xb2,
-            gslist_next: 0xb3,
-            assembly_aname_name: 0xb4,
-            assembly_image: 0xb5,
-            class_name: 0xc1,
-            image_class_cache: 0xc2,
-            hash_table_size: 0xc3,
-            hash_table_num_entries: 0xc4,
-            hash_table_table: 0xc5,
-            class_def_next_class_cache: 0xc6,
-        };
-        assert_eq!(offsets.get(OffsetKey::ClassFields), 0xaa);
-        assert_eq!(offsets.get(OffsetKey::ClassRuntimeInfo), 0xbb);
-        assert_eq!(offsets.get(OffsetKey::ClassFlagsCluster), 0xcc);
-        assert_eq!(offsets.get(OffsetKey::ClassDefFieldCount), 0xdd);
-        assert_eq!(offsets.get(OffsetKey::FieldType), 0xee);
-        assert_eq!(offsets.get(OffsetKey::FieldName), 0xff);
-        assert_eq!(offsets.get(OffsetKey::FieldParent), 0x11);
-        assert_eq!(offsets.get(OffsetKey::FieldOffset), 0x22);
-        assert_eq!(offsets.get(OffsetKey::TypeAttrs), 0x33);
-        assert_eq!(offsets.get(OffsetKey::ArrayMaxLength), 0x44);
-        assert_eq!(offsets.get(OffsetKey::ArrayVector), 0x55);
-        assert_eq!(offsets.get(OffsetKey::ClassVtableSize), 0x66);
-        assert_eq!(offsets.get(OffsetKey::DomainId), 0x77);
-        assert_eq!(offsets.get(OffsetKey::RuntimeInfoMaxDomain), 0x88);
-        assert_eq!(offsets.get(OffsetKey::RuntimeInfoDomainVtables), 0x99);
-        assert_eq!(offsets.get(OffsetKey::VtableMethodSlots), 0xa1);
-        assert_eq!(offsets.get(OffsetKey::DomainAssemblies), 0xb1);
-        assert_eq!(offsets.get(OffsetKey::GSListData), 0xb2);
-        assert_eq!(offsets.get(OffsetKey::GSListNext), 0xb3);
-        assert_eq!(offsets.get(OffsetKey::AssemblyAnameName), 0xb4);
-        assert_eq!(offsets.get(OffsetKey::AssemblyImage), 0xb5);
-        assert_eq!(offsets.get(OffsetKey::ClassName), 0xc1);
-        assert_eq!(offsets.get(OffsetKey::ImageClassCache), 0xc2);
-        assert_eq!(offsets.get(OffsetKey::HashTableSize), 0xc3);
-        assert_eq!(offsets.get(OffsetKey::HashTableNumEntries), 0xc4);
-        assert_eq!(offsets.get(OffsetKey::HashTableTable), 0xc5);
-        assert_eq!(offsets.get(OffsetKey::ClassDefNextClassCache), 0xc6);
     }
 
     #[test]

@@ -26,6 +26,7 @@
 //! pass through as `value: 0` and the caller decides whether to skip.
 
 use super::mono::{self, MonoOffsets};
+use super::mono_array;
 
 /// Layout constants for `Dictionary<int, ptr>.Entry` on Mono x86-64.
 pub const DICT_INT_PTR_ENTRY_SIZE: usize = 24;
@@ -39,11 +40,8 @@ pub struct DictPtrEntry {
     pub value: u64,
 }
 
-/// Maximum number of entries the walker will accept from a single
-/// dictionary read. Match-state dictionaries (PlayerTypeMap, zone
-/// maps) are tiny — a hard cap of 1024 is plenty and bounds the
-/// allocation cost on a corrupt `max_length`.
-pub const MAX_DICT_PTR_ENTRIES: u64 = 1024;
+/// Re-export of the centralized cap. Defined in [`super::limits`].
+pub use super::limits::MAX_DICT_INT_PTR_ENTRIES as MAX_DICT_PTR_ENTRIES;
 
 /// Walk a `Dictionary<int, ptr>._entries` `MonoArray` starting at
 /// `array_remote_addr` in the target process.
@@ -63,26 +61,13 @@ pub fn read_int_ptr_entries<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    let header_len = offsets.array_vector;
-    let header = read_mem(array_remote_addr, header_len)?;
-    if header.len() < header_len {
-        return None;
-    }
-    let capacity = mono::array_max_length(offsets, &header, 0)?;
-    if capacity == 0 {
-        return Some(Vec::new());
-    }
-    if capacity > MAX_DICT_PTR_ENTRIES {
-        return None;
-    }
-    let capacity = capacity as usize;
-
-    let vector_addr = mono::array_vector_addr(offsets, array_remote_addr)?;
-    let blob_len = capacity.checked_mul(DICT_INT_PTR_ENTRY_SIZE)?;
-    let blob = read_mem(vector_addr, blob_len)?;
-    if blob.len() < blob_len {
-        return None;
-    }
+    let (capacity, blob) = mono_array::read_array_blob(
+        offsets,
+        array_remote_addr,
+        DICT_INT_PTR_ENTRY_SIZE,
+        MAX_DICT_PTR_ENTRIES,
+        &read_mem,
+    )?;
 
     let mut used = Vec::new();
     for i in 0..capacity {
@@ -132,7 +117,7 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
     let resolved =
-        super::field::find_by_name(offsets, dict_class_bytes, 0, "_entries", read_mem)?;
+        super::field::find_field_by_name(offsets, dict_class_bytes, "_entries", read_mem)?;
     if resolved.is_static || resolved.offset < 0 {
         return None;
     }

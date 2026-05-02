@@ -32,6 +32,7 @@ use super::dict::{self, DictEntry};
 use super::field::{self, ResolvedField};
 use super::inventory::{self, InventoryValues};
 use super::mono::{self, MonoOffsets};
+use super::object;
 use super::vtable;
 
 /// Combined result of a full walk.
@@ -60,7 +61,9 @@ pub struct WalkResult {
 /// Returns `None` on any miss (unresolved field, null pointer,
 /// truncated read, dict cap exceeded, etc.). The walk is
 /// all-or-nothing — no partial snapshots.
-pub fn from_service_wrapper<F>(
+///
+/// Module-private: only `from_papa_class` and tests call this directly.
+pub(super) fn from_service_wrapper<F>(
     offsets: &MonoOffsets,
     service_wrapper_addr: u64,
     dictionary_class_bytes: &[u8],
@@ -69,12 +72,11 @@ pub fn from_service_wrapper<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
-    let wrapper_class_bytes = read_object_class_def(offsets, service_wrapper_addr, &read_mem)?;
+    let wrapper_class_bytes = object::read_runtime_class_bytes(service_wrapper_addr, &read_mem)?;
 
-    let cards_dict_addr = read_instance_pointer(
+    let cards_dict_addr = object::read_instance_pointer(
         offsets,
         &wrapper_class_bytes,
-        0,
         service_wrapper_addr,
         "Cards",
         &read_mem,
@@ -87,27 +89,25 @@ where
     // *open-generic* `Dictionary\`2` definition gets us the correct
     // field offset — reference fields like `Entry[] _entries` are 8
     // bytes regardless of T/V.
-    let entries_array_addr = read_instance_pointer(
+    let entries_array_addr = object::read_instance_pointer(
         offsets,
         dictionary_class_bytes,
-        0,
         cards_dict_addr,
         "_entries",
         &read_mem,
     )?;
     let entries = dict::read_int_int_entries(offsets, entries_array_addr, read_mem)?;
 
-    let inv_addr = read_instance_pointer(
+    let inv_addr = object::read_instance_pointer(
         offsets,
         &wrapper_class_bytes,
-        0,
         service_wrapper_addr,
         "m_inventory",
         &read_mem,
     )?;
-    let inventory_class_bytes = read_object_class_def(offsets, inv_addr, &read_mem)?;
+    let inventory_class_bytes = object::read_runtime_class_bytes(inv_addr, &read_mem)?;
     let inventory_values =
-        inventory::read_inventory(offsets, &inventory_class_bytes, 0, inv_addr, read_mem)?;
+        inventory::read_inventory(offsets, &inventory_class_bytes, inv_addr, read_mem)?;
 
     // Boosters are a separate `boosters` field on the same
     // ClientPlayerInventory object — read here so the walker delivers
@@ -124,30 +124,6 @@ where
         inventory: inventory_values,
         boosters,
     })
-}
-
-/// Read the runtime class of `obj_addr` (via `obj.vtable.klass`)
-/// and pull a `MonoClassDef`-sized blob for it.
-///
-/// `MonoObject.vtable` and `MonoVTable.klass` both live at offset 0
-/// of their respective structs — no [`MonoOffsets`] entries needed.
-fn read_object_class_def<F>(_offsets: &MonoOffsets, obj_addr: u64, read_mem: &F) -> Option<Vec<u8>>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let vtable_buf = read_mem(obj_addr, 8)?;
-    let vtable_addr = mono::read_u64(&vtable_buf, 0, 0)?;
-    if vtable_addr == 0 {
-        return None;
-    }
-    let klass_buf = read_mem(vtable_addr, 8)?;
-    let klass_addr = mono::read_u64(&klass_buf, 0, 0)?;
-    if klass_addr == 0 {
-        return None;
-    }
-    // 0x110 covers MonoClass.fields (0x98), MonoClass.runtime_info
-    // (0xd0), and MonoClassDef.field_count (0x100).
-    read_mem(klass_addr, 0x110)
 }
 
 /// Walk from a `PAPA` class down to the inventory, deriving each
@@ -187,28 +163,25 @@ where
     let papa_singleton_addr = read_static_pointer(
         offsets,
         papa_class_bytes,
-        0,
         papa_class_addr,
         domain_addr,
         "_instance",
         &read_mem,
     )?;
 
-    let inventory_manager_addr = read_instance_pointer(
+    let inventory_manager_addr = object::read_instance_pointer(
         offsets,
         papa_class_bytes,
-        0,
         papa_singleton_addr,
         "InventoryManager",
         &read_mem,
     )?;
 
     let inventory_manager_class_bytes =
-        read_object_class_def(offsets, inventory_manager_addr, &read_mem)?;
-    let service_wrapper_addr = read_instance_pointer(
+        object::read_runtime_class_bytes(inventory_manager_addr, &read_mem)?;
+    let service_wrapper_addr = object::read_instance_pointer(
         offsets,
         &inventory_manager_class_bytes,
-        0,
         inventory_manager_addr,
         "_inventoryServiceWrapper",
         &read_mem,
@@ -231,7 +204,6 @@ where
 fn read_static_pointer<F>(
     offsets: &MonoOffsets,
     class_bytes: &[u8],
-    class_base: usize,
     class_addr: u64,
     domain_addr: u64,
     field_name: &str,
@@ -241,7 +213,7 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
     let resolved: ResolvedField =
-        field::find_by_name(offsets, class_bytes, class_base, field_name, read_mem)?;
+        field::find_field_by_name(offsets, class_bytes, field_name, read_mem)?;
     if !resolved.is_static || resolved.offset < 0 {
         return None;
     }
@@ -255,82 +227,15 @@ where
     Some(ptr)
 }
 
-/// Resolve `field_name` on the class at `class_base` inside
-/// `class_bytes`, then read a pointer at `object_addr + field.offset`.
-///
-/// Rejects static fields, negative offsets, and null pointers —
-/// those would indicate the walker is on a wrong path or hit an
-/// uninitialised field.
-fn read_instance_pointer<F>(
-    offsets: &MonoOffsets,
-    class_bytes: &[u8],
-    class_base: usize,
-    object_addr: u64,
-    field_name: &str,
-    read_mem: &F,
-) -> Option<u64>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let resolved: ResolvedField =
-        field::find_by_name(offsets, class_bytes, class_base, field_name, read_mem)?;
-    if resolved.is_static || resolved.offset < 0 {
-        return None;
-    }
-    let addr = object_addr.checked_add(resolved.offset as u64)?;
-    let bytes = read_mem(addr, 8)?;
-    let ptr = mono::read_u64(&bytes, 0, 0)?;
-    if ptr == 0 {
-        return None;
-    }
-    Some(ptr)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::walker::inventory::FIELD_NAMES;
     use crate::walker::mono::{DICT_INT_INT_ENTRY_SIZE, MONO_CLASS_FIELD_SIZE};
-
-    /// FakeMem fixture (matches the shape used by the rest of the
-    /// walker tests).
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
+    use crate::walker::test_support::{make_type_block, FakeMem};
 
     fn make_field_entry(name_ptr: u64, type_ptr: u64, offset: i32) -> Vec<u8> {
-        let o = MonoOffsets::mtga_default();
-        let mut v = vec![0u8; MONO_CLASS_FIELD_SIZE];
-        v[o.field_type..o.field_type + 8].copy_from_slice(&type_ptr.to_le_bytes());
-        v[o.field_name..o.field_name + 8].copy_from_slice(&name_ptr.to_le_bytes());
-        v[o.field_offset..o.field_offset + 4].copy_from_slice(&(offset as u32).to_le_bytes());
-        v
-    }
-
-    fn make_type_block(attrs: u16) -> Vec<u8> {
-        let mut v = vec![0u8; 16];
-        v[8..12].copy_from_slice(&(attrs as u32).to_le_bytes());
-        v
+        crate::walker::test_support::make_field_entry(name_ptr, type_ptr, 0, offset)
     }
 
     /// Install field+type entries for a class. Caller writes the
@@ -367,7 +272,7 @@ mod tests {
         field_count: u32,
     ) {
         let o = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; 0x110];
+        let mut buf = vec![0u8; mono::CLASS_DEF_BLOB_LEN];
         buf[o.class_fields..o.class_fields + 8].copy_from_slice(&fields_addr.to_le_bytes());
         buf[o.class_def_field_count..o.class_def_field_count + 4]
             .copy_from_slice(&field_count.to_le_bytes());
@@ -386,7 +291,7 @@ mod tests {
         vtable_size: i32,
     ) {
         let o = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; 0x110];
+        let mut buf = vec![0u8; mono::CLASS_DEF_BLOB_LEN];
         buf[o.class_fields..o.class_fields + 8].copy_from_slice(&fields_addr.to_le_bytes());
         buf[o.class_def_field_count..o.class_def_field_count + 4]
             .copy_from_slice(&field_count.to_le_bytes());
@@ -486,7 +391,7 @@ mod tests {
 
         install_fields(mem, fields_addr, names_base, types_base, field_specs);
 
-        let mut class_buf = vec![0u8; 0x110];
+        let mut class_buf = vec![0u8; mono::CLASS_DEF_BLOB_LEN];
         class_buf[offsets.class_fields..offsets.class_fields + 8]
             .copy_from_slice(&fields_addr.to_le_bytes());
         class_buf[offsets.class_def_field_count..offsets.class_def_field_count + 4]
@@ -521,7 +426,6 @@ mod tests {
         let got = read_static_pointer(
             &offsets,
             &class_bytes,
-            0,
             class_addr,
             domain_addr,
             "_instance",
@@ -543,7 +447,6 @@ mod tests {
             read_static_pointer(
                 &offsets,
                 &class_bytes,
-                0,
                 class_addr,
                 domain_addr,
                 "_instance",
@@ -568,7 +471,6 @@ mod tests {
         let got = read_static_pointer(
             &offsets,
             &class_bytes,
-            0,
             class_addr,
             domain_addr,
             "_instance",
@@ -686,7 +588,7 @@ mod tests {
             30.1,
         );
 
-        let dict_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
+        let dict_bytes = mem.read(0x32_0000, mono::CLASS_DEF_BLOB_LEN).ok_or("dict class read")?;
         let result =
             from_service_wrapper(&offsets, wrapper_addr, &dict_bytes, |a, l| mem.read(a, l))
                 .ok_or("walk should succeed")?;
@@ -718,7 +620,7 @@ mod tests {
             0.0,
         );
 
-        let dict_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
+        let dict_bytes = mem.read(0x32_0000, mono::CLASS_DEF_BLOB_LEN).ok_or("dict class read")?;
         let result =
             from_service_wrapper(&offsets, wrapper_addr, &dict_bytes, |a, l| mem.read(a, l))
                 .ok_or("walk should succeed via backing-field form")?;
@@ -739,16 +641,13 @@ mod tests {
             0.0,
         );
 
-        // Replace the wrapper object's Cards slot with NULL by shadow-
-        // writing a zeroed blob ahead of the original.
+        // Replace the wrapper object's Cards slot with NULL.
         let mut zeroed_obj = vec![0u8; 0x40];
         let wrapper_vtable: u64 = 0x71_0000;
         zeroed_obj[0..8].copy_from_slice(&wrapper_vtable.to_le_bytes());
-        let mut new_blocks = vec![(wrapper_addr, zeroed_obj)];
-        new_blocks.extend(mem.blocks);
-        mem.blocks = new_blocks;
+        mem.replace(wrapper_addr, zeroed_obj);
 
-        let dict_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
+        let dict_bytes = mem.read(0x32_0000, mono::CLASS_DEF_BLOB_LEN).ok_or("dict class read")?;
         assert_eq!(
             from_service_wrapper(&offsets, wrapper_addr, &dict_bytes, |a, l| mem.read(a, l)),
             None
@@ -845,8 +744,8 @@ mod tests {
 
         // Re-fetch the papa_class_bytes + dict_class_bytes the
         // walker will pass back in.
-        let papa_class_bytes = mem.read(papa_class_addr, 0x110).ok_or("papa class read")?;
-        let dict_class_bytes = mem.read(0x32_0000, 0x110).ok_or("dict class read")?;
+        let papa_class_bytes = mem.read(papa_class_addr, mono::CLASS_DEF_BLOB_LEN).ok_or("papa class read")?;
+        let dict_class_bytes = mem.read(0x32_0000, mono::CLASS_DEF_BLOB_LEN).ok_or("dict class read")?;
 
         let result = from_papa_class(
             &offsets,

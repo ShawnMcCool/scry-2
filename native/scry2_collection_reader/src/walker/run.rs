@@ -32,15 +32,9 @@ use super::match_info::{self, MatchInfoValues};
 use super::mono::{self, MonoOffsets};
 use super::vtable;
 
-/// Bytes to read for each `MonoClassDef` blob the walker consumes.
-/// Must cover:
-/// - `MonoClass.runtime_info` @ `0xd0`
-/// - `MonoClass.vtable_size`  @ `0x5c`
-/// - `MonoClass.fields`       @ `0x98`
-/// - `MonoClassDef.field_count` @ `0x100`
-///
-/// 0x110 is the smallest power-of-16 size that covers all four.
-pub const CLASS_DEF_BLOB_LEN: usize = 0x110;
+// `CLASS_DEF_BLOB_LEN` lives on `super::mono`; the spike binaries import
+// it from here for ergonomics.
+pub use super::mono::CLASS_DEF_BLOB_LEN;
 
 /// Filename substring that identifies MTGA's Mono runtime DLL on
 /// every platform. `/proc/<pid>/maps` paths can be Wine-style with
@@ -210,7 +204,7 @@ where
 
     // PAPA._instance — static field via vtable storage.
     let instance_field =
-        field::find_by_name(&offsets, &papa_bytes, 0, "_instance", read_mem)
+        field::find_field_by_name(&offsets, &papa_bytes, "_instance", read_mem)
             .ok_or(WalkError::ChainFailed)?;
     if !instance_field.is_static || instance_field.offset < 0 {
         return Err(WalkError::ChainFailed);
@@ -331,7 +325,7 @@ fn is_image_extension(path: &Option<String>, dll_path: Option<&str>) -> bool {
     }
 }
 
-/// Try `class_lookup::find_by_name` against each image in turn,
+/// Try `class_lookup::find_class_by_name` against each image in turn,
 /// returning the first hit.
 fn find_class_in_images<F>(
     offsets: &MonoOffsets,
@@ -343,7 +337,7 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
     for image in images {
-        if let Some(addr) = class_lookup::find_by_name(offsets, *image, target, read_mem) {
+        if let Some(addr) = class_lookup::find_class_by_name(offsets, *image, target, read_mem) {
             return Some(addr);
         }
     }
@@ -353,31 +347,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// FakeMem fixture identical in shape to the one used in
-    /// `field`/`image_lookup`/`class_lookup`/`chain` tests.
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
+    use crate::walker::test_support::FakeMem;
 
     #[test]
     fn path_match_accepts_unix_paths() {
@@ -558,6 +528,40 @@ mod tests {
         assert_eq!(
             walk_collection(&maps, |a, l| mem.read(a, l), || None),
             Err(WalkError::MonoDllReadFailed)
+        );
+    }
+
+    #[test]
+    fn walk_collection_unwinds_when_read_budget_is_exhausted() {
+        // Integration test for `read_budget::bounded`: when the
+        // walker is given a closure whose reads are starved by an
+        // exhausted budget, every chain step sees `None` and the
+        // walker unwinds with an explicit error rather than spinning.
+        //
+        // We construct a maps list that contains a mono DLL entry —
+        // so `read_mono_image` finds an anchor — but every read
+        // fails because the budget hits zero on the very first call.
+        // The walker must terminate with `MonoDllReadFailed`; not
+        // panic, not loop.
+        use std::sync::atomic::AtomicU64;
+        let base: u64 = 0x180000000;
+        let maps: Vec<MapEntry> = vec![(
+            base,
+            base + 0x1000,
+            "r--p".to_string(),
+            Some("/abs/mono-2.0-bdwgc.dll".to_string()),
+        )];
+        let mem = FakeMem::default();
+        let counter = AtomicU64::new(0);
+        let inner = |a: u64, l: usize| mem.read(a, l);
+        // Budget = 0 starves every read.
+        let bounded = crate::read_budget::bounded(&counter, 0, inner);
+
+        let result = walk_collection(&maps, bounded, || None);
+        assert_eq!(
+            result,
+            Err(WalkError::MonoDllReadFailed),
+            "exhausted budget must surface as a walk error, not a hang"
         );
     }
 }

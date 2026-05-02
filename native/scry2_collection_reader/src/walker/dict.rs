@@ -29,7 +29,8 @@
 //! structural scanner uses — it is what distinguishes a live
 //! `Dictionary<int, int>` from random int pairs in memory.
 
-use super::mono::{self, MonoOffsets, DICT_INT_INT_ENTRY_SIZE};
+use super::mono::{MonoOffsets, DICT_INT_INT_ENTRY_SIZE};
+use super::mono_array;
 
 /// A used entry from a `Dictionary<int, int>`.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -38,11 +39,8 @@ pub struct DictEntry {
     pub value: i32,
 }
 
-/// Maximum number of entries the walker will accept from a single
-/// dictionary read. Chosen to cover MTGA's collection size (~5K
-/// cards today, headroom for years) with a hard cap that avoids
-/// catastrophic allocation on a corrupt `max_length`.
-pub const MAX_DICT_ENTRIES: u64 = 100_000;
+/// Re-export of the centralized cap. Defined in [`super::limits`].
+pub use super::limits::MAX_DICT_INT_INT_ENTRIES as MAX_DICT_ENTRIES;
 
 /// Walk a `Dictionary<int, int>._entries` `MonoArray` starting at
 /// `array_remote_addr` in the target process.
@@ -66,29 +64,13 @@ pub fn read_int_int_entries<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    // Pull the 32-byte MonoArray header (obj + bounds + max_length +
-    // the first byte of vector — we only need the first three).
-    let header_len = offsets.array_vector;
-    let header = read_mem(array_remote_addr, header_len)?;
-    if header.len() < header_len {
-        return None;
-    }
-    let capacity = mono::array_max_length(offsets, &header, 0)?;
-    if capacity == 0 {
-        return Some(Vec::new());
-    }
-    if capacity > MAX_DICT_ENTRIES {
-        return None;
-    }
-    let capacity = capacity as usize;
-
-    // Pull the entire entry blob in one read (capacity * 16 bytes).
-    let vector_addr = mono::array_vector_addr(offsets, array_remote_addr)?;
-    let blob_len = capacity.checked_mul(DICT_INT_INT_ENTRY_SIZE)?;
-    let blob = read_mem(vector_addr, blob_len)?;
-    if blob.len() < blob_len {
-        return None;
-    }
+    let (capacity, blob) = mono_array::read_array_blob(
+        offsets,
+        array_remote_addr,
+        DICT_INT_INT_ENTRY_SIZE,
+        MAX_DICT_ENTRIES,
+        &read_mem,
+    )?;
 
     let mut used = Vec::new();
     for i in 0..capacity {

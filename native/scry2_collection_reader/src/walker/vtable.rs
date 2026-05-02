@@ -15,13 +15,8 @@
 //! This module covers the first two lines. Callers (see
 //! `walker/chain.rs`) add the third.
 
+use super::limits::MAX_DOMAINS;
 use super::mono::{self, MonoOffsets};
-
-/// Hard cap on `MonoClassRuntimeInfo.max_domain`. MTGA runs a single
-/// root domain; even the most aggressive multi-domain host would be
-/// well under this number. Values above the cap likely indicate a
-/// corrupt read.
-pub const MAX_DOMAINS: u16 = 64;
 
 /// Resolve the `MonoVTable *` for `class_addr` in domain
 /// `domain_addr`. Returns `None` on any read failure, out-of-range
@@ -111,35 +106,13 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
+    use crate::walker::test_support::FakeMem;
 
     /// Build a MonoClass blob large enough to cover runtime_info @0xd0
     /// and vtable_size @0x5c.
     fn make_class(runtime_info_ptr: u64, vtable_size: i32) -> Vec<u8> {
         let o = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; 0x110];
+        let mut buf = vec![0u8; mono::CLASS_DEF_BLOB_LEN];
         buf[o.class_runtime_info..o.class_runtime_info + 8]
             .copy_from_slice(&runtime_info_ptr.to_le_bytes());
         buf[o.class_vtable_size..o.class_vtable_size + 4]

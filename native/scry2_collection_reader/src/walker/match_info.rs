@@ -23,7 +23,7 @@
 //!   .CommanderGrpIds                              -> List<i32>
 //! ```
 //!
-//! Field names are resolved dynamically via [`super::field::find_by_name`]
+//! Field names are resolved dynamically via [`super::field::find_field_by_name`]
 //! — the verified offsets in the FINDING.md are diagnostic, not constants.
 //! This makes the walker resilient to field-position shifts between MTGA
 //! builds (only field-name changes break it).
@@ -37,8 +37,9 @@
 //! event time and again at end-of-match-but-before-tear-down.
 //! See `Scry2.LiveState` (planned) for the polling architecture.
 
-use super::field::{self, ResolvedField};
-use super::mono::{self, MonoOffsets};
+use super::instance_field;
+use super::mono::MonoOffsets;
+use super::object;
 
 /// Snapshot of the live MatchManager state at one moment.
 ///
@@ -134,70 +135,50 @@ pub fn from_papa_singleton<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
-    let mm_addr = read_instance_pointer(
+    let mm_addr = object::read_instance_pointer(
         offsets,
         papa_class_bytes,
-        0,
         papa_singleton_addr,
         PAPA_MATCH_MANAGER_FIELD,
         &read_mem,
     )?;
 
-    let mm_class_bytes = read_object_class_def(mm_addr, &read_mem)?;
+    let mm_class_bytes = object::read_runtime_class_bytes(mm_addr, &read_mem)?;
 
     let mut values = MatchInfoValues::default();
 
-    if let Some(local_addr) = read_instance_pointer(
-        offsets,
-        &mm_class_bytes,
-        0,
-        mm_addr,
-        "LocalPlayerInfo",
-        &read_mem,
-    ) {
-        if let Some(class_bytes) = read_object_class_def(local_addr, &read_mem) {
+    if let Some(local_addr) =
+        object::read_instance_pointer(offsets, &mm_class_bytes, mm_addr, "LocalPlayerInfo", &read_mem)
+    {
+        if let Some(class_bytes) = object::read_runtime_class_bytes(local_addr, &read_mem) {
             values.local = read_player_info(offsets, &class_bytes, local_addr, &read_mem);
         }
     }
 
-    if let Some(opp_addr) = read_instance_pointer(
-        offsets,
-        &mm_class_bytes,
-        0,
-        mm_addr,
-        "OpponentInfo",
-        &read_mem,
-    ) {
-        if let Some(class_bytes) = read_object_class_def(opp_addr, &read_mem) {
+    if let Some(opp_addr) =
+        object::read_instance_pointer(offsets, &mm_class_bytes, mm_addr, "OpponentInfo", &read_mem)
+    {
+        if let Some(class_bytes) = object::read_runtime_class_bytes(opp_addr, &read_mem) {
             values.opponent = read_player_info(offsets, &class_bytes, opp_addr, &read_mem);
         }
     }
 
-    values.match_id = read_string_field(offsets, &mm_class_bytes, mm_addr, "MatchID", &read_mem);
-    values.format = read_i32_field(offsets, &mm_class_bytes, mm_addr, "Format", &read_mem);
-    values.variant = read_i32_field(offsets, &mm_class_bytes, mm_addr, "Variant", &read_mem);
+    values.match_id =
+        instance_field::read_instance_string(offsets, &mm_class_bytes, mm_addr, "MatchID", MAX_STRING_CHARS, &read_mem);
+    values.format = read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "Format", &read_mem);
+    values.variant = read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "Variant", &read_mem);
     values.session_type =
-        read_i32_field(offsets, &mm_class_bytes, mm_addr, "SessionType", &read_mem);
-    values.current_game_number = read_i32_field(
-        offsets,
-        &mm_class_bytes,
-        mm_addr,
-        "CurrentGameNumber",
-        &read_mem,
-    );
+        read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "SessionType", &read_mem);
+    values.current_game_number =
+        read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "CurrentGameNumber", &read_mem);
     values.match_state =
-        read_i32_field(offsets, &mm_class_bytes, mm_addr, "MatchState", &read_mem);
-    values.local_player_seat_id = read_i32_field(
-        offsets,
-        &mm_class_bytes,
-        mm_addr,
-        "LocalPlayerSeatId",
-        &read_mem,
-    );
+        read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "MatchState", &read_mem);
+    values.local_player_seat_id =
+        read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "LocalPlayerSeatId", &read_mem);
     values.is_practice_game =
-        read_bool_field(offsets, &mm_class_bytes, mm_addr, "IsPracticeGame", &read_mem);
+        read_bool_or_false(offsets, &mm_class_bytes, mm_addr, "IsPracticeGame", &read_mem);
     values.is_private_game =
-        read_bool_field(offsets, &mm_class_bytes, mm_addr, "IsPrivateGame", &read_mem);
+        read_bool_or_false(offsets, &mm_class_bytes, mm_addr, "IsPrivateGame", &read_mem);
 
     Some(values)
 }
@@ -214,64 +195,54 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
     PlayerInfoValues {
-        screen_name: read_string_field(offsets, class_bytes, object_addr, "_screenName", read_mem),
-        seat_id: read_i32_field(offsets, class_bytes, object_addr, "SeatId", read_mem),
-        team_id: read_i32_field(offsets, class_bytes, object_addr, "TeamId", read_mem),
-        ranking_class: read_i32_field(offsets, class_bytes, object_addr, "RankingClass", read_mem),
-        ranking_tier: read_i32_field(offsets, class_bytes, object_addr, "RankingTier", read_mem),
-        mythic_percentile: read_i32_field(
+        screen_name: instance_field::read_instance_string(
+            offsets,
+            class_bytes,
+            object_addr,
+            "_screenName",
+            MAX_STRING_CHARS,
+            read_mem,
+        ),
+        seat_id: read_i32_or_zero(offsets, class_bytes, object_addr, "SeatId", read_mem),
+        team_id: read_i32_or_zero(offsets, class_bytes, object_addr, "TeamId", read_mem),
+        ranking_class: read_i32_or_zero(offsets, class_bytes, object_addr, "RankingClass", read_mem),
+        ranking_tier: read_i32_or_zero(offsets, class_bytes, object_addr, "RankingTier", read_mem),
+        mythic_percentile: read_i32_or_zero(
             offsets,
             class_bytes,
             object_addr,
             "MythicPercentile",
             read_mem,
         ),
-        mythic_placement: read_i32_field(
+        mythic_placement: read_i32_or_zero(
             offsets,
             class_bytes,
             object_addr,
             "MythicPlacement",
             read_mem,
         ),
-        commander_grp_ids: read_int_list_field(
+        commander_grp_ids: instance_field::read_instance_int_list(
             offsets,
             class_bytes,
             object_addr,
             "CommanderGrpIds",
+            MAX_COMMANDER_LIST,
             read_mem,
-        ),
+        )
+        .unwrap_or_default(),
     }
 }
 
-// ─── primitive readers ──────────────────────────────────────────────
+use super::limits::{MAX_COMMANDER_LIST, MAX_STRING_CHARS};
 
-fn read_instance_pointer<F>(
-    offsets: &MonoOffsets,
-    class_bytes: &[u8],
-    class_base: usize,
-    object_addr: u64,
-    field_name: &str,
-    read_mem: &F,
-) -> Option<u64>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let resolved: ResolvedField =
-        field::find_by_name(offsets, class_bytes, class_base, field_name, read_mem)?;
-    if resolved.is_static || resolved.offset < 0 {
-        return None;
-    }
-    let addr = object_addr.checked_add(resolved.offset as u64)?;
-    let bytes = read_mem(addr, 8)?;
-    let ptr = mono::read_u64(&bytes, 0, 0)?;
-    if ptr == 0 {
-        None
-    } else {
-        Some(ptr)
-    }
-}
+// ─── coalescing wrappers ────────────────────────────────────────────
+//
+// `MatchInfoValues` and `PlayerInfoValues` use silent-zero / silent-
+// false defaults (audit finding 1.3 will revisit this in a follow-up).
+// These two wrappers exist only to coalesce `instance_field`'s
+// `Option<_>` returns into the concrete defaults the structs hold.
 
-fn read_i32_field<F>(
+fn read_i32_or_zero<F>(
     offsets: &MonoOffsets,
     class_bytes: &[u8],
     object_addr: u64,
@@ -281,22 +252,11 @@ fn read_i32_field<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    let Some(resolved) = field::find_by_name(offsets, class_bytes, 0, field_name, read_mem) else {
-        return 0;
-    };
-    if resolved.is_static || resolved.offset < 0 {
-        return 0;
-    }
-    let Some(addr) = object_addr.checked_add(resolved.offset as u64) else {
-        return 0;
-    };
-    let Some(bytes) = read_mem(addr, 4) else {
-        return 0;
-    };
-    mono::read_u32(&bytes, 0, 0).map(|v| v as i32).unwrap_or(0)
+    instance_field::read_instance_i32(offsets, class_bytes, object_addr, field_name, read_mem)
+        .unwrap_or(0)
 }
 
-fn read_bool_field<F>(
+fn read_bool_or_false<F>(
     offsets: &MonoOffsets,
     class_bytes: &[u8],
     object_addr: u64,
@@ -306,199 +266,18 @@ fn read_bool_field<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    let Some(resolved) = field::find_by_name(offsets, class_bytes, 0, field_name, read_mem) else {
-        return false;
-    };
-    if resolved.is_static || resolved.offset < 0 {
-        return false;
-    }
-    let Some(addr) = object_addr.checked_add(resolved.offset as u64) else {
-        return false;
-    };
-    let Some(bytes) = read_mem(addr, 1) else {
-        return false;
-    };
-    bytes.first().map(|b| *b != 0).unwrap_or(false)
-}
-
-/// Read a `MonoString *` field and decode its UTF-16 contents.
-///
-/// `MonoString` layout: `vtable(8) + sync(8) + length:i32 + chars[length]`
-/// (UTF-16 LE).
-fn read_string_field<F>(
-    offsets: &MonoOffsets,
-    class_bytes: &[u8],
-    object_addr: u64,
-    field_name: &str,
-    read_mem: &F,
-) -> Option<String>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let resolved = field::find_by_name(offsets, class_bytes, 0, field_name, read_mem)?;
-    if resolved.is_static || resolved.offset < 0 {
-        return None;
-    }
-    let slot_addr = object_addr.checked_add(resolved.offset as u64)?;
-    let str_ptr = read_mem(slot_addr, 8).and_then(|b| mono::read_u64(&b, 0, 0))?;
-    if str_ptr == 0 {
-        return None;
-    }
-    let header = read_mem(str_ptr, 0x14)?;
-    if header.len() < 0x14 {
-        return None;
-    }
-    let length =
-        i32::from_le_bytes([header[0x10], header[0x11], header[0x12], header[0x13]]).max(0)
-            as usize;
-    if length == 0 {
-        return Some(String::new());
-    }
-    if length > 1024 {
-        return None; // sanity guard
-    }
-    let chars_bytes = read_mem(str_ptr + 0x14, length * 2)?;
-    let utf16: Vec<u16> = chars_bytes
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .collect();
-    String::from_utf16(&utf16).ok()
-}
-
-/// Read a `List<int>` field — Mono `List<T>` layout is
-/// `T[] _items + i32 _size + i32 _version`. The backing
-/// `MonoArray<int32>` element storage starts at `array_base + 0x20`.
-fn read_int_list_field<F>(
-    offsets: &MonoOffsets,
-    class_bytes: &[u8],
-    object_addr: u64,
-    field_name: &str,
-    read_mem: &F,
-) -> Vec<i32>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let Some(resolved) = field::find_by_name(offsets, class_bytes, 0, field_name, read_mem) else {
-        return Vec::new();
-    };
-    if resolved.is_static || resolved.offset < 0 {
-        return Vec::new();
-    }
-    let Some(slot_addr) = object_addr.checked_add(resolved.offset as u64) else {
-        return Vec::new();
-    };
-    let Some(list_ptr) = read_mem(slot_addr, 8).and_then(|b| mono::read_u64(&b, 0, 0)) else {
-        return Vec::new();
-    };
-    if list_ptr == 0 {
-        return Vec::new();
-    }
-    // Resolve _items + _size on the List<T> object via its runtime
-    // class. Don't trust hardcoded offsets — they vary by closed
-    // generic instantiation.
-    let Some(list_class_bytes) = read_object_class_def(list_ptr, read_mem) else {
-        return Vec::new();
-    };
-    let Some(items_ptr) = read_instance_pointer(
-        offsets,
-        &list_class_bytes,
-        0,
-        list_ptr,
-        "_items",
-        read_mem,
-    ) else {
-        return Vec::new();
-    };
-    let size = read_i32_field(offsets, &list_class_bytes, list_ptr, "_size", read_mem);
-    if size <= 0 {
-        return Vec::new();
-    }
-    let count = (size as usize).min(1024); // sanity cap
-    let Some(elements) = read_mem(items_ptr + 0x20, count * 4) else {
-        return Vec::new();
-    };
-    elements
-        .chunks_exact(4)
-        .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect()
-}
-
-/// Read `obj.vtable.klass` and pull a class-def-sized blob.
-///
-/// `MonoObject.vtable` and `MonoVTable.klass` both live at offset 0
-/// of their respective structs.
-fn read_object_class_def<F>(obj_addr: u64, read_mem: &F) -> Option<Vec<u8>>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>>,
-{
-    let vtable_addr = read_mem(obj_addr, 8).and_then(|b| mono::read_u64(&b, 0, 0))?;
-    if vtable_addr == 0 {
-        return None;
-    }
-    let klass_addr = read_mem(vtable_addr, 8).and_then(|b| mono::read_u64(&b, 0, 0))?;
-    if klass_addr == 0 {
-        return None;
-    }
-    // Same blob length the rest of the walker uses.
-    read_mem(klass_addr, super::run::CLASS_DEF_BLOB_LEN)
+    instance_field::read_instance_bool(offsets, class_bytes, object_addr, field_name, read_mem)
+        .unwrap_or(false)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::walker::mono::MONO_CLASS_FIELD_SIZE;
-
-    /// FakeMem fixture identical in shape to the one used by every
-    /// other walker test module.
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
-
-    /// Build a MonoClassDef byte buffer with `fields_ptr` and
-    /// `field_count` populated at the right offsets per
-    /// `MonoOffsets::mtga_default()`.
-    fn make_class_def(fields_ptr: u64, field_count: u32) -> Vec<u8> {
-        let offsets = MonoOffsets::mtga_default();
-        let mut buf = vec![0u8; super::super::run::CLASS_DEF_BLOB_LEN];
-        buf[offsets.class_fields..offsets.class_fields + 8]
-            .copy_from_slice(&fields_ptr.to_le_bytes());
-        buf[offsets.class_def_field_count..offsets.class_def_field_count + 4]
-            .copy_from_slice(&field_count.to_le_bytes());
-        buf
-    }
+    use crate::walker::test_support::{make_class_def, make_type_block, FakeMem};
 
     fn make_field_entry(name_ptr: u64, type_ptr: u64, offset: i32) -> Vec<u8> {
-        let o = MonoOffsets::mtga_default();
-        let mut v = vec![0u8; MONO_CLASS_FIELD_SIZE];
-        v[o.field_type..o.field_type + 8].copy_from_slice(&type_ptr.to_le_bytes());
-        v[o.field_name..o.field_name + 8].copy_from_slice(&name_ptr.to_le_bytes());
-        v[o.field_offset..o.field_offset + 4].copy_from_slice(&(offset as u32).to_le_bytes());
-        v
-    }
-
-    fn make_type_block(attrs: u16) -> Vec<u8> {
-        let mut v = vec![0u8; 16];
-        v[8..12].copy_from_slice(&(attrs as u32).to_le_bytes());
-        v
+        crate::walker::test_support::make_field_entry(name_ptr, type_ptr, 0, offset)
     }
 
     /// Populate FakeMem with a class whose `class_bytes` describe
@@ -523,26 +302,6 @@ mod tests {
         }
         mem.add(fields_array_addr, entry_blob);
         make_class_def(fields_array_addr, fields.len() as u32)
-    }
-
-    /// Build an object whose first 8 bytes are a vtable ptr, vtable's
-    /// first 8 bytes are the class addr, and class addr resolves to
-    /// `class_bytes`. Returns the object addr.
-    fn install_object_with_class(
-        mem: &mut FakeMem,
-        object_addr: u64,
-        object_payload_size: usize,
-        vtable_addr: u64,
-        class_addr: u64,
-        class_bytes: Vec<u8>,
-    ) {
-        let mut payload = vec![0u8; object_payload_size.max(0x10)];
-        payload[0..8].copy_from_slice(&vtable_addr.to_le_bytes());
-        mem.add(object_addr, payload);
-        let mut vt = vec![0u8; 0x50];
-        vt[0..8].copy_from_slice(&class_addr.to_le_bytes());
-        mem.add(vtable_addr, vt);
-        mem.add(class_addr, class_bytes);
     }
 
     /// In-place stamp an i32 into a payload buffer at `field_offset`.
@@ -594,11 +353,12 @@ mod tests {
 
         install_mono_string(&mut mem, string_addr, "Lagun4");
 
-        let result = read_string_field(
+        let result = instance_field::read_instance_string(
             &offsets,
             &class_bytes,
             object_addr,
             "_screenName",
+            MAX_STRING_CHARS,
             &|a, l| mem.read(a, l),
         );
         assert_eq!(result, Some("Lagun4".to_string()));
@@ -619,11 +379,12 @@ mod tests {
         // Object payload with null at offset 0x10.
         mem.add(object_addr, vec![0u8; 0x40]);
 
-        let result = read_string_field(
+        let result = instance_field::read_instance_string(
             &offsets,
             &class_bytes,
             object_addr,
             "_screenName",
+            MAX_STRING_CHARS,
             &|a, l| mem.read(a, l),
         );
         assert_eq!(result, None);

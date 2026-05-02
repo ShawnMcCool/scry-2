@@ -26,11 +26,6 @@
 //! specifically `experiments/spikes/spike5_mono_metadata/` and
 //! `experiments/spikes/spike7_papa_walk/`.
 
-// Individual pieces land test-first; each module is unused until the
-// layer above consumes it. Once `walk_collection` is wired, this allow
-// comes off.
-#![allow(dead_code)]
-
 pub mod boosters;
 pub mod build_hint;
 pub mod chain;
@@ -40,12 +35,19 @@ pub mod dict_kv;
 pub mod domain;
 pub mod field;
 pub mod image_lookup;
+pub mod instance_field;
 pub mod inventory;
+pub mod limits;
 pub mod list_t;
 pub mod match_info;
 pub mod match_scene;
 pub mod mono;
+pub mod mono_array;
+pub mod object;
 pub mod pe;
 pub mod prologue;
 pub mod run;
 pub mod vtable;
+
+#[cfg(test)]
+pub(crate) mod test_support;

@@ -13,29 +13,13 @@
 //! `MonoClass.name` to the target. MTGA's `Core.dll` has a few
 //! thousand classes total — a one-shot startup scan is fine.
 //!
-//! This module's `find_by_name` mirrors the shape of
-//! `field::find_by_name` and `image_lookup::find_by_assembly_name`:
+//! This module's `find_class_by_name` mirrors the shape of
+//! `field::find_field_by_name` and `image_lookup::find_image_by_name`:
 //! it takes a `read_mem` closure so the same code drives both live
 //! `process_vm_readv` reads and `FakeMem`-style unit tests.
 
+use super::limits::{MAX_BUCKETS, MAX_NAME_LEN, MAX_TOTAL_CLASSES};
 use super::mono::{self, MonoOffsets, POINTER_SIZE};
-
-/// Maximum bytes to read from a class-name C string. Mono class
-/// names are uniformly short; 256 leaves headroom without paying
-/// for unbounded reads on a malformed pointer.
-pub const MAX_NAME_LEN: usize = 256;
-
-/// Hard cap on how many bucket-chain entries the walker dereferences
-/// across an entire scan. Chosen to be far above any realistic class
-/// count: MTGA's `Core.dll` carries a few thousand classes total, so
-/// 65,536 leaves comfortable headroom while still bounding any
-/// runaway loop on a corrupted `next_class_cache` chain.
-pub const MAX_TOTAL_CLASSES: usize = 65_536;
-
-/// Hard cap on the number of buckets we'll iterate. Mono's class
-/// cache uses a power-of-two-ish size; legitimate values are in the
-/// low thousands. A `size` field much above this is suspicious.
-pub const MAX_BUCKETS: usize = 1_048_576;
 
 /// Walk `image->class_cache` and return every class name +
 /// `MonoClass *` it visits. Useful for diagnostics when looking for
@@ -126,12 +110,12 @@ where
 ///
 /// A read miss on an individual bucket head, chain node, or class
 /// name is treated as "skip this entry" — iteration continues to
-/// the next bucket. This mirrors the posture of `field::find_by_name`
-/// and `image_lookup::find_by_assembly_name`.
+/// the next bucket. This mirrors the posture of `field::find_field_by_name`
+/// and `image_lookup::find_image_by_name`.
 ///
 /// `read_mem(addr, len)` fetches `len` bytes from the target process
 /// at remote address `addr`. In tests this is a `FakeMem`-style stub.
-pub fn find_by_name<F>(
+pub fn find_class_by_name<F>(
     offsets: &MonoOffsets,
     image_addr: u64,
     target_name: &str,
@@ -237,31 +221,7 @@ where
 mod tests {
     use super::*;
 
-    /// FakeMem fixture identical in spirit to the one in `field.rs`
-    /// and `image_lookup.rs` tests.
-    #[derive(Default)]
-    struct FakeMem {
-        blocks: Vec<(u64, Vec<u8>)>,
-    }
-
-    impl FakeMem {
-        fn add(&mut self, addr: u64, bytes: Vec<u8>) {
-            self.blocks.push((addr, bytes));
-        }
-
-        fn read(&self, addr: u64, len: usize) -> Option<Vec<u8>> {
-            for (base, data) in &self.blocks {
-                if addr >= *base {
-                    let off = (addr - *base) as usize;
-                    if off < data.len() {
-                        let end = off.saturating_add(len).min(data.len());
-                        return Some(data[off..end].to_vec());
-                    }
-                }
-            }
-            None
-        }
-    }
+    use crate::walker::test_support::FakeMem;
 
     /// Layout knobs for the synthetic image fixtures. Picking widely
     /// spaced base addresses keeps the FakeMem block lookups
@@ -362,7 +322,7 @@ mod tests {
 
     fn run(mem: &FakeMem, target: &str) -> Option<u64> {
         let offsets = MonoOffsets::mtga_default();
-        find_by_name(&offsets, IMAGE_ADDR, target, |addr, len| {
+        find_class_by_name(&offsets, IMAGE_ADDR, target, |addr, len| {
             mem.read(addr, len)
         })
     }
