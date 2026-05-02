@@ -14,6 +14,8 @@ defmodule Scry2.Decks.MatchResult do
     field :game_results, :map
     field :opponent_screen_name, :string
     field :opponent_rank, :string
+    field :opponent_rank_mythic_percentile, :integer
+    field :opponent_rank_mythic_placement, :integer
     field :started_at, :utc_datetime
     field :completed_at, :utc_datetime
 
@@ -32,6 +34,8 @@ defmodule Scry2.Decks.MatchResult do
       :player_rank,
       :opponent_screen_name,
       :opponent_rank,
+      :opponent_rank_mythic_percentile,
+      :opponent_rank_mythic_placement,
       :num_games,
       :game_results,
       :started_at,

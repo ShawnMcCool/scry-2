@@ -10,6 +10,8 @@ defmodule Scry2.Matches.Match do
     field :opponent_screen_name, :string
     field :opponent_rank, :string
     field :player_rank, :string
+    field :opponent_rank_mythic_percentile, :integer
+    field :opponent_rank_mythic_placement, :integer
     field :started_at, :utc_datetime
     field :ended_at, :utc_datetime
     field :won, :boolean
@@ -42,6 +44,8 @@ defmodule Scry2.Matches.Match do
       :opponent_screen_name,
       :opponent_rank,
       :player_rank,
+      :opponent_rank_mythic_percentile,
+      :opponent_rank_mythic_placement,
       :started_at,
       :ended_at,
       :won,
