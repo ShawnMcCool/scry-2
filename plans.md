@@ -79,7 +79,7 @@ returns the rank/screen-name/commander chain only — every "Chain 2"
 item below (board state) is still gated on `walker/card_holder.rs`
 (blocked on parent-class + GRE captures, see task #22).
 
-- LiveView UI consuming `live_match:updates` (rank/screen-name/commander) — **today** (unblocked)
+- LiveView UI consuming `live_match:updates` (rank/screen-name/commander) — **✅ shipped** (`Scry2Web.Components.LiveMatchCard` on `/matches`)
 - Active match HUD feed (life, hand, library, gy, exile, mana, stack) — **live** + **reader+**
 - Real-time draft pack reader (cards seen but passed) — **live** + **reader+**
 - Real-time mana / card-advantage tracker — **live** + **reader+**

@@ -12,7 +12,7 @@ defmodule Scry2Web.MatchesLive do
   """
   use Scry2Web, :live_view
 
-  alias Scry2.{Cards, MatchEconomy, Matches}
+  alias Scry2.{Cards, LiveState, MatchEconomy, Matches}
   alias Scry2.Topics
   alias Scry2Web.MatchesHelpers
 
@@ -25,9 +25,17 @@ defmodule Scry2Web.MatchesLive do
     if connected?(socket) do
       Topics.subscribe(Topics.matches_updates())
       Topics.subscribe(Topics.match_economy_updates())
+      Topics.subscribe(LiveState.updates_topic())
+      Topics.subscribe(LiveState.final_topic())
     end
 
-    {:ok, assign(socket, reload_timer: nil, show_all_formats: false)}
+    {:ok,
+     assign(socket,
+       reload_timer: nil,
+       show_all_formats: false,
+       live_match_tick: nil,
+       live_match_commander_names: %{}
+     )}
   end
 
   @impl true
@@ -105,7 +113,47 @@ defmodule Scry2Web.MatchesLive do
     {:noreply, socket}
   end
 
+  def handle_info({:tick, payload}, socket) when is_map(payload) do
+    {:noreply, assign_live_tick(socket, payload)}
+  end
+
+  def handle_info({:final, _snapshot}, socket) do
+    {:noreply, assign(socket, live_match_tick: nil, live_match_commander_names: %{})}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  # ── Live-match tick ──────────────────────────────────────────────────
+
+  defp assign_live_tick(socket, payload) do
+    grp_ids = collect_commander_grp_ids(payload)
+    cached = socket.assigns.live_match_commander_names
+
+    cached_ids = MapSet.new(Map.keys(cached))
+    incoming_ids = MapSet.new(grp_ids)
+
+    commander_names =
+      if MapSet.subset?(incoming_ids, cached_ids) do
+        cached
+      else
+        Cards.list_by_arena_ids(grp_ids)
+        |> Enum.into(%{}, fn {arena_id, card} -> {arena_id, card.name} end)
+      end
+
+    assign(socket,
+      live_match_tick: payload,
+      live_match_commander_names: commander_names
+    )
+  end
+
+  defp collect_commander_grp_ids(payload) do
+    local = Map.get(payload, :local, %{}) |> Map.get(:commander_grp_ids, [])
+    opponent = Map.get(payload, :opponent, %{}) |> Map.get(:commander_grp_ids, [])
+
+    (local ++ opponent)
+    |> Enum.filter(&(is_integer(&1) and &1 > 0))
+    |> Enum.uniq()
+  end
 
   # ── Data loading ─────────────────────────────────────────────────────
 
@@ -216,6 +264,12 @@ defmodule Scry2Web.MatchesLive do
         cumulative_series={@cumulative_series}
         show_all_formats={@show_all_formats}
         winrate_period={@winrate_period}
+      />
+
+      <%!-- Active-match live card (visible while a match is in flight) --%>
+      <Scry2Web.Components.LiveMatchCard.card
+        tick={@live_match_tick}
+        commander_names_by_arena_id={@live_match_commander_names}
       />
 
       <%!-- Recent-match economy ticker --%>
