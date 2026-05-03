@@ -41,6 +41,7 @@ pub mod instance_field;
 pub mod inventory;
 pub mod limits;
 pub mod list_t;
+pub mod mastery;
 pub mod match_info;
 pub mod match_scene;
 pub mod mono;
