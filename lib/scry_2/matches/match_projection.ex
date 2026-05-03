@@ -39,6 +39,7 @@ defmodule Scry2.Matches.MatchProjection do
   alias Scry2.Events.EventName
   alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
   alias Scry2.Matches
+  alias Scry2.Matches.RankFormat
   alias Scry2.Repo
 
   # ── Projection handlers ─────────────────────────────────────────────
@@ -51,7 +52,7 @@ defmodule Scry2.Matches.MatchProjection do
       mtga_match_id: event.mtga_match_id,
       event_name: event.event_name,
       opponent_screen_name: event.opponent_screen_name,
-      opponent_rank: compose_rank(event.opponent_rank_class, event.opponent_rank_tier),
+      opponent_rank: RankFormat.compose(event.opponent_rank_class, event.opponent_rank_tier),
       started_at: event.occurred_at,
       player_rank: event.player_rank,
       format: event.format,
@@ -243,8 +244,4 @@ defmodule Scry2.Matches.MatchProjection do
       })
     end
   end
-
-  defp compose_rank(nil, _tier), do: nil
-  defp compose_rank(class, nil), do: class
-  defp compose_rank(class, tier), do: "#{class} #{tier}"
 end

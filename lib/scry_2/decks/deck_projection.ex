@@ -55,6 +55,7 @@ defmodule Scry2.Decks.DeckProjection do
   alias Scry2.Events.EventName
   alias Scry2.Events.Gameplay.{CardDrawn, MulliganOffered}
   alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
+  alias Scry2.Matches.RankFormat
   alias Scry2.Repo
 
   # ── Projection handlers ─────────────────────────────────────────────
@@ -207,7 +208,7 @@ defmodule Scry2.Decks.DeckProjection do
       event_name: event.event_name,
       player_rank: event.player_rank,
       opponent_screen_name: event.opponent_screen_name,
-      opponent_rank: compose_rank(event.opponent_rank_class, event.opponent_rank_tier),
+      opponent_rank: RankFormat.compose(event.opponent_rank_class, event.opponent_rank_tier),
       started_at: event.occurred_at
     })
 
@@ -424,7 +425,7 @@ defmodule Scry2.Decks.DeckProjection do
           event_name: event.event_name,
           player_rank: event.player_rank,
           opponent_screen_name: event.opponent_screen_name,
-          opponent_rank: compose_rank(event.opponent_rank_class, event.opponent_rank_tier),
+          opponent_rank: RankFormat.compose(event.opponent_rank_class, event.opponent_rank_tier),
           started_at: event.occurred_at
         }
 
@@ -511,8 +512,4 @@ defmodule Scry2.Decks.DeckProjection do
       Decks.increment_deck_result_counters!(mr.mtga_deck_id, mr.won, mr.format_type, mr.num_games)
     end)
   end
-
-  defp compose_rank(nil, _tier), do: nil
-  defp compose_rank(class, nil), do: class
-  defp compose_rank(class, tier), do: "#{class} #{tier}"
 end
