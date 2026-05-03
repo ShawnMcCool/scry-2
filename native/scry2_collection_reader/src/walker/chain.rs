@@ -588,7 +588,9 @@ mod tests {
             30.1,
         );
 
-        let dict_bytes = mem.read(0x32_0000, mono::CLASS_DEF_BLOB_LEN).ok_or("dict class read")?;
+        let dict_bytes = mem
+            .read(0x32_0000, mono::CLASS_DEF_BLOB_LEN)
+            .ok_or("dict class read")?;
         let result =
             from_service_wrapper(&offsets, wrapper_addr, &dict_bytes, |a, l| mem.read(a, l))
                 .ok_or("walk should succeed")?;
@@ -620,7 +622,9 @@ mod tests {
             0.0,
         );
 
-        let dict_bytes = mem.read(0x32_0000, mono::CLASS_DEF_BLOB_LEN).ok_or("dict class read")?;
+        let dict_bytes = mem
+            .read(0x32_0000, mono::CLASS_DEF_BLOB_LEN)
+            .ok_or("dict class read")?;
         let result =
             from_service_wrapper(&offsets, wrapper_addr, &dict_bytes, |a, l| mem.read(a, l))
                 .ok_or("walk should succeed via backing-field form")?;
@@ -647,7 +651,9 @@ mod tests {
         zeroed_obj[0..8].copy_from_slice(&wrapper_vtable.to_le_bytes());
         mem.replace(wrapper_addr, zeroed_obj);
 
-        let dict_bytes = mem.read(0x32_0000, mono::CLASS_DEF_BLOB_LEN).ok_or("dict class read")?;
+        let dict_bytes = mem
+            .read(0x32_0000, mono::CLASS_DEF_BLOB_LEN)
+            .ok_or("dict class read")?;
         assert_eq!(
             from_service_wrapper(&offsets, wrapper_addr, &dict_bytes, |a, l| mem.read(a, l)),
             None
@@ -744,8 +750,12 @@ mod tests {
 
         // Re-fetch the papa_class_bytes + dict_class_bytes the
         // walker will pass back in.
-        let papa_class_bytes = mem.read(papa_class_addr, mono::CLASS_DEF_BLOB_LEN).ok_or("papa class read")?;
-        let dict_class_bytes = mem.read(0x32_0000, mono::CLASS_DEF_BLOB_LEN).ok_or("dict class read")?;
+        let papa_class_bytes = mem
+            .read(papa_class_addr, mono::CLASS_DEF_BLOB_LEN)
+            .ok_or("papa class read")?;
+        let dict_class_bytes = mem
+            .read(0x32_0000, mono::CLASS_DEF_BLOB_LEN)
+            .ok_or("dict class read")?;
 
         let result = from_papa_class(
             &offsets,

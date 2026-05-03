@@ -159,7 +159,8 @@ mod tests {
                 let value = int_field_offsets[i].1;
                 object_blob[o..o + 4].copy_from_slice(&value.to_le_bytes());
             } else {
-                object_blob[o..o + 8].copy_from_slice(&vault_progress_value.to_bits().to_le_bytes());
+                object_blob[o..o + 8]
+                    .copy_from_slice(&vault_progress_value.to_bits().to_le_bytes());
             }
         }
         mem.add(fields_array_addr, entry_blob);
@@ -182,13 +183,10 @@ mod tests {
             (0x20, 12_345), // gold
             (0x24, 3_000),  // gems
         ];
-        let class_bytes =
-            populate_inventory(&mut mem, int_field_offsets, 0x30, 30.1, object_addr);
+        let class_bytes = populate_inventory(&mut mem, int_field_offsets, 0x30, 30.1, object_addr);
 
-        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| {
-            mem.read(a, l)
-        })
-        .ok_or("all seven fields should resolve")?;
+        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| mem.read(a, l))
+            .ok_or("all seven fields should resolve")?;
 
         assert_eq!(
             inv,
@@ -233,9 +231,7 @@ mod tests {
         mem.add(object_addr, vec![0u8; 0x40]);
 
         let class_bytes = make_class_def(fields_array_addr, present_names.len() as u32);
-        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| {
-            mem.read(a, l)
-        });
+        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| mem.read(a, l));
         assert_eq!(inv, None);
     }
 
@@ -277,9 +273,7 @@ mod tests {
         mem.add(object_addr, vec![0u8; 0x40]);
 
         let class_bytes = make_class_def(fields_array_addr, FIELD_NAMES.len() as u32);
-        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| {
-            mem.read(a, l)
-        });
+        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| mem.read(a, l));
         assert_eq!(inv, None);
     }
 
@@ -315,9 +309,7 @@ mod tests {
         mem.add(object_addr, vec![0u8; 0x40]);
 
         let class_bytes = make_class_def(fields_array_addr, FIELD_NAMES.len() as u32);
-        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| {
-            mem.read(a, l)
-        });
+        let inv = read_inventory(&offsets, &class_bytes, object_addr, |a, l| mem.read(a, l));
         assert_eq!(inv, None);
     }
 

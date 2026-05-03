@@ -58,7 +58,11 @@ fn main() -> ExitCode {
             return ExitCode::from(2);
         }
     };
-    eprintln!("[spike] mono image base=0x{:x} stitched_bytes={}", mono_base, mono_bytes.len());
+    eprintln!(
+        "[spike] mono image base=0x{:x} stitched_bytes={}",
+        mono_base,
+        mono_bytes.len()
+    );
 
     let offsets = MonoOffsets::mtga_default();
 
@@ -113,10 +117,8 @@ fn main() -> ExitCode {
     let im_field = field::find_field_by_name(&offsets, &papa_bytes, "InventoryManager", read_mem)
         .filter(|f| !f.is_static)
         .expect("InventoryManager field on PAPA");
-    let im_addr = read_u64(
-        &read_mem(papa_singleton + im_field.offset as u64, 8).expect("im slot"),
-    )
-    .expect("u64");
+    let im_addr = read_u64(&read_mem(papa_singleton + im_field.offset as u64, 8).expect("im slot"))
+        .expect("u64");
     if im_addr == 0 {
         println!("[spike] PAPA._instance.InventoryManager is NULL");
         return ExitCode::from(1);
@@ -126,14 +128,16 @@ fn main() -> ExitCode {
     let im_class_addr = read_object_class(im_addr, &read_mem).expect("im class");
     let im_class_bytes = read_mem(im_class_addr, CLASS_DEF_BLOB_LEN).expect("im class def");
 
-    let wrap_field =
-        field::find_field_by_name(&offsets, &im_class_bytes, "_inventoryServiceWrapper", read_mem)
-            .filter(|f| !f.is_static)
-            .expect("_inventoryServiceWrapper field");
-    let wrap_addr = read_u64(
-        &read_mem(im_addr + wrap_field.offset as u64, 8).expect("wrap slot"),
+    let wrap_field = field::find_field_by_name(
+        &offsets,
+        &im_class_bytes,
+        "_inventoryServiceWrapper",
+        read_mem,
     )
-    .expect("u64");
+    .filter(|f| !f.is_static)
+    .expect("_inventoryServiceWrapper field");
+    let wrap_addr = read_u64(&read_mem(im_addr + wrap_field.offset as u64, 8).expect("wrap slot"))
+        .expect("u64");
     if wrap_addr == 0 {
         println!("[spike] InventoryManager._inventoryServiceWrapper is NULL");
         return ExitCode::from(1);
@@ -141,15 +145,14 @@ fn main() -> ExitCode {
 
     // wrapper.m_inventory → ClientPlayerInventory
     let wrap_class_addr = read_object_class(wrap_addr, &read_mem).expect("wrapper class");
-    let wrap_class_bytes = read_mem(wrap_class_addr, CLASS_DEF_BLOB_LEN).expect("wrapper class def");
+    let wrap_class_bytes =
+        read_mem(wrap_class_addr, CLASS_DEF_BLOB_LEN).expect("wrapper class def");
 
     let inv_field = field::find_field_by_name(&offsets, &wrap_class_bytes, "m_inventory", read_mem)
         .filter(|f| !f.is_static)
         .expect("m_inventory field");
-    let inv_addr = read_u64(
-        &read_mem(wrap_addr + inv_field.offset as u64, 8).expect("inv slot"),
-    )
-    .expect("u64");
+    let inv_addr = read_u64(&read_mem(wrap_addr + inv_field.offset as u64, 8).expect("inv slot"))
+        .expect("u64");
     if inv_addr == 0 {
         println!("[spike] wrapper.m_inventory is NULL");
         return ExitCode::from(1);
@@ -158,7 +161,10 @@ fn main() -> ExitCode {
     let inv_class_addr = read_object_class(inv_addr, &read_mem).expect("inv class");
     let inv_class_bytes = read_mem(inv_class_addr, CLASS_DEF_BLOB_LEN).expect("inv class def");
 
-    println!("\n# ClientPlayerInventory — runtime class field manifest (object @ 0x{:x})", inv_addr);
+    println!(
+        "\n# ClientPlayerInventory — runtime class field manifest (object @ 0x{:x})",
+        inv_addr
+    );
     dump_class(&offsets, inv_class_addr, &inv_class_bytes, &read_mem);
 
     // Probe a list of plausible booster-related field names. Untapped's
@@ -203,7 +209,9 @@ fn main() -> ExitCode {
                                 // runtime class.
                                 walk_list_first_element(target, &read_mem, &offsets);
                             } else {
-                                println!("    (slot points to NULL — likely empty / not yet populated)");
+                                println!(
+                                    "    (slot points to NULL — likely empty / not yet populated)"
+                                );
                             }
                         }
                     }
@@ -288,8 +296,7 @@ fn dump_class<F>(offsets: &MonoOffsets, class_addr: u64, class_bytes: &[u8], rea
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    let name =
-        read_class_name(class_bytes, read_mem).unwrap_or_else(|| "<unreadable>".to_string());
+    let name = read_class_name(class_bytes, read_mem).unwrap_or_else(|| "<unreadable>".to_string());
     let fields_ptr = mono::class_fields_ptr(offsets, class_bytes, 0).unwrap_or(0);
     let count = mono::class_def_field_count(offsets, class_bytes, 0).unwrap_or(0) as usize;
     println!(
@@ -395,9 +402,9 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
     for img in images {
-        if let Some(addr) =
-            scry2_collection_reader::walker::class_lookup::find_class_by_name(offsets, *img, target, read_mem)
-        {
+        if let Some(addr) = scry2_collection_reader::walker::class_lookup::find_class_by_name(
+            offsets, *img, target, read_mem,
+        ) {
             return Some(addr);
         }
     }
@@ -442,6 +449,9 @@ fn resolve_pid() -> Result<i32, String> {
     match candidates.len() {
         0 => Err(format!("no process with comm '{}' found", MTGA_COMM)),
         1 => Ok(candidates[0]),
-        n => Err(format!("found {} candidate {} processes — pass --pid=<n>", n, MTGA_COMM)),
+        n => Err(format!(
+            "found {} candidate {} processes — pass --pid=<n>",
+            n, MTGA_COMM
+        )),
     }
 }

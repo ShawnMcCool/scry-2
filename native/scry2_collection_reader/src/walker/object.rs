@@ -56,7 +56,8 @@ pub fn read_instance_pointer<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
 {
-    let resolved: ResolvedField = field::find_field_by_name(offsets, class_bytes, field_name, read_mem)?;
+    let resolved: ResolvedField =
+        field::find_field_by_name(offsets, class_bytes, field_name, read_mem)?;
     if resolved.is_static || resolved.offset < 0 {
         return None;
     }
@@ -74,9 +75,7 @@ where
 mod tests {
     use super::*;
     use crate::walker::mono::MONO_CLASS_FIELD_SIZE;
-    use crate::walker::test_support::{
-        make_class_def, make_field_entry, make_type_block, FakeMem,
-    };
+    use crate::walker::test_support::{make_class_def, make_field_entry, make_type_block, FakeMem};
 
     #[test]
     fn read_runtime_class_bytes_resolves_via_vtable() -> Result<(), String> {
@@ -96,8 +95,8 @@ mod tests {
         let class = make_class_def(0xdead_0000, 0);
         mem.add(class_addr, class.clone());
 
-        let got = read_runtime_class_bytes(object_addr, &|a, l| mem.read(a, l))
-            .ok_or("must resolve")?;
+        let got =
+            read_runtime_class_bytes(object_addr, &|a, l| mem.read(a, l)).ok_or("must resolve")?;
         assert_eq!(got, class);
         Ok(())
     }
@@ -107,7 +106,10 @@ mod tests {
         let mut mem = FakeMem::default();
         let object_addr: u64 = 0x10_0000;
         mem.add(object_addr, vec![0u8; 0x20]);
-        assert_eq!(read_runtime_class_bytes(object_addr, &|a, l| mem.read(a, l)), None);
+        assert_eq!(
+            read_runtime_class_bytes(object_addr, &|a, l| mem.read(a, l)),
+            None
+        );
     }
 
     #[test]
@@ -119,10 +121,7 @@ mod tests {
         let name_addr: u64 = 0x20_0000;
         let type_addr: u64 = 0x30_0000;
 
-        mem.add(
-            fields_addr,
-            make_field_entry(name_addr, type_addr, 0, 0x18),
-        );
+        mem.add(fields_addr, make_field_entry(name_addr, type_addr, 0, 0x18));
         mem.add(name_addr, {
             let mut v = b"_field".to_vec();
             v.push(0);
@@ -154,10 +153,7 @@ mod tests {
         let name_addr: u64 = 0x20_0000;
         let type_addr: u64 = 0x30_0000;
 
-        mem.add(
-            fields_addr,
-            make_field_entry(name_addr, type_addr, 0, 0x10),
-        );
+        mem.add(fields_addr, make_field_entry(name_addr, type_addr, 0, 0x10));
         mem.add(name_addr, {
             let mut v = b"_static".to_vec();
             v.push(0);
@@ -186,10 +182,7 @@ mod tests {
         let name_addr: u64 = 0x20_0000;
         let type_addr: u64 = 0x30_0000;
 
-        mem.add(
-            fields_addr,
-            make_field_entry(name_addr, type_addr, 0, 0x10),
-        );
+        mem.add(fields_addr, make_field_entry(name_addr, type_addr, 0, 0x10));
         mem.add(name_addr, {
             let mut v = b"x".to_vec();
             v.push(0);

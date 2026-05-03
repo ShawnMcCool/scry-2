@@ -24,6 +24,7 @@
 //! that thread only.
 
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 /// Read budget for one [`crate::walker::run::walk_match_info`] or
 /// [`crate::walker::run::walk_collection`] invocation.
@@ -66,6 +67,48 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy + 'a,
 {
     move |addr, len| {
+        if counter.fetch_add(1, Ordering::Relaxed) >= budget {
+            return None;
+        }
+        inner(addr, len)
+    }
+}
+
+/// Default wall-clock budget for one walker call. Matches the
+/// LiveState poll interval (500 ms) — a single walk that takes longer
+/// than this would block the next tick, so terminating early lets
+/// the caller wind down rather than queue infinitely.
+pub const WALK_WALL_CLOCK_BUDGET: Duration = Duration::from_millis(500);
+
+/// Wrap `inner` with both an atomic read counter (read-count budget)
+/// and a wall-clock deadline. Whichever budget trips first ends the
+/// walk by returning `None` — the same signal the read-count budget
+/// already uses.
+///
+/// **Why both:** the read-count budget catches "this walk is asking
+/// for an unreasonable number of reads against this MTGA build" — it
+/// scales with the work the walker is asked to do, and surfaces
+/// regressions like the v0.30.3 budget bump (MTGA grew, walker now
+/// burns more reads). The wall-clock budget catches "this walk has
+/// been running too long for any reason" — pid-reuse against an
+/// unrelated process whose memory makes the walker chase nonsense
+/// pointers, or a future bug that loops without exhausting the read
+/// counter. The wall-clock check is the actual invariant we care
+/// about (don't peg the dirty-IO scheduler); the read counter is the
+/// observability hook (we can see how many reads MTGA needs).
+pub fn bounded_with_deadline<'a, F>(
+    counter: &'a AtomicU64,
+    budget: u64,
+    deadline: Instant,
+    inner: F,
+) -> impl Fn(u64, usize) -> Option<Vec<u8>> + Copy + 'a
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy + 'a,
+{
+    move |addr, len| {
+        if Instant::now() >= deadline {
+            return None;
+        }
         if counter.fetch_add(1, Ordering::Relaxed) >= budget {
             return None;
         }

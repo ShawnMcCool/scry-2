@@ -99,6 +99,30 @@ defmodule Scry2.MtgaMemory.Nif do
            %{reads_used: non_neg_integer(), budget: non_neg_integer()}}
   def walker_debug_walk_match_board_with_stats(_pid), do: :erlang.nif_error(:nif_not_loaded)
 
+  @doc """
+  Snapshot the discovery cache state. Returns
+  `[{pid, "filled,slots,csv"}]` — one tuple per cached pid, with a
+  comma-separated list of which anchors are currently held. Used by
+  the admin memory diagnostics page.
+  """
+  @spec walker_debug_cache_snapshot() :: [{non_neg_integer(), String.t()}]
+  def walker_debug_cache_snapshot, do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Drop the discovery cache for `pid`. Forces full re-discovery on the
+  next walker call against that pid. For the admin page's "force
+  re-discovery" button.
+  """
+  @spec walker_debug_cache_invalidate(non_neg_integer()) :: :ok
+  def walker_debug_cache_invalidate(_pid), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  Drop the entire discovery cache (every pid). For the admin page's
+  "clear all" button and for tests that need a clean slate.
+  """
+  @spec walker_debug_cache_clear() :: :ok
+  def walker_debug_cache_clear, do: :erlang.nif_error(:nif_not_loaded)
+
   # --- raw NIF declarations ---
 
   @doc false

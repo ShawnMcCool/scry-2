@@ -213,8 +213,8 @@ where
     else {
         return Some(Vec::new());
     };
-    let size = read_instance_i32(offsets, &list_class_bytes, list_ptr, "_size", read_mem)
-        .unwrap_or(0);
+    let size =
+        read_instance_i32(offsets, &list_class_bytes, list_ptr, "_size", read_mem).unwrap_or(0);
     if size <= 0 {
         return Some(Vec::new());
     }
@@ -251,7 +251,10 @@ mod tests {
         name: &str,
         offset: i32,
     ) -> Vec<u8> {
-        mem.add(fields_addr, make_field_entry(name_addr, type_addr, 0, offset));
+        mem.add(
+            fields_addr,
+            make_field_entry(name_addr, type_addr, 0, offset),
+        );
         let mut nb = name.as_bytes().to_vec();
         nb.push(0);
         mem.add(name_addr, nb);
@@ -263,14 +266,8 @@ mod tests {
     fn read_instance_i32_returns_value() -> Result<(), String> {
         let offsets = MonoOffsets::mtga_default();
         let mut mem = FakeMem::default();
-        let class = install_single_field_class(
-            &mut mem,
-            0x10_0000,
-            0x20_0000,
-            0x30_0000,
-            "wcCommon",
-            0x50,
-        );
+        let class =
+            install_single_field_class(&mut mem, 0x10_0000, 0x20_0000, 0x30_0000, "wcCommon", 0x50);
         let object_addr: u64 = 0x40_0000;
         let mut payload = vec![0u8; 0x80];
         payload[0x50..0x54].copy_from_slice(&42i32.to_le_bytes());
@@ -290,7 +287,8 @@ mod tests {
         let mem = FakeMem::default();
         let class = make_class_def(0, 0);
         assert_eq!(
-            read_instance_i32(&offsets, &class, 0x40_0000, "missing", &|a, l| mem.read(a, l)),
+            read_instance_i32(&offsets, &class, 0x40_0000, "missing", &|a, l| mem
+                .read(a, l)),
             None
         );
     }
@@ -377,9 +375,14 @@ mod tests {
         }
         mem.add(str_ptr + 0x14, chars);
 
-        let got = read_instance_string(&offsets, &class, object_addr, "_screenName", 256, &|a, l| {
-            mem.read(a, l)
-        })
+        let got = read_instance_string(
+            &offsets,
+            &class,
+            object_addr,
+            "_screenName",
+            256,
+            &|a, l| mem.read(a, l),
+        )
         .ok_or("must resolve")?;
         assert_eq!(got, s);
         Ok(())
@@ -402,9 +405,14 @@ mod tests {
         mem.add(object_addr, vec![0u8; 0x40]);
 
         assert_eq!(
-            read_instance_string(&offsets, &class, object_addr, "_screenName", 256, &|a, l| {
-                mem.read(a, l)
-            }),
+            read_instance_string(
+                &offsets,
+                &class,
+                object_addr,
+                "_screenName",
+                256,
+                &|a, l| { mem.read(a, l) }
+            ),
             None
         );
     }
@@ -424,15 +432,11 @@ mod tests {
         let object_addr: u64 = 0x40_0000;
         mem.add(object_addr, vec![0u8; 0x40]);
 
-        let got = read_instance_int_list(
-            &offsets,
-            &class,
-            object_addr,
-            "Commanders",
-            32,
-            &|a, l| mem.read(a, l),
-        )
-        .ok_or("must resolve field")?;
+        let got =
+            read_instance_int_list(&offsets, &class, object_addr, "Commanders", 32, &|a, l| {
+                mem.read(a, l)
+            })
+            .ok_or("must resolve field")?;
         assert!(got.is_empty());
         Ok(())
     }
@@ -496,15 +500,11 @@ mod tests {
         }
         mem.add(items_ptr + 0x20, elements);
 
-        let got = read_instance_int_list(
-            &offsets,
-            &class,
-            object_addr,
-            "Commanders",
-            32,
-            &|a, l| mem.read(a, l),
-        )
-        .ok_or("must resolve")?;
+        let got =
+            read_instance_int_list(&offsets, &class, object_addr, "Commanders", 32, &|a, l| {
+                mem.read(a, l)
+            })
+            .ok_or("must resolve")?;
         assert_eq!(got, vec![11, 22, 33]);
         Ok(())
     }

@@ -109,8 +109,7 @@ where
 }
 
 use super::object::{
-    read_instance_pointer as read_pointer_field,
-    read_runtime_class_bytes as read_object_class_def,
+    read_instance_pointer as read_pointer_field, read_runtime_class_bytes as read_object_class_def,
 };
 
 fn read_i32_at<F>(addr: u64, read_mem: &F) -> Option<i32>
@@ -169,7 +168,10 @@ mod tests {
 
         // Inventory class: one field, "boosters" at offset 0x10.
         mem.add(inv_class_addr, make_class_def(inv_fields_addr, 1));
-        mem.add(inv_fields_addr, make_field_entry(inv_name_addr, inv_type_addr, 0x10));
+        mem.add(
+            inv_fields_addr,
+            make_field_entry(inv_name_addr, inv_type_addr, 0x10),
+        );
         let mut nb = b"boosters".to_vec();
         nb.push(0);
         mem.add(inv_name_addr, nb);

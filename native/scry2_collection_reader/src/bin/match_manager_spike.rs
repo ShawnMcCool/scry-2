@@ -108,14 +108,14 @@ fn main() -> ExitCode {
 
     // Resolve PAPA._instance — handles both literal `_instance` and
     // `<Instance>k__BackingField` per spike 5.
-    let instance_field = match field::find_field_by_name(&offsets, &papa_bytes, "_instance", read_mem)
-    {
-        Some(f) => f,
-        None => {
-            println!("\n[spike] PAPA._instance — NOT RESOLVED — stopping");
-            return ExitCode::from(1);
-        }
-    };
+    let instance_field =
+        match field::find_field_by_name(&offsets, &papa_bytes, "_instance", read_mem) {
+            Some(f) => f,
+            None => {
+                println!("\n[spike] PAPA._instance — NOT RESOLVED — stopping");
+                return ExitCode::from(1);
+            }
+        };
 
     if !instance_field.is_static {
         println!(
@@ -136,9 +136,7 @@ fn main() -> ExitCode {
     let papa_singleton_addr = match read_mem(static_addr, 8).and_then(|b| read_u64(&b)) {
         Some(p) if p != 0 => p,
         Some(_) => {
-            println!(
-                "\n[spike] PAPA._instance is NULL — is MTGA fully initialised? (pid {pid})"
-            );
+            println!("\n[spike] PAPA._instance is NULL — is MTGA fully initialised? (pid {pid})");
             return ExitCode::from(1);
         }
         None => {
@@ -147,8 +145,10 @@ fn main() -> ExitCode {
         }
     };
 
-    println!("\n[spike] PAPA._instance singleton = 0x{:x} (resolved via '{}')",
-             papa_singleton_addr, instance_field.name_found);
+    println!(
+        "\n[spike] PAPA._instance singleton = 0x{:x} (resolved via '{}')",
+        papa_singleton_addr, instance_field.name_found
+    );
 
     // Try to resolve MatchManager — both literal and backing-field
     // variants are tried by find_by_name automatically.
@@ -172,7 +172,8 @@ fn main() -> ExitCode {
 
     // Use the canonical name MatchManager and proceed if it resolves
     // as an instance field.
-    let mm_field = match field::find_field_by_name(&offsets, &papa_bytes, "MatchManager", read_mem) {
+    let mm_field = match field::find_field_by_name(&offsets, &papa_bytes, "MatchManager", read_mem)
+    {
         Some(f) if !f.is_static => f,
         Some(f) => {
             println!(
@@ -257,10 +258,7 @@ fn main() -> ExitCode {
             let slot = mm_addr + f.offset as u64;
             let target_addr = match read_mem(slot, 8).and_then(|b| read_u64(&b)) {
                 Some(0) => {
-                    println!(
-                        "\n[{}] field present but pointer is NULL",
-                        candidate
-                    );
+                    println!("\n[{}] field present but pointer is NULL", candidate);
                     continue;
                 }
                 Some(p) => p,
@@ -283,7 +281,10 @@ fn main() -> ExitCode {
                     continue;
                 }
             };
-            println!("\n# {} (object 0x{:x}) — runtime class field manifest", candidate, target_addr);
+            println!(
+                "\n# {} (object 0x{:x}) — runtime class field manifest",
+                candidate, target_addr
+            );
             dump_class(&offsets, target_class, &target_bytes, &read_mem);
             if *candidate == "LocalPlayerInfo" || *candidate == "OpponentInfo" {
                 player_addrs.push((candidate, target_addr));
@@ -313,14 +314,14 @@ fn main() -> ExitCode {
             ("MythicPlacement", 4),
             ("IsWotc", 1),
         ] {
-            let resolved =
-                match field::find_field_by_name(&offsets, &player_bytes, name, read_mem) {
-                    Some(r) if !r.is_static => r,
-                    _ => {
-                        println!("  {} → not resolved", name);
-                        continue;
-                    }
-                };
+            let resolved = match field::find_field_by_name(&offsets, &player_bytes, name, read_mem)
+            {
+                Some(r) if !r.is_static => r,
+                _ => {
+                    println!("  {} → not resolved", name);
+                    continue;
+                }
+            };
             let off = resolved.offset as u32;
             let addr = *player_addr + resolved.offset as u64;
             let bytes = match read_mem(addr, *width) {
@@ -332,10 +333,8 @@ fn main() -> ExitCode {
             };
             match *width {
                 4 => {
-                    let int_val =
-                        i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
-                    let float_val =
-                        f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                    let int_val = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+                    let float_val = f32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
                     println!(
                         "  {} @ 0x{:04x} = i32:{} (raw 0x{:08x}, as_f32:{:.4})",
                         name, off, int_val, int_val as u32, float_val
@@ -361,7 +360,12 @@ fn main() -> ExitCode {
             Some(b) => b,
             None => continue,
         };
-        for inner in &["_deckCards", "_sideboardCards", "CommanderGrpIds", "_screenName"] {
+        for inner in &[
+            "_deckCards",
+            "_sideboardCards",
+            "CommanderGrpIds",
+            "_screenName",
+        ] {
             let f = match field::find_field_by_name(&offsets, &player_bytes, inner, read_mem) {
                 Some(f) if !f.is_static => f,
                 _ => continue,
@@ -380,7 +384,10 @@ fn main() -> ExitCode {
             // MonoString layout: vtable(8) + sync(8) + length(4) + chars(UTF-16).
             if *inner == "_screenName" {
                 if let Some(s) = read_mono_string(inner_addr, &read_mem) {
-                    println!("\n[{}.{}] addr=0x{:x} value={:?}", label, inner, inner_addr, s);
+                    println!(
+                        "\n[{}.{}] addr=0x{:x} value={:?}",
+                        label, inner, inner_addr, s
+                    );
                     continue;
                 }
             }
@@ -444,8 +451,12 @@ fn main() -> ExitCode {
                             for i in 0..8 {
                                 let off = i * 4;
                                 if b.len() >= off + 4 {
-                                    let v =
-                                        i32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]]);
+                                    let v = i32::from_le_bytes([
+                                        b[off],
+                                        b[off + 1],
+                                        b[off + 2],
+                                        b[off + 3],
+                                    ]);
                                     print!(" {}", v);
                                 }
                             }
@@ -496,7 +507,10 @@ fn main() -> ExitCode {
         let target_class = match read_object_class(target, &read_mem) {
             Some(c) => c,
             None => {
-                println!("  '{}' addr=0x{:x} could not read runtime class", inner, target);
+                println!(
+                    "  '{}' addr=0x{:x} could not read runtime class",
+                    inner, target
+                );
                 continue;
             }
         };
@@ -507,8 +521,8 @@ fn main() -> ExitCode {
                 continue;
             }
         };
-        let cls_name = read_class_name(&target_bytes, &read_mem)
-            .unwrap_or_else(|| "<unreadable>".to_string());
+        let cls_name =
+            read_class_name(&target_bytes, &read_mem).unwrap_or_else(|| "<unreadable>".to_string());
         println!(
             "\n[MatchManager.{}] addr=0x{:x} runtime_class='{}' (class addr 0x{:x})",
             inner, target, cls_name, target_class
@@ -644,13 +658,17 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    let storage = match vtable::static_storage_base(&offsets, scene_class_addr, domain_addr, read_mem) {
-        Some(s) => s,
-        None => {
-            println!("[spike] could not locate {}'s static storage", scene_class_name);
-            return ExitCode::SUCCESS;
-        }
-    };
+    let storage =
+        match vtable::static_storage_base(&offsets, scene_class_addr, domain_addr, read_mem) {
+            Some(s) => s,
+            None => {
+                println!(
+                    "[spike] could not locate {}'s static storage",
+                    scene_class_name
+                );
+                return ExitCode::SUCCESS;
+            }
+        };
     let scene_singleton =
         match read_mem(storage + anchor_resolved.offset as u64, 8).and_then(|b| read_u64(&b)) {
             Some(0) | None => {
@@ -683,7 +701,12 @@ fn main() -> ExitCode {
         "\n# {} runtime class field manifest",
         read_class_name(&scene_runtime_bytes, &read_mem).unwrap_or_default()
     );
-    dump_class(&offsets, scene_runtime_class, &scene_runtime_bytes, &read_mem);
+    dump_class(
+        &offsets,
+        scene_runtime_class,
+        &scene_runtime_bytes,
+        &read_mem,
+    );
 
     // Try to follow _gameManager → CardHolderManager → _provider → PlayerTypeMap.
     let game_manager_addr =
@@ -741,19 +764,17 @@ fn main() -> ExitCode {
         Some(b) => b,
         None => return ExitCode::SUCCESS,
     };
-    println!(
-        "\n# CardHolderManager runtime class field manifest"
-    );
+    println!("\n# CardHolderManager runtime class field manifest");
     dump_class(&offsets, chm_class, &chm_bytes, &read_mem);
 
     // _provider → PlayerTypeMap.
-    let provider_addr =
-        match field::find_field_by_name(&offsets, &chm_bytes, "_provider", read_mem) {
-            Some(f) if !f.is_static => {
-                read_mem(chm_addr + f.offset as u64, 8).and_then(|b| read_u64(&b))
-            }
-            _ => None,
-        };
+    let provider_addr = match field::find_field_by_name(&offsets, &chm_bytes, "_provider", read_mem)
+    {
+        Some(f) if !f.is_static => {
+            read_mem(chm_addr + f.offset as u64, 8).and_then(|b| read_u64(&b))
+        }
+        _ => None,
+    };
     let provider_addr = match provider_addr {
         Some(p) if p != 0 => p,
         _ => {
@@ -761,7 +782,10 @@ fn main() -> ExitCode {
             return ExitCode::SUCCESS;
         }
     };
-    println!("\n[spike] CardHolderManager._provider = 0x{:x}", provider_addr);
+    println!(
+        "\n[spike] CardHolderManager._provider = 0x{:x}",
+        provider_addr
+    );
     let prov_class = match read_object_class(provider_addr, &read_mem) {
         Some(c) => c,
         None => return ExitCode::SUCCESS,
@@ -773,13 +797,13 @@ fn main() -> ExitCode {
     println!("\n# _provider runtime class field manifest");
     dump_class(&offsets, prov_class, &prov_bytes, &read_mem);
 
-    let ptm_addr =
-        match field::find_field_by_name(&offsets, &prov_bytes, "PlayerTypeMap", read_mem) {
-            Some(f) if !f.is_static => {
-                read_mem(provider_addr + f.offset as u64, 8).and_then(|b| read_u64(&b))
-            }
-            _ => None,
-        };
+    let ptm_addr = match field::find_field_by_name(&offsets, &prov_bytes, "PlayerTypeMap", read_mem)
+    {
+        Some(f) if !f.is_static => {
+            read_mem(provider_addr + f.offset as u64, 8).and_then(|b| read_u64(&b))
+        }
+        _ => None,
+    };
 
     let ptm_addr = match ptm_addr {
         Some(p) if p != 0 => {
@@ -844,14 +868,14 @@ where
             }
         };
 
-    let outer_entries =
-        match dict_kv::read_int_ptr_entries(offsets, outer_entries_array, read_mem) {
-            Some(e) => e,
-            None => {
-                println!("[chain2] could not read PlayerTypeMap entries");
-                return;
-            }
-        };
+    let outer_entries = match dict_kv::read_int_ptr_entries(offsets, outer_entries_array, read_mem)
+    {
+        Some(e) => e,
+        None => {
+            println!("[chain2] could not read PlayerTypeMap entries");
+            return;
+        }
+    };
 
     println!("[chain2] PlayerTypeMap has {} seat(s)", outer_entries.len());
 
@@ -883,8 +907,7 @@ where
         println!("  runtime class = '{}'", inner_class_name);
 
         let inner_entries_array =
-            match dict_kv::entries_array_addr(offsets, &inner_class_bytes, inner_dict, read_mem)
-            {
+            match dict_kv::entries_array_addr(offsets, &inner_class_bytes, inner_dict, read_mem) {
                 Some(a) => a,
                 None => {
                     println!("  inner dict ._entries not resolved");
@@ -934,7 +957,9 @@ where
     println!("       runtime class = '{}'", class_name);
 
     // Address of the class_addr is at vtable.klass — re-read for the dump_class signature.
-    let vtable = read_mem(holder_addr, 8).and_then(|b| read_u64(&b)).unwrap_or(0);
+    let vtable = read_mem(holder_addr, 8)
+        .and_then(|b| read_u64(&b))
+        .unwrap_or(0);
     let class_addr = if vtable != 0 {
         read_mem(vtable, 8).and_then(|b| read_u64(&b)).unwrap_or(0)
     } else {
@@ -1006,7 +1031,9 @@ where
         }
 
         let slot_addr = holder_addr + offset_val as u64;
-        let inner = read_mem(slot_addr, 8).and_then(|b| read_u64(&b)).unwrap_or(0);
+        let inner = read_mem(slot_addr, 8)
+            .and_then(|b| read_u64(&b))
+            .unwrap_or(0);
         if inner == 0 {
             continue;
         }
@@ -1048,15 +1075,13 @@ where
                     }
                 })
                 .unwrap_or(-1);
-            let items_ptr = field::find_field_by_name(offsets, &inner_class_bytes, "_items", read_mem)
-                .and_then(|f| read_mem(inner + f.offset as u64, 8))
-                .and_then(|b| read_u64(&b))
-                .unwrap_or(0);
+            let items_ptr =
+                field::find_field_by_name(offsets, &inner_class_bytes, "_items", read_mem)
+                    .and_then(|f| read_mem(inner + f.offset as u64, 8))
+                    .and_then(|b| read_u64(&b))
+                    .unwrap_or(0);
 
-            println!(
-                "           List._size={} _items=0x{:x}",
-                size, items_ptr
-            );
+            println!("           List._size={} _items=0x{:x}", size, items_ptr);
 
             // For a populated List<T>, peek the first element's runtime
             // class so we know what T is.
@@ -1069,12 +1094,8 @@ where
 
                 if elem_ptr != 0 {
                     if let Some(eb) = read_class_def_for_object(elem_ptr, read_mem) {
-                        let en = read_class_name(&eb, read_mem)
-                            .unwrap_or_else(|| "?".to_string());
-                        println!(
-                            "           first element 0x{:x} class='{}'",
-                            elem_ptr, en
-                        );
+                        let en = read_class_name(&eb, read_mem).unwrap_or_else(|| "?".to_string());
+                        println!("           first element 0x{:x} class='{}'", elem_ptr, en);
 
                         // One level deeper: dump the element's fields too.
                         // This is where CardLayoutData → BaseCDC drill lives.
@@ -1121,12 +1142,8 @@ fn is_deep_dive_class(class_name: &str) -> bool {
 /// peek `_size` / `_items`, and if non-empty, dump the first element's
 /// runtime class + fields. This is the "one more level" recursion used
 /// after a `is_deep_dive_class` hit.
-fn drill_lists_inside<F>(
-    offsets: &MonoOffsets,
-    obj_addr: u64,
-    class_bytes: &[u8],
-    read_mem: &F,
-) where
+fn drill_lists_inside<F>(offsets: &MonoOffsets, obj_addr: u64, class_bytes: &[u8], read_mem: &F)
+where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
     let fields_ptr = mono::class_fields_ptr(offsets, class_bytes, 0).unwrap_or(0);
@@ -1223,8 +1240,8 @@ fn drill_lists_inside<F>(
             Some(b) => b,
             None => continue,
         };
-        let elem_name = read_class_name(&elem_class_bytes, read_mem)
-            .unwrap_or_else(|| "?".to_string());
+        let elem_name =
+            read_class_name(&elem_class_bytes, read_mem).unwrap_or_else(|| "?".to_string());
 
         println!(
             "               first element 0x{:x} class='{}'",
@@ -1260,9 +1277,12 @@ where
         return;
     }
 
-    let prefix = if depth == 0 { "this".to_string() } else { format!("parent^{}", depth) };
-    let class_name =
-        read_class_name(class_bytes, read_mem).unwrap_or_else(|| "?".to_string());
+    let prefix = if depth == 0 {
+        "this".to_string()
+    } else {
+        format!("parent^{}", depth)
+    };
+    let class_name = read_class_name(class_bytes, read_mem).unwrap_or_else(|| "?".to_string());
     println!("           [{}] class='{}'", prefix, class_name);
 
     dump_class_own_fields(offsets, class_bytes, read_mem);
@@ -1289,8 +1309,7 @@ where
     };
     // Stop at System.Object — its name is "Object" and it has no
     // useful instance fields for our purposes.
-    let parent_name =
-        read_class_name(&parent_bytes, read_mem).unwrap_or_default();
+    let parent_name = read_class_name(&parent_bytes, read_mem).unwrap_or_default();
     if parent_name == "Object" || parent_name == "MonoBehaviour" {
         return;
     }
@@ -1422,8 +1441,8 @@ where
     if header.len() < 0x14 {
         return None;
     }
-    let length =
-        i32::from_le_bytes([header[0x10], header[0x11], header[0x12], header[0x13]]).max(0) as usize;
+    let length = i32::from_le_bytes([header[0x10], header[0x11], header[0x12], header[0x13]]).max(0)
+        as usize;
     if length == 0 {
         return Some(String::new());
     }
@@ -1487,7 +1506,10 @@ where
         let entry_bytes = match read_mem(entry_addr, MONO_CLASS_FIELD_SIZE) {
             Some(b) => b,
             None => {
-                println!("  [{i:3}] <read failed for field entry @ 0x{:x}>", entry_addr);
+                println!(
+                    "  [{i:3}] <read failed for field entry @ 0x{:x}>",
+                    entry_addr
+                );
                 continue;
             }
         };
@@ -1530,9 +1552,9 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
     for img in images {
-        if let Some(addr) =
-            scry2_collection_reader::walker::class_lookup::find_class_by_name(offsets, *img, target, read_mem)
-        {
+        if let Some(addr) = scry2_collection_reader::walker::class_lookup::find_class_by_name(
+            offsets, *img, target, read_mem,
+        ) {
             return Some(addr);
         }
     }
@@ -1559,8 +1581,12 @@ fn auto_discover_pid() -> Result<i32, String> {
     let entries = fs::read_dir("/proc").map_err(|e| format!("read /proc: {e}"))?;
     for entry in entries.flatten() {
         let name = entry.file_name();
-        let Some(name_str) = name.to_str() else { continue };
-        let Ok(pid) = name_str.parse::<i32>() else { continue };
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        let Ok(pid) = name_str.parse::<i32>() else {
+            continue;
+        };
 
         let comm = fs::read_to_string(format!("/proc/{}/comm", pid)).unwrap_or_default();
         if comm.trim() != MTGA_COMM {

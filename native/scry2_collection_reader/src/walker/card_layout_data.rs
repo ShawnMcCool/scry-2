@@ -45,7 +45,10 @@ where
         return None;
     }
 
-    let list_addr = read_pointer_at(holder_addr.checked_add(list_field.offset as u64)?, &read_mem)?;
+    let list_addr = read_pointer_at(
+        holder_addr.checked_add(list_field.offset as u64)?,
+        &read_mem,
+    )?;
     if list_addr == 0 {
         return Some(Vec::new());
     }
@@ -55,10 +58,7 @@ where
         list_t::read_pointer_list(offsets, &list_class_bytes, list_addr, &read_mem);
 
     let mut arena_ids = Vec::with_capacity(entry_pointers.len().min(limits::MAX_LIST_ELEMENTS));
-    for entry_addr in entry_pointers
-        .into_iter()
-        .take(limits::MAX_LIST_ELEMENTS)
-    {
+    for entry_addr in entry_pointers.into_iter().take(limits::MAX_LIST_ELEMENTS) {
         if entry_addr == 0 {
             continue;
         }
@@ -284,7 +284,9 @@ mod tests {
             &[(0x10, &[0]), (0x14, &0i32.to_le_bytes())],
         );
 
-        assert!(!is_revealed(&offsets, &class_bytes, entry_addr, &|a, l| mem.read(a, l)));
+        assert!(!is_revealed(&offsets, &class_bytes, entry_addr, &|a, l| {
+            mem.read(a, l)
+        }));
     }
 
     #[test]
@@ -312,7 +314,9 @@ mod tests {
             &[(0x10, &[1]), (0x14, &7i32.to_le_bytes())],
         );
 
-        assert!(!is_revealed(&offsets, &class_bytes, entry_addr, &|a, l| mem.read(a, l)));
+        assert!(!is_revealed(&offsets, &class_bytes, entry_addr, &|a, l| {
+            mem.read(a, l)
+        }));
     }
 
     #[test]

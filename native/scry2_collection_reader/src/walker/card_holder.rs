@@ -91,10 +91,7 @@ where
     let cdc_pointers = list_t::read_pointer_list(offsets, &list_class_bytes, list_addr, &read_mem);
 
     let mut arena_ids = Vec::with_capacity(cdc_pointers.len().min(limits::MAX_LIST_ELEMENTS));
-    for cdc_ptr in cdc_pointers
-        .into_iter()
-        .take(limits::MAX_LIST_ELEMENTS)
-    {
+    for cdc_ptr in cdc_pointers.into_iter().take(limits::MAX_LIST_ELEMENTS) {
         if let Some(arena_id) = arena_id_for_cdc(offsets, cdc_ptr, &read_mem) {
             arena_ids.push(arena_id);
         }
@@ -137,11 +134,7 @@ where
 /// need [`field::find_field_by_name_in_chain`] for the first hop.
 /// `_instance` and `BaseGrpId` live on their own classes (verified by
 /// follow-up spike data) and use the flat resolver.
-pub fn arena_id_for_cdc<F>(
-    offsets: &MonoOffsets,
-    cdc_addr: u64,
-    read_mem: &F,
-) -> Option<i32>
+pub fn arena_id_for_cdc<F>(offsets: &MonoOffsets, cdc_addr: u64, read_mem: &F) -> Option<i32>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
@@ -171,8 +164,10 @@ where
     if instance_field.is_static {
         return None;
     }
-    let instance_addr =
-        read_pointer_at(model_addr.checked_add(instance_field.offset as u64)?, read_mem)?;
+    let instance_addr = read_pointer_at(
+        model_addr.checked_add(instance_field.offset as u64)?,
+        read_mem,
+    )?;
     if instance_addr == 0 {
         return None;
     }
@@ -311,12 +306,7 @@ mod tests {
     /// End-to-end fixture: install a fake CDC at `cdc_addr` pointing
     /// at a fake CardDataAdapter that points at a fake
     /// CardInstanceData with `BaseGrpId = arena_id`.
-    fn install_full_card_chain(
-        mem: &mut FakeMem,
-        base: u64,
-        cdc_addr: u64,
-        arena_id: i32,
-    ) -> u64 {
+    fn install_full_card_chain(mem: &mut FakeMem, base: u64, cdc_addr: u64, arena_id: i32) -> u64 {
         // CardInstanceData class: one field "BaseGrpId" at offset 0x10.
         let inst_class_addr = base + 0x100_0000;
         let inst_addr = base + 0x110_0000;
@@ -738,7 +728,11 @@ mod tests {
             0x3_020_0000,
             0x3_030_0000,
             0,
-            &[("Card", 0x10), ("IsVisibleInLayout", 0x18), ("FaceDownState", 0x1c)],
+            &[
+                ("Card", 0x10),
+                ("IsVisibleInLayout", 0x18),
+                ("FaceDownState", 0x1c),
+            ],
         );
         let cld_addr: u64 = 0x3_040_0000;
         let cld_vtable: u64 = 0x3_050_0000;
@@ -801,8 +795,8 @@ mod tests {
         mem.add(holder_class_addr, holder_class_bytes);
 
         // Zone 5 (graveyard) — anything non-battlefield routes the same.
-        let arena_ids =
-            read_zone_arena_ids(&offsets, holder_addr, 5, |a, l| mem.read(a, l)).ok_or("expected Some")?;
+        let arena_ids = read_zone_arena_ids(&offsets, holder_addr, 5, |a, l| mem.read(a, l))
+            .ok_or("expected Some")?;
         assert_eq!(arena_ids, vec![4242]);
         Ok(())
     }

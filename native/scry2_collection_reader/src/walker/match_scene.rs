@@ -71,11 +71,13 @@ pub fn find_scene_singleton<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
-    let instance_field = field::find_field_by_name(offsets, scene_class_bytes, "Instance", read_mem)?;
+    let instance_field =
+        field::find_field_by_name(offsets, scene_class_bytes, "Instance", read_mem)?;
     if !instance_field.is_static || instance_field.offset < 0 {
         return None;
     }
-    let storage = super::vtable::static_storage_base(offsets, scene_class_addr, domain_addr, read_mem)?;
+    let storage =
+        super::vtable::static_storage_base(offsets, scene_class_addr, domain_addr, read_mem)?;
     let static_addr = storage.checked_add(instance_field.offset as u64)?;
     let bytes = read_mem(static_addr, 8)?;
     let ptr = mono::read_u64(&bytes, 0, 0)?;
@@ -101,16 +103,35 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
     let scene_class_bytes = read_object_class_def(scene_addr, &read_mem)?;
-    let game_manager = read_instance_pointer(offsets, &scene_class_bytes, scene_addr, "_gameManager", &read_mem)?;
+    let game_manager = read_instance_pointer(
+        offsets,
+        &scene_class_bytes,
+        scene_addr,
+        "_gameManager",
+        &read_mem,
+    )?;
 
     let gm_class_bytes = read_object_class_def(game_manager, &read_mem)?;
-    let chm_addr = read_instance_pointer(offsets, &gm_class_bytes, game_manager, "CardHolderManager", &read_mem)?;
+    let chm_addr = read_instance_pointer(
+        offsets,
+        &gm_class_bytes,
+        game_manager,
+        "CardHolderManager",
+        &read_mem,
+    )?;
 
     let chm_class_bytes = read_object_class_def(chm_addr, &read_mem)?;
-    let provider_addr = read_instance_pointer(offsets, &chm_class_bytes, chm_addr, "_provider", &read_mem)?;
+    let provider_addr =
+        read_instance_pointer(offsets, &chm_class_bytes, chm_addr, "_provider", &read_mem)?;
 
     let provider_class_bytes = read_object_class_def(provider_addr, &read_mem)?;
-    let ptm_addr = read_instance_pointer(offsets, &provider_class_bytes, provider_addr, "PlayerTypeMap", &read_mem)?;
+    let ptm_addr = read_instance_pointer(
+        offsets,
+        &provider_class_bytes,
+        provider_addr,
+        "PlayerTypeMap",
+        &read_mem,
+    )?;
 
     let ptm_class_bytes = read_object_class_def(ptm_addr, &read_mem)?;
     Some((ptm_addr, ptm_class_bytes))
@@ -133,7 +154,8 @@ pub fn read_seat_zone_map<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
-    let outer_entries_addr = dict_kv::entries_array_addr(offsets, ptm_class_bytes, ptm_addr, &read_mem)?;
+    let outer_entries_addr =
+        dict_kv::entries_array_addr(offsets, ptm_class_bytes, ptm_addr, &read_mem)?;
     let outer_entries = dict_kv::read_int_ptr_entries(offsets, outer_entries_addr, read_mem)?;
 
     // Group by seat in deterministic order. The dictionary itself is
@@ -141,7 +163,11 @@ where
     // hash bucket placement.
     let mut by_seat: BTreeMap<i32, Vec<ZoneHolder>> = BTreeMap::new();
 
-    for DictPtrEntry { key: seat, value: inner_dict_addr } in outer_entries {
+    for DictPtrEntry {
+        key: seat,
+        value: inner_dict_addr,
+    } in outer_entries
+    {
         let zones = if inner_dict_addr == 0 {
             Vec::new()
         } else {
@@ -167,11 +193,16 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
     let class_bytes = read_object_class_def(inner_dict_addr, read_mem)?;
-    let entries_addr = dict_kv::entries_array_addr(offsets, &class_bytes, inner_dict_addr, read_mem)?;
+    let entries_addr =
+        dict_kv::entries_array_addr(offsets, &class_bytes, inner_dict_addr, read_mem)?;
     let entries = dict_kv::read_int_ptr_entries(offsets, entries_addr, read_mem)?;
 
     let mut by_zone: BTreeMap<i32, u64> = BTreeMap::new();
-    for DictPtrEntry { key: zone, value: holder } in entries {
+    for DictPtrEntry {
+        key: zone,
+        value: holder,
+    } in entries
+    {
         // Keep the entry even if holder is null — caller may want to
         // know the zone was registered but no card holder yet bound.
         by_zone.insert(zone, holder);
@@ -179,7 +210,10 @@ where
     Some(
         by_zone
             .into_iter()
-            .map(|(zone_id, holder_addr)| ZoneHolder { zone_id, holder_addr })
+            .map(|(zone_id, holder_addr)| ZoneHolder {
+                zone_id,
+                holder_addr,
+            })
             .collect(),
     )
 }
@@ -367,10 +401,7 @@ mod tests {
         let inner_a_vtable: u64 = 0x100_1000;
         let inner_a_class: u64 = 0x100_2000;
         let inner_a_entries_array: u64 = 0x100_3000;
-        let inner_a_entries = [
-            used_ptr_entry(3, 0xaaaa),
-            used_ptr_entry(7, 0xbbbb),
-        ];
+        let inner_a_entries = [used_ptr_entry(3, 0xaaaa), used_ptr_entry(7, 0xbbbb)];
         install_dict_with_entries(
             &mut mem,
             inner_a_class,
@@ -427,23 +458,40 @@ mod tests {
             .read(ptm_class, crate::walker::mono::CLASS_DEF_BLOB_LEN)
             .ok_or("read ptm class bytes")?;
 
-        let result = read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, |a, l| {
-            mem.read(a, l)
-        })
-        .ok_or("read_seat_zone_map should return Some")?;
+        let result =
+            read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, |a, l| mem.read(a, l))
+                .ok_or("read_seat_zone_map should return Some")?;
 
         assert_eq!(result.seats.len(), 2);
 
         let seat_a = &result.seats[0];
         assert_eq!(seat_a.seat_id, 0);
         assert_eq!(seat_a.zones.len(), 2);
-        assert_eq!(seat_a.zones[0], ZoneHolder { zone_id: 3, holder_addr: 0xaaaa });
-        assert_eq!(seat_a.zones[1], ZoneHolder { zone_id: 7, holder_addr: 0xbbbb });
+        assert_eq!(
+            seat_a.zones[0],
+            ZoneHolder {
+                zone_id: 3,
+                holder_addr: 0xaaaa
+            }
+        );
+        assert_eq!(
+            seat_a.zones[1],
+            ZoneHolder {
+                zone_id: 7,
+                holder_addr: 0xbbbb
+            }
+        );
 
         let seat_b = &result.seats[1];
         assert_eq!(seat_b.seat_id, 1);
         assert_eq!(seat_b.zones.len(), 1);
-        assert_eq!(seat_b.zones[0], ZoneHolder { zone_id: 4, holder_addr: 0xcccc });
+        assert_eq!(
+            seat_b.zones[0],
+            ZoneHolder {
+                zone_id: 4,
+                holder_addr: 0xcccc
+            }
+        );
         Ok(())
     }
 
@@ -474,10 +522,9 @@ mod tests {
             .read(ptm_class, crate::walker::mono::CLASS_DEF_BLOB_LEN)
             .ok_or("read ptm class bytes")?;
 
-        let result = read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, |a, l| {
-            mem.read(a, l)
-        })
-        .ok_or("should return Some")?;
+        let result =
+            read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, |a, l| mem.read(a, l))
+                .ok_or("should return Some")?;
 
         assert_eq!(result.seats.len(), 1);
         assert_eq!(result.seats[0].seat_id, 99);

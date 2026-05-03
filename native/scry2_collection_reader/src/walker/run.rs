@@ -33,6 +33,7 @@ use super::match_info::{self, MatchInfoValues};
 use super::match_scene;
 use super::mono::{self, MonoOffsets};
 use super::vtable;
+use crate::discovery_cache::{self, AnchorKind};
 
 // `CLASS_DEF_BLOB_LEN` lives on `super::mono`; the spike binaries import
 // it from here for ergonomics.
@@ -178,7 +179,10 @@ where
 /// is null (no active match) — this is a normal state, not an error.
 /// Returns `Err(WalkError)` for upstream failures (mono DLL missing,
 /// PAPA class missing, etc.).
-pub fn walk_match_info<F>(maps: &[MapEntry], read_mem: F) -> Result<Option<MatchInfoValues>, WalkError>
+pub fn walk_match_info<F>(
+    maps: &[MapEntry],
+    read_mem: F,
+) -> Result<Option<MatchInfoValues>, WalkError>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
@@ -205,9 +209,8 @@ where
         read_mem(papa_addr, CLASS_DEF_BLOB_LEN).ok_or(WalkError::ClassReadFailed("PAPA"))?;
 
     // PAPA._instance — static field via vtable storage.
-    let instance_field =
-        field::find_field_by_name(&offsets, &papa_bytes, "_instance", read_mem)
-            .ok_or(WalkError::ChainFailed)?;
+    let instance_field = field::find_field_by_name(&offsets, &papa_bytes, "_instance", read_mem)
+        .ok_or(WalkError::ChainFailed)?;
     if !instance_field.is_static || instance_field.offset < 0 {
         return Err(WalkError::ChainFailed);
     }
@@ -288,9 +291,8 @@ where
         return Err(WalkError::RootDomainNotFound);
     }
 
-    let scene_class_addr =
-        find_class_in_images(&offsets, &images, "MatchSceneManager", read_mem)
-            .ok_or(WalkError::ClassNotFound("MatchSceneManager"))?;
+    let scene_class_addr = find_class_in_images(&offsets, &images, "MatchSceneManager", read_mem)
+        .ok_or(WalkError::ClassNotFound("MatchSceneManager"))?;
     let scene_class_bytes = read_mem(scene_class_addr, CLASS_DEF_BLOB_LEN)
         .ok_or(WalkError::ClassReadFailed("MatchSceneManager"))?;
 
@@ -311,15 +313,11 @@ where
             None => return Ok(None),
         };
 
-    let seat_zone_map = match match_scene::read_seat_zone_map(
-        &offsets,
-        ptm_addr,
-        &ptm_class_bytes,
-        read_mem,
-    ) {
-        Some(m) => m,
-        None => return Ok(None),
-    };
+    let seat_zone_map =
+        match match_scene::read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, read_mem) {
+            Some(m) => m,
+            None => return Ok(None),
+        };
 
     let mut zones = Vec::new();
     for seat in &seat_zone_map.seats {
@@ -346,6 +344,212 @@ where
     }
 
     Ok(Some(BoardSnapshot { zones }))
+}
+
+// ============================================================
+// Cached variants — same chain logic, but expensive discovery
+// (mono image stitch + root_domain + image enumeration + class
+// lookup by name) goes through `discovery_cache` keyed by pid.
+// First call after MTGA starts pays full cost; every subsequent
+// call drops two orders of magnitude (~few hundred reads instead
+// of ~65k).
+//
+// On any chain failure that may indicate stale cache, the caller
+// (NIF wrapper) is expected to call `discovery_cache::invalidate(pid)`
+// and retry once. The cache module's docstring covers the contract.
+// ============================================================
+
+/// Cached variant of [`walk_match_info`]. See module-level cache
+/// rationale and the note on stale-entry handling.
+pub fn walk_match_info_cached<F>(
+    pid: u32,
+    maps: &[MapEntry],
+    read_mem: F,
+) -> Result<Option<MatchInfoValues>, WalkError>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let offsets = MonoOffsets::mtga_default();
+
+    let mono_image =
+        discovery_cache::get_mono_image(pid, maps, read_mem).ok_or(WalkError::MonoDllReadFailed)?;
+    let domain_addr = discovery_cache::get_root_domain(pid, &mono_image, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    let images = discovery_cache::get_all_images(pid, &offsets, domain_addr, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    let papa = discovery_cache::get_anchor(
+        pid,
+        AnchorKind::Papa,
+        &offsets,
+        &images,
+        "PAPA",
+        CLASS_DEF_BLOB_LEN,
+        read_mem,
+    )
+    .ok_or(WalkError::ClassNotFound("PAPA"))?;
+
+    // PAPA._instance — static field via vtable storage. Exactly the
+    // same code path as `walk_match_info` from this point on.
+    let instance_field =
+        field::find_field_by_name(&offsets, &papa.class_bytes, "_instance", read_mem)
+            .ok_or(WalkError::ChainFailed)?;
+    if !instance_field.is_static || instance_field.offset < 0 {
+        return Err(WalkError::ChainFailed);
+    }
+    let storage = vtable::static_storage_base(&offsets, papa.class_addr, domain_addr, read_mem)
+        .ok_or(WalkError::ChainFailed)?;
+    let static_addr = storage + instance_field.offset as u64;
+    let papa_singleton = read_mem(static_addr, 8)
+        .and_then(|b| mono::read_u64(&b, 0, 0))
+        .ok_or(WalkError::ChainFailed)?;
+    if papa_singleton == 0 {
+        return Ok(None);
+    }
+
+    Ok(match_info::from_papa_singleton(
+        &offsets,
+        papa_singleton,
+        &papa.class_bytes,
+        read_mem,
+    ))
+}
+
+/// Cached variant of [`walk_match_board`]. See module-level cache
+/// rationale and the note on stale-entry handling.
+pub fn walk_match_board_cached<F>(
+    pid: u32,
+    maps: &[MapEntry],
+    read_mem: F,
+) -> Result<Option<BoardSnapshot>, WalkError>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let offsets = MonoOffsets::mtga_default();
+
+    let mono_image =
+        discovery_cache::get_mono_image(pid, maps, read_mem).ok_or(WalkError::MonoDllReadFailed)?;
+    let domain_addr = discovery_cache::get_root_domain(pid, &mono_image, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    let images = discovery_cache::get_all_images(pid, &offsets, domain_addr, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    let scene = discovery_cache::get_anchor(
+        pid,
+        AnchorKind::Scene,
+        &offsets,
+        &images,
+        "MatchSceneManager",
+        CLASS_DEF_BLOB_LEN,
+        read_mem,
+    )
+    .ok_or(WalkError::ClassNotFound("MatchSceneManager"))?;
+
+    let scene_singleton = match match_scene::find_scene_singleton(
+        &offsets,
+        scene.class_addr,
+        &scene.class_bytes,
+        domain_addr,
+        read_mem,
+    ) {
+        Some(addr) => addr,
+        None => return Ok(None),
+    };
+
+    let (ptm_addr, ptm_class_bytes) =
+        match match_scene::walk_to_player_type_map(&offsets, scene_singleton, read_mem) {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+
+    let seat_zone_map =
+        match match_scene::read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, read_mem) {
+            Some(m) => m,
+            None => return Ok(None),
+        };
+
+    let mut zones = Vec::new();
+    for seat in &seat_zone_map.seats {
+        for zone in &seat.zones {
+            if !card_holder::READABLE_ZONES.contains(&zone.zone_id) {
+                continue;
+            }
+            if zone.holder_addr == 0 {
+                continue;
+            }
+            if let Some(arena_ids) =
+                card_holder::read_zone_arena_ids(&offsets, zone.holder_addr, zone.zone_id, read_mem)
+            {
+                if arena_ids.is_empty() {
+                    continue;
+                }
+                zones.push(ZoneCards {
+                    seat_id: seat.seat_id,
+                    zone_id: zone.zone_id,
+                    arena_ids,
+                });
+            }
+        }
+    }
+
+    Ok(Some(BoardSnapshot { zones }))
+}
+
+/// Cached variant of [`walk_collection`]. See module-level cache
+/// rationale and the note on stale-entry handling.
+pub fn walk_collection_cached<F, B>(
+    pid: u32,
+    maps: &[MapEntry],
+    read_mem: F,
+    build_hint: B,
+) -> Result<Snapshot, WalkError>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+    B: FnOnce() -> Option<String>,
+{
+    let offsets = MonoOffsets::mtga_default();
+
+    let mono_image =
+        discovery_cache::get_mono_image(pid, maps, read_mem).ok_or(WalkError::MonoDllReadFailed)?;
+    let domain_addr = discovery_cache::get_root_domain(pid, &mono_image, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    let images = discovery_cache::get_all_images(pid, &offsets, domain_addr, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    let papa = discovery_cache::get_anchor(
+        pid,
+        AnchorKind::Papa,
+        &offsets,
+        &images,
+        "PAPA",
+        CLASS_DEF_BLOB_LEN,
+        read_mem,
+    )
+    .ok_or(WalkError::ClassNotFound("PAPA"))?;
+    let dict = discovery_cache::get_anchor(
+        pid,
+        AnchorKind::DictGeneric,
+        &offsets,
+        &images,
+        "Dictionary`2",
+        CLASS_DEF_BLOB_LEN,
+        read_mem,
+    )
+    .ok_or(WalkError::ClassNotFound("Dictionary`2"))?;
+
+    let walk = chain::from_papa_class(
+        &offsets,
+        papa.class_addr,
+        domain_addr,
+        &papa.class_bytes,
+        &dict.class_bytes,
+        read_mem,
+    )
+    .ok_or(WalkError::ChainFailed)?;
+
+    Ok(Snapshot {
+        entries: walk.entries,
+        inventory: walk.inventory,
+        boosters: walk.boosters,
+        mtga_build_hint: build_hint(),
+    })
 }
 
 /// Locate the mono DLL in `maps`, stitch all its mapped sections

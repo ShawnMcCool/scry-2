@@ -24,11 +24,13 @@ pub mod linux;
 #[cfg(target_os = "linux")]
 pub use linux as platform;
 
+pub mod discovery_cache;
 pub mod read_budget;
 pub mod walker;
 
-use read_budget::{bounded, WALK_READ_BUDGET};
+use read_budget::{bounded_with_deadline, WALK_READ_BUDGET, WALK_WALL_CLOCK_BUDGET};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::Instant;
 
 #[cfg(target_os = "macos")]
 pub mod macos;
@@ -42,6 +44,7 @@ pub use windows as platform;
 
 mod atoms {
     rustler::atoms! {
+        ok,
         pong,
         unmapped,
         no_process,
@@ -221,13 +224,53 @@ fn walk_collection(pid: i32) -> Result<WalkSnapshot, WalkErrorWire> {
     let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
     let counter = AtomicU64::new(0);
     let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
-    let snap = walker::run::walk_collection(&maps, read_mem, || {
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+    let result = walker::run::walk_collection_cached(pid as u32, &maps, read_mem, || {
         walker::build_hint::find_mtga_root(&maps)
             .and_then(|root| walker::build_hint::read_build_guid(&root))
+    });
+    let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
+        let counter = AtomicU64::new(0);
+        let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+        let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+        let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+        walker::run::walk_collection_cached(pid as u32, &maps, read_mem, || {
+            walker::build_hint::find_mtga_root(&maps)
+                .and_then(|root| walker::build_hint::read_build_guid(&root))
+        })
     })
     .map_err(WalkErrorWire::from)?;
     Ok(snapshot_to_wire(snap))
+}
+
+/// If `result` indicates a failure that may have come from a stale
+/// cache entry (chain ended at a cached pointer), invalidate the
+/// cache for `pid` and run `retry`. On any other failure or success,
+/// return the original.
+///
+/// Stale-detection rule: `ChainFailed` is the only error that can
+/// come from a cached pointer being garbage. `ClassNotFound` /
+/// `ClassReadFailed` are caught BEFORE we cache, so they can't be
+/// stale. `MonoDllNotFound` / `MonoDllReadFailed` /
+/// `RootDomainNotFound` / `AssemblyNotFound` are upstream of the
+/// cache. The retry happens once — if it still fails, propagate the
+/// error.
+fn retry_invalidating_on_chain_failure<T, R>(
+    pid: u32,
+    result: Result<T, walker::run::WalkError>,
+    retry: R,
+) -> Result<T, walker::run::WalkError>
+where
+    R: FnOnce() -> Result<T, walker::run::WalkError>,
+{
+    match result {
+        Err(walker::run::WalkError::ChainFailed) => {
+            discovery_cache::invalidate(pid);
+            retry()
+        }
+        other => other,
+    }
 }
 
 /// Diagnostic NIF — list every `(assembly_name, class_name)` whose
@@ -248,7 +291,8 @@ fn walker_debug_classes_matching(
     let maps = platform::list_maps(pid).map_err(err_atom)?;
     let counter = AtomicU64::new(0);
     let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
 
     let (mono_base, mono_bytes) =
         walker::run::read_mono_image(&maps, &read_mem).ok_or(atoms::io_error())?;
@@ -285,7 +329,8 @@ fn walker_debug_class_fields(
     let maps = platform::list_maps(pid).map_err(err_atom)?;
     let counter = AtomicU64::new(0);
     let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
 
     let (mono_base, mono_bytes) =
         walker::run::read_mono_image(&maps, &read_mem).ok_or(atoms::io_error())?;
@@ -427,8 +472,17 @@ fn walk_match_info(pid: i32) -> Result<Option<WireMatchInfo>, WalkErrorWire> {
     let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
     let counter = AtomicU64::new(0);
     let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
-    let snap = walker::run::walk_match_info(&maps, read_mem).map_err(WalkErrorWire::from)?;
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+    let result = walker::run::walk_match_info_cached(pid as u32, &maps, read_mem);
+    let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
+        let counter = AtomicU64::new(0);
+        let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+        let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+        let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+        walker::run::walk_match_info_cached(pid as u32, &maps, read_mem)
+    })
+    .map_err(WalkErrorWire::from)?;
     Ok(snap.map(match_info_to_wire))
 }
 
@@ -478,8 +532,17 @@ fn walk_match_board(pid: i32) -> Result<Option<WireBoardSnapshot>, WalkErrorWire
     let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
     let counter = AtomicU64::new(0);
     let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
-    let snap = walker::run::walk_match_board(&maps, read_mem).map_err(WalkErrorWire::from)?;
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+    let result = walker::run::walk_match_board_cached(pid as u32, &maps, read_mem);
+    let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
+        let counter = AtomicU64::new(0);
+        let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+        let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+        let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+        walker::run::walk_match_board_cached(pid as u32, &maps, read_mem)
+    })
+    .map_err(WalkErrorWire::from)?;
     Ok(snap.map(board_snapshot_to_wire))
 }
 
@@ -497,10 +560,11 @@ pub struct WireWalkStats {
     pub budget: u64,
 }
 
-/// `walk_match_info` + reads_used / budget. The walk runs to
-/// completion (or budget exhaustion) regardless of error; the stats
-/// are reported on success and failure alike so a "class_not_found"
-/// can be distinguished from "ran fine but no active match".
+/// `walk_match_info_cached` + reads_used / budget. The walk uses the
+/// cached discovery path (same as prod), so the reported `reads_used`
+/// reflects what the LiveState polling will actually pay on
+/// subsequent ticks. First call after MTGA starts pays full
+/// discovery cost; subsequent calls drop two orders of magnitude.
 #[rustler::nif(schedule = "DirtyIo")]
 fn walker_debug_walk_match_info_with_stats(
     pid: i32,
@@ -509,8 +573,9 @@ fn walker_debug_walk_match_info_with_stats(
     let result = match platform::list_maps(pid) {
         Ok(maps) => {
             let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-            let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
-            walker::run::walk_match_info(&maps, read_mem)
+            let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+            let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+            walker::run::walk_match_info_cached(pid as u32, &maps, read_mem)
                 .map(|opt| opt.map(match_info_to_wire))
                 .map_err(WalkErrorWire::from)
         }
@@ -523,18 +588,22 @@ fn walker_debug_walk_match_info_with_stats(
     (result, stats)
 }
 
-/// `walk_match_board` + reads_used / budget. Same shape as the
+/// `walk_match_board_cached` + reads_used / budget. Same shape as the
 /// match-info variant.
 #[rustler::nif(schedule = "DirtyIo")]
 fn walker_debug_walk_match_board_with_stats(
     pid: i32,
-) -> (Result<Option<WireBoardSnapshot>, WalkErrorWire>, WireWalkStats) {
+) -> (
+    Result<Option<WireBoardSnapshot>, WalkErrorWire>,
+    WireWalkStats,
+) {
     let counter = AtomicU64::new(0);
     let result = match platform::list_maps(pid) {
         Ok(maps) => {
             let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-            let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
-            walker::run::walk_match_board(&maps, read_mem)
+            let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+            let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+            walker::run::walk_match_board_cached(pid as u32, &maps, read_mem)
                 .map(|opt| opt.map(board_snapshot_to_wire))
                 .map_err(WalkErrorWire::from)
         }
@@ -556,7 +625,8 @@ fn walker_debug_list_assemblies(pid: i32) -> Result<Vec<(String, u64)>, Atom> {
     let maps = platform::list_maps(pid).map_err(err_atom)?;
     let counter = AtomicU64::new(0);
     let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
 
     let (mono_base, mono_bytes) =
         walker::run::read_mono_image(&maps, &read_mem).ok_or(atoms::io_error())?;
@@ -564,6 +634,30 @@ fn walker_debug_list_assemblies(pid: i32) -> Result<Vec<(String, u64)>, Atom> {
         .ok_or(atoms::io_error())?;
     walker::image_lookup::list_all_assembly_names_and_images(&offsets, domain_addr, read_mem)
         .ok_or(atoms::io_error())
+}
+
+/// Snapshot the discovery cache. Returns one `(pid, "filled,slots")`
+/// tuple per cached pid; empty when nothing has been cached.
+#[rustler::nif]
+fn walker_debug_cache_snapshot() -> Vec<(u32, String)> {
+    discovery_cache::snapshot()
+}
+
+/// Drop the discovery cache for `pid`. Forces full discovery on the
+/// next walker call. Used by the admin page when investigating a
+/// suspected stale-cache regression.
+#[rustler::nif]
+fn walker_debug_cache_invalidate(pid: u32) -> Atom {
+    discovery_cache::invalidate(pid);
+    atoms::ok()
+}
+
+/// Drop the entire discovery cache. One-button reset for the admin
+/// page; also useful in tests.
+#[rustler::nif]
+fn walker_debug_cache_clear() -> Atom {
+    discovery_cache::clear_all();
+    atoms::ok()
 }
 
 rustler::init!("Elixir.Scry2.MtgaMemory.Nif");

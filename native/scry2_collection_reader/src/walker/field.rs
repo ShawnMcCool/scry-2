@@ -352,10 +352,8 @@ mod tests {
         );
         let class_buf = make_class_def(fields_ptr, 3);
 
-        let hit = find_field_by_name(&offsets, &class_buf, "m_inventory", |a, l| {
-            mem.read(a, l)
-        })
-        .ok_or("m_inventory should match exactly")?;
+        let hit = find_field_by_name(&offsets, &class_buf, "m_inventory", |a, l| mem.read(a, l))
+            .ok_or("m_inventory should match exactly")?;
 
         assert_eq!(hit.name_found, "m_inventory");
         assert_eq!(hit.parent_ptr, parent_ptr);
@@ -500,13 +498,11 @@ mod tests {
     fn find_in_chain_finds_field_on_self() -> Result<(), String> {
         let offsets = MonoOffsets::mtga_default();
         let mut mem = FakeMem::default();
-        let class_buf =
-            build_class_with_field(&mut mem, 0x1000, 0x2000, 0x3000, 0, "_self_field");
+        let class_buf = build_class_with_field(&mut mem, 0x1000, 0x2000, 0x3000, 0, "_self_field");
 
-        let hit = find_field_by_name_in_chain(&offsets, &class_buf, "_self_field", |a, l| {
-            mem.read(a, l)
-        })
-        .ok_or("self field should resolve")?;
+        let hit =
+            find_field_by_name_in_chain(&offsets, &class_buf, "_self_field", |a, l| mem.read(a, l))
+                .ok_or("self field should resolve")?;
         assert_eq!(hit.name_found, "_self_field");
         Ok(())
     }
@@ -547,27 +543,29 @@ mod tests {
 
         // Grandparent declares "_target".
         let grandparent_addr: u64 = 0x10000;
-        let grandparent_blob = build_class_with_field(
-            &mut mem, 0x11000, 0x12000, 0x13000, 0, "_target",
-        );
+        let grandparent_blob =
+            build_class_with_field(&mut mem, 0x11000, 0x12000, 0x13000, 0, "_target");
         mem.add(grandparent_addr, grandparent_blob);
 
         // Parent declares "_other_a", parent → grandparent.
         let parent_addr: u64 = 0x20000;
         let parent_blob = build_class_with_field(
-            &mut mem, 0x21000, 0x22000, 0x23000, grandparent_addr, "_other_a",
+            &mut mem,
+            0x21000,
+            0x22000,
+            0x23000,
+            grandparent_addr,
+            "_other_a",
         );
         mem.add(parent_addr, parent_blob);
 
         // Child declares "_other_b", parent → parent.
-        let child_blob = build_class_with_field(
-            &mut mem, 0x31000, 0x32000, 0x33000, parent_addr, "_other_b",
-        );
+        let child_blob =
+            build_class_with_field(&mut mem, 0x31000, 0x32000, 0x33000, parent_addr, "_other_b");
 
-        let hit = find_field_by_name_in_chain(&offsets, &child_blob, "_target", |a, l| {
-            mem.read(a, l)
-        })
-        .ok_or("grandparent field should resolve")?;
+        let hit =
+            find_field_by_name_in_chain(&offsets, &child_blob, "_target", |a, l| mem.read(a, l))
+                .ok_or("grandparent field should resolve")?;
         assert_eq!(hit.name_found, "_target");
         Ok(())
     }
@@ -579,8 +577,7 @@ mod tests {
 
         // Parent declares only "_other"; chain ends at null parent.
         let parent_addr: u64 = 0x10000;
-        let parent_blob =
-            build_class_with_field(&mut mem, 0x11000, 0x12000, 0x13000, 0, "_other");
+        let parent_blob = build_class_with_field(&mut mem, 0x11000, 0x12000, 0x13000, 0, "_other");
         mem.add(parent_addr, parent_blob);
 
         // Child declares only "_yet_other".
@@ -606,25 +603,17 @@ mod tests {
 
         // Parent has "shared" at offset 0x40.
         let parent_addr: u64 = 0x10000;
-        let parent_blob =
-            build_class_with_field(&mut mem, 0x11000, 0x12000, 0x13000, 0, "shared");
+        let parent_blob = build_class_with_field(&mut mem, 0x11000, 0x12000, 0x13000, 0, "shared");
         mem.add(parent_addr, parent_blob);
 
         // Child also has "shared" at offset 0x40 — same field name,
         // different class. Self should win.
-        let child_blob = build_class_with_field(
-            &mut mem,
-            0x21000,
-            0x22000,
-            0x23000,
-            parent_addr,
-            "shared",
-        );
+        let child_blob =
+            build_class_with_field(&mut mem, 0x21000, 0x22000, 0x23000, parent_addr, "shared");
 
-        let hit = find_field_by_name_in_chain(&offsets, &child_blob, "shared", |a, l| {
-            mem.read(a, l)
-        })
-        .ok_or("should match self")?;
+        let hit =
+            find_field_by_name_in_chain(&offsets, &child_blob, "shared", |a, l| mem.read(a, l))
+                .ok_or("should match self")?;
         assert_eq!(hit.name_found, "shared");
         // Both are at 0x40 in this fixture, so we can't disambiguate by
         // offset; the assertion is that we got something.

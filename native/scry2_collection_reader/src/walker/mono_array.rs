@@ -113,9 +113,8 @@ mod tests {
         let elements: Vec<u8> = (0..16).collect();
         write_array_header(&mut mem, array_addr, 4, elements.clone());
 
-        let (cap, blob) =
-            read_array_blob(&offsets, array_addr, 4, 100, &|a, l| mem.read(a, l))
-                .ok_or("must read")?;
+        let (cap, blob) = read_array_blob(&offsets, array_addr, 4, 100, &|a, l| mem.read(a, l))
+            .ok_or("must read")?;
         assert_eq!(cap, 4);
         assert_eq!(blob, elements);
         Ok(())
@@ -139,9 +138,8 @@ mod tests {
         let array_addr: u64 = 0x10_0000;
         write_array_header(&mut mem, array_addr, 0, vec![]);
 
-        let (cap, blob) =
-            read_array_blob(&offsets, array_addr, 4, 100, &|a, l| mem.read(a, l))
-                .ok_or("must read")?;
+        let (cap, blob) = read_array_blob(&offsets, array_addr, 4, 100, &|a, l| mem.read(a, l))
+            .ok_or("must read")?;
         assert_eq!(cap, 0);
         assert!(blob.is_empty());
         Ok(())

@@ -77,33 +77,36 @@ fn main() -> ExitCode {
 
     // Walk PAPA → MatchManager just to confirm we're in a match,
     // then walk MatchSceneManager → battlefield separately.
-    let scene_class_addr = match find_class_in_any(&offsets, &images, "MatchSceneManager", &read_mem) {
-        Some(a) => a,
-        None => {
-            eprintln!("[spike] MatchSceneManager class not found");
-            return ExitCode::from(2);
-        }
-    };
+    let scene_class_addr =
+        match find_class_in_any(&offsets, &images, "MatchSceneManager", &read_mem) {
+            Some(a) => a,
+            None => {
+                eprintln!("[spike] MatchSceneManager class not found");
+                return ExitCode::from(2);
+            }
+        };
     let scene_class_bytes = match read_mem(scene_class_addr, CLASS_DEF_BLOB_LEN) {
         Some(b) => b,
         None => return ExitCode::from(2),
     };
 
-    let instance_field = match field::find_field_by_name(&offsets, &scene_class_bytes, "Instance", read_mem) {
-        Some(f) if f.is_static => f,
-        _ => {
-            eprintln!("[spike] MatchSceneManager.Instance not resolvable as static");
-            return ExitCode::from(2);
-        }
-    };
+    let instance_field =
+        match field::find_field_by_name(&offsets, &scene_class_bytes, "Instance", read_mem) {
+            Some(f) if f.is_static => f,
+            _ => {
+                eprintln!("[spike] MatchSceneManager.Instance not resolvable as static");
+                return ExitCode::from(2);
+            }
+        };
 
-    let storage = match vtable::static_storage_base(&offsets, scene_class_addr, domain_addr, read_mem) {
-        Some(s) => s,
-        None => {
-            eprintln!("[spike] could not locate scene's static storage");
-            return ExitCode::from(2);
-        }
-    };
+    let storage =
+        match vtable::static_storage_base(&offsets, scene_class_addr, domain_addr, read_mem) {
+            Some(s) => s,
+            None => {
+                eprintln!("[spike] could not locate scene's static storage");
+                return ExitCode::from(2);
+            }
+        };
     let scene_singleton = match read_u64_at(storage + instance_field.offset as u64, &read_mem) {
         Some(p) if p != 0 => p,
         _ => {
@@ -115,25 +118,35 @@ fn main() -> ExitCode {
     // Scene → _gameManager → CardHolderManager → _provider → PlayerTypeMap
     let scene_class = read_object_class(scene_singleton, &read_mem).unwrap_or(0);
     let scene_class_bytes = read_mem(scene_class, CLASS_DEF_BLOB_LEN).unwrap_or_default();
-    let gm = chase(&offsets, &scene_class_bytes, scene_singleton, "_gameManager", &read_mem)
-        .expect("scene._gameManager");
+    let gm = chase(
+        &offsets,
+        &scene_class_bytes,
+        scene_singleton,
+        "_gameManager",
+        &read_mem,
+    )
+    .expect("scene._gameManager");
     let gm_class = read_object_class(gm, &read_mem).unwrap();
     let gm_bytes = read_mem(gm_class, CLASS_DEF_BLOB_LEN).unwrap();
-    let chm = chase(&offsets, &gm_bytes, gm, "CardHolderManager", &read_mem).expect("gm.CardHolderManager");
+    let chm = chase(&offsets, &gm_bytes, gm, "CardHolderManager", &read_mem)
+        .expect("gm.CardHolderManager");
     let chm_class = read_object_class(chm, &read_mem).unwrap();
     let chm_bytes = read_mem(chm_class, CLASS_DEF_BLOB_LEN).unwrap();
     let provider = chase(&offsets, &chm_bytes, chm, "_provider", &read_mem).expect("chm._provider");
     let prov_class = read_object_class(provider, &read_mem).unwrap();
     let prov_bytes = read_mem(prov_class, CLASS_DEF_BLOB_LEN).unwrap();
-    let ptm = chase(&offsets, &prov_bytes, provider, "PlayerTypeMap", &read_mem).expect("provider.PlayerTypeMap");
+    let ptm = chase(&offsets, &prov_bytes, provider, "PlayerTypeMap", &read_mem)
+        .expect("provider.PlayerTypeMap");
 
     // PTM = Dictionary<int, Dictionary<int, ICardHolder>>. Walk entries
     // looking for any seat's Battlefield holder (zone_id = 4).
     use scry2_collection_reader::walker::dict_kv;
     let ptm_class = read_object_class(ptm, &read_mem).unwrap();
     let ptm_bytes = read_mem(ptm_class, CLASS_DEF_BLOB_LEN).unwrap();
-    let outer_entries_addr = dict_kv::entries_array_addr(&offsets, &ptm_bytes, ptm, &read_mem).unwrap();
-    let outer_entries = dict_kv::read_int_ptr_entries(&offsets, outer_entries_addr, &read_mem).unwrap();
+    let outer_entries_addr =
+        dict_kv::entries_array_addr(&offsets, &ptm_bytes, ptm, &read_mem).unwrap();
+    let outer_entries =
+        dict_kv::read_int_ptr_entries(&offsets, outer_entries_addr, &read_mem).unwrap();
 
     let mut battlefield_holder: Option<u64> = None;
     let mut battlefield_seat: i32 = -1;
@@ -144,14 +157,20 @@ fn main() -> ExitCode {
         }
         let inner_class = read_object_class(inner_dict, &read_mem).unwrap_or(0);
         let inner_class_bytes = read_mem(inner_class, CLASS_DEF_BLOB_LEN).unwrap_or_default();
-        let inner_entries_addr = match dict_kv::entries_array_addr(&offsets, &inner_class_bytes, inner_dict, &read_mem) {
+        let inner_entries_addr = match dict_kv::entries_array_addr(
+            &offsets,
+            &inner_class_bytes,
+            inner_dict,
+            &read_mem,
+        ) {
             Some(a) => a,
             None => continue,
         };
-        let inner_entries = match dict_kv::read_int_ptr_entries(&offsets, inner_entries_addr, &read_mem) {
-            Some(e) => e,
-            None => continue,
-        };
+        let inner_entries =
+            match dict_kv::read_int_ptr_entries(&offsets, inner_entries_addr, &read_mem) {
+                Some(e) => e,
+                None => continue,
+            };
         for ie in &inner_entries {
             if ie.key == 4 && ie.value != 0 {
                 // Prefer Opponent (seat 2), but accept anything if no Opponent.
@@ -177,21 +196,39 @@ fn main() -> ExitCode {
             return ExitCode::from(0);
         }
     };
-    println!("[spike] battlefield holder = 0x{:x} (seat {})", battlefield_holder, battlefield_seat);
+    println!(
+        "[spike] battlefield holder = 0x{:x} (seat {})",
+        battlefield_holder, battlefield_seat
+    );
 
     // BattlefieldCardHolder._battlefieldLayout (own field, offset 0x168 per other spike)
     let bf_class = read_object_class(battlefield_holder, &read_mem).unwrap();
     let bf_bytes = read_mem(bf_class, CLASS_DEF_BLOB_LEN).unwrap();
-    let layout_addr = chase(&offsets, &bf_bytes, battlefield_holder, "_battlefieldLayout", &read_mem)
-        .expect("BattlefieldCardHolder._battlefieldLayout");
+    let layout_addr = chase(
+        &offsets,
+        &bf_bytes,
+        battlefield_holder,
+        "_battlefieldLayout",
+        &read_mem,
+    )
+    .expect("BattlefieldCardHolder._battlefieldLayout");
     println!("[spike] _battlefieldLayout = 0x{:x}", layout_addr);
 
     // BattlefieldLayout._unattachedCardsCache (own field on BattlefieldLayout)
     let layout_class = read_object_class(layout_addr, &read_mem).unwrap();
     let layout_bytes = read_mem(layout_class, CLASS_DEF_BLOB_LEN).unwrap();
-    let cards_list_addr = chase(&offsets, &layout_bytes, layout_addr, "_unattachedCardsCache", &read_mem)
-        .expect("BattlefieldLayout._unattachedCardsCache");
-    println!("[spike] _unattachedCardsCache (List<DuelScene_CDC>) = 0x{:x}", cards_list_addr);
+    let cards_list_addr = chase(
+        &offsets,
+        &layout_bytes,
+        layout_addr,
+        "_unattachedCardsCache",
+        &read_mem,
+    )
+    .expect("BattlefieldLayout._unattachedCardsCache");
+    println!(
+        "[spike] _unattachedCardsCache (List<DuelScene_CDC>) = 0x{:x}",
+        cards_list_addr
+    );
 
     // Read _size + _items of the list
     let list_class = read_object_class(cards_list_addr, &read_mem).unwrap();
@@ -203,7 +240,10 @@ fn main() -> ExitCode {
     let items_ptr = field::find_field_by_name(&offsets, &list_bytes, "_items", read_mem)
         .and_then(|f| read_u64_at(cards_list_addr + f.offset as u64, &read_mem))
         .unwrap_or(0);
-    println!("[spike] battlefield cards: _size={} _items=0x{:x}", size, items_ptr);
+    println!(
+        "[spike] battlefield cards: _size={} _items=0x{:x}",
+        size, items_ptr
+    );
 
     if size <= 0 || items_ptr == 0 {
         println!("[spike] no cards on battlefield to drill — try again with a populated board");
@@ -228,7 +268,10 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    println!("[spike] _model resolved at offset 0x{:x} (declaring class chain depth was N)", model_field.offset);
+    println!(
+        "[spike] _model resolved at offset 0x{:x} (declaring class chain depth was N)",
+        model_field.offset
+    );
 
     let model_addr = read_u64_at(first_cdc + model_field.offset as u64, &read_mem).unwrap_or(0);
     if model_addr == 0 {
@@ -246,16 +289,21 @@ fn main() -> ExitCode {
     dump_class_chain(&offsets, &model_class_bytes, 0, &read_mem);
 
     // Try to drill _instance
-    let instance_field = match find_in_class_chain(&offsets, &model_class_bytes, "_instance", &read_mem) {
-        Some(f) => f,
-        None => {
-            println!("\n[spike] _instance not found on {}", model_class_name);
-            return ExitCode::from(1);
-        }
-    };
-    println!("\n[spike] _instance resolved at offset 0x{:x}", instance_field.offset);
+    let instance_field =
+        match find_in_class_chain(&offsets, &model_class_bytes, "_instance", &read_mem) {
+            Some(f) => f,
+            None => {
+                println!("\n[spike] _instance not found on {}", model_class_name);
+                return ExitCode::from(1);
+            }
+        };
+    println!(
+        "\n[spike] _instance resolved at offset 0x{:x}",
+        instance_field.offset
+    );
 
-    let instance_addr = read_u64_at(model_addr + instance_field.offset as u64, &read_mem).unwrap_or(0);
+    let instance_addr =
+        read_u64_at(model_addr + instance_field.offset as u64, &read_mem).unwrap_or(0);
     if instance_addr == 0 {
         println!("[spike] _instance pointer is null");
         return ExitCode::from(1);
@@ -278,12 +326,23 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    println!("\n[spike] BaseGrpId resolved at offset 0x{:x}", grp_field.offset);
+    println!(
+        "\n[spike] BaseGrpId resolved at offset 0x{:x}",
+        grp_field.offset
+    );
 
     let arena_id_bytes = read_mem(instance_addr + grp_field.offset as u64, 4).unwrap_or_default();
     if arena_id_bytes.len() == 4 {
-        let arena_id = i32::from_le_bytes([arena_id_bytes[0], arena_id_bytes[1], arena_id_bytes[2], arena_id_bytes[3]]);
-        println!("\n[spike] ✓ FIRST CARD ARENA ID = {} (raw 0x{:08x})", arena_id, arena_id as u32);
+        let arena_id = i32::from_le_bytes([
+            arena_id_bytes[0],
+            arena_id_bytes[1],
+            arena_id_bytes[2],
+            arena_id_bytes[3],
+        ]);
+        println!(
+            "\n[spike] ✓ FIRST CARD ARENA ID = {} (raw 0x{:08x})",
+            arena_id, arena_id as u32
+        );
     }
 
     // Also try IsTapped, FaceDownState fields for context
@@ -365,7 +424,11 @@ where
         return;
     }
     let class_name = read_class_name(class_bytes, read_mem).unwrap_or_else(|| "?".into());
-    let prefix = if depth == 0 { "this".to_string() } else { format!("parent^{}", depth) };
+    let prefix = if depth == 0 {
+        "this".to_string()
+    } else {
+        format!("parent^{}", depth)
+    };
     println!("[{}] class='{}'", prefix, class_name);
 
     use scry2_collection_reader::walker::mono;
@@ -444,7 +507,9 @@ where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
     for img in images {
-        if let Some(addr) = scry2_collection_reader::walker::class_lookup::find_class_by_name(offsets, *img, target, read_mem) {
+        if let Some(addr) = scry2_collection_reader::walker::class_lookup::find_class_by_name(
+            offsets, *img, target, read_mem,
+        ) {
             return Some(addr);
         }
     }
@@ -459,7 +524,9 @@ where
     if b.len() < 8 {
         None
     } else {
-        Some(u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+        Some(u64::from_le_bytes([
+            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7],
+        ]))
     }
 }
 
@@ -487,8 +554,14 @@ where
         return None;
     }
     let name_ptr = u64::from_le_bytes([
-        class_bytes[0x48], class_bytes[0x49], class_bytes[0x4a], class_bytes[0x4b],
-        class_bytes[0x4c], class_bytes[0x4d], class_bytes[0x4e], class_bytes[0x4f],
+        class_bytes[0x48],
+        class_bytes[0x49],
+        class_bytes[0x4a],
+        class_bytes[0x4b],
+        class_bytes[0x4c],
+        class_bytes[0x4d],
+        class_bytes[0x4e],
+        class_bytes[0x4f],
     ]);
     read_c_string(name_ptr, READ_NAME_MAX, read_mem)
 }
@@ -508,7 +581,9 @@ where
 fn resolve_pid() -> Result<i32, String> {
     for arg in env::args().skip(1) {
         if let Some(rest) = arg.strip_prefix("--pid=") {
-            return rest.parse::<i32>().map_err(|e| format!("--pid= not a number: {e}"));
+            return rest
+                .parse::<i32>()
+                .map_err(|e| format!("--pid= not a number: {e}"));
         }
     }
     auto_discover_pid()
@@ -519,8 +594,12 @@ fn auto_discover_pid() -> Result<i32, String> {
     let mut candidates = Vec::new();
     for entry in entries.flatten() {
         let name = entry.file_name();
-        let Some(name_str) = name.to_str() else { continue };
-        let Ok(pid) = name_str.parse::<i32>() else { continue };
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        let Ok(pid) = name_str.parse::<i32>() else {
+            continue;
+        };
         let comm = fs::read_to_string(format!("/proc/{}/comm", pid)).unwrap_or_default();
         if comm.trim() != MTGA_COMM {
             continue;

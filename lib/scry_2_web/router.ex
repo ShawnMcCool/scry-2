@@ -52,6 +52,7 @@ defmodule Scry2Web.Router do
       live "/drafts/:id", DraftsLive, :show
       live "/settings", SettingsLive, :index
       live "/operations", OperationsLive, :index
+      live "/operations/mtga-memory", MtgaMemoryLive, :index
       live "/console", ConsolePageLive, :index
     end
   end

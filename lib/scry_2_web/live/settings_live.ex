@@ -651,17 +651,21 @@ defmodule Scry2Web.SettingsLive do
               />
             </div>
 
-            <div class="mt-3">
+            <div class="mt-3 flex items-start gap-2 flex-wrap">
               <button type="button" phx-click="run_diagnostic_capture" class="btn btn-soft btn-sm">
                 Run diagnostic capture now
               </button>
-              <p class="text-xs text-base-content/60 mt-1">
-                Resolves MTGA's process and runs both walker chains once. Result is
-                flashed at the top of the page and logged to the console under
-                <code>:live_state</code>
-                at warning level (visible without verbose).
-              </p>
+              <.link navigate={~p"/operations/mtga-memory"} class="btn btn-soft btn-sm">
+                Memory diagnostics →
+              </.link>
             </div>
+            <p class="text-xs text-base-content/60 mt-1">
+              Diagnostic capture resolves MTGA's process and runs both walker
+              chains once — result flashes at the top and logs to <code>:live_state</code>
+              at warning level. The full diagnostics page lets you trace the
+              walker over time, inspect the per-pid discovery cache, and probe
+              classes by name.
+            </p>
 
             <div class="divider my-2"></div>
 

@@ -147,9 +147,13 @@ where
 
     let mut values = MatchInfoValues::default();
 
-    if let Some(local_addr) =
-        object::read_instance_pointer(offsets, &mm_class_bytes, mm_addr, "LocalPlayerInfo", &read_mem)
-    {
+    if let Some(local_addr) = object::read_instance_pointer(
+        offsets,
+        &mm_class_bytes,
+        mm_addr,
+        "LocalPlayerInfo",
+        &read_mem,
+    ) {
         if let Some(class_bytes) = object::read_runtime_class_bytes(local_addr, &read_mem) {
             values.local = read_player_info(offsets, &class_bytes, local_addr, &read_mem);
         }
@@ -163,22 +167,48 @@ where
         }
     }
 
-    values.match_id =
-        instance_field::read_instance_string(offsets, &mm_class_bytes, mm_addr, "MatchID", MAX_STRING_CHARS, &read_mem);
+    values.match_id = instance_field::read_instance_string(
+        offsets,
+        &mm_class_bytes,
+        mm_addr,
+        "MatchID",
+        MAX_STRING_CHARS,
+        &read_mem,
+    );
     values.format = read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "Format", &read_mem);
     values.variant = read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "Variant", &read_mem);
     values.session_type =
         read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "SessionType", &read_mem);
-    values.current_game_number =
-        read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "CurrentGameNumber", &read_mem);
+    values.current_game_number = read_i32_or_zero(
+        offsets,
+        &mm_class_bytes,
+        mm_addr,
+        "CurrentGameNumber",
+        &read_mem,
+    );
     values.match_state =
         read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "MatchState", &read_mem);
-    values.local_player_seat_id =
-        read_i32_or_zero(offsets, &mm_class_bytes, mm_addr, "LocalPlayerSeatId", &read_mem);
-    values.is_practice_game =
-        read_bool_or_false(offsets, &mm_class_bytes, mm_addr, "IsPracticeGame", &read_mem);
-    values.is_private_game =
-        read_bool_or_false(offsets, &mm_class_bytes, mm_addr, "IsPrivateGame", &read_mem);
+    values.local_player_seat_id = read_i32_or_zero(
+        offsets,
+        &mm_class_bytes,
+        mm_addr,
+        "LocalPlayerSeatId",
+        &read_mem,
+    );
+    values.is_practice_game = read_bool_or_false(
+        offsets,
+        &mm_class_bytes,
+        mm_addr,
+        "IsPracticeGame",
+        &read_mem,
+    );
+    values.is_private_game = read_bool_or_false(
+        offsets,
+        &mm_class_bytes,
+        mm_addr,
+        "IsPrivateGame",
+        &read_mem,
+    );
 
     Some(values)
 }
@@ -205,7 +235,13 @@ where
         ),
         seat_id: read_i32_or_zero(offsets, class_bytes, object_addr, "SeatId", read_mem),
         team_id: read_i32_or_zero(offsets, class_bytes, object_addr, "TeamId", read_mem),
-        ranking_class: read_i32_or_zero(offsets, class_bytes, object_addr, "RankingClass", read_mem),
+        ranking_class: read_i32_or_zero(
+            offsets,
+            class_bytes,
+            object_addr,
+            "RankingClass",
+            read_mem,
+        ),
         ranking_tier: read_i32_or_zero(offsets, class_bytes, object_addr, "RankingTier", read_mem),
         mythic_percentile: read_i32_or_zero(
             offsets,
