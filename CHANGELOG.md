@@ -11,6 +11,12 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Settings → Memory reading** now exposes a "Verbose diagnostics" toggle and a "Run diagnostic capture now" button — useful when memory reading isn't producing data and you want a fast read on whether MTGA is reachable.
+- Memory-reading log lines now appear under their own **:live_state** chip in the console drawer, separated from general ingestion noise.
+- At every match wind-down, the console now records a one-line summary of what the memory reader saw — counts of successful, empty, and failed reads for both the rank chain and the board chain — making it easier to tell whether memory reading is working from one match to the next.
+
 ## v0.30.1 — 2026-05-03
 
 ### Maintenance
