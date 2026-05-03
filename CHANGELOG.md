@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.30.0 — 2026-05-03
+
 ### Improved
 
 - **More cards in the Revealed cards section.** The match detail page now shows cards from your opponent's **Hand** (revealed via Thoughtseize, Duress, etc.), **Graveyard**, and **Exile** in addition to the battlefield. Captured directly from MTGA's process memory at end-of-match, so you can finally see what your opponent was holding when they hit you with a discard spell. The Hand section is labelled **revealed only** to make clear it's just the cards that became visible during the match — not their full hand.
