@@ -55,4 +55,52 @@ defmodule Scry2Web.MatchesLiveTest do
       refute html =~ "data-test=\"match-economy-card\""
     end
   end
+
+  describe "match detail — opponent + rank display" do
+    test "renders memory-enriched opponent screen name and rank", %{conn: conn} do
+      match =
+        Factory.create_match(
+          mtga_match_id: "rank-detail-1",
+          opponent_screen_name: "RealOpponent#42",
+          opponent_rank: "Diamond 2",
+          player_rank: "Platinum 4"
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/matches/#{match.id}")
+
+      assert html =~ "RealOpponent#42"
+      assert html =~ "Diamond 2"
+      assert html =~ "Platinum 4"
+    end
+
+    test "renders Mythic placement when opponent has placement", %{conn: conn} do
+      match =
+        Factory.create_match(
+          mtga_match_id: "rank-detail-2",
+          opponent_screen_name: "TopPlayer",
+          opponent_rank: "Mythic",
+          opponent_rank_mythic_placement: 142
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/matches/#{match.id}")
+
+      assert html =~ "TopPlayer"
+      assert html =~ "Mythic #142"
+    end
+
+    test "renders Mythic percentile when opponent has no placement", %{conn: conn} do
+      match =
+        Factory.create_match(
+          mtga_match_id: "rank-detail-3",
+          opponent_screen_name: "Climbing",
+          opponent_rank: "Mythic",
+          opponent_rank_mythic_percentile: 88
+        )
+
+      {:ok, _view, html} = live(conn, ~p"/matches/#{match.id}")
+
+      assert html =~ "Climbing"
+      assert html =~ "Mythic 88%"
+    end
+  end
 end

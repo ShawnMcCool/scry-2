@@ -14,6 +14,7 @@ defmodule Scry2Web.MatchesLive do
 
   alias Scry2.{Cards, LiveState, MatchEconomy, Matches}
   alias Scry2.Topics
+  alias Scry2Web.Components.RankBadge
   alias Scry2Web.MatchesHelpers
 
   @per_page 20
@@ -738,6 +739,12 @@ defmodule Scry2Web.MatchesLive do
           <h1 class="text-xl font-semibold text-base-content font-beleren">
             vs {@match.opponent_screen_name || "Unknown"}
           </h1>
+          <RankBadge.rank_badge
+            :if={@match.opponent_rank}
+            rank={@match.opponent_rank}
+            mythic_placement={@match.opponent_rank_mythic_placement}
+            mythic_percentile={@match.opponent_rank_mythic_percentile}
+          />
         </div>
 
         <div class="flex items-center gap-3 text-sm text-base-content/60 mt-1 flex-wrap">
@@ -773,7 +780,7 @@ defmodule Scry2Web.MatchesLive do
               class="text-xs"
             />
           </span>
-          <span :if={@match.player_rank}>{@match.player_rank}</span>
+          <RankBadge.rank_badge :if={@match.player_rank} rank={@match.player_rank} />
           <span :if={@match.on_play != nil}>{MatchesHelpers.on_play_label(@match.on_play)}</span>
         </div>
       </div>
