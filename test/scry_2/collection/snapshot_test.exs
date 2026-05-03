@@ -156,6 +156,50 @@ defmodule Scry2.Collection.SnapshotTest do
     end
   end
 
+  describe "mastery field round-trip" do
+    test "persists and reloads all mastery fields" do
+      attrs = %{
+        snapshot_ts: DateTime.utc_now() |> DateTime.truncate(:microsecond),
+        reader_version: "test",
+        reader_confidence: "walker",
+        card_count: 0,
+        total_copies: 0,
+        cards_json: "[]",
+        mastery_tier: 17,
+        mastery_xp_in_tier: 500,
+        mastery_orbs: 0,
+        mastery_season_name: "BattlePass_SOS",
+        mastery_season_ends_at: ~U[2026-09-15 00:00:00Z]
+      }
+
+      changeset = Snapshot.changeset(%Snapshot{}, attrs)
+      assert changeset.valid?
+
+      {:ok, saved} = Repo.insert(changeset)
+      reloaded = Repo.get!(Snapshot, saved.id)
+
+      assert reloaded.mastery_tier == 17
+      assert reloaded.mastery_xp_in_tier == 500
+      assert reloaded.mastery_orbs == 0
+      assert reloaded.mastery_season_name == "BattlePass_SOS"
+      assert reloaded.mastery_season_ends_at == ~U[2026-09-15 00:00:00Z]
+    end
+
+    test "snapshot is valid without any mastery fields (all nullable)" do
+      attrs = %{
+        snapshot_ts: DateTime.utc_now() |> DateTime.truncate(:microsecond),
+        reader_version: "test",
+        reader_confidence: "walker",
+        card_count: 0,
+        total_copies: 0,
+        cards_json: "[]"
+      }
+
+      changeset = Snapshot.changeset(%Snapshot{}, attrs)
+      assert changeset.valid?
+    end
+  end
+
   defp base_attrs(extra) do
     Map.merge(
       %{

@@ -10,6 +10,13 @@ defmodule Scry2.Collection.Snapshot do
   Walker-path fields (`wildcards_*`, `gold`, `gems`, `vault_progress`)
   are nullable — the scanner fallback can't populate them yet. The
   walker implementation lands them (ADR 034).
+
+  Mastery-pass fields (`mastery_*`) are also nullable and populated by
+  the new mastery walker (`walker/mastery.rs`) on each snapshot when the
+  3-hop chain `PAPA → SetMasteryDataProvider → AwsSetMasteryStrategy →
+  ProgressionTrack` resolves. Between mastery seasons or when the
+  runtime strategy isn't `AwsSetMasteryStrategy`, the walker returns
+  `{:ok, nil}` and the columns stay null. See spike 20 for the chain.
   """
 
   use Ecto.Schema
@@ -38,7 +45,12 @@ defmodule Scry2.Collection.Snapshot do
     :vault_progress,
     :boosters_json,
     :mtga_match_id,
-    :match_phase
+    :match_phase,
+    :mastery_tier,
+    :mastery_xp_in_tier,
+    :mastery_orbs,
+    :mastery_season_name,
+    :mastery_season_ends_at
   ]
 
   @required_fields [
@@ -68,6 +80,11 @@ defmodule Scry2.Collection.Snapshot do
     field :boosters_json, :string
     field :mtga_match_id, :string
     field :match_phase, :string
+    field :mastery_tier, :integer
+    field :mastery_xp_in_tier, :integer
+    field :mastery_orbs, :integer
+    field :mastery_season_name, :string
+    field :mastery_season_ends_at, :utc_datetime
 
     timestamps(type: :utc_datetime_usec)
   end
