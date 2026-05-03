@@ -29,8 +29,8 @@ defmodule Scry2Web.Components.MasteryCard do
   def mastery_card(assigns) do
     assigns =
       assigns
-      |> assign_new(:now, fn -> DateTime.utc_now() end)
-      |> assign_new(:set_code, fn -> set_code(assigns[:snapshot]) end)
+      |> assign(:now, assigns[:now] || DateTime.utc_now())
+      |> assign(:set_code, set_code(assigns[:snapshot]))
 
     ~H"""
     <section class="card bg-base-200 border border-base-300" data-role="mastery-card">

@@ -125,6 +125,7 @@ defmodule Scry2.Collection do
       }
       |> Map.merge(walker_fields(result))
       |> Map.merge(match_tag_fields(result))
+      |> Map.merge(mastery_fields(result))
 
     snapshot_changeset = Snapshot.changeset(%Snapshot{}, attrs)
     previous = current()
@@ -324,4 +325,14 @@ defmodule Scry2.Collection do
   end
 
   defp match_tag_fields(_), do: %{}
+
+  defp mastery_fields(result) do
+    Map.take(result, [
+      :mastery_tier,
+      :mastery_xp_in_tier,
+      :mastery_orbs,
+      :mastery_season_name,
+      :mastery_season_ends_at
+    ])
+  end
 end
