@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.30.2 — 2026-05-03
+
 ### Improved
 
 - **Settings → Memory reading** now exposes a "Verbose diagnostics" toggle and a "Run diagnostic capture now" button — useful when memory reading isn't producing data and you want a fast read on whether MTGA is reachable.
