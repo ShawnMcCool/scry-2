@@ -229,6 +229,13 @@ defmodule Scry2.Application do
           # collection:diffs and writes to economy_card_grants when the
           # collection grew without an explanation (pack-opens etc.).
           Scry2.Economy.IngestMemoryGrants,
+          # Match-record enrichment: subscribes to live_match:final and merges
+          # memory-observed gap-filler fields (opponent screen name, rank with
+          # mythic percentile/placement) into matches_matches rows.
+          Scry2.Matches.MergeOpponentObservation,
+          # Match-result enrichment: same memory observation, applied to
+          # decks_match_results rows.
+          Scry2.Decks.MergeMatchResultObservation,
           # Stages 01–05: watcher reads Player.log and broadcasts raw events.
           Scry2.MtgaLogIngestion.Watcher
         ]
