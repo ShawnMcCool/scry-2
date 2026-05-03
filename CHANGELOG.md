@@ -11,6 +11,15 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Memory reading uses less CPU during matches.** The reader now caches the most expensive parts of its setup work across polls, so every poll after the first costs a small fraction of what it did before. Long matches and Brawl/Commander games (which take longer per turn) feel notably lighter on the system.
+- **Memory reading is harder to break by future MTGA updates.** Each memory-read pass now has a 500&nbsp;ms ceiling on top of the existing safety cap, so if a future MTGA build ever changes shape in a way that confuses the reader, the affected poll stops cleanly rather than hanging the app.
+
+### New
+
+- **Memory diagnostics page at Operations → Memory diagnostics →.** Inspect the live MTGA process, run a one-shot walker trace with read-count and timing, see what's in the discovery cache, and probe MTGA's class table by name. Useful when something looks off with rank, opponent name, or revealed cards and you want concrete numbers before reporting it.
+
 ## v0.30.3 — 2026-05-03
 
 ### Fixed
