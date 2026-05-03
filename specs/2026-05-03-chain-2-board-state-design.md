@@ -73,7 +73,7 @@ Chain 2's actual list usage:
 
 New module. Given a `holder_addr`, returns `Vec<i32>` (the arena_ids of cards visible in that zone). Uses two paths:
 
-**Non-battlefield zones (Hand, Graveyard, Exile, Stack, Command, CardBrowser*, etc.):**
+**Non-battlefield zones (Hand, Graveyard, Exile, Stack, etc. — Command zone holder is enumerated for free by the seat→zone walk but stays empty in formats without commanders):**
 
 1. Read `BaseCardHolder._previousLayoutData` — `List<CardLayoutData>` where each element is a struct (NOT a reference).
 2. For each `CardLayoutData`:
@@ -230,7 +230,6 @@ Opponent cards revealed
   Exile         [card] ...
   Hand revealed [card] (Thoughtseized turn 3)   ← v1 has no turn data; just lists
   Stack         [card]
-  Command       [card] (Brawl: commander)
 ```
 
 Each `[card]` is the existing `Scry2Web.Components.CardThumb` (or whichever component renders an arena_id with image + hover tooltip — confirm during implementation; this is shape, not commitment).
@@ -242,7 +241,7 @@ Helpers extracted into `Scry2Web.Live.MatchBoardView` (pure functions: `group_by
 ## Testing
 
 - **Walker:** unit tests against `FakeMem` for the new `card_holder.rs` module, mirroring the existing `match_scene.rs` test pattern. End-to-end: `walk_match_board` returns a synthetic seat→zone→arena_ids map.
-- **Spike:** `cargo run --bin card-holder-spike --release` against a live MTGA process during a Brawl match (chosen for the Command-zone coverage). Stdout becomes the FINDING.md.
+- **Spike:** `cargo run --bin match-manager-spike --release` against a live MTGA process during any active match. Stdout becomes the FINDING.md.
 - **Persistence:** `LiveState.record_final_board/2` test inserts board snapshot + revealed cards in one transaction; failure rolls both back.
 - **Server:** test the new tick path with `TestBackend` returning fixture board snapshots; verify `last_board_snapshot` accumulates and is persisted on wind-down.
 - **UI:** ADR-013 — extracted helpers (`group_by_zone/1`, etc.) get pure-function tests. No HTML assertions.
@@ -250,7 +249,7 @@ Helpers extracted into `Scry2Web.Live.MatchBoardView` (pure functions: `group_by
 ## Sub-projects (decomposition for the writing-plans skill)
 
 1. ~~**Walker generic `List<T>`**~~ — **closed by the walker refactor** (`refactor(walker): extract shared primitives per engineering audit`). `mono_array::read_array_elements` already takes element size; `list_t::read_pointer_list` covers `List<TRef>`. Struct-list reads are three lines of caller code — no preemptive helper needed.
-2. **Spike capture against live MTGA** — run the existing `match-manager-spike --pid=<MTGA pid>` (its `chain2_deep_dive` already dumps the relevant field manifests), capture stdout, write FINDING.md pinning offsets for `BaseCardHolder._previousLayoutData`, `CardLayoutData`, `BaseCDC._model`, `CardDataAdapter._instance`, `BattlefieldCardHolder.Layout`, `BattlefieldRegion._stacksByShape`, `BattlefieldStack.AllCards`. Gated on the user running MTGA. ~30 min when MTGA is in a Brawl match (chosen for Command-zone coverage).
+2. **Spike capture against live MTGA** — run the existing `match-manager-spike --pid=<MTGA pid>` (its `chain2_deep_dive` already dumps the relevant field manifests), capture stdout, write FINDING.md pinning offsets for `BaseCardHolder._previousLayoutData`, `CardLayoutData`, `BaseCDC._model`, `CardDataAdapter._instance`, `BattlefieldCardHolder.Layout`, `BattlefieldRegion._stacksByShape`, `BattlefieldStack.AllCards`. Gated on the user running MTGA. ~30 min once MTGA is in any active match.
 3. **Walker `card_holder.rs`** — non-battlefield path. ~1 day.
 4. **Walker battlefield region traversal** — region/stack drill-down. ~1 day.
 5. **MtgaMemory contract + persistence + LiveState.Server integration** — Elixir layer. ~2 days.
