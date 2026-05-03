@@ -7,16 +7,18 @@ defmodule Scry2Web.Components.LiveMatchCard do
   ship in the log stream — opponent rank in particular is the
   log-gap-filler. Hidden when no tick is held (no active match).
 
-  Logic-bearing helpers `view_model/1`, `format_rank/4`, and
-  `screen_name_or_nil/1` are exposed for unit testing per ADR-013
-  (no HTML assertions; test the pure helper).
+  Logic-bearing helpers `view_model/1` and `screen_name_or_nil/1` are
+  exposed for unit testing per ADR-013 (no HTML assertions; test the
+  pure helper). Rank rendering itself lives in
+  `Scry2Web.Components.RankBadge` — the sole place that knows how to
+  render an MTGA rank with a Mythic suffix.
   """
 
   use Phoenix.Component
 
-  # Order matches MTGA's RankingClass enum: index 0 = None.
-  # See `.claude/skills/mono-memory-reader/SKILL.md`.
-  @rank_class_labels {nil, "Bronze", "Silver", "Gold", "Platinum", "Diamond", "Mythic"}
+  alias Scry2.LiveState.RankClass
+  alias Scry2.Matches.RankFormat
+  alias Scry2Web.Components.RankBadge
 
   @placeholder_screen_names ["Local Player", "Opponent"]
 
@@ -50,12 +52,16 @@ defmodule Scry2Web.Components.LiveMatchCard do
             label="You"
             name={@vm.local_name}
             rank={@vm.local_rank}
+            mythic_placement={@vm.local_mythic_placement}
+            mythic_percentile={@vm.local_mythic_percentile}
             commanders={commander_labels(@vm.local_commander_arena_ids, @commander_names_by_arena_id)}
           />
           <.player_block
             label="Opponent"
             name={@vm.opponent_name}
             rank={@vm.opponent_rank}
+            mythic_placement={@vm.opponent_mythic_placement}
+            mythic_percentile={@vm.opponent_mythic_percentile}
             commanders={
               commander_labels(@vm.opponent_commander_arena_ids, @commander_names_by_arena_id)
             }
@@ -69,6 +75,8 @@ defmodule Scry2Web.Components.LiveMatchCard do
   attr :label, :string, required: true
   attr :name, :string, default: nil
   attr :rank, :string, default: nil
+  attr :mythic_placement, :integer, default: nil
+  attr :mythic_percentile, :integer, default: nil
   attr :commanders, :list, default: []
 
   defp player_block(assigns) do
@@ -76,7 +84,12 @@ defmodule Scry2Web.Components.LiveMatchCard do
     <div class="flex flex-col gap-0.5">
       <span class="text-xs uppercase tracking-wide opacity-50">{@label}</span>
       <span class="text-base font-semibold truncate">{@name || "—"}</span>
-      <span :if={@rank} class="text-xs opacity-70">{@rank}</span>
+      <RankBadge.rank_badge
+        :if={@rank}
+        rank={@rank}
+        mythic_placement={@mythic_placement}
+        mythic_percentile={@mythic_percentile}
+      />
       <span :for={commander <- @commanders} class="text-xs opacity-70 truncate">
         ⌬ {commander}
       </span>
@@ -87,13 +100,22 @@ defmodule Scry2Web.Components.LiveMatchCard do
   @doc """
   Build a display-ready view model from a `live_match:updates` tick
   payload. `nil` payload → inactive (card hidden).
+
+  Rank fields are split into a base string (composed via
+  `RankClass.name/1` + `RankFormat.compose/2`) and the raw mythic
+  placement/percentile integers, so the rendering component
+  (`Scry2Web.Components.RankBadge`) can format the suffix.
   """
   @spec view_model(map() | nil) :: %{
           active?: boolean(),
           opponent_name: String.t() | nil,
           local_name: String.t() | nil,
           opponent_rank: String.t() | nil,
+          opponent_mythic_percentile: integer() | nil,
+          opponent_mythic_placement: integer() | nil,
           local_rank: String.t() | nil,
+          local_mythic_percentile: integer() | nil,
+          local_mythic_placement: integer() | nil,
           game_number: integer() | nil,
           local_commander_arena_ids: [integer()],
           opponent_commander_arena_ids: [integer()]
@@ -104,7 +126,11 @@ defmodule Scry2Web.Components.LiveMatchCard do
       opponent_name: nil,
       local_name: nil,
       opponent_rank: nil,
+      opponent_mythic_percentile: nil,
+      opponent_mythic_placement: nil,
       local_rank: nil,
+      local_mythic_percentile: nil,
+      local_mythic_placement: nil,
       game_number: nil,
       local_commander_arena_ids: [],
       opponent_commander_arena_ids: []
@@ -121,59 +147,41 @@ defmodule Scry2Web.Components.LiveMatchCard do
       opponent_name: screen_name_or_nil(Map.get(opponent, :screen_name)),
       local_name: screen_name_or_nil(Map.get(local, :screen_name)),
       opponent_rank:
-        format_rank(
-          Map.get(opponent, :ranking_class, 0),
-          Map.get(opponent, :ranking_tier, 0),
-          Map.get(opponent, :mythic_percentile, 0),
-          Map.get(opponent, :mythic_placement, 0)
+        compose_rank(
+          Map.get(opponent, :ranking_class),
+          Map.get(opponent, :ranking_tier)
         ),
+      opponent_mythic_percentile: Map.get(opponent, :mythic_percentile),
+      opponent_mythic_placement: Map.get(opponent, :mythic_placement),
       local_rank:
-        format_rank(
-          Map.get(local, :ranking_class, 0),
-          Map.get(local, :ranking_tier, 0),
-          Map.get(local, :mythic_percentile, 0),
-          Map.get(local, :mythic_placement, 0)
+        compose_rank(
+          Map.get(local, :ranking_class),
+          Map.get(local, :ranking_tier)
         ),
+      local_mythic_percentile: Map.get(local, :mythic_percentile),
+      local_mythic_placement: Map.get(local, :mythic_placement),
       game_number: if(game_number > 0, do: game_number, else: nil),
       local_commander_arena_ids: Map.get(local, :commander_grp_ids, []),
       opponent_commander_arena_ids: Map.get(opponent, :commander_grp_ids, [])
     }
   end
 
-  @doc """
-  Format a rank for display. Returns `nil` when no rank is available
-  (class index 0 = None).
-
-  - Sub-Mythic: `"Diamond 3"` (class + tier).
-  - Mythic with placement > 0: `"Mythic #42"`.
-  - Mythic with percentile > 0: `"Mythic 12%"`.
-  - Mythic with neither: `"Mythic"`.
-  """
-  @spec format_rank(integer(), integer(), integer(), integer()) :: String.t() | nil
-  def format_rank(0, _tier, _percentile, _placement), do: nil
-
-  def format_rank(6, _tier, _percentile, placement) when placement > 0 do
-    "Mythic ##{placement}"
-  end
-
-  def format_rank(6, _tier, percentile, _placement) when percentile > 0 do
-    "Mythic #{percentile}%"
-  end
-
-  def format_rank(6, _tier, _percentile, _placement), do: "Mythic"
-
-  def format_rank(class, tier, _percentile, _placement)
-      when class in 1..5 and is_integer(tier) do
-    label = elem(@rank_class_labels, class)
-
-    if tier > 0 do
-      "#{label} #{tier}"
-    else
-      label
+  # Class 0 = "None" in RankClass; the player has no rank to show.
+  # Mythic always renders without a tier suffix — the suffix is encoded
+  # in the placement / percentile fields handled by `RankBadge`. For
+  # sub-Mythic classes, tier 0 ("no tier") is also dropped so we get
+  # "Platinum" rather than "Platinum 0".
+  defp compose_rank(class_index, tier) do
+    case RankClass.name(class_index) do
+      nil -> nil
+      "None" -> nil
+      "Mythic" -> "Mythic"
+      class_name -> RankFormat.compose(class_name, nil_if_zero(tier))
     end
   end
 
-  def format_rank(_class, _tier, _percentile, _placement), do: nil
+  defp nil_if_zero(0), do: nil
+  defp nil_if_zero(other), do: other
 
   @doc """
   Filter MTGA's tear-down placeholders ("Local Player" / "Opponent")

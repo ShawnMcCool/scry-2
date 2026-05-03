@@ -10,7 +10,11 @@ defmodule Scry2Web.Components.LiveMatchCardTest do
       assert vm.opponent_name == nil
       assert vm.local_name == nil
       assert vm.opponent_rank == nil
+      assert vm.opponent_mythic_percentile == nil
+      assert vm.opponent_mythic_placement == nil
       assert vm.local_rank == nil
+      assert vm.local_mythic_percentile == nil
+      assert vm.local_mythic_placement == nil
       assert vm.game_number == nil
       assert vm.local_commander_arena_ids == []
       assert vm.opponent_commander_arena_ids == []
@@ -81,7 +85,7 @@ defmodule Scry2Web.Components.LiveMatchCardTest do
       assert vm.opponent_rank == nil
     end
 
-    test "Mythic class with placement renders as 'Mythic #42'" do
+    test "Mythic class composes to 'Mythic' rank with placement preserved" do
       tick =
         match_info(
           opponent:
@@ -95,10 +99,12 @@ defmodule Scry2Web.Components.LiveMatchCardTest do
 
       vm = LiveMatchCard.view_model(tick)
 
-      assert vm.opponent_rank == "Mythic #42"
+      assert vm.opponent_rank == "Mythic"
+      assert vm.opponent_mythic_placement == 42
+      assert vm.opponent_mythic_percentile == 0
     end
 
-    test "Mythic class with percentile only renders as 'Mythic 12%'" do
+    test "Mythic class composes to 'Mythic' rank with percentile preserved" do
       tick =
         match_info(
           opponent:
@@ -112,10 +118,12 @@ defmodule Scry2Web.Components.LiveMatchCardTest do
 
       vm = LiveMatchCard.view_model(tick)
 
-      assert vm.opponent_rank == "Mythic 12%"
+      assert vm.opponent_rank == "Mythic"
+      assert vm.opponent_mythic_percentile == 12
+      assert vm.opponent_mythic_placement == 0
     end
 
-    test "Mythic class with neither percentile nor placement renders as just 'Mythic'" do
+    test "Mythic class with neither percentile nor placement still composes to 'Mythic'" do
       tick =
         match_info(
           opponent:
@@ -130,9 +138,11 @@ defmodule Scry2Web.Components.LiveMatchCardTest do
       vm = LiveMatchCard.view_model(tick)
 
       assert vm.opponent_rank == "Mythic"
+      assert vm.opponent_mythic_percentile == 0
+      assert vm.opponent_mythic_placement == 0
     end
 
-    test "all ranking classes render with their tier" do
+    test "all sub-Mythic ranking classes render with their tier" do
       classes = [
         {1, "Bronze"},
         {2, "Silver"},
@@ -148,6 +158,15 @@ defmodule Scry2Web.Components.LiveMatchCardTest do
         vm = LiveMatchCard.view_model(tick)
         assert vm.opponent_rank == "#{label} 4"
       end
+    end
+
+    test "sub-Mythic class with tier 0 drops the tier suffix" do
+      tick =
+        match_info(opponent: player_info(ranking_class: 4, ranking_tier: 0))
+
+      vm = LiveMatchCard.view_model(tick)
+
+      assert vm.opponent_rank == "Platinum"
     end
 
     test "commander grpIds are surfaced for both players" do
