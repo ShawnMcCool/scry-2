@@ -51,6 +51,7 @@ defmodule Scry2.Console.Filter do
         ingester: :show,
         importer: :show,
         http: :show,
+        live_state: :show,
         system: :show,
         # framework (hidden by default)
         phoenix: :hide,

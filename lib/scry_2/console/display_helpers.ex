@@ -19,6 +19,7 @@ defmodule Scry2.Console.DisplayHelpers do
     :ingester,
     :importer,
     :http,
+    :live_state,
     :system,
     # framework
     :phoenix,
@@ -26,7 +27,7 @@ defmodule Scry2.Console.DisplayHelpers do
     :live_view
   ]
 
-  @app_components [:watcher, :parser, :ingester, :importer, :http, :system]
+  @app_components [:watcher, :parser, :ingester, :importer, :http, :live_state, :system]
   @framework_components [:phoenix, :ecto, :live_view]
 
   @badge_palette [

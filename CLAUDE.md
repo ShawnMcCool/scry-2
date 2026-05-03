@@ -411,6 +411,7 @@ The handler classifies every entry into one component:
 | `:ingester` | Explicit — raw-event persistence, downstream dispatch |
 | `:importer` | Explicit — MTGA + Scryfall imports, card synthesis  |
 | `:http` | Explicit — API calls, rate limiting, fetch results |
+| `:live_state` | Explicit + Automatic — in-match memory polling (Chain-1 / Chain-2). Auto-classified for any log from `Scry2.LiveState.*` |
 | `:system` | Fallback — any log without a component tag and no framework prefix |
 | `:phoenix` | Automatic — logs from `Phoenix.*` modules |
 | `:ecto` | Automatic — logs from `Ecto.*`, `Exqlite.*`, `DBConnection.*` |

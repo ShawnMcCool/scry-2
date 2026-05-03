@@ -106,6 +106,10 @@ defmodule Scry2.Console.CaptureLogOutput do
   # scry_2 uses SQLite via Exqlite (not Postgrex).
   defp classify_module_name("Exqlite" <> _), do: :ecto
   defp classify_module_name("DBConnection" <> _), do: :ecto
+  # Auto-classify the live-polling subsystem so any log emitted from
+  # there without an explicit :component tag still lands on the right
+  # console chip.
+  defp classify_module_name("Scry2.LiveState" <> _), do: :live_state
   defp classify_module_name(_), do: :system
 
   # Extract module atom from meta[:mfa] (tuple: {module, fun, arity}).

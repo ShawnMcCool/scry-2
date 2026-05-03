@@ -33,6 +33,7 @@ defmodule Scry2.LiveState do
   alias Scry2.Topics
 
   @enabled_settings_key "live_match_polling_enabled"
+  @verbose_diagnostics_settings_key "live_state_verbose_diagnostics"
 
   @doc "PubSub topic for in-flight tick broadcasts."
   @spec updates_topic() :: String.t()
@@ -50,6 +51,13 @@ defmodule Scry2.LiveState do
   def enabled_settings_key, do: @enabled_settings_key
 
   @doc """
+  Settings key for the verbose-diagnostics flag. Default behaviour is
+  OFF — prod stays at WARNING for `:live_state` unless the user opts in.
+  """
+  @spec verbose_diagnostics_settings_key() :: String.t()
+  def verbose_diagnostics_settings_key, do: @verbose_diagnostics_settings_key
+
+  @doc """
   Read the current value of the live-polling feature flag. Defaults to
   true when the setting is absent (e.g. fresh install).
   """
@@ -62,6 +70,20 @@ defmodule Scry2.LiveState do
       false -> false
       "false" -> false
       _ -> true
+    end
+  end
+
+  @doc """
+  Read the verbose-diagnostics flag. Defaults to **false** — prod stays
+  quiet (warning only). Flip on for debugging sessions to emit a
+  per-tick info log line characterising both walker chains.
+  """
+  @spec verbose_diagnostics?() :: boolean()
+  def verbose_diagnostics? do
+    case Scry2.Settings.get(@verbose_diagnostics_settings_key) do
+      true -> true
+      "true" -> true
+      _ -> false
     end
   end
 

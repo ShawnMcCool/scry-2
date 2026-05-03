@@ -14,10 +14,13 @@ defmodule Scry2Web.SettingsLive do
   alias Scry2.Collection
   alias Scry2.Config
   alias Scry2.Events
+  alias Scry2.MtgaMemory
   alias Scry2.MtgaLogIngestion.LocateLogFile
   alias Scry2.MtgaLogIngestion.Watcher
   alias Scry2.Settings
   alias Scry2Web.SettingsLive.Form
+
+  require Scry2.Log, as: Log
 
   @diagnostics_refresh_interval 2_000
 
@@ -26,6 +29,7 @@ defmodule Scry2Web.SettingsLive do
   @refresh_cron_key "cards_refresh_cron"
   @poll_interval_key "mtga_logs_poll_interval_ms"
   @live_polling_key "live_match_polling_enabled"
+  @verbose_diagnostics_key "live_state_verbose_diagnostics"
   @economy_capture_key "match_economy_capture_enabled"
 
   @impl true
@@ -68,6 +72,7 @@ defmodule Scry2Web.SettingsLive do
       refresh_cron: current_value(@refresh_cron_key, :cards_refresh_cron),
       poll_interval_ms: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms),
       live_polling_enabled: Scry2.LiveState.enabled?(),
+      live_state_verbose_diagnostics: Scry2.LiveState.verbose_diagnostics?(),
       economy_capture_enabled: Scry2.MatchEconomy.capture_enabled?()
     }
 
@@ -203,6 +208,50 @@ defmodule Scry2Web.SettingsLive do
      |> put_flash(:info, flash_message)}
   end
 
+  def handle_event("toggle_verbose_diagnostics", _params, socket) do
+    next = not socket.assigns.field_values.live_state_verbose_diagnostics
+    Settings.put!(@verbose_diagnostics_key, next)
+
+    flash_message =
+      if next do
+        "Verbose live-state diagnostics enabled — every poll tick will write a [info] line to the console under :live_state."
+      else
+        "Verbose live-state diagnostics disabled — only the wind-down summary line will be emitted."
+      end
+
+    {:noreply,
+     socket
+     |> put_field_value(:live_state_verbose_diagnostics, next)
+     |> put_flash(:info, flash_message)}
+  end
+
+  def handle_event("run_diagnostic_capture", _params, socket) do
+    case run_one_shot_walker() do
+      {:ok, summary} ->
+        Log.warning(:live_state, "live_state: one-shot diagnostic — #{summary}")
+
+        {:noreply,
+         put_flash(
+           socket,
+           :info,
+           "Captured: #{summary} (full result is in the console under :live_state)"
+         )}
+
+      {:error, reason} ->
+        Log.warning(
+          :live_state,
+          "live_state: one-shot diagnostic failed — #{inspect(reason)}"
+        )
+
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           "Diagnostic capture failed: #{inspect(reason)} (is MTGA running?)"
+         )}
+    end
+  end
+
   def handle_event("acknowledge_build_change", _params, socket) do
     case Collection.acknowledge_current_build!() do
       :ok ->
@@ -316,6 +365,46 @@ defmodule Scry2Web.SettingsLive do
 
   defp stored_value(:poll_interval_ms),
     do: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms)
+
+  # One-shot walker probe for the "Run diagnostic capture now" button.
+  # Resolves the MTGA process and runs both walker chains once, then
+  # returns a one-line summary. Failures are reported verbatim so the
+  # user can see whether the chain is reachable at all.
+  defp run_one_shot_walker do
+    memory = MtgaMemory.impl()
+
+    with {:ok, pid} <-
+           memory.find_process(fn %{name: name} -> String.starts_with?(name, "MTGA") end) do
+      info_summary =
+        case memory.walk_match_info(pid) do
+          {:ok, nil} -> "info=ok_nil(scene torn down)"
+          {:ok, snap} when is_map(snap) -> "info=ok(opp=#{one_shot_opp(snap)})"
+          {:error, reason} -> "info=err(#{inspect(reason)})"
+        end
+
+      board_summary =
+        case memory.walk_match_board(pid) do
+          {:ok, nil} ->
+            "board=ok_none"
+
+          {:ok, %{zones: zones}} when is_list(zones) ->
+            cards = Enum.reduce(zones, 0, fn z, acc -> acc + length(z.arena_ids) end)
+            "board=ok_some(zones=#{length(zones)},cards=#{cards})"
+
+          {:error, reason} ->
+            "board=err(#{inspect(reason)})"
+        end
+
+      {:ok, "pid=#{pid}; #{info_summary}; #{board_summary}"}
+    end
+  end
+
+  defp one_shot_opp(snap) do
+    case Map.get(snap, :opponent) do
+      %{screen_name: name} when is_binary(name) and name != "" -> name
+      _ -> "?"
+    end
+  end
 
   @impl true
   def render(assigns) do
@@ -525,6 +614,40 @@ defmodule Scry2Web.SettingsLive do
             </div>
 
             <.build_change_banner status={@build_change_status} />
+
+            <div class="divider my-2"></div>
+
+            <div class="flex items-start justify-between gap-4">
+              <div class="flex-1">
+                <h3 class="text-sm font-semibold">Verbose diagnostics</h3>
+                <p class="text-sm text-base-content/70 mt-1">
+                  Emit a one-line <code>[info]</code> entry every poll tick under
+                  the <code>:live_state</code> console component. Off by default —
+                  flip this on while debugging memory-read regressions, then off
+                  again so prod stays at warning level. The wind-down summary
+                  line is always emitted regardless.
+                </p>
+              </div>
+              <input
+                type="checkbox"
+                class="toggle toggle-primary mt-1"
+                checked={@field_values.live_state_verbose_diagnostics}
+                phx-click="toggle_verbose_diagnostics"
+                aria-label="Enable verbose live-state diagnostics"
+              />
+            </div>
+
+            <div class="mt-3">
+              <button type="button" phx-click="run_diagnostic_capture" class="btn btn-soft btn-sm">
+                Run diagnostic capture now
+              </button>
+              <p class="text-xs text-base-content/60 mt-1">
+                Resolves MTGA's process and runs both walker chains once. Result is
+                flashed at the top of the page and logged to the console under
+                <code>:live_state</code>
+                at warning level (visible without verbose).
+              </p>
+            </div>
 
             <div class="divider my-2"></div>
 

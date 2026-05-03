@@ -25,6 +25,7 @@ defmodule Scry2.Console.DisplayHelpersTest do
                :ingester,
                :importer,
                :http,
+               :live_state,
                :system,
                :phoenix,
                :ecto,
@@ -39,6 +40,7 @@ defmodule Scry2.Console.DisplayHelpersTest do
                :ingester,
                :importer,
                :http,
+               :live_state,
                :system
              ]
 
