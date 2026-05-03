@@ -329,5 +329,57 @@ defmodule Scry2.LiveState.ServerTest do
       assert_receive {:final, %Snapshot{mtga_match_id: @match_id}}, 500
       refute_receive {:final_board, _}, 100
     end
+
+    test "persists multi-zone board (hand + battlefield + graveyard + exile) end-to-end" do
+      board = %{
+        zones: [
+          # Local player — full hand visible to themselves
+          %{seat_id: 1, zone_id: 3, arena_ids: [301, 302, 303]},
+          %{seat_id: 1, zone_id: 4, arena_ids: [401]},
+          %{seat_id: 1, zone_id: 5, arena_ids: [501, 502]},
+          # Opponent — only revealed cards in hand
+          %{seat_id: 2, zone_id: 3, arena_ids: [311]},
+          %{seat_id: 2, zone_id: 4, arena_ids: [411, 412]},
+          %{seat_id: 2, zone_id: 5, arena_ids: [511]},
+          %{seat_id: 2, zone_id: 6, arena_ids: [611]}
+        ],
+        reader_version: "test-0.0.1"
+      }
+
+      _server =
+        start_server_with_fixture(%{
+          processes: [%{pid: @mtga_pid, name: "MTGA.exe", cmdline: "MTGA.exe"}],
+          match_info:
+            build_match_info(%{
+              opponent_screen_name: "Lagun4",
+              opponent_ranking_class: 5,
+              opponent_ranking_tier: 4
+            }),
+          board_snapshot: board
+        })
+
+      send_match_created(@match_id)
+      assert_receive {:tick, _}, 500
+      send_match_completed(@match_id)
+
+      assert_receive {:final, %Snapshot{mtga_match_id: @match_id}}, 500
+      assert_receive {:final_board, %BoardSnapshot{}}, 500
+
+      cards = LiveState.get_revealed_cards_by_match_id(@match_id)
+      assert length(cards) == 11
+
+      by_zone =
+        cards
+        |> Enum.group_by(&{&1.seat_id, &1.zone_id})
+        |> Map.new(fn {k, v} -> {k, Enum.map(v, & &1.arena_id) |> Enum.sort()} end)
+
+      assert by_zone[{1, 3}] == [301, 302, 303]
+      assert by_zone[{1, 4}] == [401]
+      assert by_zone[{1, 5}] == [501, 502]
+      assert by_zone[{2, 3}] == [311]
+      assert by_zone[{2, 4}] == [411, 412]
+      assert by_zone[{2, 5}] == [511]
+      assert by_zone[{2, 6}] == [611]
+    end
   end
 end
