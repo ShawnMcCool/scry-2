@@ -183,9 +183,7 @@ defmodule Scry2.Collection.ReaderTest do
       assert result.mtga_build_hint == "abc-123-guid"
     end
 
-    test "walker error falls back to the scanner path" do
-      # Walker errors → fall back. The fixture also carries a heap +
-      # MTGA.exe stub so the scanner path can run.
+    defp scanner_fallback_fixture(walker_snapshot_or_error) do
       heap_base = 0x0800_0000
       heap_size = 0x4000
       cards_offset = 0x1000
@@ -198,25 +196,38 @@ defmodule Scry2.Collection.ReaderTest do
 
       mtga_exe_base = 0x4000_0000
 
-      TestBackend.set_fixture(%{
-        processes: [%{pid: 1, name: "MTGA.exe", cmdline: ""}],
-        maps: [
-          %{start: heap_base, end_addr: heap_base + heap_size, perms: "rw-p", path: nil},
-          %{
-            start: mtga_exe_base,
-            end_addr: mtga_exe_base + 0x10,
-            perms: "r--p",
-            path: "C:/MTGA.exe"
-          },
-          %{start: 0x100, end_addr: 0x200, perms: "r-xp", path: "mono-2.0-bdwgc.dll"},
-          %{start: 0x300, end_addr: 0x400, perms: "r-xp", path: "UnityPlayer.dll"}
-        ],
-        memory: [
-          {heap_base, heap_bin},
-          {mtga_exe_base, <<0x4D, 0x5A>>}
-        ],
-        walker_snapshot: {:error, {:assembly_not_found, "Core"}}
-      })
+      %{
+        heap_base: heap_base,
+        heap_size: heap_size,
+        fixture: %{
+          processes: [%{pid: 1, name: "MTGA.exe", cmdline: ""}],
+          maps: [
+            %{start: heap_base, end_addr: heap_base + heap_size, perms: "rw-p", path: nil},
+            %{
+              start: mtga_exe_base,
+              end_addr: mtga_exe_base + 0x10,
+              perms: "r--p",
+              path: "C:/MTGA.exe"
+            },
+            %{start: 0x100, end_addr: 0x200, perms: "r-xp", path: "mono-2.0-bdwgc.dll"},
+            %{start: 0x300, end_addr: 0x400, perms: "r-xp", path: "UnityPlayer.dll"}
+          ],
+          memory: [
+            {heap_base, heap_bin},
+            {mtga_exe_base, <<0x4D, 0x5A>>}
+          ],
+          walker_snapshot: walker_snapshot_or_error
+        }
+      }
+    end
+
+    test "walker error falls back to the scanner path" do
+      # Walker errors → fall back. The fixture also carries a heap +
+      # MTGA.exe stub so the scanner path can run.
+      %{heap_size: heap_size, fixture: fixture} =
+        scanner_fallback_fixture({:error, {:assembly_not_found, "Core"}})
+
+      TestBackend.set_fixture(fixture)
 
       assert {:ok, result} =
                Reader.read(
@@ -228,23 +239,14 @@ defmodule Scry2.Collection.ReaderTest do
 
       assert result.reader_confidence == "fallback_scan"
       assert result.card_count == 60
+      # mastery is always attempted after cards succeed, even on scanner path
+      assert Map.has_key?(result, :mastery_tier)
+      assert Map.has_key?(result, :mastery_season_name)
     end
 
     test "walker self-check failure also falls back to the scanner" do
-      # Walker returns {:ok, snap} but the snap is empty cards →
+      # Walker returns {:ok, snap} but the snap has 0 cards →
       # walker_result_ok?/2 fails → fall back to scanner.
-      heap_base = 0x0800_0000
-      heap_size = 0x4000
-      cards_offset = 0x1000
-      cards = cards_array(60, 90_000)
-
-      heap_bin =
-        :binary.copy(<<0>>, cards_offset) <>
-          cards <>
-          :binary.copy(<<0>>, heap_size - cards_offset - byte_size(cards))
-
-      mtga_exe_base = 0x4000_0000
-
       bad_snap = %{
         cards: [],
         wildcards: %{common: 0, uncommon: 0, rare: 0, mythic: 0},
@@ -255,25 +257,8 @@ defmodule Scry2.Collection.ReaderTest do
         reader_version: "scry2-walker-0.1.0"
       }
 
-      TestBackend.set_fixture(%{
-        processes: [%{pid: 1, name: "MTGA.exe", cmdline: ""}],
-        maps: [
-          %{start: heap_base, end_addr: heap_base + heap_size, perms: "rw-p", path: nil},
-          %{
-            start: mtga_exe_base,
-            end_addr: mtga_exe_base + 0x10,
-            perms: "r--p",
-            path: "C:/MTGA.exe"
-          },
-          %{start: 0x100, end_addr: 0x200, perms: "r-xp", path: "mono-2.0-bdwgc.dll"},
-          %{start: 0x300, end_addr: 0x400, perms: "r-xp", path: "UnityPlayer.dll"}
-        ],
-        memory: [
-          {heap_base, heap_bin},
-          {mtga_exe_base, <<0x4D, 0x5A>>}
-        ],
-        walker_snapshot: bad_snap
-      })
+      %{heap_size: heap_size, fixture: fixture} = scanner_fallback_fixture(bad_snap)
+      TestBackend.set_fixture(fixture)
 
       assert {:ok, result} =
                Reader.read(
@@ -285,6 +270,50 @@ defmodule Scry2.Collection.ReaderTest do
 
       assert result.reader_confidence == "fallback_scan"
       assert result.card_count == 60
+      # mastery is always attempted after cards succeed, even on scanner path
+      assert Map.has_key?(result, :mastery_tier)
+      assert Map.has_key?(result, :mastery_season_name)
+    end
+
+    test "scanner-fallback path includes mastery when walk_mastery succeeds" do
+      # walker self-check fails (0 cards) → scanner runs → mastery is still merged
+      bad_snap = %{
+        cards: [],
+        wildcards: %{common: 0, uncommon: 0, rare: 0, mythic: 0},
+        gold: 0,
+        gems: 0,
+        vault_progress: 0.0,
+        build_hint: nil,
+        reader_version: "scry2-walker-0.1.0"
+      }
+
+      mastery = %{
+        tier: 5,
+        xp_in_tier: 200,
+        orbs: 3,
+        season_name: "BattlePass_FDN",
+        expiration_time_ticks: 639_178_128_000_000_000
+      }
+
+      %{heap_size: heap_size, fixture: base_fixture} = scanner_fallback_fixture(bad_snap)
+      fixture = Map.put(base_fixture, :mastery_info, mastery)
+      TestBackend.set_fixture(fixture)
+
+      assert {:ok, result} =
+               Reader.read(
+                 mem: TestBackend,
+                 scanner: [min_run: 50],
+                 chunk_size: heap_size,
+                 min_scan_entries: 50
+               )
+
+      assert result.reader_confidence == "fallback_scan"
+      assert result.card_count == 60
+      assert result.mastery_tier == 5
+      assert result.mastery_xp_in_tier == 200
+      assert result.mastery_orbs == 3
+      assert result.mastery_season_name == "BattlePass_FDN"
+      assert %DateTime{} = result.mastery_season_ends_at
     end
 
     test "walker success uses build_hint = nil cleanly" do

@@ -73,16 +73,34 @@ defmodule Scry2.Collection.Reader do
     with {:ok, pid} <- Discovery.find_mtga(mem),
          {:ok, maps} <- mem.list_maps(pid),
          :ok <- SelfCheck.discovery_ok?(maps) do
-      case try_walker(mem, pid, walker_check_opts) do
-        {:ok, walker_result} ->
-          {:ok, walker_result}
+      base_result =
+        case try_walker(mem, pid, walker_check_opts) do
+          {:ok, walker_result} ->
+            {:ok, walker_result}
 
-        {:error, reason} ->
-          Log.info(:ingester, fn ->
-            "walker fell back to scanner: #{inspect(reason)}"
-          end)
+          {:error, reason} ->
+            Log.info(:ingester, fn ->
+              "walker fell back to scanner: #{inspect(reason)}"
+            end)
 
-          run_scanner_path(mem, pid, maps, scanner_opts, chunk_size, max_regions, scan_check_opts)
+            run_scanner_path(
+              mem,
+              pid,
+              maps,
+              scanner_opts,
+              chunk_size,
+              max_regions,
+              scan_check_opts
+            )
+        end
+
+      case base_result do
+        {:ok, result} ->
+          mastery = read_mastery_safely(mem, pid)
+          {:ok, Map.merge(result, mastery_params(mastery))}
+
+        {:error, _} = error ->
+          error
       end
     end
   end
@@ -90,8 +108,7 @@ defmodule Scry2.Collection.Reader do
   defp try_walker(mem, pid, walker_check_opts) do
     with {:ok, snapshot} <- mem.walk_collection(pid),
          :ok <- SelfCheck.walker_result_ok?(snapshot, walker_check_opts) do
-      mastery = read_mastery_safely(mem, pid)
-      {:ok, Map.merge(summarize_walker(snapshot), mastery_params(mastery))}
+      {:ok, summarize_walker(snapshot)}
     end
   end
 
