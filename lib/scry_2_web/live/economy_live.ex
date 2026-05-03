@@ -18,6 +18,7 @@ defmodule Scry2Web.EconomyLive do
   import Scry2Web.Components.RecentCardGrantsCard
   import Scry2Web.Components.PendingPacksCard
   import Scry2Web.Components.ForecastStrip
+  import Scry2Web.Components.MasteryCard
 
   @valid_ranges ~w(today 3d week 2w season)
   @default_range "2w"
@@ -42,6 +43,7 @@ defmodule Scry2Web.EconomyLive do
        card_grants: [],
        grants_cards_by_arena_id: %{},
        pending_packs: [],
+       latest_snapshot: nil,
        time_range: @default_range,
        currency_series: "{}",
        wildcards_series: "{}",
@@ -96,6 +98,8 @@ defmodule Scry2Web.EconomyLive do
     card_grants = Economy.list_card_grants(limit: @recent_card_grants_limit)
     grants_cards = load_grants_cards(card_grants)
 
+    latest_snapshot = Collection.current()
+
     socket
     |> assign(
       entries: Economy.list_event_entries(player_id: player_id),
@@ -105,7 +109,8 @@ defmodule Scry2Web.EconomyLive do
       crafts_cards_by_arena_id: crafts_cards,
       card_grants: card_grants,
       grants_cards_by_arena_id: grants_cards,
-      pending_packs: PendingPacks.summarize(Collection.current())
+      pending_packs: PendingPacks.summarize(latest_snapshot),
+      latest_snapshot: latest_snapshot
     )
     |> build_chart_assigns()
   end
@@ -263,6 +268,9 @@ defmodule Scry2Web.EconomyLive do
             />
           </div>
         </section>
+
+        <%!-- Mastery Pass card (memory-read snapshot) --%>
+        <.mastery_card snapshot={@latest_snapshot} />
 
         <%!-- Pending booster inventory by set --%>
         <.pending_packs_card rows={@pending_packs} />
