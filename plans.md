@@ -42,7 +42,7 @@ is clean.
 
 - Account identity (username, player UUID, account-creation timestamp) — **reader+**
 - Constructed / Limited / Historic rank + tier + percentile — **reader+**
-- Mastery pass tier, XP, free-vs-premium, mastery orbs — **reader+**
+- Mastery pass tier, XP, mastery orbs, season name, season end — **✅ shipped** (`Scry2Web.Components.MasteryCard` on `/economy`; walker reads `PAPA._instance → MasteryPassProvider → AwsSetMasteryStrategy → ProgressionTrack` per spike 20). Free-vs-premium intentionally dropped — not surfaced in MTGA's mastery-pass memory state for this season.
 - Daily / weekly quest contents and progress — **reader+**
 - Win-track (15-win) progress and claimed rewards — **reader+**
 - Cosmetics inventory (pets, sleeves, avatars, alt arts, emotes) — **reader+**
@@ -92,7 +92,7 @@ item below (board state) is still gated on `walker/card_holder.rs`
 All gated on walker phase 6 producing a stream of currency/progression rows.
 
 - Vault opening ETA from vault-progress slope — **walker**
-- Mastery pass completion ETA vs season end — **walker**
+- Mastery pass completion ETA vs season end — **walker** (display shipped above; forecast deferred to follow-up plan once we have a few days of mastery snapshots accumulated)
 - Currency burn-rate dashboard (gold/gems/wildcards over time) — **walker**
 - Quest-reroll EV calculator — **walker** + **reader+**
 - Win-track velocity / weekly reward attainment — **walker** + **reader+**
