@@ -8,8 +8,6 @@ defmodule Scry2.LiveState.RevealedCard do
   ordering MTGA stored the cards in, so rendering can show play-order
   (battlefield) or stack-order (Stack zone, future v2).
 
-  v1 only carries Battlefield rows (`zone_id == 4`).
-
   See `specs/2026-05-03-chain-2-board-state-design.md`.
   """
 

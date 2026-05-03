@@ -168,10 +168,6 @@ defmodule Scry2.MtgaMemory do
   `MatchSceneManager.Instance` is null — i.e. no active match scene
   (the duel UI hasn't loaded, or it's torn down). This is the
   authoritative signal for `Scry2.LiveState.Server` to wind down.
-
-  v1 only populates entries for the Battlefield zone (`zone_id ==
-  4`). Other zones land once the `CardLayoutData` struct shape is
-  pinned by a follow-up live spike.
   """
   @type board_snapshot :: %{
           required(:zones) => [seat_zone_cards()],

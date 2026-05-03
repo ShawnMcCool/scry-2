@@ -4,8 +4,7 @@ defmodule Scry2Web.Components.RevealedCardsCard do
   detail page.
 
   Per-seat groups (You / Opponent / others), each with per-zone
-  rows (Battlefield first; v2 will surface Graveyard / Exile /
-  etc.). Each card is rendered via `Scry2Web.CardComponents.card_image/1`
+  rows (Battlefield first; followed by Hand, Graveyard, and Exile). Each card is rendered via `Scry2Web.CardComponents.card_image/1`
   so the existing image cache + tooltip behaviour is reused.
 
   Hidden when `groups` is empty.
