@@ -12,7 +12,7 @@ defmodule Scry2Web.Components.MasteryCard.Helpers do
   [0.0, 100.0]. The per-tier XP requirement is 1000 on MTGA's mastery
   curve.
   """
-  @spec xp_progress_percent(non_neg_integer() | nil) :: float()
+  @spec xp_progress_percent(integer() | nil) :: float()
   def xp_progress_percent(nil), do: 0.0
 
   def xp_progress_percent(xp_in_tier) when is_integer(xp_in_tier) do
@@ -71,6 +71,10 @@ defmodule Scry2Web.Components.MasteryCard.Helpers do
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" · ")
   end
+
+  @doc "Per-tier XP requirement on MTGA's mastery curve."
+  @spec xp_per_tier() :: pos_integer()
+  def xp_per_tier, do: @xp_per_tier
 
   defp emptyish_to_nil(""), do: nil
   defp emptyish_to_nil(string), do: string

@@ -23,6 +23,10 @@ defmodule Scry2Web.Components.MasteryCard.HelpersTest do
     test "nil → 0.0%" do
       assert H.xp_progress_percent(nil) == 0.0
     end
+
+    test "negative xp clamps to 0.0%" do
+      assert H.xp_progress_percent(-50) == 0.0
+    end
   end
 
   describe "format_tier/1" do
@@ -84,6 +88,12 @@ defmodule Scry2Web.Components.MasteryCard.HelpersTest do
 
     test "empty suffix → nil" do
       assert H.set_code_from_season_name("BattlePass_") == nil
+    end
+  end
+
+  describe "xp_per_tier/0" do
+    test "xp_per_tier returns 1000" do
+      assert H.xp_per_tier() == 1_000
     end
   end
 

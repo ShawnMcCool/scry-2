@@ -27,14 +27,20 @@ defmodule Scry2Web.Components.MasteryCard do
     doc: "Override DateTime for testing; defaults to DateTime.utc_now/0."
 
   def mastery_card(assigns) do
-    assigns = assign_new(assigns, :now, fn -> DateTime.utc_now() end)
+    assigns =
+      assigns
+      |> assign_new(:now, fn -> DateTime.utc_now() end)
+      |> assign_new(:set_code, fn -> set_code(assigns[:snapshot]) end)
 
     ~H"""
     <section class="card bg-base-200 border border-base-300" data-role="mastery-card">
       <div class="card-body">
         <div class="flex items-baseline justify-between">
           <h2 class="card-title">Mastery Pass</h2>
-          <span :if={has_mastery?(@snapshot)} class="text-xs text-base-content/60">
+          <span
+            :if={has_mastery?(@snapshot) and @snapshot.mastery_season_ends_at != nil}
+            class="text-xs text-base-content/60"
+          >
             {H.season_end_countdown(@snapshot.mastery_season_ends_at, @now)}
           </span>
         </div>
@@ -46,15 +52,15 @@ defmodule Scry2Web.Components.MasteryCard do
                 {H.format_tier(@snapshot.mastery_tier)}
               </span>
               <.set_icon
-                :if={set_code(@snapshot)}
-                code={set_code(@snapshot)}
+                :if={@set_code}
+                code={@set_code}
                 class="text-base-content/50"
               />
             </div>
 
             <div>
               <div class="flex items-baseline justify-between text-xs text-base-content/70">
-                <span>{xp_in_tier_or_zero(@snapshot)} / 1000 XP toward next tier</span>
+                <span>{xp_in_tier_or_zero(@snapshot)} / {H.xp_per_tier()} XP toward next tier</span>
                 <span>{H.xp_progress_percent(@snapshot.mastery_xp_in_tier)}%</span>
               </div>
               <div class="w-full bg-base-300 rounded-full h-2 mt-1">
