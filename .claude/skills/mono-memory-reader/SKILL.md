@@ -689,6 +689,54 @@ objdump -p "$DLL" | grep -E '^\s+\[.*<symbol_name>'
 objdump -d --disassembler-options=intel --start-address=<VA> --stop-address=<VA+N> "$DLL"
 ```
 
+## Read budget — operational knob
+
+Every NIF wraps its `process_vm_readv` closure in
+[`read_budget::bounded`](../../../native/scry2_collection_reader/src/read_budget.rs)
+to cap one walk at `WALK_READ_BUDGET` reads. The cap exists to stop
+runaway walks (PID reuse against an unrelated process; self-
+referential pointer loops on partially-zeroed memory) from pegging
+a dirty-IO scheduler thread.
+
+**The cap is load-bearing.** Past the limit every read returns `None`
+and the walker silently bails as if the chain were broken — typically
+surfacing as `WalkError::ClassNotFound("PAPA")` because PAPA discovery
+is the first big read-burner.
+
+Measured against MTGA build `Fri Apr 11 17:22:20 2025` (222 loaded
+Mono images), a single walk costs:
+
+| Walker | reads_used |
+|---|---:|
+| `walk_match_info` (Chain-1) | ~69,000 |
+| `walk_match_board` (Chain-2) | ~64,000 |
+
+Both chains scale with the image count, since `find_class_in_images`
+iterates every image looking for the target class. Class lookup
+within an image walks the class hash buckets (cost ~ O(classes per
+image)).
+
+Current cap: **200,000 reads** (set v0.30.3, ~3× headroom over
+measured cost). When MTGA grows further:
+
+1. Use `walker_debug_walk_match_info_with_stats(pid)` /
+   `walker_debug_walk_match_board_with_stats(pid)` (NIFs in
+   `Scry2.MtgaMemory.Nif`) to read live `reads_used` against the
+   running process. Both return `(result, %{reads_used, budget})`.
+2. The Settings → Memory reading "Run diagnostic capture now" button
+   surfaces these inline.
+3. If `reads_used` creeps above 70% of budget, raise the cap (and
+   document the new measurement in this section).
+
+The structural fix is to cache discovery results
+(`PAPA`, `MatchSceneManager`, runtime class addresses) per
+`(pid, mono_base)`, dropping the steady-state cost from "scan 222
+images" to "follow 5 pointers" (a few hundred reads). v0.31.0 adds
+that cache; until then, the budget is the load-bearing defense.
+
+Full diagnostic procedure and evidence:
+[`spike19_read_budget_regression/FINDING.md`](../../../../mtga-duress/experiments/spikes/spike19_read_budget_regression/FINDING.md).
+
 ## Sibling module: the POC
 
 `mtga-duress/experiments/mtga-reader-poc/` — working structural-scan

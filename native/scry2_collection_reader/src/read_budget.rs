@@ -26,12 +26,28 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 /// Read budget for one [`crate::walker::run::walk_match_info`] or
-/// [`crate::walker::run::walk_collection`] invocation. A normal walk
-/// against a real MTGA process needs on the order of a few hundred
-/// reads; 5,000 leaves an order-of-magnitude headroom for legitimate
-/// future expansion of the walker without ever letting a runaway walk
-/// burn a scheduler.
-pub const WALK_READ_BUDGET: u64 = 5_000;
+/// [`crate::walker::run::walk_collection`] invocation.
+///
+/// A walk against current MTGA (build `Fri Apr 11 17:22:20 2025`)
+/// scans 222 loaded Mono images while resolving `PAPA`,
+/// `MatchSceneManager`, and friends — class lookup against an image
+/// walks the class hash buckets, which dominates the read count.
+/// The previous 5,000 ceiling (sized for the early walker against a
+/// smaller image set) was being silently exceeded — every read past
+/// the cap returns `None`, the walker bails with `ClassNotFound`, and
+/// Chain-1 / Chain-2 silently produce nothing. v0.30.3 raised the
+/// ceiling to 200,000 after this regression was diagnosed; the
+/// `walker_debug_walk_match_info_with_stats` NIF now reports actual
+/// reads_used per call so further drift is visible before it breaks.
+///
+/// 200k caps any single walk at ~0.2 s of `process_vm_readv` time on
+/// commodity hardware, well under the 500 ms LiveState poll interval,
+/// while leaving an order-of-magnitude margin over the current
+/// measured cost. **Watch this knob.** If MTGA grows further and the
+/// stats start reporting reads_used close to budget, raise it again
+/// — or better, finish the v0.31.0 discovery-cache work that drops
+/// the steady-state cost to a few hundred reads per tick.
+pub const WALK_READ_BUDGET: u64 = 200_000;
 
 /// Wrap `inner` with an atomic read counter capped at `budget`.
 ///

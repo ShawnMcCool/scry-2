@@ -367,44 +367,58 @@ defmodule Scry2Web.SettingsLive do
     do: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms)
 
   # One-shot walker probe for the "Run diagnostic capture now" button.
-  # Resolves the MTGA process and runs both walker chains once, then
-  # returns a one-line summary. Failures are reported verbatim so the
-  # user can see whether the chain is reachable at all.
+  # Resolves the MTGA process and runs both walker chains once via the
+  # *_with_stats NIFs, returning a one-line summary that includes
+  # reads_used / budget for each chain. Surfacing the read counts is
+  # the structural fix for the v0.30.3 budget regression — when the
+  # reads_used number creeps near the budget across MTGA upgrades
+  # we'll see it before it silently breaks.
   defp run_one_shot_walker do
     memory = MtgaMemory.impl()
 
     with {:ok, pid} <-
            memory.find_process(fn %{name: name} -> String.starts_with?(name, "MTGA") end) do
+      {info_result, info_stats} =
+        Scry2.MtgaMemory.Nif.walker_debug_walk_match_info_with_stats(pid)
+
       info_summary =
-        case memory.walk_match_info(pid) do
-          {:ok, nil} -> "info=ok_nil(scene torn down)"
-          {:ok, snap} when is_map(snap) -> "info=ok(opp=#{one_shot_opp(snap)})"
-          {:error, reason} -> "info=err(#{inspect(reason)})"
-        end
+        "info=#{format_walk_outcome(info_result, &one_shot_opp/1)} #{format_stats(info_stats)}"
+
+      {board_result, board_stats} =
+        Scry2.MtgaMemory.Nif.walker_debug_walk_match_board_with_stats(pid)
 
       board_summary =
-        case memory.walk_match_board(pid) do
-          {:ok, nil} ->
-            "board=ok_none"
-
-          {:ok, %{zones: zones}} when is_list(zones) ->
-            cards = Enum.reduce(zones, 0, fn z, acc -> acc + length(z.arena_ids) end)
-            "board=ok_some(zones=#{length(zones)},cards=#{cards})"
-
-          {:error, reason} ->
-            "board=err(#{inspect(reason)})"
-        end
+        "board=#{format_walk_outcome(board_result, &one_shot_board/1)} #{format_stats(board_stats)}"
 
       {:ok, "pid=#{pid}; #{info_summary}; #{board_summary}"}
     end
   end
 
-  defp one_shot_opp(snap) do
-    case Map.get(snap, :opponent) do
-      %{screen_name: name} when is_binary(name) and name != "" -> name
-      _ -> "?"
-    end
+  defp format_walk_outcome({:ok, nil}, _ok_some_label), do: "ok_nil"
+  defp format_walk_outcome({:ok, snap}, ok_some_label), do: "ok_some(#{ok_some_label.(snap)})"
+  defp format_walk_outcome({:error, reason}, _label), do: "err(#{inspect(reason)})"
+
+  defp format_stats(%{reads_used: used, budget: budget}) do
+    pct = Float.round(used / budget * 100, 1)
+    "[reads=#{used}/#{budget} #{pct}%]"
   end
+
+  defp one_shot_opp(snap) do
+    name =
+      case Map.get(snap, :opponent) do
+        %{screen_name: n} when is_binary(n) and n != "" -> n
+        _ -> "?"
+      end
+
+    "opp=#{name}"
+  end
+
+  defp one_shot_board(%{zones: zones}) when is_list(zones) do
+    cards = Enum.reduce(zones, 0, fn z, acc -> acc + length(z.arena_ids) end)
+    "zones=#{length(zones)},cards=#{cards}"
+  end
+
+  defp one_shot_board(_), do: "?"
 
   @impl true
   def render(assigns) do

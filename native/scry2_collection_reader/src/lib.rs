@@ -28,7 +28,7 @@ pub mod read_budget;
 pub mod walker;
 
 use read_budget::{bounded, WALK_READ_BUDGET};
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(target_os = "macos")]
 pub mod macos;
@@ -473,10 +473,6 @@ fn board_snapshot_to_wire(v: walker::run::BoardSnapshot) -> WireBoardSnapshot {
 /// Returns `{:ok, nil}` when MTGA is reachable but there is no active
 /// match scene — the duel UI hasn't loaded or has torn down. Returns
 /// `{:ok, %{...}}` populated with per-zone arena_id lists otherwise.
-///
-/// v1 only populates the Battlefield zone for each seat. Other zones
-/// land once the `CardLayoutData` struct shape is pinned by a
-/// follow-up live spike.
 #[rustler::nif(schedule = "DirtyIo")]
 fn walk_match_board(pid: i32) -> Result<Option<WireBoardSnapshot>, WalkErrorWire> {
     let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
@@ -485,6 +481,70 @@ fn walk_match_board(pid: i32) -> Result<Option<WireBoardSnapshot>, WalkErrorWire
     let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
     let snap = walker::run::walk_match_board(&maps, read_mem).map_err(WalkErrorWire::from)?;
     Ok(snap.map(board_snapshot_to_wire))
+}
+
+// ============================================================
+// Stats variants — return (result, reads_used, budget) so callers
+// can measure how close each walk is to the read-budget ceiling.
+// Used by the Settings → Memory reading "Run diagnostic capture"
+// button and any future ad-hoc instrumentation.
+// ============================================================
+
+/// Stats payload for any `*_with_stats` NIF call.
+#[derive(NifMap)]
+pub struct WireWalkStats {
+    pub reads_used: u64,
+    pub budget: u64,
+}
+
+/// `walk_match_info` + reads_used / budget. The walk runs to
+/// completion (or budget exhaustion) regardless of error; the stats
+/// are reported on success and failure alike so a "class_not_found"
+/// can be distinguished from "ran fine but no active match".
+#[rustler::nif(schedule = "DirtyIo")]
+fn walker_debug_walk_match_info_with_stats(
+    pid: i32,
+) -> (Result<Option<WireMatchInfo>, WalkErrorWire>, WireWalkStats) {
+    let counter = AtomicU64::new(0);
+    let result = match platform::list_maps(pid) {
+        Ok(maps) => {
+            let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+            let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
+            walker::run::walk_match_info(&maps, read_mem)
+                .map(|opt| opt.map(match_info_to_wire))
+                .map_err(WalkErrorWire::from)
+        }
+        Err(_) => Err(WalkErrorWire::MonoDllReadFailed),
+    };
+    let stats = WireWalkStats {
+        reads_used: counter.load(Ordering::Relaxed),
+        budget: WALK_READ_BUDGET,
+    };
+    (result, stats)
+}
+
+/// `walk_match_board` + reads_used / budget. Same shape as the
+/// match-info variant.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walker_debug_walk_match_board_with_stats(
+    pid: i32,
+) -> (Result<Option<WireBoardSnapshot>, WalkErrorWire>, WireWalkStats) {
+    let counter = AtomicU64::new(0);
+    let result = match platform::list_maps(pid) {
+        Ok(maps) => {
+            let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+            let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
+            walker::run::walk_match_board(&maps, read_mem)
+                .map(|opt| opt.map(board_snapshot_to_wire))
+                .map_err(WalkErrorWire::from)
+        }
+        Err(_) => Err(WalkErrorWire::MonoDllReadFailed),
+    };
+    let stats = WireWalkStats {
+        reads_used: counter.load(Ordering::Relaxed),
+        budget: WALK_READ_BUDGET,
+    };
+    (result, stats)
 }
 
 /// Diagnostic NIF — list every loaded assembly's

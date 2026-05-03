@@ -77,6 +77,28 @@ defmodule Scry2.MtgaMemory.Nif do
           {:ok, [{String.t(), String.t(), integer(), boolean()}]} | {:error, atom()}
   def walker_debug_class_fields(_pid, _class_name), do: :erlang.nif_error(:nif_not_loaded)
 
+  @doc """
+  `walk_match_info` plus per-call read-budget stats. Returns
+  `{result, %{reads_used: N, budget: B}}` so callers can monitor how
+  close each walk is to the read-budget ceiling. Used by the Settings
+  → Memory reading "Run diagnostic capture now" button and by any
+  ad-hoc instrumentation we want to add without disturbing the
+  production walker call shape.
+  """
+  @spec walker_debug_walk_match_info_with_stats(non_neg_integer()) ::
+          {{:ok, map() | nil} | {:error, term()},
+           %{reads_used: non_neg_integer(), budget: non_neg_integer()}}
+  def walker_debug_walk_match_info_with_stats(_pid), do: :erlang.nif_error(:nif_not_loaded)
+
+  @doc """
+  `walk_match_board` plus per-call read-budget stats. Same shape as
+  `walker_debug_walk_match_info_with_stats/1`.
+  """
+  @spec walker_debug_walk_match_board_with_stats(non_neg_integer()) ::
+          {{:ok, map() | nil} | {:error, term()},
+           %{reads_used: non_neg_integer(), budget: non_neg_integer()}}
+  def walker_debug_walk_match_board_with_stats(_pid), do: :erlang.nif_error(:nif_not_loaded)
+
   # --- raw NIF declarations ---
 
   @doc false
