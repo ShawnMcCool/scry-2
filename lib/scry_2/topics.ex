@@ -84,6 +84,15 @@ defmodule Scry2.Topics do
   """
   def live_match_final, do: "live_match:final"
 
+  @doc """
+  Final Chain-2 board snapshot persisted at match wind-down. Payload:
+  `{:final_board, %Scry2.LiveState.BoardSnapshot{}}`. UI subscribers
+  use this to refresh the per-match revealed-cards view; no
+  cross-context subscriber for v1 (the cards live on `LiveState` and
+  callers query directly via `LiveState.get_revealed_cards_by_match_id/1`).
+  """
+  def live_match_board_final, do: "live_match:board_final"
+
   # ── Crafts ───────────────────────────────────────────────────────────────
   @doc """
   Wildcard crafts attributed from collection snapshot diffs. Subscribers

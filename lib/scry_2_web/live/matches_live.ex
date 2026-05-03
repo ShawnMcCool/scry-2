@@ -14,7 +14,8 @@ defmodule Scry2Web.MatchesLive do
 
   alias Scry2.{Cards, LiveState, MatchEconomy, Matches}
   alias Scry2.Topics
-  alias Scry2Web.Components.RankBadge
+  alias Scry2Web.Components.{RankBadge, RevealedCardsCard}
+  alias Scry2Web.Live.MatchBoardView
   alias Scry2Web.MatchesHelpers
 
   @per_page 20
@@ -28,6 +29,7 @@ defmodule Scry2Web.MatchesLive do
       Topics.subscribe(Topics.match_economy_updates())
       Topics.subscribe(LiveState.updates_topic())
       Topics.subscribe(LiveState.final_topic())
+      Topics.subscribe(Topics.live_match_board_final())
     end
 
     {:ok,
@@ -122,7 +124,35 @@ defmodule Scry2Web.MatchesLive do
     {:noreply, assign(socket, live_match_tick: nil, live_match_commander_names: %{})}
   end
 
+  def handle_info({:final_board, board}, socket) do
+    socket =
+      case socket.assigns[:match] do
+        %{mtga_match_id: mtga_match_id} ->
+          # The board snapshot belongs to the parent live_state_snapshot,
+          # which carries the mtga_match_id; just reload the displayed
+          # cards if we're showing the matching detail page. Looking up
+          # via the facade keeps the FK lookup in one place.
+          if board_belongs_to_displayed_match?(board, mtga_match_id) do
+            assign_revealed_cards(socket, mtga_match_id)
+          else
+            socket
+          end
+
+        _ ->
+          socket
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
+
+  defp board_belongs_to_displayed_match?(board, mtga_match_id) do
+    case LiveState.get_board_by_match_id(mtga_match_id) do
+      nil -> false
+      %{id: id} -> id == board.id
+    end
+  end
 
   # ── Live-match tick ──────────────────────────────────────────────────
 
@@ -227,12 +257,17 @@ defmodule Scry2Web.MatchesLive do
 
     deck_submission = List.first(match.deck_submissions || [])
 
+    deck_arena_ids =
+      if deck_submission, do: extract_arena_ids(deck_submission), else: []
+
+    revealed_rows = LiveState.get_revealed_cards_by_match_id(match.mtga_match_id)
+    revealed_arena_ids = revealed_rows |> Enum.map(& &1.arena_id) |> Enum.uniq()
+    revealed_groups = MatchBoardView.group_by_seat_and_zone(revealed_rows)
+
     cards_by_arena_id =
-      if deck_submission do
-        arena_ids = extract_arena_ids(deck_submission)
-        Cards.list_by_arena_ids(arena_ids)
-      else
-        %{}
+      case Enum.uniq(deck_arena_ids ++ revealed_arena_ids) do
+        [] -> %{}
+        ids -> Cards.list_by_arena_ids(ids)
       end
 
     assign(socket,
@@ -241,7 +276,30 @@ defmodule Scry2Web.MatchesLive do
       opponent_history: opponent_history,
       deck_submission: deck_submission,
       cards_by_arena_id: cards_by_arena_id,
+      revealed_groups: revealed_groups,
       match_economy_summary: MatchEconomy.get_summary(match.mtga_match_id)
+    )
+  end
+
+  defp assign_revealed_cards(socket, mtga_match_id) do
+    revealed_rows = LiveState.get_revealed_cards_by_match_id(mtga_match_id)
+    revealed_arena_ids = revealed_rows |> Enum.map(& &1.arena_id) |> Enum.uniq()
+    revealed_groups = MatchBoardView.group_by_seat_and_zone(revealed_rows)
+
+    # Merge any new arena_ids into the existing card map without
+    # re-querying for ones already loaded.
+    existing = socket.assigns[:cards_by_arena_id] || %{}
+    missing_ids = Enum.reject(revealed_arena_ids, &Map.has_key?(existing, &1))
+
+    cards_by_arena_id =
+      case missing_ids do
+        [] -> existing
+        ids -> Map.merge(existing, Cards.list_by_arena_ids(ids))
+      end
+
+    assign(socket,
+      revealed_groups: revealed_groups,
+      cards_by_arena_id: cards_by_arena_id
     )
   end
 
@@ -368,6 +426,12 @@ defmodule Scry2Web.MatchesLive do
         cards_by_arena_id={@cards_by_arena_id}
       />
 
+      <%!-- Revealed cards from in-process memory (Chain-2) --%>
+      <RevealedCardsCard.card
+        groups={@revealed_groups}
+        card_names_by_arena_id={card_names_from(@cards_by_arena_id)}
+      />
+
       <%!-- Opponent history --%>
       <.opponent_panel
         :if={@match.opponent_screen_name}
@@ -378,6 +442,21 @@ defmodule Scry2Web.MatchesLive do
       />
     </Layouts.app>
     """
+  end
+
+  # Extracts arena_id => name from the cards_by_arena_id map populated by
+  # `Cards.list_by_arena_ids/1`. Values may be either `%Card{}` structs (with
+  # a `:name` field) or plain maps from the MtgaCard fallback path.
+  defp card_names_from(cards_by_arena_id) when is_map(cards_by_arena_id) do
+    Map.new(cards_by_arena_id, fn {arena_id, card} ->
+      name =
+        case card do
+          %{name: n} when is_binary(n) -> n
+          _ -> "Card ##{arena_id}"
+        end
+
+      {arena_id, name}
+    end)
   end
 
   # ── Dashboard component ──────────────────────────────────────────────

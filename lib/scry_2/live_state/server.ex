@@ -1,13 +1,16 @@
 defmodule Scry2.LiveState.Server do
   @moduledoc """
-  Live-polling state machine for in-match memory reads (Chain 1).
+  Live-polling state machine for in-match memory reads (Chain 1
+  rank/screen-name + Chain 2 board state).
 
   ```text
   IDLE
     → MatchCreated domain event (and feature flag enabled)
                          ↓ resolve MTGA pid, schedule first tick
   POLLING
-    • every @poll_interval_ms: walk_match_info(pid)
+    • every @poll_interval_ms:
+        - walk_match_info(pid)              [Chain 1, authoritative]
+        - walk_match_board(pid)             [Chain 2, best-effort]
     •   {:ok, snap} → broadcast {:tick, snap} on live_match:updates
     •   {:ok, nil}  → MatchSceneManager.Instance NULL → WINDING_DOWN
     •   {:error, _} → MTGA gone or memory layout broken → WINDING_DOWN
@@ -16,9 +19,16 @@ defmodule Scry2.LiveState.Server do
                          ↓
   WINDING_DOWN
     • persist last in-flight snapshot via LiveState.record_final/2
+    • if any board snapshot was captured: persist via
+      LiveState.record_final_board/2 (broadcasts on live_match:board_final)
     • broadcast {:final, %Snapshot{}} on live_match:final
     • return to IDLE
   ```
+
+  Chain-2 reads are best-effort: errors / `nil` results from
+  `walk_match_board` are logged at INFO level and the previous good
+  snapshot is kept. Only `walk_match_info` failures wind down the
+  polling loop.
 
   Wind-down on `{:error, _}` is structural, not a transient retry.
   When MTGA quits mid-match the cached `mtga_pid` is invalid: best
@@ -59,6 +69,7 @@ defmodule Scry2.LiveState.Server do
               mtga_match_id: nil,
               mtga_pid: nil,
               last_snapshot: nil,
+              last_board_snapshot: nil,
               poll_interval_ms: nil,
               match_timeout_ms: nil,
               memory: nil,
@@ -149,7 +160,15 @@ defmodule Scry2.LiveState.Server do
 
       {:ok, snap} when is_map(snap) ->
         LiveState.broadcast_tick(snap)
-        new_state = %{state | last_snapshot: snap, poll_timer: schedule_poll(state)}
+        board = read_board_safely(state)
+
+        new_state = %{
+          state
+          | last_snapshot: snap,
+            last_board_snapshot: board || state.last_board_snapshot,
+            poll_timer: schedule_poll(state)
+        }
+
         {:noreply, new_state}
 
       {:error, reason} ->
@@ -200,6 +219,26 @@ defmodule Scry2.LiveState.Server do
     }
   end
 
+  # Chain-2 read tolerated as best-effort — Chain-1 owns the
+  # wind-down decision. Returns nil on any error or scene-torn-down;
+  # the caller falls back to the previous successful read.
+  defp read_board_safely(state) do
+    case state.memory.walk_match_board(state.mtga_pid) do
+      {:ok, snap} when is_map(snap) ->
+        snap
+
+      {:ok, nil} ->
+        nil
+
+      {:error, reason} ->
+        Log.info(:ingester, fn ->
+          "live_state: walk_match_board returned error #{inspect(reason)}; keeping last good"
+        end)
+
+        nil
+    end
+  end
+
   defp wind_down(state, _reason) do
     cancel_timers(state)
 
@@ -207,7 +246,22 @@ defmodule Scry2.LiveState.Server do
 
     case LiveState.record_final(state.mtga_match_id, snapshot_attrs) do
       {:ok, _snapshot} ->
-        :ok
+        # Chain-1 persistence succeeded — try Chain-2 too, but only
+        # if we actually captured a board snapshot at some point. The
+        # board persistence depends on the parent snapshot existing,
+        # which it now does.
+        if state.last_board_snapshot do
+          case LiveState.record_final_board(state.mtga_match_id, state.last_board_snapshot) do
+            {:ok, _board} ->
+              :ok
+
+            {:error, reason} ->
+              Log.error(
+                :ingester,
+                "live_state: failed to persist final board snapshot: #{inspect(reason)}"
+              )
+          end
+        end
 
       {:error, changeset} ->
         Log.error(
@@ -221,6 +275,7 @@ defmodule Scry2.LiveState.Server do
       mtga_match_id: nil,
       mtga_pid: nil,
       last_snapshot: nil,
+      last_board_snapshot: nil,
       poll_interval_ms: state.poll_interval_ms,
       match_timeout_ms: state.match_timeout_ms,
       memory: state.memory,

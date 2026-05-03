@@ -5,7 +5,7 @@ defmodule Scry2.LiveState.ServerTest do
   alias Scry2.Events.Match.{MatchCompleted, MatchCreated}
   alias Scry2.LiveState
   alias Scry2.LiveState.Server
-  alias Scry2.LiveState.Snapshot
+  alias Scry2.LiveState.{BoardSnapshot, Snapshot}
   alias Scry2.MtgaMemory.TestBackend
   alias Scry2.Topics
 
@@ -239,6 +239,95 @@ defmodule Scry2.LiveState.ServerTest do
 
       assert_receive {:final, %Snapshot{mtga_match_id: @match_id}}, 500
       refute_receive {:tick, _}, 100
+    end
+  end
+
+  describe "Chain-2 board polling" do
+    setup do
+      :ok = PubSub.subscribe(Scry2.PubSub, LiveState.updates_topic())
+      :ok = PubSub.subscribe(Scry2.PubSub, LiveState.final_topic())
+      :ok = PubSub.subscribe(Scry2.PubSub, Topics.live_match_board_final())
+      :ok
+    end
+
+    test "captures board snapshot during polling and persists at wind-down" do
+      board = %{
+        zones: [
+          %{seat_id: 1, zone_id: 4, arena_ids: [101, 102]},
+          %{seat_id: 2, zone_id: 4, arena_ids: [201, 202, 203]}
+        ],
+        reader_version: "test-0.0.1"
+      }
+
+      _server =
+        start_server_with_fixture(%{
+          processes: [%{pid: @mtga_pid, name: "MTGA.exe", cmdline: "MTGA.exe"}],
+          match_info:
+            build_match_info(%{
+              opponent_screen_name: "Lagun4",
+              opponent_ranking_class: 5,
+              opponent_ranking_tier: 4
+            }),
+          board_snapshot: board
+        })
+
+      send_match_created(@match_id)
+      # Wait for the first tick so last_board_snapshot is populated.
+      assert_receive {:tick, _}, 500
+
+      send_match_completed(@match_id)
+
+      assert_receive {:final, %Snapshot{mtga_match_id: @match_id}}, 500
+      assert_receive {:final_board, %BoardSnapshot{} = persisted}, 500
+
+      assert persisted.reader_version == "test-0.0.1"
+
+      cards = LiveState.get_revealed_cards_by_match_id(@match_id)
+      assert length(cards) == 5
+      assert Enum.map(cards, & &1.arena_id) == [101, 102, 201, 202, 203]
+    end
+
+    test "skips board persistence when no board snapshot was ever captured" do
+      _server =
+        start_server_with_fixture(%{
+          processes: [%{pid: @mtga_pid, name: "MTGA.exe", cmdline: "MTGA.exe"}],
+          match_info:
+            build_match_info(%{
+              opponent_screen_name: "Lagun4",
+              opponent_ranking_class: 5,
+              opponent_ranking_tier: 4
+            })
+          # No :board_snapshot key — TestBackend returns {:error, :no_board_snapshot}.
+        })
+
+      send_match_created(@match_id)
+      send_match_completed(@match_id)
+
+      assert_receive {:final, %Snapshot{mtga_match_id: @match_id}}, 500
+      refute_receive {:final_board, _}, 100
+
+      assert LiveState.get_board_by_match_id(@match_id) == nil
+    end
+
+    test "tolerates board read errors mid-match (Chain-1 stays authoritative)" do
+      _server =
+        start_server_with_fixture(%{
+          processes: [%{pid: @mtga_pid, name: "MTGA.exe", cmdline: "MTGA.exe"}],
+          match_info:
+            build_match_info(%{
+              opponent_screen_name: "Lagun4",
+              opponent_ranking_class: 5,
+              opponent_ranking_tier: 4
+            }),
+          board_snapshot: {:error, :scene_unreachable}
+        })
+
+      send_match_created(@match_id)
+      send_match_completed(@match_id)
+
+      # Chain-1 still winds down cleanly; Chain-2 just doesn't persist.
+      assert_receive {:final, %Snapshot{mtga_match_id: @match_id}}, 500
+      refute_receive {:final_board, _}, 100
     end
   end
 end
