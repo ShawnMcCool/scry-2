@@ -296,4 +296,127 @@ defmodule Scry2.Collection.ReaderTest do
       assert result.mtga_build_hint == nil
     end
   end
+
+  describe "walker mastery merge" do
+    defp walker_fixture_with_mastery(walker_snap, mastery_info_or_unset) do
+      base = %{
+        processes: [%{pid: 1, name: "MTGA.exe", cmdline: ""}],
+        maps: [
+          %{start: 0x100, end_addr: 0x200, perms: "r-xp", path: "mono-2.0-bdwgc.dll"},
+          %{start: 0x300, end_addr: 0x400, perms: "r-xp", path: "UnityPlayer.dll"}
+        ],
+        walker_snapshot: walker_snap
+      }
+
+      case mastery_info_or_unset do
+        :unset -> base
+        info -> Map.put(base, :mastery_info, info)
+      end
+    end
+
+    defp valid_walker_snap_for_mastery do
+      %{
+        cards: [{70012, 1}, {82456, 4}, {91234, 2}, {44321, 1}],
+        wildcards: %{common: 42, uncommon: 17, rare: 5, mythic: 2},
+        gold: 12_345,
+        gems: 3_000,
+        vault_progress: 30.1,
+        build_hint: "abc-123-guid",
+        reader_version: "scry2-walker-0.1.0"
+      }
+    end
+
+    test "merges mastery fields into params when walk_mastery returns a map" do
+      mastery = %{
+        tier: 17,
+        xp_in_tier: 500,
+        orbs: 0,
+        season_name: "BattlePass_SOS",
+        expiration_time_ticks: 639_178_128_000_000_000
+      }
+
+      TestBackend.set_fixture(
+        walker_fixture_with_mastery(valid_walker_snap_for_mastery(), mastery)
+      )
+
+      assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
+
+      assert result.reader_confidence == "walker"
+      assert result.mastery_tier == 17
+      assert result.mastery_xp_in_tier == 500
+      assert result.mastery_orbs == 0
+      assert result.mastery_season_name == "BattlePass_SOS"
+      assert %DateTime{} = result.mastery_season_ends_at
+    end
+
+    test "leaves mastery columns nil when walk_mastery returns {:ok, nil}" do
+      TestBackend.set_fixture(walker_fixture_with_mastery(valid_walker_snap_for_mastery(), nil))
+
+      assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
+
+      assert result.reader_confidence == "walker"
+      assert result.mastery_tier == nil
+      assert result.mastery_xp_in_tier == nil
+      assert result.mastery_orbs == nil
+      assert result.mastery_season_name == nil
+      assert result.mastery_season_ends_at == nil
+    end
+
+    test "leaves mastery columns nil when walk_mastery returns {:error, _}" do
+      # No :mastery_info key in the fixture → TestBackend returns
+      # {:error, :no_mastery_info}.
+      TestBackend.set_fixture(
+        walker_fixture_with_mastery(valid_walker_snap_for_mastery(), :unset)
+      )
+
+      assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
+
+      assert result.reader_confidence == "walker"
+      assert result.mastery_tier == nil
+      assert result.mastery_xp_in_tier == nil
+      assert result.mastery_orbs == nil
+      assert result.mastery_season_name == nil
+      assert result.mastery_season_ends_at == nil
+    end
+
+    test "ticks → DateTime conversion is correct (.NET epoch offset)" do
+      # 639_178_128_000_000_000 .NET ticks
+      #   ÷ 10_000_000              → 63_917_812_800 seconds since 0001-01-01
+      #   − 62_135_596_800          → 1_782_216_000 Unix seconds
+      expected = DateTime.from_unix!(1_782_216_000)
+
+      mastery = %{
+        tier: 1,
+        xp_in_tier: 0,
+        orbs: 0,
+        season_name: "Test",
+        expiration_time_ticks: 639_178_128_000_000_000
+      }
+
+      TestBackend.set_fixture(
+        walker_fixture_with_mastery(valid_walker_snap_for_mastery(), mastery)
+      )
+
+      assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
+      assert result.mastery_season_ends_at == expected
+    end
+
+    test "zero or negative ticks → mastery_season_ends_at = nil" do
+      mastery = %{
+        tier: 1,
+        xp_in_tier: 0,
+        orbs: 0,
+        season_name: "Sentinel",
+        expiration_time_ticks: 0
+      }
+
+      TestBackend.set_fixture(
+        walker_fixture_with_mastery(valid_walker_snap_for_mastery(), mastery)
+      )
+
+      assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
+      assert result.mastery_season_name == "Sentinel"
+      assert result.mastery_season_ends_at == nil
+    end
+  end
 end

@@ -90,9 +90,68 @@ defmodule Scry2.Collection.Reader do
   defp try_walker(mem, pid, walker_check_opts) do
     with {:ok, snapshot} <- mem.walk_collection(pid),
          :ok <- SelfCheck.walker_result_ok?(snapshot, walker_check_opts) do
-      {:ok, summarize_walker(snapshot)}
+      mastery = read_mastery_safely(mem, pid)
+      {:ok, Map.merge(summarize_walker(snapshot), mastery_params(mastery))}
     end
   end
+
+  # .NET DateTime.Ticks are 100-nanosecond intervals since 0001-01-01 UTC.
+  # 62_135_596_800 = seconds between 0001-01-01 and the Unix epoch.
+  @net_epoch_offset_seconds 62_135_596_800
+
+  @mastery_param_keys [
+    :mastery_tier,
+    :mastery_xp_in_tier,
+    :mastery_orbs,
+    :mastery_season_name,
+    :mastery_season_ends_at
+  ]
+
+  defp read_mastery_safely(mem, pid) do
+    case mem.walk_mastery(pid) do
+      {:ok, info} ->
+        info
+
+      {:error, reason} ->
+        Log.info(:ingester, fn ->
+          "walk_mastery failed: #{inspect(reason)} — leaving mastery null"
+        end)
+
+        nil
+    end
+  rescue
+    e ->
+      Log.warning(:ingester, fn ->
+        "walk_mastery raised: #{inspect(e)} — leaving mastery null"
+      end)
+
+      nil
+  end
+
+  defp mastery_params(nil) do
+    Map.new(@mastery_param_keys, fn key -> {key, nil} end)
+  end
+
+  defp mastery_params(%{} = info) do
+    %{
+      mastery_tier: Map.get(info, :tier),
+      mastery_xp_in_tier: Map.get(info, :xp_in_tier),
+      mastery_orbs: Map.get(info, :orbs),
+      mastery_season_name: Map.get(info, :season_name),
+      mastery_season_ends_at: ticks_to_datetime(Map.get(info, :expiration_time_ticks))
+    }
+  end
+
+  defp ticks_to_datetime(ticks) when is_integer(ticks) and ticks > 0 do
+    unix_seconds = div(ticks, 10_000_000) - @net_epoch_offset_seconds
+
+    case DateTime.from_unix(unix_seconds) do
+      {:ok, datetime} -> datetime
+      _ -> nil
+    end
+  end
+
+  defp ticks_to_datetime(_), do: nil
 
   defp run_scanner_path(mem, pid, maps, scanner_opts, chunk_size, max_regions, scan_check_opts) do
     with :ok <- SelfCheck.access_channel_ok?(mem, pid, maps),
