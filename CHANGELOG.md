@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.31.0 — 2026-05-03
+
 ### Improved
 
 - **Memory reading uses less CPU during matches.** The reader now caches the most expensive parts of its setup work across polls, so every poll after the first costs a small fraction of what it did before. Long matches and Brawl/Commander games (which take longer per turn) feel notably lighter on the system.
