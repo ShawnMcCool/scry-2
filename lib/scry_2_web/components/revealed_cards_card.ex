@@ -58,6 +58,9 @@ defmodule Scry2Web.Components.RevealedCardsCard do
         <div class="flex items-baseline gap-2">
           <span class="text-xs font-semibold opacity-70">{zone.label}</span>
           <span class="text-xs opacity-50 tabular-nums">({length(zone.arena_ids)})</span>
+          <span :if={zone.zone_id == 3} class="text-xs opacity-50 italic">
+            revealed only
+          </span>
         </div>
 
         <div class="flex flex-wrap gap-1">
