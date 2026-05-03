@@ -487,6 +487,62 @@ fn walk_match_info(pid: i32) -> Result<Option<WireMatchInfo>, WalkErrorWire> {
 }
 
 // ============================================================
+// walk_mastery NIF — battle-pass / mastery-pass tier, XP, orbs,
+// season name, and expiration. Per
+// `specs/2026-05-03-mastery-pass-display-design.md` (Task M-T3).
+// ============================================================
+
+/// Wire shape returned to Elixir for one mastery snapshot. `nil` when
+/// the chain is unreachable — between seasons, harness/test strategy,
+/// or PAPA singleton not yet populated.
+#[derive(NifMap)]
+pub struct WireMasteryInfo {
+    pub tier: i32,
+    pub xp_in_tier: i32,
+    pub orbs: i32,
+    pub season_name: Option<String>,
+    pub expiration_time_ticks: Option<i64>,
+}
+
+fn mastery_info_to_wire(info: walker::mastery::MasteryInfo) -> WireMasteryInfo {
+    WireMasteryInfo {
+        tier: info.tier,
+        xp_in_tier: info.xp_in_tier,
+        orbs: info.orbs,
+        season_name: info.season_name,
+        expiration_time_ticks: info.expiration_time_ticks,
+    }
+}
+
+/// Walks `PAPA._instance.<MasteryPassProvider>k__BackingField` →
+/// `SetMasteryDataProvider._strategy` →
+/// `AwsSetMasteryStrategy._currentBpTrack` → `ProgressionTrack` and
+/// returns tier / XP-in-tier / orbs / season name / expiration ticks.
+///
+/// Returns `{:ok, nil}` between seasons or when the chain isn't
+/// reachable (harness strategy, anchor not yet populated). Returns
+/// `{:ok, %{...}}` populated otherwise. Uses the discovery cache and
+/// wall-clock budget shipped in v0.31.0.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walk_mastery(pid: i32) -> Result<Option<WireMasteryInfo>, WalkErrorWire> {
+    let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+    let result = walker::run::walk_mastery_cached(pid as u32, &maps, read_mem);
+    let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
+        let counter = AtomicU64::new(0);
+        let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+        let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+        let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+        walker::run::walk_mastery_cached(pid as u32, &maps, read_mem)
+    })
+    .map_err(WalkErrorWire::from)?;
+    Ok(snap.map(mastery_info_to_wire))
+}
+
+// ============================================================
 // walk_match_board NIF — Chain 2 (per-zone visible card arena_ids)
 // per specs/2026-05-03-chain-2-board-state-design.md
 // ============================================================
