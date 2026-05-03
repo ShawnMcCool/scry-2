@@ -244,11 +244,10 @@ pub struct ZoneCards {
 /// Snapshot of every readable card across every zone in the active
 /// match. Returned by [`walk_match_board`].
 ///
-/// v1 only populates entries for the Battlefield zone (zone_id == 4)
-/// because that path uses MTGA's `_unattachedCardsCache` directly.
-/// Other zones are reachable via `CardHolderBase._previousLayoutData`
-/// → `List<CardLayoutData>` and will land once the CardLayoutData
-/// struct layout is pinned by a follow-up live spike.
+/// Populates entries for Hand (3), Battlefield (4), Graveyard (5),
+/// and Exile (6). Stack and Command are intentionally not walked.
+/// Empty zones are omitted from the result entirely (no zero-length
+/// `ZoneCards` rows reach the wire).
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct BoardSnapshot {
     pub zones: Vec<ZoneCards>,
@@ -258,7 +257,8 @@ pub struct BoardSnapshot {
 ///
 /// Resolves `MatchSceneManager.Instance` (the static singleton),
 /// walks to its `PlayerTypeMap`, then for every (seat, zone) entry
-/// drills the holder for arena_ids — currently battlefield only.
+/// drills the holder for arena_ids across Hand (3), Battlefield (4),
+/// Graveyard (5), and Exile (6).
 ///
 /// Returns `Ok(None)` when MTGA is reachable but
 /// `MatchSceneManager.Instance` is null — i.e. no active match scene
@@ -324,17 +324,18 @@ where
     let mut zones = Vec::new();
     for seat in &seat_zone_map.seats {
         for zone in &seat.zones {
-            // v1: battlefield only. Other zones land once
-            // CardHolderBase._previousLayoutData drilling is wired.
-            if zone.zone_id != card_holder::ZONE_BATTLEFIELD {
+            if !card_holder::READABLE_ZONES.contains(&zone.zone_id) {
                 continue;
             }
             if zone.holder_addr == 0 {
                 continue;
             }
             if let Some(arena_ids) =
-                card_holder::read_battlefield_arena_ids(&offsets, zone.holder_addr, read_mem)
+                card_holder::read_zone_arena_ids(&offsets, zone.holder_addr, zone.zone_id, read_mem)
             {
+                if arena_ids.is_empty() {
+                    continue;
+                }
                 zones.push(ZoneCards {
                     seat_id: seat.seat_id,
                     zone_id: zone.zone_id,

@@ -1,7 +1,7 @@
 //! Drill into one MTGA `ICardHolder` to extract the arena_ids of
 //! cards visible in that zone (Chain 2 final hop).
 //!
-//! ## Battlefield path (v1, this module)
+//! ## Battlefield path (this module)
 //!
 //! ```text
 //! BattlefieldCardHolder
@@ -21,13 +21,13 @@
 //! `CardLayoutData` wrapper to unpack and no per-region/per-stack
 //! drill (battlefield regions are layout metadata, not card storage).
 //!
-//! ## Other zones (v2, future module)
+//! ## Non-battlefield zones (Hand, Graveyard, Exile)
 //!
-//! Hand / Graveyard / Exile / Stack / Command go through the
-//! universal `CardHolderBase._previousLayoutData : List<CardLayoutData>`
-//! field. That path needs the `CardLayoutData` struct layout pinned by
-//! a follow-up spike and is intentionally deferred — battlefield alone
-//! covers the bulk of "what is the opponent playing?" UX.
+//! Hand / Graveyard / Exile go through the universal
+//! `CardHolderBase._previousLayoutData : List<CardLayoutData>` field,
+//! handled by [`super::card_layout_data`]. The dispatcher
+//! [`read_zone_arena_ids`] in this module routes by `zone_id`.
+//! Stack and Command are not walked (see [`READABLE_ZONES`]).
 
 use super::field;
 use super::instance_field;
@@ -41,6 +41,15 @@ use super::object;
 /// skill; the walker keeps these as integers (Elixir-side translation
 /// owns the symbolic names).
 pub const ZONE_BATTLEFIELD: i32 = 4;
+
+/// Zone enum values that the walker reads. Hand (3), Battlefield (4),
+/// Graveyard (5), Exile (6) — see `mono-memory-reader` skill for the
+/// full CardHolderType enum.
+///
+/// Stack (9) and Command (10) are deliberately omitted: stack is
+/// rarely populated at end-of-match and the player does not play
+/// Brawl/Commander.
+pub const READABLE_ZONES: &[i32] = &[3, 4, 5, 6];
 
 /// Read every visible card's arena_id in a battlefield holder.
 ///
