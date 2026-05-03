@@ -17,5 +17,17 @@ defmodule Scry2.Matches.RankFormatTest do
       assert RankFormat.compose("Gold", 3) == "Gold 3"
       assert RankFormat.compose("Diamond", 1) == "Diamond 1"
     end
+
+    test "drops tier for Mythic — MTGA emits tier=1 but it's meaningless at Mythic" do
+      assert RankFormat.compose("Mythic", 1) == "Mythic"
+      assert RankFormat.compose("Mythic", nil) == "Mythic"
+      assert RankFormat.compose("Mythic", 0) == "Mythic"
+    end
+
+    test "collapses 'None' sentinel to nil so the UI hides the rank" do
+      assert RankFormat.compose("None", 0) == nil
+      assert RankFormat.compose("None", nil) == nil
+      assert RankFormat.compose("None", 3) == nil
+    end
   end
 end

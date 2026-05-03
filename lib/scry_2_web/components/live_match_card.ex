@@ -147,16 +147,16 @@ defmodule Scry2Web.Components.LiveMatchCard do
       opponent_name: screen_name_or_nil(Map.get(opponent, :screen_name)),
       local_name: screen_name_or_nil(Map.get(local, :screen_name)),
       opponent_rank:
-        compose_rank(
-          Map.get(opponent, :ranking_class),
-          Map.get(opponent, :ranking_tier)
+        RankFormat.compose(
+          RankClass.name(Map.get(opponent, :ranking_class)),
+          nil_if_zero(Map.get(opponent, :ranking_tier))
         ),
       opponent_mythic_percentile: Map.get(opponent, :mythic_percentile),
       opponent_mythic_placement: Map.get(opponent, :mythic_placement),
       local_rank:
-        compose_rank(
-          Map.get(local, :ranking_class),
-          Map.get(local, :ranking_tier)
+        RankFormat.compose(
+          RankClass.name(Map.get(local, :ranking_class)),
+          nil_if_zero(Map.get(local, :ranking_tier))
         ),
       local_mythic_percentile: Map.get(local, :mythic_percentile),
       local_mythic_placement: Map.get(local, :mythic_placement),
@@ -166,20 +166,10 @@ defmodule Scry2Web.Components.LiveMatchCard do
     }
   end
 
-  # Class 0 = "None" in RankClass; the player has no rank to show.
-  # Mythic always renders without a tier suffix — the suffix is encoded
-  # in the placement / percentile fields handled by `RankBadge`. For
-  # sub-Mythic classes, tier 0 ("no tier") is also dropped so we get
-  # "Platinum" rather than "Platinum 0".
-  defp compose_rank(class_index, tier) do
-    case RankClass.name(class_index) do
-      nil -> nil
-      "None" -> nil
-      "Mythic" -> "Mythic"
-      class_name -> RankFormat.compose(class_name, nil_if_zero(tier))
-    end
-  end
-
+  # Tier 0 ("no tier") is dropped so sub-Mythic classes render as
+  # "Platinum" rather than "Platinum 0". The "None" sentinel from
+  # `RankClass.name(0)` and the meaningless Mythic tier are both
+  # collapsed inside `RankFormat.compose/2`.
   defp nil_if_zero(0), do: nil
   defp nil_if_zero(other), do: other
 

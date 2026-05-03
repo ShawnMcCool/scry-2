@@ -604,5 +604,24 @@ defmodule Scry2.DecksTest do
       assert updated.opponent_rank_mythic_percentile == 88
       assert updated.opponent_rank_mythic_placement == 142
     end
+
+    test "drops Mythic tier when walker emits the meaningless tier=1" do
+      TestFactory.create_deck_match_result(%{
+        deck: TestFactory.create_deck(%{mtga_deck_id: "D-MYTHIC-1"}),
+        mtga_match_id: "M-MYTHIC-1"
+      })
+
+      snapshot = %Snapshot{
+        mtga_match_id: "M-MYTHIC-1",
+        opponent_ranking_class: 6,
+        opponent_ranking_tier: 1,
+        opponent_mythic_percentile: 88
+      }
+
+      assert {:ok, updated} = Decks.merge_match_result_observation(snapshot)
+      assert updated.opponent_rank == "Mythic"
+      refute updated.opponent_rank =~ "1"
+      assert updated.opponent_rank_mythic_percentile == 88
+    end
   end
 end

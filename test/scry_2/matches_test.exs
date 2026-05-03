@@ -819,6 +819,22 @@ defmodule Scry2.MatchesTest do
       assert updated.opponent_rank_mythic_percentile == 88
       assert updated.opponent_rank_mythic_placement == 142
     end
+
+    test "drops Mythic tier when walker emits the meaningless tier=1" do
+      TestFactory.create_match(%{mtga_match_id: "M-MYTHIC-1"})
+
+      snapshot = %Snapshot{
+        mtga_match_id: "M-MYTHIC-1",
+        opponent_ranking_class: 6,
+        opponent_ranking_tier: 1,
+        opponent_mythic_percentile: 88
+      }
+
+      assert {:ok, updated} = Matches.merge_opponent_observation(snapshot)
+      assert updated.opponent_rank == "Mythic"
+      refute updated.opponent_rank =~ "1"
+      assert updated.opponent_rank_mythic_percentile == 88
+    end
   end
 
   describe "list_matches/1 with :category" do
