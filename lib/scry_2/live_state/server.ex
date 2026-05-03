@@ -244,6 +244,10 @@ defmodule Scry2.LiveState.Server do
 
     snapshot_attrs = build_snapshot_attrs(state.last_snapshot)
 
+    Log.warning(:ingester, fn ->
+      "live_state: chain-2 wind-down — #{chain_2_summary(state.last_board_snapshot)}"
+    end)
+
     case LiveState.record_final(state.mtga_match_id, snapshot_attrs) do
       {:ok, _snapshot} ->
         # Chain-1 persistence succeeded — try Chain-2 too, but only
@@ -283,6 +287,30 @@ defmodule Scry2.LiveState.Server do
       timeout_timer: nil
     }
   end
+
+  # Summarises the captured Chain-2 board snapshot for the wind-down
+  # diagnostic. Three outcomes the prod log can distinguish:
+  #
+  #   - "no snapshot captured during match" — every walk_match_board
+  #     tick returned nil/error, so MatchSceneManager.Instance was
+  #     unreachable for the whole match (or the chain failed before
+  #     producing any holders to walk).
+  #   - "snapshot present, zones=N, cards=M" with N>0 — the chain
+  #     produced cards (working or partially working).
+  #   - "snapshot present but empty" — the chain reached the
+  #     PlayerTypeMap but every per-zone walk returned empty/None.
+  defp chain_2_summary(nil), do: "no snapshot captured during match"
+
+  defp chain_2_summary(%{zones: zones}) when is_list(zones) do
+    if zones == [] do
+      "snapshot present but empty"
+    else
+      card_count = Enum.reduce(zones, 0, fn z, acc -> acc + length(z.arena_ids) end)
+      "snapshot present, zones=#{length(zones)}, cards=#{card_count}"
+    end
+  end
+
+  defp chain_2_summary(_other), do: "snapshot present but unrecognized shape"
 
   defp build_snapshot_attrs(nil) do
     # No tick ever succeeded — persist a minimal row with reader_version
