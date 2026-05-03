@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.32.0 — 2026-05-03
+
 ### New
 
 - **Economy → Mastery Pass card.** See your current Mastery Pass tier, XP toward the next tier, mastery orb count, season name, and how many days are left in the current season. The card refreshes whenever your collection does.
