@@ -28,6 +28,7 @@
 
 pub mod boosters;
 pub mod build_hint;
+pub mod card_holder;
 pub mod chain;
 pub mod class_lookup;
 pub mod dict;

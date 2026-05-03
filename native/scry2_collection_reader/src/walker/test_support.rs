@@ -102,11 +102,18 @@ pub fn make_type_block(attrs: u16) -> Vec<u8> {
 /// `field_count` at the canonical offsets, padded to
 /// [`CLASS_DEF_BLOB_LEN`].
 pub fn make_class_def(fields_ptr: u64, field_count: u32) -> Vec<u8> {
+    make_class_def_with_parent(fields_ptr, field_count, 0)
+}
+
+/// Variant that also stamps `MonoClass.parent`. Used by parent-chain
+/// field-resolution tests.
+pub fn make_class_def_with_parent(fields_ptr: u64, field_count: u32, parent_ptr: u64) -> Vec<u8> {
     let o = MonoOffsets::mtga_default();
     let mut buf = vec![0u8; CLASS_DEF_BLOB_LEN];
     buf[o.class_fields..o.class_fields + 8].copy_from_slice(&fields_ptr.to_le_bytes());
     buf[o.class_def_field_count..o.class_def_field_count + 4]
         .copy_from_slice(&field_count.to_le_bytes());
+    buf[o.class_parent..o.class_parent + 8].copy_from_slice(&parent_ptr.to_le_bytes());
     buf
 }
 

@@ -432,6 +432,61 @@ fn walk_match_info(pid: i32) -> Result<Option<WireMatchInfo>, WalkErrorWire> {
     Ok(snap.map(match_info_to_wire))
 }
 
+// ============================================================
+// walk_match_board NIF — Chain 2 (per-zone visible card arena_ids)
+// per specs/2026-05-03-chain-2-board-state-design.md
+// ============================================================
+
+/// One (seat, zone, arena_ids) row in [`WireBoardSnapshot.zones`].
+#[derive(NifMap)]
+pub struct WireZoneCards {
+    pub seat_id: i32,
+    pub zone_id: i32,
+    pub arena_ids: Vec<i32>,
+}
+
+/// Wire shape returned to Elixir for one board-state read. `nil` when
+/// `MatchSceneManager.Instance` is null (no active match scene).
+#[derive(NifMap)]
+pub struct WireBoardSnapshot {
+    pub zones: Vec<WireZoneCards>,
+    pub reader_version: String,
+}
+
+fn board_snapshot_to_wire(v: walker::run::BoardSnapshot) -> WireBoardSnapshot {
+    WireBoardSnapshot {
+        zones: v
+            .zones
+            .into_iter()
+            .map(|z| WireZoneCards {
+                seat_id: z.seat_id,
+                zone_id: z.zone_id,
+                arena_ids: z.arena_ids,
+            })
+            .collect(),
+        reader_version: READER_VERSION.to_string(),
+    }
+}
+
+/// Read one board-state snapshot from the target MTGA process.
+///
+/// Returns `{:ok, nil}` when MTGA is reachable but there is no active
+/// match scene — the duel UI hasn't loaded or has torn down. Returns
+/// `{:ok, %{...}}` populated with per-zone arena_id lists otherwise.
+///
+/// v1 only populates the Battlefield zone for each seat. Other zones
+/// land once the `CardLayoutData` struct shape is pinned by a
+/// follow-up live spike.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walk_match_board(pid: i32) -> Result<Option<WireBoardSnapshot>, WalkErrorWire> {
+    let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let read_mem = bounded(&counter, WALK_READ_BUDGET, inner);
+    let snap = walker::run::walk_match_board(&maps, read_mem).map_err(WalkErrorWire::from)?;
+    Ok(snap.map(board_snapshot_to_wire))
+}
+
 /// Diagnostic NIF — list every loaded assembly's
 /// `{name, image_addr}`.
 #[rustler::nif(schedule = "DirtyIo")]

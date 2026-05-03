@@ -50,6 +50,47 @@ where
     object_addr.checked_add(resolved.offset as u64)
 }
 
+/// Parent-aware variant — walks `MonoClass.parent` when the field is
+/// not declared on the runtime class. See
+/// [`field::find_field_by_name_in_chain`] for the chain-walk
+/// semantics.
+fn resolve_field_addr_in_chain<F>(
+    offsets: &MonoOffsets,
+    class_bytes: &[u8],
+    object_addr: u64,
+    field_name: &str,
+    read_mem: F,
+) -> Option<u64>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let resolved: ResolvedField =
+        field::find_field_by_name_in_chain(offsets, class_bytes, field_name, read_mem)?;
+    if resolved.is_static || resolved.offset < 0 {
+        return None;
+    }
+    object_addr.checked_add(resolved.offset as u64)
+}
+
+/// Parent-aware variant of [`read_instance_i32`]. Used when the
+/// declared field may live on a base class (e.g. `BaseGrpId` on a
+/// `CardInstanceData` parent).
+pub fn read_instance_i32_in_chain<F>(
+    offsets: &MonoOffsets,
+    class_bytes: &[u8],
+    object_addr: u64,
+    field_name: &str,
+    read_mem: &F,
+) -> Option<i32>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let addr =
+        resolve_field_addr_in_chain(offsets, class_bytes, object_addr, field_name, *read_mem)?;
+    let bytes = read_mem(addr, 4)?;
+    mono::read_u32(&bytes, 0, 0).map(|v| v as i32)
+}
+
 /// Read a 4-byte signed integer instance field.
 pub fn read_instance_i32<F>(
     offsets: &MonoOffsets,

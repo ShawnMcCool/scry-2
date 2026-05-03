@@ -147,6 +147,10 @@ pub struct MonoOffsets {
     /// `MonoClass.name` (`const char *`). Verified at `0x48` by
     /// `offsets_probe/dump.c`.
     pub class_name: usize,
+    /// `MonoClass.parent` (`MonoClass *` to the base class, or `NULL`
+    /// for `System.Object`). Verified at `0x30` by the existing
+    /// match-manager spike's `dump_class_chain` walk.
+    pub class_parent: usize,
     /// `MonoImage.class_cache` — start of the embedded
     /// `MonoInternalHashTable`. Verified at `0x4d0`:
     /// `lea rcx, [r13+0x4d0]; call mono_internal_hash_table_lookup`.
@@ -205,6 +209,7 @@ impl MonoOffsets {
             assembly_aname_name: 0x10,
             assembly_image: 0x60,
             class_name: 0x48,
+            class_parent: 0x30,
             image_class_cache: 0x4d0,
             hash_table_size: 0x18,
             hash_table_num_entries: 0x1c,
@@ -259,6 +264,13 @@ pub fn read_ptr(bytes: &[u8], base: usize, offset: usize) -> Option<u64> {
 /// on a `MonoClass` at `class_base` inside `bytes`.
 pub fn class_fields_ptr(offsets: &MonoOffsets, bytes: &[u8], class_base: usize) -> Option<u64> {
     read_ptr(bytes, class_base, offsets.class_fields)
+}
+
+/// Read `MonoClass.parent` — the pointer to the base class, or
+/// `Some(0)` for `System.Object` (no parent). Returns `None` only on
+/// out-of-bounds / arithmetic overflow.
+pub fn class_parent_ptr(offsets: &MonoOffsets, bytes: &[u8], class_base: usize) -> Option<u64> {
+    read_ptr(bytes, class_base, offsets.class_parent)
 }
 
 /// Read `MonoClass.runtime_info` — the pointer to the

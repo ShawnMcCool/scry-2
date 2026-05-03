@@ -21,6 +21,7 @@
 //! (no /proc, no syscalls) so unit tests can drive it with a
 //! `FakeMem`-style fixture.
 
+use super::card_holder;
 use super::chain;
 use super::class_lookup;
 use super::dict::DictEntry;
@@ -29,6 +30,7 @@ use super::field;
 use super::image_lookup;
 use super::inventory::InventoryValues;
 use super::match_info::{self, MatchInfoValues};
+use super::match_scene;
 use super::mono::{self, MonoOffsets};
 use super::vtable;
 
@@ -227,6 +229,122 @@ where
         &papa_bytes,
         read_mem,
     ))
+}
+
+/// One (seat, zone, arena_ids) triple in [`BoardSnapshot`]. `seat_id`
+/// and `zone_id` are MTGA's own enum integers — keep them opaque at
+/// the walker boundary; symbolic translation is the caller's job.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ZoneCards {
+    pub seat_id: i32,
+    pub zone_id: i32,
+    pub arena_ids: Vec<i32>,
+}
+
+/// Snapshot of every readable card across every zone in the active
+/// match. Returned by [`walk_match_board`].
+///
+/// v1 only populates entries for the Battlefield zone (zone_id == 4)
+/// because that path uses MTGA's `_unattachedCardsCache` directly.
+/// Other zones are reachable via `CardHolderBase._previousLayoutData`
+/// → `List<CardLayoutData>` and will land once the CardLayoutData
+/// struct layout is pinned by a follow-up live spike.
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub struct BoardSnapshot {
+    pub zones: Vec<ZoneCards>,
+}
+
+/// Run the board-state walker (Chain 2) against a target process.
+///
+/// Resolves `MatchSceneManager.Instance` (the static singleton),
+/// walks to its `PlayerTypeMap`, then for every (seat, zone) entry
+/// drills the holder for arena_ids — currently battlefield only.
+///
+/// Returns `Ok(None)` when MTGA is reachable but
+/// `MatchSceneManager.Instance` is null — i.e. no active match scene
+/// (the duel UI hasn't loaded, or it's torn down). Treat as the
+/// authoritative "wind down polling" signal.
+pub fn walk_match_board<F>(
+    maps: &[MapEntry],
+    read_mem: F,
+) -> Result<Option<BoardSnapshot>, WalkError>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let offsets = MonoOffsets::mtga_default();
+
+    let (mono_base, mono_bytes) =
+        read_mono_image(maps, &read_mem).ok_or(WalkError::MonoDllReadFailed)?;
+    if mono_bytes.is_empty() {
+        return Err(WalkError::MonoDllNotFound);
+    }
+
+    let domain_addr = domain::find_root_domain(&mono_bytes, mono_base, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+
+    let images = image_lookup::list_all_images(&offsets, domain_addr, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    if images.is_empty() {
+        return Err(WalkError::RootDomainNotFound);
+    }
+
+    let scene_class_addr =
+        find_class_in_images(&offsets, &images, "MatchSceneManager", read_mem)
+            .ok_or(WalkError::ClassNotFound("MatchSceneManager"))?;
+    let scene_class_bytes = read_mem(scene_class_addr, CLASS_DEF_BLOB_LEN)
+        .ok_or(WalkError::ClassReadFailed("MatchSceneManager"))?;
+
+    let scene_singleton = match match_scene::find_scene_singleton(
+        &offsets,
+        scene_class_addr,
+        &scene_class_bytes,
+        domain_addr,
+        read_mem,
+    ) {
+        Some(addr) => addr,
+        None => return Ok(None), // No active match scene — normal state.
+    };
+
+    let (ptm_addr, ptm_class_bytes) =
+        match match_scene::walk_to_player_type_map(&offsets, scene_singleton, read_mem) {
+            Some(p) => p,
+            None => return Ok(None),
+        };
+
+    let seat_zone_map = match match_scene::read_seat_zone_map(
+        &offsets,
+        ptm_addr,
+        &ptm_class_bytes,
+        read_mem,
+    ) {
+        Some(m) => m,
+        None => return Ok(None),
+    };
+
+    let mut zones = Vec::new();
+    for seat in &seat_zone_map.seats {
+        for zone in &seat.zones {
+            // v1: battlefield only. Other zones land once
+            // CardHolderBase._previousLayoutData drilling is wired.
+            if zone.zone_id != card_holder::ZONE_BATTLEFIELD {
+                continue;
+            }
+            if zone.holder_addr == 0 {
+                continue;
+            }
+            if let Some(arena_ids) =
+                card_holder::read_battlefield_arena_ids(&offsets, zone.holder_addr, read_mem)
+            {
+                zones.push(ZoneCards {
+                    seat_id: seat.seat_id,
+                    zone_id: zone.zone_id,
+                    arena_ids,
+                });
+            }
+        }
+    }
+
+    Ok(Some(BoardSnapshot { zones }))
 }
 
 /// Locate the mono DLL in `maps`, stitch all its mapped sections
