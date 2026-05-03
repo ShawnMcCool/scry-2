@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.30.1 — 2026-05-03
+
 ### Maintenance
 
 - Internal diagnostic logging for the Revealed cards capture path. No user-visible behavior change — adds a single log line at the end of every match summarizing whether memory-read board capture succeeded, so future investigation has direct evidence to work from.
