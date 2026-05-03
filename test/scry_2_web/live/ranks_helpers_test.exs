@@ -15,6 +15,18 @@ defmodule Scry2Web.RanksHelpersTest do
     test "returns dash for nil class" do
       assert RanksHelpers.format_rank(nil, 1) == "—"
     end
+
+    test "drops the meaningless tier suffix for Mythic players (regression)" do
+      # MTGA emits tier=1 for every Mythic player, but the number is
+      # meaningless at Mythic — the meaningful suffix is the percentile
+      # / placement, displayed separately by RankBadge.
+      assert RanksHelpers.format_rank("Mythic", 1) == "Mythic"
+    end
+
+    test "returns dash for the 'None' sentinel" do
+      assert RanksHelpers.format_rank("None", nil) == "—"
+      assert RanksHelpers.format_rank("None", 3) == "—"
+    end
   end
 
   describe "format_record/2" do

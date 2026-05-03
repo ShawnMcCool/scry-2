@@ -3,16 +3,20 @@ defmodule Scry2Web.RanksHelpers do
   Pure helper functions for `Scry2Web.RanksLive`. Extracted per ADR-013.
   """
 
+  alias Scry2.Matches.RankFormat
+
   @class_order ~w(Bronze Silver Gold Platinum Diamond)
 
   @doc """
-  Formats a rank as "Class Level" (e.g. "Gold 1").
-  Returns "—" when class is nil.
+  Formats a rank for display in the UI.
+
+  Delegates to `Scry2.Matches.RankFormat.compose/2` for the canonical
+  rank-string composition (handling Mythic-tier collapse and the
+  `"None"` sentinel) and substitutes the dash placeholder `"—"` when
+  the composer returns `nil`.
   """
   @spec format_rank(String.t() | nil, integer() | nil) :: String.t()
-  def format_rank(nil, _level), do: "—"
-  def format_rank(class, nil), do: class
-  def format_rank(class, level), do: "#{class} #{level}"
+  def format_rank(class, level), do: RankFormat.compose(class, level) || "—"
 
   @doc """
   Returns a W–L record string from won/lost counts.
