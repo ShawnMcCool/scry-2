@@ -11,6 +11,14 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Memory reading is working again.** A read-count safety cap inside the memory reader was sized for an older MTGA build and was being silently exceeded on the current one — every match-start poll bailed before it could find the rank/board chain anchor, leaving opponent rank, screen name, and the Revealed cards section blank. The cap has been raised with several times the headroom over actual measured cost, and the memory reader is now also instrumented so future drift will surface before it breaks again.
+
+### Improved
+
+- The **Run diagnostic capture now** button on **Settings → Memory reading** now reports how many memory reads the walker used and what percentage of its budget that consumed — useful for spotting drift after a future MTGA update.
+
 ## v0.30.2 — 2026-05-03
 
 ### Improved
