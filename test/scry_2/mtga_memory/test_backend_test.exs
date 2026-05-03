@@ -109,6 +109,40 @@ defmodule Scry2.MtgaMemory.TestBackendTest do
     end
   end
 
+  describe "walk_mastery/1" do
+    test "returns the configured :mastery_info fixture verbatim" do
+      info = %{
+        tier: 17,
+        xp_in_tier: 500,
+        orbs: 0,
+        season_name: "BattlePass_SOS",
+        expiration_time_ticks: 639_178_128_000_000_000
+      }
+
+      TestBackend.set_fixture(mastery_info: info)
+      assert TestBackend.walk_mastery(1) == {:ok, info}
+    end
+
+    test "returns {:ok, nil} when fixture mastery_info is nil" do
+      TestBackend.set_fixture(mastery_info: nil)
+      assert TestBackend.walk_mastery(1) == {:ok, nil}
+    end
+
+    test "returns {:error, :no_mastery_info} when fixture omits the key" do
+      TestBackend.set_fixture(maps: [])
+      assert TestBackend.walk_mastery(1) == {:error, :no_mastery_info}
+    end
+
+    test "returns {:error, :no_fixture} when no fixture has been set" do
+      assert TestBackend.walk_mastery(1) == {:error, :no_fixture}
+    end
+
+    test "passes through any error tuple set in the fixture" do
+      TestBackend.set_fixture(mastery_info: {:error, {:chain_failed, :strategy_null}})
+      assert TestBackend.walk_mastery(1) == {:error, {:chain_failed, :strategy_null}}
+    end
+  end
+
   describe "dictionary<int,int> fixture exercises" do
     test "reads a synthetic Mono Dictionary<int,int> entries array field-by-field" do
       # A Mono-style Dictionary<int,int> entries array in .NET/Mono layout:

@@ -189,6 +189,50 @@ defmodule Scry2.MtgaMemory do
   """
   @callback walk_match_board(pid_int()) :: {:ok, board_snapshot() | nil} | {:error, term()}
 
+  @typedoc """
+  Battle-pass / mastery-pass snapshot returned by `walk_mastery/1`.
+  Surfaces the player's current pass tier, XP toward the next tier,
+  mastery orb count, and the live season identifier + expiration.
+
+  Returned as `nil` (i.e. `{:ok, nil}`) when MTGA is running but the
+  mastery anchor isn't reachable — between seasons, or the runtime
+  `_strategy` class doesn't match the production `AwsSetMasteryStrategy`
+  (walker fails safe rather than read at the wrong offsets).
+
+  `expiration_time_ticks` is the raw .NET `DateTime.Ticks` value
+  (100-ns since 0001-01-01 UTC); consumers convert at the boundary
+  (see `Scry2.Collection.Reader`).
+  """
+  @type mastery_info :: %{
+          required(:tier) => integer(),
+          required(:xp_in_tier) => integer(),
+          required(:orbs) => integer(),
+          required(:season_name) => String.t() | nil,
+          required(:expiration_time_ticks) => integer() | nil
+        }
+
+  @doc """
+  Read one battle-pass / mastery snapshot (current tier, XP toward next
+  tier, orbs, season name, expiration ticks) from the target MTGA
+  process via the 3-hop chain `PAPA._instance →
+  SetMasteryDataProvider._strategy → AwsSetMasteryStrategy._currentBpTrack
+  → ProgressionTrack`.
+
+  Returns:
+    * `{:ok, %{...}}` when the chain resolves end-to-end.
+    * `{:ok, nil}` when MTGA is running but the chain isn't reachable
+      (between seasons / strategy is non-production / current track
+      null) — this is normal, not an error.
+    * `{:error, reason}` for upstream walker failures (mono DLL missing,
+      PAPA class not found, etc.).
+
+  Called once per `Scry2.Collection.Reader` snapshot — same cadence as
+  `walk_collection/1`. The walker shares the per-pid discovery cache
+  shipped in v0.31.0 so the second walk per snapshot pays no
+  discovery cost.
+  """
+  @callback walk_mastery(pid_int()) :: {:ok, mastery_info() | nil} | {:error, term()}
+
   @doc """
   Returns the configured backend module.
 
