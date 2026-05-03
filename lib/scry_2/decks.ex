@@ -17,8 +17,12 @@ defmodule Scry2.Decks do
 
   alias Scry2.Cards.MtgaCard
   alias Scry2.Decks.{Deck, DeckVersion, GameDraw, GameSubmission, MatchResult, MulliganHand}
+  alias Scry2.LiveState.{RankClass, Snapshot}
+  alias Scry2.Matches.RankFormat
   alias Scry2.Repo
   alias Scry2.Topics
+
+  require Scry2.Log, as: Log
 
   # Minimum samples required for a rolling-window point to be plotted.
   # See Scry2.Matches for rationale.
@@ -588,6 +592,72 @@ defmodule Scry2.Decks do
 
     broadcast_update(result.mtga_deck_id)
     result
+  end
+
+  @doc """
+  Merge a memory observation snapshot into the `decks_match_results` row
+  identified by `mtga_match_id`. Memory-wins-when-present: nil fields in
+  the snapshot are dropped before the update so log-derived non-nil
+  values are preserved. Broadcasts `{:deck_updated, mtga_deck_id}` on
+  `decks:updates` on success (gated by SilentMode).
+
+  No-op when the snapshot has no enrichable fields populated, or when no
+  match_result row exists for the given `mtga_match_id`.
+  """
+  @spec merge_match_result_observation(Snapshot.t()) ::
+          {:ok, MatchResult.t()} | {:error, Ecto.Changeset.t()} | :ok
+  def merge_match_result_observation(%Snapshot{} = snapshot) do
+    attrs = merge_match_result_observation_attrs(snapshot)
+
+    if map_size(attrs) == 0 do
+      :ok
+    else
+      case Repo.get_by(MatchResult, mtga_match_id: snapshot.mtga_match_id) do
+        nil ->
+          # Race: memory `live_match:final` can arrive before the log-derived
+          # match_result row exists. Expected during normal flow.
+          Log.info(:ingester, fn ->
+            "merge_match_result_observation: no match_result for mtga_match_id=#{snapshot.mtga_match_id}"
+          end)
+
+          :ok
+
+        %MatchResult{} = result ->
+          case result |> MatchResult.changeset(attrs) |> Repo.update() do
+            {:ok, updated} ->
+              broadcast_update(updated.mtga_deck_id)
+              {:ok, updated}
+
+            {:error, changeset} = error ->
+              Log.error(
+                :ingester,
+                "merge_match_result_observation: changeset error: #{inspect(changeset.errors)}"
+              )
+
+              error
+          end
+      end
+    end
+  end
+
+  defp merge_match_result_observation_attrs(%Snapshot{} = snapshot) do
+    %{
+      opponent_screen_name: snapshot.opponent_screen_name,
+      opponent_rank:
+        RankFormat.compose(
+          RankClass.name(snapshot.opponent_ranking_class),
+          snapshot.opponent_ranking_tier
+        ),
+      opponent_rank_mythic_percentile: snapshot.opponent_mythic_percentile,
+      opponent_rank_mythic_placement: snapshot.opponent_mythic_placement,
+      player_rank:
+        RankFormat.compose(
+          RankClass.name(snapshot.local_ranking_class),
+          snapshot.local_ranking_tier
+        )
+    }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
   end
 
   @doc """

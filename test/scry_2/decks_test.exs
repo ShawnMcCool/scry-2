@@ -499,4 +499,110 @@ defmodule Scry2.DecksTest do
       assert card_arena_id in result_ids
     end
   end
+
+  describe "merge_match_result_observation/1" do
+    alias Scry2.LiveState.Snapshot
+
+    test "writes all gap-filler fields and broadcasts on decks:updates" do
+      match_result =
+        TestFactory.create_deck_match_result(%{
+          deck: TestFactory.create_deck(%{mtga_deck_id: "D-100"}),
+          mtga_match_id: "M-100",
+          player_rank: nil
+        })
+
+      # Subscribe AFTER create_deck_match_result so we don't see the factory's own broadcast.
+      Topics.subscribe(Topics.decks_updates())
+
+      snapshot = %Snapshot{
+        mtga_match_id: "M-100",
+        opponent_screen_name: "RealName#12345",
+        opponent_ranking_class: 5,
+        opponent_ranking_tier: 2,
+        opponent_mythic_percentile: nil,
+        opponent_mythic_placement: nil,
+        local_ranking_class: 4,
+        local_ranking_tier: 4
+      }
+
+      assert {:ok, updated} = Decks.merge_match_result_observation(snapshot)
+      assert updated.id == match_result.id
+      assert updated.opponent_screen_name == "RealName#12345"
+      assert updated.opponent_rank == "Diamond 2"
+      assert updated.player_rank == "Platinum 4"
+
+      assert_receive {:deck_updated, mtga_deck_id}, 100
+      assert mtga_deck_id == "D-100"
+    end
+
+    test "preserves log-derived non-nil fields when memory only fills some" do
+      result =
+        TestFactory.create_deck_match_result(%{
+          deck: TestFactory.create_deck(%{mtga_deck_id: "D-200"}),
+          mtga_match_id: "M-200"
+        })
+
+      # Seed opponent_rank directly — the factory doesn't forward this key,
+      # but the production write path (MatchProjection) does. We're
+      # simulating an existing log-derived rank value here to verify it
+      # survives an incoming memory observation that lacks rank data.
+      {:ok, _} =
+        result
+        |> Ecto.Changeset.change(opponent_rank: "Bronze 1")
+        |> Scry2.Repo.update()
+
+      snapshot = %Snapshot{
+        mtga_match_id: "M-200",
+        opponent_screen_name: "MemoryName",
+        opponent_ranking_class: nil,
+        opponent_ranking_tier: nil
+      }
+
+      assert {:ok, updated} = Decks.merge_match_result_observation(snapshot)
+      assert updated.opponent_screen_name == "MemoryName"
+      assert updated.opponent_rank == "Bronze 1"
+    end
+
+    test "no-ops with all-nil enrichable fields" do
+      TestFactory.create_deck_match_result(%{
+        deck: TestFactory.create_deck(%{mtga_deck_id: "D-300"}),
+        mtga_match_id: "M-300"
+      })
+
+      Topics.subscribe(Topics.decks_updates())
+
+      snapshot = %Snapshot{mtga_match_id: "M-300", reader_version: "unknown"}
+      assert :ok = Decks.merge_match_result_observation(snapshot)
+      refute_receive {:deck_updated, _}, 50
+    end
+
+    test "returns :ok when match_result not found" do
+      snapshot = %Snapshot{
+        mtga_match_id: "M-MISSING",
+        opponent_screen_name: "Someone"
+      }
+
+      assert :ok = Decks.merge_match_result_observation(snapshot)
+    end
+
+    test "writes mythic percentile and placement when present" do
+      TestFactory.create_deck_match_result(%{
+        deck: TestFactory.create_deck(%{mtga_deck_id: "D-400"}),
+        mtga_match_id: "M-400"
+      })
+
+      snapshot = %Snapshot{
+        mtga_match_id: "M-400",
+        opponent_ranking_class: 6,
+        opponent_ranking_tier: nil,
+        opponent_mythic_percentile: 88,
+        opponent_mythic_placement: 142
+      }
+
+      assert {:ok, updated} = Decks.merge_match_result_observation(snapshot)
+      assert updated.opponent_rank == "Mythic"
+      assert updated.opponent_rank_mythic_percentile == 88
+      assert updated.opponent_rank_mythic_placement == 142
+    end
+  end
 end
