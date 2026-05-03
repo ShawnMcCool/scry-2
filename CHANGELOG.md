@@ -11,6 +11,19 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Opponent rank and screen name on the match detail page.** Scry now shows your opponent's rank (with mythic percentile / placement when applicable) and real MTGA screen name on the match detail page, captured at match start from MTGA's process memory — closing the gap where the log only ever told us the opponent's anonymized handle.
+- **Revealed cards from MTGA's memory on the match detail page.** When a match ends, Scry now shows the cards that were visible on the battlefield at end-of-match — yours and your opponent's — under a new **Revealed cards** section on the match detail. Captured directly from MTGA's process memory while the game is live, then persisted at wind-down. Other zones (graveyard, exile, hand, stack, command) will follow.
+
+### Improved
+
+- **Consistent rank rendering everywhere.** Rank badges on the match detail, the matches list, and the live-match card now all share the same component, so a Mythic player at the same rank is displayed identically in every place it appears.
+
+### Fixed
+
+- **Mythic rank no longer shows a meaningless "1" tier.** MTGA always reports `tier=1` for Mythic players regardless of their actual standing, so previous releases would show "Mythic 1" instead of just "Mythic". The tier is now hidden when the rank is Mythic.
+
 ## v0.28.7 — 2026-05-02
 
 ### New
