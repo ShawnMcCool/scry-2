@@ -19,6 +19,11 @@ name = "card-chain-spike"
 path = "src/bin/card_chain_spike.rs"
 required-features = []
 
+[[bin]]
+name = "event-manager-spike"
+path = "src/bin/event_manager_spike.rs"
+required-features = []
+
 [dependencies]
 rustler = "0.37"
 
