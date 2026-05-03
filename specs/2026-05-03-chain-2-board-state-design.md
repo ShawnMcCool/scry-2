@@ -62,9 +62,12 @@ LiveState.Server (existing, polls every 500 ms)
 
 ### `walker/list_t.rs` — generic List<T>
 
-Existing `list_t.rs` is hardcoded to a 24-byte `ClientBoosterInfo` element. Generalise to `read_list_elements<T>(...)` parameterised on element-size and a deserialiser closure. Provide a thin convenience wrapper for the booster shape so `walker/inventory.rs` is unaffected.
+**Status: closed by the walker refactor.** Post-refactor, `list_t.rs` already provides `read_int_list` (for `List<i32>`), `read_pointer_list` (for `List<TRef>`), plus the underlying `read_size` / `read_items_ptr` primitives. `mono_array::read_array_elements(addr, vector_offset, count, element_size, read_mem)` is parameterised on element size, so a struct-typed `List<CardLayoutData>` is three lines of caller code (read size, read items_ptr, call `read_array_elements` with `sizeof(CardLayoutData)` from the spike). No new helper required — adding one before the spike data lands would be premature abstraction.
 
-The Chain 2 use is `List<BaseCDC>` where each element is a 64-bit pointer (BaseCDC is a reference type) — i.e., `read_list_pointers(holder_addr_to_list_field, ...)` returns `Vec<u64>`.
+Chain 2's actual list usage:
+- `List<CardLayoutData>` (struct elements) — caller chunks the blob, no helper.
+- `List<BaseCDC>` in `BattlefieldStack.AllCards` (reference elements) — `read_pointer_list` covers it.
+- `List<BattlefieldStack>` (reference elements) — `read_pointer_list` covers it.
 
 ### `walker/card_holder.rs` — drill into a holder
 
@@ -246,16 +249,14 @@ Helpers extracted into `Scry2Web.Live.MatchBoardView` (pure functions: `group_by
 
 ## Sub-projects (decomposition for the writing-plans skill)
 
-Each is small enough for one implementation plan:
-
-1. **Walker generic `List<T>`** — refactor `list_t.rs` to parameterise element size + deserialiser. ~1 day.
-2. **Card-holder spike + offset capture** — `bin/card_holder_spike.rs` + FINDING.md. Requires running MTGA. ~1 day (gated on user running MTGA).
+1. ~~**Walker generic `List<T>`**~~ — **closed by the walker refactor** (`refactor(walker): extract shared primitives per engineering audit`). `mono_array::read_array_elements` already takes element size; `list_t::read_pointer_list` covers `List<TRef>`. Struct-list reads are three lines of caller code — no preemptive helper needed.
+2. **Spike capture against live MTGA** — run the existing `match-manager-spike --pid=<MTGA pid>` (its `chain2_deep_dive` already dumps the relevant field manifests), capture stdout, write FINDING.md pinning offsets for `BaseCardHolder._previousLayoutData`, `CardLayoutData`, `BaseCDC._model`, `CardDataAdapter._instance`, `BattlefieldCardHolder.Layout`, `BattlefieldRegion._stacksByShape`, `BattlefieldStack.AllCards`. Gated on the user running MTGA. ~30 min when MTGA is in a Brawl match (chosen for Command-zone coverage).
 3. **Walker `card_holder.rs`** — non-battlefield path. ~1 day.
 4. **Walker battlefield region traversal** — region/stack drill-down. ~1 day.
 5. **MtgaMemory contract + persistence + LiveState.Server integration** — Elixir layer. ~2 days.
 6. **UI surface on match detail** — render section + helpers + tests. ~1 day.
 
-Sub-project 1 has no dependencies and can land first. Sub-project 2 unblocks 3 and 4. 5 depends on 3+4. 6 depends on 5.
+Sub-project 2 is the sole remaining blocker. 3 and 4 can be planned in parallel once it lands. 5 depends on 3+4. 6 depends on 5.
 
 ## Open questions to resolve during sub-project 2 (spike)
 
