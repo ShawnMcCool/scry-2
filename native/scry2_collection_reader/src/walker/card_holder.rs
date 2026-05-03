@@ -95,6 +95,30 @@ where
     Some(arena_ids)
 }
 
+/// Dispatch from a `(holder_addr, zone_id)` pair to the right reader.
+///
+/// - `ZONE_BATTLEFIELD` (4) → [`read_battlefield_arena_ids`]
+/// - any other zone → [`super::card_layout_data::read_revealed_arena_ids`]
+///
+/// Returns the arena_ids in the order MTGA stored them in the holder's
+/// underlying list. `None` only on structural read failure of the
+/// dispatched path; `Some(vec![])` when reachable but empty.
+pub fn read_zone_arena_ids<F>(
+    offsets: &MonoOffsets,
+    holder_addr: u64,
+    zone_id: i32,
+    read_mem: F,
+) -> Option<Vec<i32>>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    if zone_id == ZONE_BATTLEFIELD {
+        read_battlefield_arena_ids(offsets, holder_addr, read_mem)
+    } else {
+        super::card_layout_data::read_revealed_arena_ids(offsets, holder_addr, read_mem)
+    }
+}
+
 /// Drill one `BaseCDC` (or any `*_CDC` subclass) to its arena_id:
 /// `BASE_CDC._model` (parent-class field) →
 /// `CardDataAdapter._instance` →
@@ -596,6 +620,181 @@ mod tests {
         let arena_ids = read_battlefield_arena_ids(&offsets, holder_addr, |a, l| mem.read(a, l))
             .ok_or("should return Some")?;
         assert!(arena_ids.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn read_zone_arena_ids_routes_battlefield_through_battlefield_path() -> Result<(), String> {
+        let mut mem = FakeMem::default();
+        let offsets = MonoOffsets::mtga_default();
+
+        let cdc = 0x500_0000;
+        install_full_card_chain(&mut mem, 0x600_0000, cdc, 7777);
+
+        let list_array_addr: u64 = 0xb00_0000;
+        install_pointer_array(&mut mem, list_array_addr, &[cdc]);
+
+        let list_addr: u64 = 0xb10_0000;
+        let list_vtable: u64 = 0xb20_0000;
+        let list_class_addr: u64 = 0xb30_0000;
+        let list_class_bytes = build_class_with_fields(
+            &mut mem,
+            0xb40_0000,
+            0xb50_0000,
+            0xb60_0000,
+            0,
+            &[("_items", 0x10), ("_size", 0x18)],
+        );
+        let mut list_payload = vec![0u8; 0x40];
+        list_payload[0..8].copy_from_slice(&list_vtable.to_le_bytes());
+        list_payload[0x10..0x18].copy_from_slice(&list_array_addr.to_le_bytes());
+        list_payload[0x18..0x1c].copy_from_slice(&1i32.to_le_bytes());
+        mem.add(list_addr, list_payload);
+        let mut vt = vec![0u8; 0x50];
+        vt[0..8].copy_from_slice(&list_class_addr.to_le_bytes());
+        mem.add(list_vtable, vt);
+        mem.add(list_class_addr, list_class_bytes);
+
+        let layout_addr: u64 = 0xc00_0000;
+        let layout_vtable: u64 = 0xc10_0000;
+        let layout_class_addr: u64 = 0xc20_0000;
+        let layout_class_bytes = build_class_with_one_field(
+            &mut mem,
+            0xc30_0000,
+            0xc40_0000,
+            0xc50_0000,
+            0,
+            "_unattachedCardsCache",
+            0x20,
+        );
+        install_object(
+            &mut mem,
+            layout_addr,
+            0x40,
+            layout_vtable,
+            layout_class_addr,
+            &layout_class_bytes,
+            &[(0x20, list_addr)],
+        );
+
+        let holder_addr: u64 = 0xd00_0000;
+        let holder_vtable: u64 = 0xd10_0000;
+        let holder_class_addr: u64 = 0xd20_0000;
+        let holder_class_bytes = build_class_with_one_field(
+            &mut mem,
+            0xd30_0000,
+            0xd40_0000,
+            0xd50_0000,
+            0,
+            "_battlefieldLayout",
+            0x30,
+        );
+        install_object(
+            &mut mem,
+            holder_addr,
+            0x40,
+            holder_vtable,
+            holder_class_addr,
+            &holder_class_bytes,
+            &[(0x30, layout_addr)],
+        );
+
+        let arena_ids = read_zone_arena_ids(&offsets, holder_addr, ZONE_BATTLEFIELD, |a, l| {
+            mem.read(a, l)
+        })
+        .ok_or("expected Some")?;
+        assert_eq!(arena_ids, vec![7777]);
+        Ok(())
+    }
+
+    #[test]
+    fn read_zone_arena_ids_routes_non_battlefield_through_layout_data_path() -> Result<(), String> {
+        // Holder with no _battlefieldLayout, but with a
+        // _previousLayoutData containing one revealed CardLayoutData
+        // wrapping a CDC for arena_id 4242.
+        let mut mem = FakeMem::default();
+        let offsets = MonoOffsets::mtga_default();
+
+        let cdc: u64 = 0x2_500_0000;
+        install_full_card_chain(&mut mem, 0x2_600_0000, cdc, 4242);
+
+        // CardLayoutData class: Card@0x10, IsVisibleInLayout@0x18,
+        // FaceDownState@0x1c.
+        // NOTE: install_full_card_chain(base=0x2_600_0000) occupies up to
+        // base+0x420_0000 = 0x2_A20_0000, so start fixtures at 0x3_000_0000.
+        let cld_class_addr: u64 = 0x3_000_0000;
+        let cld_class_bytes = build_class_with_fields(
+            &mut mem,
+            0x3_010_0000,
+            0x3_020_0000,
+            0x3_030_0000,
+            0,
+            &[("Card", 0x10), ("IsVisibleInLayout", 0x18), ("FaceDownState", 0x1c)],
+        );
+        let cld_addr: u64 = 0x3_040_0000;
+        let cld_vtable: u64 = 0x3_050_0000;
+        let mut cld_payload = vec![0u8; 0x40];
+        cld_payload[0..8].copy_from_slice(&cld_vtable.to_le_bytes());
+        cld_payload[0x10..0x18].copy_from_slice(&cdc.to_le_bytes());
+        cld_payload[0x18] = 1;
+        cld_payload[0x1c..0x20].copy_from_slice(&0i32.to_le_bytes());
+        mem.add(cld_addr, cld_payload);
+        let mut vt = vec![0u8; 0x50];
+        vt[0..8].copy_from_slice(&cld_class_addr.to_le_bytes());
+        mem.add(cld_vtable, vt);
+        mem.add(cld_class_addr, cld_class_bytes);
+
+        // List<CardLayoutData> wrapping the one entry.
+        let list_array_addr: u64 = 0x3_100_0000;
+        install_pointer_array(&mut mem, list_array_addr, &[cld_addr]);
+
+        let list_addr: u64 = 0x3_110_0000;
+        let list_vtable: u64 = 0x3_120_0000;
+        let list_class_addr: u64 = 0x3_130_0000;
+        let list_class_bytes = build_class_with_fields(
+            &mut mem,
+            0x3_140_0000,
+            0x3_150_0000,
+            0x3_160_0000,
+            0,
+            &[("_items", 0x10), ("_size", 0x18)],
+        );
+        let mut list_payload = vec![0u8; 0x40];
+        list_payload[0..8].copy_from_slice(&list_vtable.to_le_bytes());
+        list_payload[0x10..0x18].copy_from_slice(&list_array_addr.to_le_bytes());
+        list_payload[0x18..0x1c].copy_from_slice(&1i32.to_le_bytes());
+        mem.add(list_addr, list_payload);
+        let mut vt2 = vec![0u8; 0x50];
+        vt2[0..8].copy_from_slice(&list_class_addr.to_le_bytes());
+        mem.add(list_vtable, vt2);
+        mem.add(list_class_addr, list_class_bytes);
+
+        // Holder with _previousLayoutData @ 0xa8.
+        let holder_addr: u64 = 0x3_200_0000;
+        let holder_vtable: u64 = 0x3_210_0000;
+        let holder_class_addr: u64 = 0x3_220_0000;
+        let holder_class_bytes = build_class_with_one_field(
+            &mut mem,
+            0x3_230_0000,
+            0x3_240_0000,
+            0x3_250_0000,
+            0,
+            "_previousLayoutData",
+            0xa8,
+        );
+        let mut payload = vec![0u8; 0xc0];
+        payload[0..8].copy_from_slice(&holder_vtable.to_le_bytes());
+        payload[0xa8..0xb0].copy_from_slice(&list_addr.to_le_bytes());
+        mem.add(holder_addr, payload);
+        let mut vt3 = vec![0u8; 0x50];
+        vt3[0..8].copy_from_slice(&holder_class_addr.to_le_bytes());
+        mem.add(holder_vtable, vt3);
+        mem.add(holder_class_addr, holder_class_bytes);
+
+        // Zone 5 (graveyard) — anything non-battlefield routes the same.
+        let arena_ids =
+            read_zone_arena_ids(&offsets, holder_addr, 5, |a, l| mem.read(a, l)).ok_or("expected Some")?;
+        assert_eq!(arena_ids, vec![4242]);
         Ok(())
     }
 
