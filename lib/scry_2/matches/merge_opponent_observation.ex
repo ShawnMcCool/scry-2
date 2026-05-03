@@ -33,6 +33,5 @@ defmodule Scry2.Matches.MergeOpponentObservation do
     {:noreply, state}
   end
 
-  @impl true
   def handle_info(_other, state), do: {:noreply, state}
 end

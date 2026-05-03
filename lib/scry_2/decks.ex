@@ -655,6 +655,9 @@ defmodule Scry2.Decks do
           RankClass.name(snapshot.local_ranking_class),
           snapshot.local_ranking_tier
         )
+      # Note: local_mythic_percentile/placement deliberately not persisted —
+      # the Ranks context owns the player's mythic progression with richer
+      # point-in-time data than this single observation.
     }
     |> Enum.reject(fn {_key, value} -> is_nil(value) end)
     |> Map.new()

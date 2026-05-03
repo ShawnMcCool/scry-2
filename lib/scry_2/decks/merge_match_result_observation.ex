@@ -32,6 +32,5 @@ defmodule Scry2.Decks.MergeMatchResultObservation do
     {:noreply, state}
   end
 
-  @impl true
   def handle_info(_other, state), do: {:noreply, state}
 end

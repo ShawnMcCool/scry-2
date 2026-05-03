@@ -36,17 +36,26 @@ defmodule Scry2Web.Components.RankBadge do
     """
   end
 
-  defp display_text(%{rank: nil}), do: "Unranked"
+  @doc """
+  Determine the display text for a rank badge given the rank string and
+  optional Mythic-tier suffix integers. Returns "Unranked" for nil rank,
+  "Mythic #N" when placement > 0, "Mythic N%" when percentile > 0, or
+  the bare rank string otherwise.
 
-  defp display_text(%{rank: "Mythic", mythic_placement: placement})
-       when is_integer(placement) and placement > 0 do
+  Public for unit testing per ADR-013.
+  """
+  @spec display_text(map()) :: String.t()
+  def display_text(%{rank: nil}), do: "Unranked"
+
+  def display_text(%{rank: "Mythic", mythic_placement: placement})
+      when is_integer(placement) and placement > 0 do
     "Mythic ##{placement}"
   end
 
-  defp display_text(%{rank: "Mythic", mythic_percentile: percentile})
-       when is_integer(percentile) and percentile > 0 do
+  def display_text(%{rank: "Mythic", mythic_percentile: percentile})
+      when is_integer(percentile) and percentile > 0 do
     "Mythic #{percentile}%"
   end
 
-  defp display_text(%{rank: rank}), do: rank
+  def display_text(%{rank: rank}), do: rank
 end
