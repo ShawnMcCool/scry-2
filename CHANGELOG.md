@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.29.0 — 2026-05-03
+
 ### New
 
 - **Opponent rank and screen name on the match detail page.** Scry now shows your opponent's rank (with mythic percentile / placement when applicable) and real MTGA screen name on the match detail page, captured at match start from MTGA's process memory — closing the gap where the log only ever told us the opponent's anonymized handle.
