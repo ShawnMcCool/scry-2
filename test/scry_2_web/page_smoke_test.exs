@@ -38,11 +38,19 @@ defmodule Scry2Web.PageSmokeTest do
   # tests measure steady-state only.
   @warmup_flag {__MODULE__, :warmed_up?}
 
+  # Mirror of media-centarr's smoke setup: only the warmup runs per test.
+  # Index-page tests render fine with no active player (all-players view), so
+  # we don't pay for player creation + Settings write on every mount. Detail
+  # routes that *need* an active player seed it in their own describe block.
   setup %{conn: conn} = context do
+    warmup_once(conn)
+    context
+  end
+
+  defp seed_active_player do
     player = TestFactory.create_player(%{screen_name: "SmokeTester"})
     Settings.put!("active_player_id", player.id)
-    warmup_once(conn)
-    Map.put(context, :player, player)
+    player
   end
 
   for {path, label} <- [
@@ -50,14 +58,18 @@ defmodule Scry2Web.PageSmokeTest do
         {"/player", "player"},
         {"/ranks", "ranks"},
         {"/economy", "economy"},
+        {"/match-economy", "match economy"},
         {"/collection", "collection"},
         {"/collection/diagnostics", "collection diagnostics"},
         {"/matches", "matches list"},
         {"/cards", "cards"},
-        {"/decks", "decks list"},
+        {"/decks", "decks list (default filter)"},
+        {"/decks?filter=played", "decks list filter=played"},
+        {"/decks?filter=all", "decks list filter=all"},
         {"/drafts", "drafts list"},
         {"/settings", "settings"},
         {"/operations", "operations"},
+        {"/operations/mtga-memory", "operations mtga memory"},
         {"/console", "console"}
       ] do
     test "#{label} (#{path}) renders without crashing", %{conn: conn} do
@@ -83,6 +95,10 @@ defmodule Scry2Web.PageSmokeTest do
   end
 
   describe "/matches/:id" do
+    setup do
+      %{player: seed_active_player()}
+    end
+
     test "renders match detail", %{conn: conn, player: player} do
       match = TestFactory.create_match(%{player_id: player.id})
       assert {:ok, _view, html} = live_within!(conn, "/matches/#{match.id}")
@@ -91,10 +107,19 @@ defmodule Scry2Web.PageSmokeTest do
   end
 
   describe "/decks/:deck_id" do
-    test "renders deck detail", %{conn: conn} do
-      deck = TestFactory.create_deck()
-      assert {:ok, _view, html} = live_within!(conn, "/decks/#{deck.mtga_deck_id}")
-      assert is_binary(html)
+    setup do
+      %{deck: TestFactory.create_deck()}
+    end
+
+    for tab <- [nil, "overview", "analysis", "matches", "changes"] do
+      tab_label = tab || "default"
+      query = if tab, do: "?tab=#{tab}", else: ""
+
+      test "renders deck detail tab=#{tab_label}", %{conn: conn, deck: deck} do
+        path = "/decks/#{deck.mtga_deck_id}#{unquote(query)}"
+        assert {:ok, _view, html} = live_within!(conn, path)
+        assert is_binary(html)
+      end
     end
 
     # Synthetic deck IDs use the form "<match_id>:seat<n>" when the player is
@@ -105,17 +130,28 @@ defmodule Scry2Web.PageSmokeTest do
     test "renders deck detail when mtga_deck_id contains a colon", %{conn: conn} do
       synthetic_id = "match-#{System.unique_integer([:positive])}:seat1"
       deck = TestFactory.create_deck(%{mtga_deck_id: synthetic_id})
-      assert {:ok, _view, html} = live(conn, "/decks/#{deck.mtga_deck_id}")
+      assert {:ok, _view, html} = live_within!(conn, "/decks/#{deck.mtga_deck_id}")
       assert is_binary(html)
     end
   end
 
   describe "/drafts/:id" do
-    test "renders draft detail", %{conn: conn, player: player} do
+    setup do
+      player = seed_active_player()
       draft = TestFactory.create_draft(%{player_id: player.id})
       _pick = TestFactory.create_pick(%{draft: draft})
-      assert {:ok, _view, html} = live_within!(conn, "/drafts/#{draft.id}")
-      assert is_binary(html)
+      %{draft: draft}
+    end
+
+    for tab <- [nil, "picks", "deck", "matches"] do
+      tab_label = tab || "default"
+      query = if tab, do: "?tab=#{tab}", else: ""
+
+      test "renders draft detail tab=#{tab_label}", %{conn: conn, draft: draft} do
+        path = "/drafts/#{draft.id}#{unquote(query)}"
+        assert {:ok, _view, html} = live_within!(conn, path)
+        assert is_binary(html)
+      end
     end
   end
 
