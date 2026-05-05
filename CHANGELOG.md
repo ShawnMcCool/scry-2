@@ -11,6 +11,10 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Drafts page → Deck tab no longer crashes.** Opening any past draft and clicking the **Deck** sub-tab returned an Internal Server Error instead of showing the full draft pool grouped by card type. Creatures, Instants & Sorceries, Artifacts & Enchantments, and Lands now render correctly.
+
 ## v0.32.0 — 2026-05-03
 
 ### New
