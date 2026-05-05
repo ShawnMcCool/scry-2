@@ -41,8 +41,9 @@ defmodule Scry2Web.DraftsHelpers do
 
   @doc """
   Groups a list of arena_ids by card type using a lookup map of
-  `%{arena_id => %{type_line: string}}`. Returns `[{label, [arena_id]}]`
-  in canonical order, omitting empty groups.
+  `%{arena_id => %Cards.Card{}}` (or any map whose values expose a
+  `:types` field). Returns `[{label, [arena_id]}]` in canonical order,
+  omitting empty groups.
   """
   @spec group_pool_by_type([integer()], map()) :: [{String.t(), [integer()]}]
   def group_pool_by_type(arena_ids, cards_by_arena_id) do
@@ -58,7 +59,7 @@ defmodule Scry2Web.DraftsHelpers do
             []
 
           card ->
-            [{arena_id, classify_type(card.type_line)}]
+            [{arena_id, classify_type(card.types)}]
         end
       end)
 

@@ -1,6 +1,7 @@
 defmodule Scry2Web.DraftsHelpersTest do
   use ExUnit.Case, async: true
 
+  alias Scry2.TestFactory
   alias Scry2Web.DraftsHelpers
 
   describe "trophy?/1" do
@@ -36,11 +37,17 @@ defmodule Scry2Web.DraftsHelpersTest do
   end
 
   describe "group_pool_by_type/2" do
+    # Fixtures use real %Cards.Card{} structs (via TestFactory.build_card)
+    # rather than raw maps. Production passes Card structs into this helper;
+    # asserting against the real shape catches field-name drift like the
+    # v0.32.0 prod crash where the helper read :type_line from a struct
+    # whose field is :types.
+
     test "groups cards by type using provided type lookup" do
       cards_by_arena_id = %{
-        1 => %{type_line: "Creature — Wizard"},
-        2 => %{type_line: "Instant"},
-        3 => %{type_line: "Land"}
+        1 => TestFactory.build_card(%{arena_id: 1, types: "Creature — Wizard"}),
+        2 => TestFactory.build_card(%{arena_id: 2, types: "Instant"}),
+        3 => TestFactory.build_card(%{arena_id: 3, types: "Land"})
       }
 
       groups = DraftsHelpers.group_pool_by_type([1, 2, 3], cards_by_arena_id)
@@ -56,25 +63,31 @@ defmodule Scry2Web.DraftsHelpersTest do
     end
 
     test "classifies Sorcery into Instants & Sorceries" do
-      cards_by_arena_id = %{1 => %{type_line: "Sorcery"}}
+      cards_by_arena_id = %{1 => TestFactory.build_card(%{arena_id: 1, types: "Sorcery"})}
       groups = DraftsHelpers.group_pool_by_type([1], cards_by_arena_id)
       assert Enum.find(groups, &(elem(&1, 0) == "Instants & Sorceries")) != nil
     end
 
     test "classifies Artifact into Artifacts & Enchantments" do
-      cards_by_arena_id = %{1 => %{type_line: "Artifact"}}
+      cards_by_arena_id = %{1 => TestFactory.build_card(%{arena_id: 1, types: "Artifact"})}
       groups = DraftsHelpers.group_pool_by_type([1], cards_by_arena_id)
       assert Enum.find(groups, &(elem(&1, 0) == "Artifacts & Enchantments")) != nil
     end
 
     test "classifies Enchantment into Artifacts & Enchantments" do
-      cards_by_arena_id = %{1 => %{type_line: "Enchantment — Aura"}}
+      cards_by_arena_id = %{
+        1 => TestFactory.build_card(%{arena_id: 1, types: "Enchantment — Aura"})
+      }
+
       groups = DraftsHelpers.group_pool_by_type([1], cards_by_arena_id)
       assert Enum.find(groups, &(elem(&1, 0) == "Artifacts & Enchantments")) != nil
     end
 
-    test "classifies unrecognized type_line into Other" do
-      cards_by_arena_id = %{1 => %{type_line: "Planeswalker — Jace"}}
+    test "classifies unrecognized types into Other" do
+      cards_by_arena_id = %{
+        1 => TestFactory.build_card(%{arena_id: 1, types: "Planeswalker — Jace"})
+      }
+
       groups = DraftsHelpers.group_pool_by_type([1], cards_by_arena_id)
       assert Enum.find(groups, &(elem(&1, 0) == "Other")) != nil
     end
