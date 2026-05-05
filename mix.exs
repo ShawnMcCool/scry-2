@@ -28,7 +28,7 @@ defmodule Scry2.MixProject do
 
   def cli do
     [
-      preferred_envs: [precommit: :test]
+      preferred_envs: [precommit: :test, "test.prod_smoke": :test]
     ]
   end
 
@@ -88,6 +88,7 @@ defmodule Scry2.MixProject do
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
+      "test.prod_smoke": ["ecto.create --quiet", "ecto.migrate --quiet", "test --only prod_smoke"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind scry_2", "esbuild scry_2"],
       "assets.deploy": [

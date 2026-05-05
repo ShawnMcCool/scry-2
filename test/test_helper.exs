@@ -1,4 +1,4 @@
-ExUnit.start(exclude: [:external])
+ExUnit.start(exclude: [:external, :prod_smoke])
 Ecto.Adapters.SQL.Sandbox.mode(Scry2.Repo, :manual)
 
 # Suppress the "Exqlite.Connection disconnected: client exited" error that
