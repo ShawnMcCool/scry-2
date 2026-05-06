@@ -71,6 +71,38 @@ where
     }
 }
 
+/// Like [`read_instance_pointer`] but resolves `field_name` against
+/// the class's parent chain — necessary for inherited backing fields
+/// (e.g. `LimitedPlayerEvent` inherits `<EventInfo>k__BackingField`
+/// from `BasicPlayerEvent`).
+///
+/// Same null/static/negative-offset rejection rules as
+/// [`read_instance_pointer`].
+pub fn read_instance_pointer_in_chain<F>(
+    offsets: &MonoOffsets,
+    class_bytes: &[u8],
+    object_addr: u64,
+    field_name: &str,
+    read_mem: &F,
+) -> Option<u64>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let resolved: ResolvedField =
+        field::find_field_by_name_in_chain(offsets, class_bytes, field_name, *read_mem)?;
+    if resolved.is_static || resolved.offset < 0 {
+        return None;
+    }
+    let addr = object_addr.checked_add(resolved.offset as u64)?;
+    let bytes = read_mem(addr, 8)?;
+    let ptr = mono::read_u64(&bytes, 0, 0)?;
+    if ptr == 0 {
+        None
+    } else {
+        Some(ptr)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

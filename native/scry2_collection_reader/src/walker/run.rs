@@ -479,6 +479,70 @@ where
     ))
 }
 
+/// Cached walker entry point for the active-events list (Chain 3).
+///
+/// Same discovery-cache pattern as
+/// [`walk_mastery_cached`]/[`walk_match_info_cached`]: get
+/// mono image / root domain / images / PAPA from cache, then read
+/// `PAPA._instance` and hand off to
+/// [`crate::walker::event_manager::from_papa_singleton`].
+///
+/// `Ok(None)` when `PAPA._instance` is null (pre-login MTGA) or when
+/// the EventManager anchor itself is null. `Ok(Some(EventList { records: [] }))`
+/// when the chain resolves but the list is empty. `Err(_)` only on
+/// hard discovery failures (mono dll unreadable, root domain missing,
+/// PAPA class not found).
+pub fn walk_events_cached<F>(
+    pid: u32,
+    maps: &[MapEntry],
+    read_mem: F,
+) -> Result<Option<crate::walker::event_manager::EventList>, WalkError>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let offsets = MonoOffsets::mtga_default();
+
+    let mono_image =
+        discovery_cache::get_mono_image(pid, maps, read_mem).ok_or(WalkError::MonoDllReadFailed)?;
+    let domain_addr = discovery_cache::get_root_domain(pid, &mono_image, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    let images = discovery_cache::get_all_images(pid, &offsets, domain_addr, read_mem)
+        .ok_or(WalkError::RootDomainNotFound)?;
+    let papa = discovery_cache::get_anchor(
+        pid,
+        AnchorKind::Papa,
+        &offsets,
+        &images,
+        "PAPA",
+        CLASS_DEF_BLOB_LEN,
+        read_mem,
+    )
+    .ok_or(WalkError::ClassNotFound("PAPA"))?;
+
+    let instance_field =
+        field::find_field_by_name(&offsets, &papa.class_bytes, "_instance", read_mem)
+            .ok_or(WalkError::ChainFailed)?;
+    if !instance_field.is_static || instance_field.offset < 0 {
+        return Err(WalkError::ChainFailed);
+    }
+    let storage = vtable::static_storage_base(&offsets, papa.class_addr, domain_addr, read_mem)
+        .ok_or(WalkError::ChainFailed)?;
+    let static_addr = storage + instance_field.offset as u64;
+    let papa_singleton = read_mem(static_addr, 8)
+        .and_then(|b| mono::read_u64(&b, 0, 0))
+        .ok_or(WalkError::ChainFailed)?;
+    if papa_singleton == 0 {
+        return Ok(None);
+    }
+
+    Ok(crate::walker::event_manager::from_papa_singleton(
+        &offsets,
+        papa_singleton,
+        &papa.class_bytes,
+        read_mem,
+    ))
+}
+
 /// Cached variant of [`walk_match_board`]. See module-level cache
 /// rationale and the note on stale-entry handling.
 pub fn walk_match_board_cached<F>(

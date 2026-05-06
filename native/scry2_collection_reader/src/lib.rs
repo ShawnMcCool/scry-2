@@ -543,6 +543,84 @@ fn walk_mastery(pid: i32) -> Result<Option<WireMasteryInfo>, WalkErrorWire> {
 }
 
 // ============================================================
+// walk_events NIF — Chain 3 (active-event records: name, state,
+// wins/losses, format) per spike21_active_events/FINDING.md.
+// ============================================================
+
+/// One element of [`WireEventList.records`]. Mirrors
+/// [`walker::event_manager::EventRecord`] field-for-field.
+#[derive(NifMap)]
+pub struct WireEventRecord {
+    pub internal_event_name: Option<String>,
+    pub current_event_state: i32,
+    pub current_module: i32,
+    pub event_state: i32,
+    pub format_type: i32,
+    pub current_wins: i32,
+    pub current_losses: i32,
+    pub format_name: Option<String>,
+}
+
+/// Wire shape returned to Elixir for one active-events read. `nil`
+/// when MTGA is reachable but the EventManager anchor is null
+/// (pre-login). `Some` with possibly-empty `records` otherwise.
+#[derive(NifMap)]
+pub struct WireEventList {
+    pub records: Vec<WireEventRecord>,
+    pub reader_version: String,
+}
+
+fn event_record_to_wire(r: walker::event_manager::EventRecord) -> WireEventRecord {
+    WireEventRecord {
+        internal_event_name: r.internal_event_name,
+        current_event_state: r.current_event_state,
+        current_module: r.current_module,
+        event_state: r.event_state,
+        format_type: r.format_type,
+        current_wins: r.current_wins,
+        current_losses: r.current_losses,
+        format_name: r.format_name,
+    }
+}
+
+fn event_list_to_wire(list: walker::event_manager::EventList) -> WireEventList {
+    WireEventList {
+        records: list.records.into_iter().map(event_record_to_wire).collect(),
+        reader_version: READER_VERSION.to_string(),
+    }
+}
+
+/// Walks `PAPA._instance.<EventManager>k__BackingField` →
+/// `EventContexts` → records and decodes per-entry name, state,
+/// wins/losses, format.
+///
+/// Returns `{:ok, nil}` when PAPA's EventManager anchor is null
+/// (pre-login MTGA / freshly torn-down session). Returns
+/// `{:ok, %{records: [...], reader_version: "..."}}` otherwise — the
+/// records list may be empty if `EventContexts._size == 0`.
+///
+/// Uses the discovery cache and the same wall-clock budget as the
+/// other walker NIFs.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walk_events(pid: i32) -> Result<Option<WireEventList>, WalkErrorWire> {
+    let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+    let result = walker::run::walk_events_cached(pid as u32, &maps, read_mem);
+    let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
+        let counter = AtomicU64::new(0);
+        let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+        let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+        let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+        walker::run::walk_events_cached(pid as u32, &maps, read_mem)
+    })
+    .map_err(WalkErrorWire::from)?;
+    Ok(snap.map(event_list_to_wire))
+}
+
+// ============================================================
 // walk_match_board NIF — Chain 2 (per-zone visible card arena_ids)
 // per specs/2026-05-03-chain-2-board-state-design.md
 // ============================================================

@@ -233,6 +233,67 @@ defmodule Scry2.MtgaMemory do
   """
   @callback walk_mastery(pid_int()) :: {:ok, mastery_info() | nil} | {:error, term()}
 
+  @typedoc """
+  One row in `event_list().records` — a projection of a single MTGA
+  `EventContext`. See `Scry2.MtgaMemory.walk_events/1`.
+
+  Field meanings:
+
+  * `internal_event_name` — stable identifier (e.g. `"Premier_Draft_DFT"`).
+    Distinct from the user-facing localised name; consumers that want
+    the player-visible label resolve it via MTGA's loc tables.
+  * `current_event_state` — `0` = available, `1` = entered/in-progress,
+    `3` = standing/always-on (Play, Ladder).
+  * `current_module` — round/module pointer; `0/1/7/11` observed.
+  * `event_state` — event-template lifecycle: `0` = open, `1` = closed,
+    `2` = special.
+  * `format_type` — `1` = Limited, `2` = Sealed, `3` = Constructed.
+  * `current_wins` / `current_losses` — match counters from
+    `ClientPlayerCourseV3`.
+  * `format_name` — `"Standard"` / `"Alchemy"` / etc; `nil` on Limited
+    events (Limited derives format from the draft pool).
+  """
+  @type event_record :: %{
+          required(:internal_event_name) => String.t() | nil,
+          required(:current_event_state) => integer(),
+          required(:current_module) => integer(),
+          required(:event_state) => integer(),
+          required(:format_type) => integer(),
+          required(:current_wins) => integer(),
+          required(:current_losses) => integer(),
+          required(:format_name) => String.t() | nil
+        }
+
+  @typedoc "Active-events snapshot returned by `walk_events/1`."
+  @type event_list :: %{
+          required(:records) => [event_record()],
+          required(:reader_version) => String.t()
+        }
+
+  @doc """
+  Read the player's full active-events list (Chain 3) from the target
+  MTGA process via `PAPA._instance.<EventManager>k__BackingField →
+  EventContexts → [BasicPlayerEvent → EventInfoV3 + CourseData +
+  AwsCourseInfo._clientPlayerCourse → ClientPlayerCourseV3]`.
+
+  Returns:
+    * `{:ok, %{records: [...], reader_version: "..."}}` when the chain
+      resolves. The records list may be empty if MTGA holds no event
+      contexts (rare — the global filter list alone usually populates
+      it within seconds of login).
+    * `{:ok, nil}` when MTGA is running but the EventManager anchor is
+      null — pre-login or freshly torn-down session. Normal, not an
+      error.
+    * `{:error, reason}` for upstream walker failures (mono DLL
+      missing, PAPA class not found, etc.).
+
+  Unlike Chain 1 (`walk_match_info`) and Chain 2 (`walk_match_board`),
+  this chain is stable across match boundaries — it does NOT need to
+  be polled within an active match. A periodic refresh on the
+  collection-reader cadence is sufficient.
+  """
+  @callback walk_events(pid_int()) :: {:ok, event_list() | nil} | {:error, term()}
+
   @doc """
   Returns the configured backend module.
 

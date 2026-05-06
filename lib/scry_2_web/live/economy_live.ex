@@ -11,6 +11,7 @@ defmodule Scry2Web.EconomyLive do
   alias Scry2.Crafts
   alias Scry2.Economy
   alias Scry2.Economy.Forecast
+  alias Scry2.MtgaEvents
   alias Scry2.Topics
   alias Scry2Web.EconomyHelpers
 
@@ -19,6 +20,7 @@ defmodule Scry2Web.EconomyLive do
   import Scry2Web.Components.PendingPacksCard
   import Scry2Web.Components.ForecastStrip
   import Scry2Web.Components.MasteryCard
+  import Scry2Web.Components.ActiveEventsCard
 
   @valid_ranges ~w(today 3d week 2w season)
   @default_range "2w"
@@ -44,6 +46,8 @@ defmodule Scry2Web.EconomyLive do
        grants_cards_by_arena_id: %{},
        pending_packs: [],
        latest_snapshot: nil,
+       active_events: [],
+       active_events_error: nil,
        time_range: @default_range,
        currency_series: "{}",
        wildcards_series: "{}",
@@ -99,6 +103,7 @@ defmodule Scry2Web.EconomyLive do
     grants_cards = load_grants_cards(card_grants)
 
     latest_snapshot = Collection.current()
+    {active_events, active_events_error} = read_active_events_safely()
 
     socket
     |> assign(
@@ -110,9 +115,20 @@ defmodule Scry2Web.EconomyLive do
       card_grants: card_grants,
       grants_cards_by_arena_id: grants_cards,
       pending_packs: PendingPacks.summarize(latest_snapshot),
-      latest_snapshot: latest_snapshot
+      latest_snapshot: latest_snapshot,
+      active_events: active_events,
+      active_events_error: active_events_error
     )
     |> build_chart_assigns()
+  end
+
+  defp read_active_events_safely do
+    case MtgaEvents.read_active_events() do
+      {:ok, records} -> {records, nil}
+      {:error, reason} -> {[], reason}
+    end
+  rescue
+    _ -> {[], :read_failed}
   end
 
   defp load_crafts_cards([]), do: %{}
@@ -271,6 +287,9 @@ defmodule Scry2Web.EconomyLive do
 
         <%!-- Mastery Pass card (memory-read snapshot) --%>
         <.mastery_card snapshot={@latest_snapshot} />
+
+        <%!-- Active events card (memory-read, Chain 3) --%>
+        <.active_events_card records={@active_events} error={@active_events_error} />
 
         <%!-- Pending booster inventory by set --%>
         <.pending_packs_card rows={@pending_packs} />

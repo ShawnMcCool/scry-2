@@ -22,7 +22,7 @@ use std::process::ExitCode;
 
 use scry2_collection_reader::platform::{list_maps, read_bytes};
 use scry2_collection_reader::walker::{
-    domain, field, image_lookup,
+    domain, event_manager, field, image_lookup,
     mono::{self, MonoOffsets, MONO_CLASS_FIELD_SIZE},
     run::{read_mono_image, CLASS_DEF_BLOB_LEN},
     vtable,
@@ -245,6 +245,42 @@ fn main() -> ExitCode {
         None => return ExitCode::SUCCESS,
     };
     deep_dive_event_contexts(&offsets, list_addr, &list_class_bytes, &read_mem);
+
+    // ─────────────────────────────────────────────────────────────────
+    // End-to-end check — call the production walker against the same
+    // PAPA singleton and print its decoded records. Lets us confirm
+    // the walker module agrees with the discovery output above.
+    // ─────────────────────────────────────────────────────────────────
+    println!("\n# walker::event_manager::from_papa_singleton output");
+    match event_manager::from_papa_singleton(&offsets, papa_singleton_addr, &papa_bytes, &read_mem)
+    {
+        None => println!("[walker] from_papa_singleton returned None"),
+        Some(list) => {
+            let total = list.records.len();
+            let active = list.records.iter().filter(|r| r.is_actively_engaged()).count();
+            println!(
+                "[walker] {} records ({} actively engaged):",
+                total, active
+            );
+            println!(
+                "  {:>3}  {:<32} {:>3} {:>3} {:>5} {:<10} {:>3} {:>3}",
+                "idx", "InternalEventName", "evt", "mod", "state", "format", "W", "L"
+            );
+            for (i, r) in list.records.iter().enumerate() {
+                println!(
+                    "  [{:3}] {:<32} {:>3} {:>3} {:>5} {:<10} {:>3} {:>3}",
+                    i,
+                    r.internal_event_name.as_deref().unwrap_or("?"),
+                    r.current_event_state,
+                    r.current_module,
+                    r.event_state,
+                    r.format_name.as_deref().unwrap_or("-"),
+                    r.current_wins,
+                    r.current_losses,
+                );
+            }
+        }
+    }
 
     println!("\n[spike] done.");
     ExitCode::SUCCESS
