@@ -394,14 +394,14 @@ defmodule Scry2Web.DecksLive do
 
         <%!-- Card List — columns by type + sideboard --%>
         <div class="flex gap-8 mt-8">
-          <div :for={{type_label, cards} <- @card_list_columns}>
+          <div :for={{{type_label, cards}, col_idx} <- Enum.with_index(@card_list_columns)}>
             <h3 class="flex items-center gap-2 text-xs font-medium text-base-content/40 uppercase tracking-wide mb-1">
               <span class="w-4 shrink-0" />{type_label} ({Enum.sum(Enum.map(cards, & &1.count))})
             </h3>
             <div class="space-y-0.5">
               <div
                 :for={card <- cards}
-                id={"card-row-#{card.arena_id}"}
+                id={"card-row-#{col_idx}-#{card.arena_id}"}
                 class="flex items-baseline gap-2 text-sm py-0.5 cursor-default"
                 phx-hook={if ImageCache.cached?(card.arena_id), do: "CardHover"}
                 data-card-src={ImageCache.url_for(card.arena_id)}
@@ -1279,6 +1279,7 @@ defmodule Scry2Web.DecksLive do
         <div class="flex gap-1">
           <.card_diff_image
             :for={card <- @main_added}
+            id={"diff-v#{@version.id}-added-#{card.arena_id}"}
             arena_id={card.arena_id}
             name={DecksHelpers.card_name(card.arena_id, @cards_by_arena_id)}
             count={card.count}
@@ -1294,6 +1295,7 @@ defmodule Scry2Web.DecksLive do
         <div class="flex gap-1">
           <.card_diff_image
             :for={card <- @main_removed}
+            id={"diff-v#{@version.id}-removed-#{card.arena_id}"}
             arena_id={card.arena_id}
             name={DecksHelpers.card_name(card.arena_id, @cards_by_arena_id)}
             count={card.count}

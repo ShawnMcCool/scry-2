@@ -33,7 +33,8 @@ defmodule Scry2Web.Components.RevealedCardsCard do
 
         <div class="flex flex-col gap-4">
           <.seat_group
-            :for={group <- @groups}
+            :for={{group, group_idx} <- Enum.with_index(@groups)}
+            group_idx={group_idx}
             seat_label={group.label}
             zones={group.zones}
             card_names_by_arena_id={@card_names_by_arena_id}
@@ -44,6 +45,7 @@ defmodule Scry2Web.Components.RevealedCardsCard do
     """
   end
 
+  attr :group_idx, :integer, required: true
   attr :seat_label, :string, required: true
   attr :zones, :list, required: true
   attr :card_names_by_arena_id, :map, default: %{}
@@ -64,7 +66,8 @@ defmodule Scry2Web.Components.RevealedCardsCard do
 
         <div class="flex flex-wrap gap-1">
           <CardComponents.card_image
-            :for={arena_id <- zone.arena_ids}
+            :for={{arena_id, idx} <- Enum.with_index(zone.arena_ids)}
+            id={"revealed-#{@group_idx}-#{zone.zone_id}-#{idx}-#{arena_id}"}
             arena_id={arena_id}
             name={Map.get(@card_names_by_arena_id, arena_id, "Card ##{arena_id}")}
             class="w-[3.5rem]"

@@ -160,6 +160,7 @@ defmodule Scry2Web.CardComponents do
   attr :count, :integer, required: true
   attr :kind, :atom, values: [:added, :removed], required: true
   attr :class, :string, default: "w-20"
+  attr :id, :string, default: nil
 
   def card_diff_image(assigns) do
     assigns =
@@ -184,7 +185,7 @@ defmodule Scry2Web.CardComponents do
           arena_id={@arena_id}
           name={@name}
           class={@class}
-          id={"diff-#{@kind}-#{@arena_id}"}
+          id={@id || "diff-#{@kind}-#{@arena_id}"}
         />
       </div>
       <span class={[

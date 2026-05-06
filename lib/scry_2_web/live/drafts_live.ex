@@ -399,9 +399,12 @@ defmodule Scry2Web.DraftsLive do
         Pack contents unavailable for this pick.
       </p>
       <div class="flex flex-wrap gap-2">
-        <div :for={arena_id <- pick.pack_arena_ids["cards"] || []} class="relative">
+        <div
+          :for={{arena_id, idx} <- Enum.with_index(pick.pack_arena_ids["cards"] || [])}
+          class="relative"
+        >
           <.card_image
-            id={"pick-#{pick.draft_id}-#{pack_num}-#{pick_num}-#{arena_id}"}
+            id={"pick-#{pick.draft_id}-#{pack_num}-#{pick_num}-#{idx}-#{arena_id}"}
             arena_id={arena_id}
             name={card_name(@cards_by_arena_id, arena_id)}
             class={
