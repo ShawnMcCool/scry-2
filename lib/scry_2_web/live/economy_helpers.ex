@@ -3,7 +3,18 @@ defmodule Scry2Web.EconomyHelpers do
   Pure helper functions for `Scry2Web.EconomyLive`. Extracted per ADR-013.
   """
 
+  alias Scry2.Economy.WildcardFloors
   alias Scry2Web.LiveHelpers
+
+  @doc """
+  CSS class to apply to a wildcard stat-card value when its rarity is
+  at or below the floor in `Scry2.Economy.WildcardFloors`. Returns
+  `"text-warning"` for low rarities and `""` otherwise.
+  """
+  @spec wildcard_class(map() | nil, atom()) :: String.t()
+  def wildcard_class(inventory, rarity) do
+    if WildcardFloors.rarity_below?(inventory, rarity), do: "text-warning", else: ""
+  end
 
   @doc "Formats a currency amount with a label (e.g. '1,500 Gold')."
   @spec format_currency(integer() | nil, String.t()) :: String.t()

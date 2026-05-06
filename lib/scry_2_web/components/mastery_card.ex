@@ -22,15 +22,23 @@ defmodule Scry2Web.Components.MasteryCard do
     doc:
       "Latest %Scry2.Collection.Snapshot{} or nil. Empty state shown when nil or mastery_tier is nil."
 
+  attr :forecast, :any,
+    default: nil,
+    doc:
+      "Result of `Scry2.Economy.Forecast.mastery_eta/2`. Map variant renders the projection line; atom variants and nil suppress it."
+
   attr :now, :any,
     default: nil,
     doc: "Override DateTime for testing; defaults to DateTime.utc_now/0."
 
   def mastery_card(assigns) do
+    forecast_label = H.forecast_label(assigns[:forecast])
+
     assigns =
       assigns
       |> assign(:now, assigns[:now] || DateTime.utc_now())
       |> assign(:set_code, set_code(assigns[:snapshot]))
+      |> assign(:forecast_label, forecast_label)
 
     ~H"""
     <section class="card bg-base-200 border border-base-300" data-role="mastery-card">
@@ -78,6 +86,14 @@ defmodule Scry2Web.Components.MasteryCard do
 
             <p :if={@snapshot.mastery_season_name} class="text-xs text-base-content/60">
               Season {@snapshot.mastery_season_name}
+            </p>
+
+            <p
+              :if={@forecast_label != ""}
+              data-test="mastery-forecast"
+              class="text-xs text-base-content/70 tabular-nums"
+            >
+              {@forecast_label}
             </p>
           </div>
         <% else %>

@@ -92,16 +92,16 @@ item below (board state) is still gated on `walker/card_holder.rs`
 All gated on walker phase 6 producing a stream of currency/progression rows.
 
 - Vault opening ETA from vault-progress slope — **walker**
-- Mastery pass completion ETA vs season end — **walker** (display shipped above; forecast deferred to follow-up plan once we have a few days of mastery snapshots accumulated)
+- Mastery pass completion ETA vs season end — **✅ shipped** (`Scry2.Economy.Forecast.mastery_eta/2` projects tier at season end from XP-per-day rate; rendered as a one-liner on the `MasteryCard` on `/economy`)
 - Currency burn-rate dashboard (gold/gems/wildcards over time) — **walker**
 - Quest-reroll EV calculator — **walker** + **reader+**
 - Win-track velocity / weekly reward attainment — **walker** + **reader+**
 
 ## F. Alerting / pre-action guardrails
 
-- Wildcard floor alarm before a craft drops below threshold — **walker**
+- Wildcard floor alarm before a craft drops below threshold — **✅ shipped** (`Scry2.Economy.WildcardFloors`; wildcard stat-card values turn amber on `/economy` when at or below the rarity floor — common 50, uncommon 30, rare 15, mythic 5)
 - Rank-decay countdown around month rollover — **reader+**
-- MTGA build-change alert (revalidate parser/walker) — **walker**
+- MTGA build-change alert (revalidate parser/walker) — **✅ shipped** (`Scry2.Collection.BuildChange.detect/2`; warning banner on `/settings` with an Acknowledge button when the latest snapshot's `mtga_build_hint` differs from the user-acknowledged build)
 - Cosmetic-on-sale-you-don't-own alert — **reader+**
 - Quest-about-to-expire alert — **reader+**
 

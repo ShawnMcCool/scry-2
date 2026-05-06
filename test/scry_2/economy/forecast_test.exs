@@ -125,4 +125,126 @@ defmodule Scry2.Economy.ForecastTest do
       assert Forecast.vault_eta(missing, now) == :insufficient_data
     end
   end
+
+  describe "mastery_eta/2" do
+    defp mastery(occurred_at, tier, xp, ends_at \\ ~U[2026-06-01 00:00:00Z]) do
+      %{
+        occurred_at: occurred_at,
+        mastery_tier: tier,
+        mastery_xp_in_tier: xp,
+        mastery_season_ends_at: ends_at
+      }
+    end
+
+    test "projects tier at season end from current XP-per-day rate" do
+      now = ~U[2026-05-02 00:00:00Z]
+      ends_at = ~U[2026-06-01 00:00:00Z]
+
+      # tier 30 → tier 35 + 0 xp over 7 days = +5_000 XP / 7d ≈ 714.29/day
+      # 30 days remaining → +21,428.57 XP → +21 tiers → projected tier 56
+      snapshots = [
+        mastery(~U[2026-04-25 00:00:00Z], 30, 0, ends_at),
+        mastery(~U[2026-05-02 00:00:00Z], 35, 0, ends_at)
+      ]
+
+      result = Forecast.mastery_eta(snapshots, now)
+
+      assert result.projected_tier_at_season_end == 56
+      assert_in_delta result.xp_per_day, 714.285, 0.01
+      assert result.season_ends_at == ends_at
+      # 1000 xp to next tier ÷ 714/day ≈ 1.4 days
+      assert_in_delta result.days_to_next_tier, 1.4, 0.05
+    end
+
+    test "uses current xp_in_tier in days_to_next_tier" do
+      now = ~U[2026-05-02 00:00:00Z]
+      ends_at = ~U[2026-06-01 00:00:00Z]
+
+      # last snapshot: tier 35, xp 750. Rate: +1000 xp/day → 250 xp ÷ 1000 = 0.25 days
+      snapshots = [
+        mastery(~U[2026-04-25 00:00:00Z], 28, 750, ends_at),
+        mastery(~U[2026-05-02 00:00:00Z], 35, 750, ends_at)
+      ]
+
+      result = Forecast.mastery_eta(snapshots, now)
+      assert_in_delta result.days_to_next_tier, 0.25, 0.001
+    end
+
+    test "returns :no_progress when XP rate is flat or decreasing" do
+      now = ~U[2026-05-02 00:00:00Z]
+      ends_at = ~U[2026-06-01 00:00:00Z]
+
+      flat = [
+        mastery(~U[2026-04-25 00:00:00Z], 30, 500, ends_at),
+        mastery(~U[2026-05-02 00:00:00Z], 30, 500, ends_at)
+      ]
+
+      assert Forecast.mastery_eta(flat, now) == :no_progress
+
+      # MTGA does not actually decrease XP, but the function should be safe.
+      decreasing = [
+        mastery(~U[2026-04-25 00:00:00Z], 31, 0, ends_at),
+        mastery(~U[2026-05-02 00:00:00Z], 30, 0, ends_at)
+      ]
+
+      assert Forecast.mastery_eta(decreasing, now) == :no_progress
+    end
+
+    test "returns :insufficient_data when fewer than two snapshots have mastery fields" do
+      now = ~U[2026-05-02 00:00:00Z]
+
+      assert Forecast.mastery_eta([], now) == :insufficient_data
+
+      one = [mastery(~U[2026-05-02 00:00:00Z], 30, 500)]
+      assert Forecast.mastery_eta(one, now) == :insufficient_data
+
+      missing = [
+        mastery(~U[2026-04-25 00:00:00Z], nil, nil),
+        mastery(~U[2026-05-02 00:00:00Z], 30, 500)
+      ]
+
+      assert Forecast.mastery_eta(missing, now) == :insufficient_data
+    end
+
+    test "returns :season_ended when now is past the season end" do
+      now = ~U[2026-06-15 00:00:00Z]
+      ends_at = ~U[2026-06-01 00:00:00Z]
+
+      snapshots = [
+        mastery(~U[2026-04-25 00:00:00Z], 30, 0, ends_at),
+        mastery(~U[2026-05-02 00:00:00Z], 35, 0, ends_at)
+      ]
+
+      assert Forecast.mastery_eta(snapshots, now) == :season_ended
+    end
+
+    test "returns :no_season_end when latest snapshot has nil season_ends_at" do
+      now = ~U[2026-05-02 00:00:00Z]
+
+      snapshots = [
+        mastery(~U[2026-04-25 00:00:00Z], 30, 0, nil),
+        mastery(~U[2026-05-02 00:00:00Z], 35, 0, nil)
+      ]
+
+      assert Forecast.mastery_eta(snapshots, now) == :no_season_end
+    end
+
+    test "ignores snapshots before the first one with mastery data" do
+      now = ~U[2026-05-02 00:00:00Z]
+      ends_at = ~U[2026-06-01 00:00:00Z]
+
+      # Walker lit up partway through the snapshot history. Only mastery-bearing
+      # rows count toward the rate calculation.
+      snapshots = [
+        mastery(~U[2026-04-15 00:00:00Z], nil, nil, nil),
+        mastery(~U[2026-04-20 00:00:00Z], nil, nil, nil),
+        mastery(~U[2026-04-25 00:00:00Z], 30, 0, ends_at),
+        mastery(~U[2026-05-02 00:00:00Z], 35, 0, ends_at)
+      ]
+
+      result = Forecast.mastery_eta(snapshots, now)
+      assert is_map(result)
+      assert_in_delta result.xp_per_day, 714.285, 0.01
+    end
+  end
 end

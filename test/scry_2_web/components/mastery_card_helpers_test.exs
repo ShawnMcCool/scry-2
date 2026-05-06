@@ -112,4 +112,38 @@ defmodule Scry2Web.Components.MasteryCard.HelpersTest do
       assert H.summary_line(nil, nil, ~U[2026-05-03 00:00:00Z]) == "—"
     end
   end
+
+  describe "forecast_label/1" do
+    test "renders rate and projected tier for a successful forecast" do
+      forecast = %{
+        xp_per_day: 714.285,
+        projected_tier_at_season_end: 56,
+        days_to_next_tier: 1.4,
+        season_ends_at: ~U[2026-06-01 00:00:00Z]
+      }
+
+      assert H.forecast_label(forecast) ==
+               "+714 XP/day · projected Tier 56 by season end"
+    end
+
+    test "rounds rate to whole XP" do
+      forecast = %{
+        xp_per_day: 999.6,
+        projected_tier_at_season_end: 70,
+        days_to_next_tier: 1.0,
+        season_ends_at: ~U[2026-06-01 00:00:00Z]
+      }
+
+      assert H.forecast_label(forecast) ==
+               "+1,000 XP/day · projected Tier 70 by season end"
+    end
+
+    test "non-numeric variants render empty string" do
+      assert H.forecast_label(:insufficient_data) == ""
+      assert H.forecast_label(:no_progress) == ""
+      assert H.forecast_label(:season_ended) == ""
+      assert H.forecast_label(:no_season_end) == ""
+      assert H.forecast_label(nil) == ""
+    end
+  end
 end

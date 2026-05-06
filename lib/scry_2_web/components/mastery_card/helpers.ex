@@ -76,6 +76,34 @@ defmodule Scry2Web.Components.MasteryCard.Helpers do
   @spec xp_per_tier() :: pos_integer()
   def xp_per_tier, do: @xp_per_tier
 
+  @doc """
+  Renders a `Scry2.Economy.Forecast.mastery_eta/2` result as a one-line
+  player-facing label, e.g. `"+714 XP/day · projected Tier 56 by season
+  end"`. Atom variants render an empty string so the caller can suppress
+  the line entirely.
+  """
+  @spec forecast_label(map() | atom() | nil) :: String.t()
+  def forecast_label(%{xp_per_day: rate, projected_tier_at_season_end: tier})
+      when is_number(rate) and is_integer(tier) do
+    "+#{format_thousands(round(rate))} XP/day · projected Tier #{tier} by season end"
+  end
+
+  def forecast_label(_), do: ""
+
+  defp format_thousands(n) when is_integer(n) and n < 0,
+    do: "-" <> format_thousands(-n)
+
+  defp format_thousands(n) when is_integer(n) do
+    n
+    |> Integer.to_string()
+    |> String.reverse()
+    |> String.graphemes()
+    |> Enum.chunk_every(3)
+    |> Enum.map(&Enum.join/1)
+    |> Enum.join(",")
+    |> String.reverse()
+  end
+
   defp emptyish_to_nil(""), do: nil
   defp emptyish_to_nil(string), do: string
 end

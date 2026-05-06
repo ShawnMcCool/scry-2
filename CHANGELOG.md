@@ -11,6 +11,17 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Mastery Pass forecast.** The Mastery Pass card on the Economy page
+  now shows your current XP-per-day pace and the tier you're projected
+  to reach by season end. Hidden until there's enough history to
+  estimate, and skips itself if your XP hasn't moved.
+- **Low wildcard warning.** Wildcard counts on the Economy page now
+  turn amber when a rarity drops at or below a sensible floor — common
+  50, uncommon 30, rare 15, mythic 5 — so a near-empty rarity catches
+  your eye before you craft into it.
+
 ## v0.33.0 — 2026-05-06
 
 ### New

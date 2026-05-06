@@ -17,6 +17,10 @@ defmodule Scry2.Economy.Forecast do
 
   @type field :: atom()
 
+  # MTGA mastery curve: every tier costs the same XP. Mirrored in
+  # Scry2Web.Components.MasteryCard.Helpers.xp_per_tier/0.
+  @xp_per_tier 1_000
+
   @doc """
   Net change in `field` between the first and last snapshots in the
   list. Treats nil values as zero. Returns 0 with fewer than two
@@ -98,6 +102,93 @@ defmodule Scry2.Economy.Forecast do
     days_from_now = DateTime.diff(eta, now, :second) / 86_400.0
     %{eta: eta, days: days_from_now, rate_per_day: rate}
   end
+
+  @doc """
+  Estimates which mastery tier the player will reach by season end at
+  their current XP-per-day pace.
+
+  Inputs are `Scry2.Collection.Snapshot{}` rows (or shaped like them)
+  with `:occurred_at`, `:mastery_tier`, `:mastery_xp_in_tier`, and
+  `:mastery_season_ends_at`. Total XP per snapshot is computed as
+  `tier * 1000 + xp_in_tier`.
+
+  Returns one of:
+    * `%{xp_per_day, projected_tier_at_season_end, days_to_next_tier,
+         season_ends_at}`
+    * `:no_progress` when the rate is flat or negative
+    * `:season_ended` when `now` is past `season_ends_at`
+    * `:no_season_end` when the latest snapshot has no
+      `mastery_season_ends_at`
+    * `:insufficient_data` when fewer than two snapshots have mastery
+      fields populated
+  """
+  @spec mastery_eta([map()], DateTime.t()) ::
+          %{
+            xp_per_day: float(),
+            projected_tier_at_season_end: integer(),
+            days_to_next_tier: float(),
+            season_ends_at: DateTime.t()
+          }
+          | :no_progress
+          | :season_ended
+          | :no_season_end
+          | :insufficient_data
+  def mastery_eta(snapshots, %DateTime{} = now) do
+    with_mastery =
+      Enum.filter(snapshots, fn s ->
+        is_integer(Map.get(s, :mastery_tier)) and
+          is_integer(Map.get(s, :mastery_xp_in_tier))
+      end)
+
+    cond do
+      length(with_mastery) < 2 ->
+        :insufficient_data
+
+      true ->
+        first = List.first(with_mastery)
+        last = List.last(with_mastery)
+        ends_at = Map.get(last, :mastery_season_ends_at)
+
+        first_xp = total_xp(first)
+        last_xp = total_xp(last)
+        seconds = DateTime.diff(last.occurred_at, first.occurred_at, :second)
+
+        rate =
+          if seconds == 0 do
+            0.0
+          else
+            (last_xp - first_xp) / (seconds / 86_400)
+          end
+
+        cond do
+          is_nil(ends_at) -> :no_season_end
+          DateTime.compare(now, ends_at) == :gt -> :season_ended
+          rate <= 0 -> :no_progress
+          true -> compute_mastery_projection(last, rate, ends_at, now)
+        end
+    end
+  end
+
+  defp compute_mastery_projection(last, rate, ends_at, now) do
+    last_xp = total_xp(last)
+    days_remaining = DateTime.diff(ends_at, now, :second) / 86_400.0
+    projected_xp = last_xp + rate * days_remaining
+    projected_tier = trunc(projected_xp / @xp_per_tier)
+
+    xp_to_next = @xp_per_tier - last.mastery_xp_in_tier
+    days_to_next = xp_to_next / rate
+
+    %{
+      xp_per_day: rate,
+      projected_tier_at_season_end: projected_tier,
+      days_to_next_tier: days_to_next,
+      season_ends_at: ends_at
+    }
+  end
+
+  defp total_xp(%{mastery_tier: tier, mastery_xp_in_tier: xp})
+       when is_integer(tier) and is_integer(xp),
+       do: tier * @xp_per_tier + xp
 
   defp read_field(snapshot, field) do
     case Map.get(snapshot, field) do

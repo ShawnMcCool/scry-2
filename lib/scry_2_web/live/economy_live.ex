@@ -46,6 +46,8 @@ defmodule Scry2Web.EconomyLive do
        grants_cards_by_arena_id: %{},
        pending_packs: [],
        latest_snapshot: nil,
+       collection_snapshots: [],
+       mastery_forecast: nil,
        active_events: [],
        active_events_error: nil,
        time_range: @default_range,
@@ -103,6 +105,11 @@ defmodule Scry2Web.EconomyLive do
     grants_cards = load_grants_cards(card_grants)
 
     latest_snapshot = Collection.current()
+    collection_snapshots = Collection.list_snapshots(limit: 200) |> Enum.reverse()
+
+    mastery_forecast =
+      Forecast.mastery_eta(mastery_inputs(collection_snapshots), DateTime.utc_now())
+
     {active_events, active_events_error} = read_active_events_safely()
 
     socket
@@ -116,10 +123,23 @@ defmodule Scry2Web.EconomyLive do
       grants_cards_by_arena_id: grants_cards,
       pending_packs: PendingPacks.summarize(latest_snapshot),
       latest_snapshot: latest_snapshot,
+      collection_snapshots: collection_snapshots,
+      mastery_forecast: mastery_forecast,
       active_events: active_events,
       active_events_error: active_events_error
     )
     |> build_chart_assigns()
+  end
+
+  defp mastery_inputs(snapshots) do
+    Enum.map(snapshots, fn s ->
+      %{
+        occurred_at: s.snapshot_ts,
+        mastery_tier: s.mastery_tier,
+        mastery_xp_in_tier: s.mastery_xp_in_tier,
+        mastery_season_ends_at: s.mastery_season_ends_at
+      }
+    end)
   end
 
   defp read_active_events_safely do
@@ -201,16 +221,32 @@ defmodule Scry2Web.EconomyLive do
           <.stat_card title="Gems" value={EconomyHelpers.format_number(@inventory.gems || 0)}>
             <:icon><img src={~p"/images/gem.png"} class="size-5" alt="Gems" /></:icon>
           </.stat_card>
-          <.stat_card title="Common" value={@inventory.wildcards_common || 0}>
+          <.stat_card
+            title="Common"
+            value={@inventory.wildcards_common || 0}
+            class={EconomyHelpers.wildcard_class(@inventory, :common)}
+          >
             <:icon><.wildcard_icon rarity="common" /></:icon>
           </.stat_card>
-          <.stat_card title="Uncommon" value={@inventory.wildcards_uncommon || 0}>
+          <.stat_card
+            title="Uncommon"
+            value={@inventory.wildcards_uncommon || 0}
+            class={EconomyHelpers.wildcard_class(@inventory, :uncommon)}
+          >
             <:icon><.wildcard_icon rarity="uncommon" /></:icon>
           </.stat_card>
-          <.stat_card title="Rare" value={@inventory.wildcards_rare || 0}>
+          <.stat_card
+            title="Rare"
+            value={@inventory.wildcards_rare || 0}
+            class={EconomyHelpers.wildcard_class(@inventory, :rare)}
+          >
             <:icon><.wildcard_icon rarity="rare" /></:icon>
           </.stat_card>
-          <.stat_card title="Mythic" value={@inventory.wildcards_mythic || 0}>
+          <.stat_card
+            title="Mythic"
+            value={@inventory.wildcards_mythic || 0}
+            class={EconomyHelpers.wildcard_class(@inventory, :mythic)}
+          >
             <:icon><.wildcard_icon rarity="mythic" /></:icon>
           </.stat_card>
           <.stat_card
@@ -286,7 +322,7 @@ defmodule Scry2Web.EconomyLive do
         </section>
 
         <%!-- Mastery Pass card (memory-read snapshot) --%>
-        <.mastery_card snapshot={@latest_snapshot} />
+        <.mastery_card snapshot={@latest_snapshot} forecast={@mastery_forecast} />
 
         <%!-- Active events card (memory-read, Chain 3) --%>
         <.active_events_card records={@active_events} error={@active_events_error} />

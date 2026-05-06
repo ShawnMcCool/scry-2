@@ -31,6 +31,32 @@ defmodule Scry2Web.EconomyHelpersTest do
     end
   end
 
+  describe "wildcard_class/2" do
+    defp inv(common, uncommon, rare, mythic) do
+      %{
+        wildcards_common: common,
+        wildcards_uncommon: uncommon,
+        wildcards_rare: rare,
+        wildcards_mythic: mythic
+      }
+    end
+
+    test "returns text-warning when rarity is at or below floor" do
+      assert EconomyHelpers.wildcard_class(inv(40, 80, 50, 20), :common) == "text-warning"
+      assert EconomyHelpers.wildcard_class(inv(50, 80, 50, 20), :common) == "text-warning"
+      assert EconomyHelpers.wildcard_class(inv(100, 80, 50, 5), :mythic) == "text-warning"
+    end
+
+    test "returns empty string when rarity is above floor" do
+      assert EconomyHelpers.wildcard_class(inv(100, 80, 50, 20), :common) == ""
+      assert EconomyHelpers.wildcard_class(inv(100, 80, 50, 6), :mythic) == ""
+    end
+
+    test "returns empty string for nil inventory" do
+      assert EconomyHelpers.wildcard_class(nil, :rare) == ""
+    end
+  end
+
   describe "delta_class/1" do
     test "positive is green" do
       assert EconomyHelpers.delta_class(100) =~ "emerald"
