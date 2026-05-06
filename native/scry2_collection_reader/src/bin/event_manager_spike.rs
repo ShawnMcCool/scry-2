@@ -28,6 +28,11 @@ use scry2_collection_reader::walker::{
     vtable,
 };
 
+/// Cap for free-form MonoString reads — InternalEventName /
+/// CourseData.Id are short (<64 chars in practice). Larger than
+/// MAX_STRING_CHARS in mastery.rs but bounded.
+const MAX_STRING_CHARS: usize = 128;
+
 const MTGA_COMM: &str = "MTGA.exe";
 const READ_NAME_MAX: usize = 256;
 const MAX_PARENT_DEPTH: usize = 4;
@@ -278,9 +283,32 @@ fn deep_dive_event_contexts<F>(
         return;
     }
 
-    // Inspect at most the first 3 entries to bound output.
-    let to_inspect = (size as usize).min(3);
-    for idx in 0..to_inspect {
+    // Compact summary — read InternalEventName, CurrentEventState,
+    // CurrentModule for ALL entries so we can see the full
+    // distribution of state-discriminator values across the player's
+    // 53 entries. This answers open question 2.
+    println!("\n## Compact summary — all {} entries", size);
+    println!(
+        "  {:>3}  {:>14} {:>13} {:>13} {:<10} {:<8} {:<6} {:<28}",
+        "idx", "CurEventState", "CurModule", "EventState", "FormatType", "EntryFee", "Made?", "InternalEventName"
+    );
+    for idx in 0..(size as usize) {
+        summarize_event_context(offsets, items_ptr, idx, read_mem);
+    }
+
+    // Pick up to 3 entries to deep-dive. Prefer entries with non-zero
+    // CurrentEventState (== "actively engaged") since those are the
+    // ones whose CourseInfo / PastEntries actually carry data. Fall
+    // back to the first 3 if everything is zero.
+    let mut to_dive: Vec<usize> = (0..size as usize)
+        .filter(|i| read_current_event_state(offsets, items_ptr, *i, read_mem).unwrap_or(0) != 0)
+        .take(3)
+        .collect();
+    if to_dive.is_empty() {
+        to_dive = (0..(size as usize).min(3)).collect();
+    }
+
+    for &idx in &to_dive {
         let elem_slot = items_ptr + 0x20 + (idx as u64) * 8;
         let elem_ptr = match read_mem(elem_slot, 8).and_then(|b| read_u64(&b)) {
             Some(0) | None => continue,
@@ -332,6 +360,233 @@ fn deep_dive_event_contexts<F>(
             }
         }
     }
+}
+
+/// Read a single EventContext[idx]'s `CurrentEventState` (from the
+/// inherited `CourseData`). Used to pick deep-dive targets.
+fn read_current_event_state<F>(
+    offsets: &MonoOffsets,
+    items_ptr: u64,
+    idx: usize,
+    read_mem: &F,
+) -> Option<i32>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let elem_slot = items_ptr + 0x20 + (idx as u64) * 8;
+    let elem_ptr = read_mem(elem_slot, 8).and_then(|b| read_u64(&b))?;
+    if elem_ptr == 0 {
+        return None;
+    }
+    let elem_class_bytes = read_class_def_for_object(elem_ptr, read_mem)?;
+    let pe_field = field::find_field_by_name(offsets, &elem_class_bytes, "PlayerEvent", read_mem)?;
+    if pe_field.is_static {
+        return None;
+    }
+    let pe_addr = read_mem(elem_ptr + pe_field.offset as u64, 8).and_then(|b| read_u64(&b))?;
+    if pe_addr == 0 {
+        return None;
+    }
+    let pe_class_bytes = read_class_def_for_object(pe_addr, read_mem)?;
+    let course_addr =
+        field::find_field_by_name_in_chain(offsets, &pe_class_bytes, "CourseData", read_mem)
+            .filter(|f| !f.is_static)
+            .and_then(|f| read_mem(pe_addr + f.offset as u64, 8))
+            .and_then(|b| read_u64(&b))
+            .filter(|p| *p != 0)?;
+    let course_bytes = read_class_def_for_object(course_addr, read_mem)?;
+    read_i32_field(offsets, course_addr, &course_bytes, "CurrentEventState", read_mem)
+}
+
+/// One-liner per EventContext: PlayerEvent → CourseData ints +
+/// EventInfoV3.InternalEventName. Bounded resolution; missing
+/// values render as `?` so the table stays aligned even on null
+/// chains.
+fn summarize_event_context<F>(
+    offsets: &MonoOffsets,
+    items_ptr: u64,
+    idx: usize,
+    read_mem: &F,
+) where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let elem_slot = items_ptr + 0x20 + (idx as u64) * 8;
+    let Some(elem_ptr) = read_mem(elem_slot, 8).and_then(|b| read_u64(&b)) else {
+        println!("  [{:3}] <unreadable element pointer>", idx);
+        return;
+    };
+    if elem_ptr == 0 {
+        println!("  [{:3}] <null>", idx);
+        return;
+    }
+    let Some(elem_class_bytes) = read_class_def_for_object(elem_ptr, read_mem) else {
+        println!("  [{:3}] <unreadable EventContext class>", idx);
+        return;
+    };
+
+    // EventContext.PlayerEvent
+    let Some(pe_field) =
+        field::find_field_by_name(offsets, &elem_class_bytes, "PlayerEvent", read_mem)
+    else {
+        println!("  [{:3}] <PlayerEvent field missing>", idx);
+        return;
+    };
+    if pe_field.is_static {
+        return;
+    }
+    let pe_addr = read_mem(elem_ptr + pe_field.offset as u64, 8)
+        .and_then(|b| read_u64(&b))
+        .unwrap_or(0);
+    if pe_addr == 0 {
+        println!("  [{:3}] <PlayerEvent NULL>", idx);
+        return;
+    }
+    let Some(pe_class_bytes) = read_class_def_for_object(pe_addr, read_mem) else {
+        return;
+    };
+
+    // CourseData (inherited via parent chain on subclasses)
+    let course_addr = field::find_field_by_name_in_chain(offsets, &pe_class_bytes, "CourseData", read_mem)
+        .filter(|f| !f.is_static)
+        .and_then(|f| read_mem(pe_addr + f.offset as u64, 8))
+        .and_then(|b| read_u64(&b))
+        .unwrap_or(0);
+
+    let mut cur_event_state: Option<i32> = None;
+    let mut cur_module: Option<i32> = None;
+    let mut made_choice: Option<bool> = None;
+    if course_addr != 0 {
+        if let Some(course_bytes) = read_class_def_for_object(course_addr, read_mem) {
+            cur_event_state = read_i32_field(offsets, course_addr, &course_bytes, "CurrentEventState", read_mem);
+            cur_module = read_i32_field(offsets, course_addr, &course_bytes, "CurrentModule", read_mem);
+            made_choice = read_bool_field(offsets, course_addr, &course_bytes, "MadeChoice", read_mem);
+        }
+    }
+
+    // EventInfo._eventInfoV3 — InternalEventName, EventState, FormatType, EntryFees count
+    let event_info_addr = field::find_field_by_name_in_chain(offsets, &pe_class_bytes, "EventInfo", read_mem)
+        .filter(|f| !f.is_static)
+        .and_then(|f| read_mem(pe_addr + f.offset as u64, 8))
+        .and_then(|b| read_u64(&b))
+        .unwrap_or(0);
+
+    let mut internal_name = String::from("?");
+    let mut event_state: Option<i32> = None;
+    let mut format_type: Option<i32> = None;
+    let mut entry_fee_count: Option<i32> = None;
+    if event_info_addr != 0 {
+        if let Some(ei_bytes) = read_class_def_for_object(event_info_addr, read_mem) {
+            // BasicEventInfo._eventInfoV3 -> EventInfoV3
+            if let Some(v3_addr) = field::find_field_by_name_in_chain(offsets, &ei_bytes, "_eventInfoV3", read_mem)
+                .filter(|f| !f.is_static)
+                .and_then(|f| read_mem(event_info_addr + f.offset as u64, 8))
+                .and_then(|b| read_u64(&b))
+                .filter(|p| *p != 0)
+            {
+                if let Some(v3_bytes) = read_class_def_for_object(v3_addr, read_mem) {
+                    if let Some(name) =
+                        read_mono_string_field(offsets, v3_addr, &v3_bytes, "InternalEventName", read_mem)
+                    {
+                        internal_name = name;
+                    }
+                    event_state = read_i32_field(offsets, v3_addr, &v3_bytes, "EventState", read_mem);
+                    format_type = read_i32_field(offsets, v3_addr, &v3_bytes, "FormatType", read_mem);
+                    // EntryFees is List<T>: count = ._size at +0x18
+                    if let Some(list_addr) = field::find_field_by_name_in_chain(offsets, &v3_bytes, "EntryFees", read_mem)
+                        .filter(|f| !f.is_static)
+                        .and_then(|f| read_mem(v3_addr + f.offset as u64, 8))
+                        .and_then(|b| read_u64(&b))
+                        .filter(|p| *p != 0)
+                    {
+                        if let Some(lb) = read_mem(list_addr + 0x18, 4) {
+                            if lb.len() >= 4 {
+                                entry_fee_count = Some(i32::from_le_bytes([lb[0], lb[1], lb[2], lb[3]]));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    println!(
+        "  [{:3}]  {:>14} {:>13} {:>13} {:<10} {:<8} {:<6} {:<28}",
+        idx,
+        cur_event_state.map(|v| v.to_string()).unwrap_or_else(|| "?".into()),
+        cur_module.map(|v| v.to_string()).unwrap_or_else(|| "?".into()),
+        event_state.map(|v| v.to_string()).unwrap_or_else(|| "?".into()),
+        format_type.map(|v| v.to_string()).unwrap_or_else(|| "?".into()),
+        entry_fee_count.map(|v| v.to_string()).unwrap_or_else(|| "?".into()),
+        match made_choice { Some(true) => "true", Some(false) => "false", None => "?" },
+        if internal_name.len() > 28 { format!("{}…", &internal_name[..27]) } else { internal_name },
+    );
+}
+
+/// Read an i32-typed instance field by name (parent-chain lookup).
+fn read_i32_field<F>(
+    offsets: &MonoOffsets,
+    obj_addr: u64,
+    class_bytes: &[u8],
+    name: &str,
+    read_mem: &F,
+) -> Option<i32>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let f = field::find_field_by_name_in_chain(offsets, class_bytes, name, read_mem)?;
+    if f.is_static {
+        return None;
+    }
+    let bytes = read_mem(obj_addr + f.offset as u64, 4)?;
+    if bytes.len() < 4 {
+        return None;
+    }
+    Some(i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+}
+
+/// Read a 1-byte bool instance field by name (parent-chain lookup).
+fn read_bool_field<F>(
+    offsets: &MonoOffsets,
+    obj_addr: u64,
+    class_bytes: &[u8],
+    name: &str,
+    read_mem: &F,
+) -> Option<bool>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let f = field::find_field_by_name_in_chain(offsets, class_bytes, name, read_mem)?;
+    if f.is_static {
+        return None;
+    }
+    let bytes = read_mem(obj_addr + f.offset as u64, 1)?;
+    if bytes.is_empty() {
+        return None;
+    }
+    Some(bytes[0] != 0)
+}
+
+/// Read a `MonoString *` instance field by name (parent-chain lookup),
+/// then decode UTF-16 → Rust String.
+fn read_mono_string_field<F>(
+    offsets: &MonoOffsets,
+    obj_addr: u64,
+    class_bytes: &[u8],
+    name: &str,
+    read_mem: &F,
+) -> Option<String>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let f = field::find_field_by_name_in_chain(offsets, class_bytes, name, read_mem)?;
+    if f.is_static {
+        return None;
+    }
+    let str_addr = read_mem(obj_addr + f.offset as u64, 8).and_then(|b| read_u64(&b))?;
+    if str_addr == 0 {
+        return None;
+    }
+    mono::read_mono_string(str_addr, MAX_STRING_CHARS, read_mem)
 }
 
 /// Within a `BasicPlayerEvent` / `LimitedPlayerEvent`, dereference and
@@ -401,10 +656,277 @@ fn drill_player_event_inner<F>(
                                 v3_ptr, v3_name
                             );
                             dump_class_chain(offsets, &v3_bytes, 0, read_mem);
+
+                            // Drill PastEntries — the most likely
+                            // home of historical wins/losses per
+                            // event template.
+                            drill_past_entries(offsets, v3_ptr, &v3_bytes, read_mem);
                         }
                     }
                 }
             }
+        }
+    }
+
+    // Drill the private mirror of CourseData (`_courseInfo`, likely
+    // `CourseInfoV3`). This is where wire-format per-entry state
+    // including module/round counters likely lives.
+    drill_course_info(offsets, pe_addr, pe_class_bytes, read_mem);
+}
+
+/// Resolve `BasicPlayerEvent._courseInfo` (offset 0x0038, parent-chain
+/// lookup) and dump its class manifest. Likely class is
+/// `CourseInfoV3` — its fields should reveal where wins/losses live.
+fn drill_course_info<F>(
+    offsets: &MonoOffsets,
+    pe_addr: u64,
+    pe_class_bytes: &[u8],
+    read_mem: &F,
+) where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let f = match field::find_field_by_name_in_chain(offsets, pe_class_bytes, "_courseInfo", read_mem) {
+        Some(f) if !f.is_static => f,
+        _ => {
+            println!("    [PlayerEvent._courseInfo] not resolved");
+            return;
+        }
+    };
+    let inner_ptr = match read_mem(pe_addr + f.offset as u64, 8).and_then(|b| read_u64(&b)) {
+        Some(0) | None => {
+            println!("    [PlayerEvent._courseInfo] NULL");
+            return;
+        }
+        Some(p) => p,
+    };
+    let Some(inner_bytes) = read_class_def_for_object(inner_ptr, read_mem) else {
+        return;
+    };
+    let inner_name = read_class_name(&inner_bytes, read_mem).unwrap_or_else(|| "?".to_string());
+    println!(
+        "    [PlayerEvent._courseInfo] addr=0x{:x} class='{}'",
+        inner_ptr, inner_name
+    );
+    dump_class_chain(offsets, &inner_bytes, 0, read_mem);
+
+    // Also read every primitive (i32/bool/MonoString) field inline
+    // so we can see their actual values for this entry.
+    println!("      [_courseInfo values:]");
+    print_all_primitive_field_values(offsets, inner_ptr, &inner_bytes, read_mem);
+
+    // AwsCourseInfo wraps a private `_clientPlayerCourse` — drill it.
+    if let Some(cpc_field) =
+        field::find_field_by_name_in_chain(offsets, &inner_bytes, "_clientPlayerCourse", read_mem)
+    {
+        if !cpc_field.is_static {
+            let cpc_ptr = read_mem(inner_ptr + cpc_field.offset as u64, 8)
+                .and_then(|b| read_u64(&b))
+                .unwrap_or(0);
+            if cpc_ptr == 0 {
+                println!("      [_courseInfo._clientPlayerCourse] NULL");
+            } else if let Some(cpc_bytes) = read_class_def_for_object(cpc_ptr, read_mem) {
+                let cpc_name =
+                    read_class_name(&cpc_bytes, read_mem).unwrap_or_else(|| "?".to_string());
+                println!(
+                    "      [_courseInfo._clientPlayerCourse] addr=0x{:x} class='{}'",
+                    cpc_ptr, cpc_name
+                );
+                dump_class_chain(offsets, &cpc_bytes, 0, read_mem);
+                println!("        [_clientPlayerCourse values:]");
+                print_all_primitive_field_values(offsets, cpc_ptr, &cpc_bytes, read_mem);
+
+                // Drill collection fields one level — likely homes
+                // for module/wins/losses lists.
+                drill_pointer_fields(offsets, cpc_ptr, &cpc_bytes, read_mem, 0);
+            }
+        }
+    }
+}
+
+/// Resolve `EventInfoV3.PastEntries` (a `List<T>`), peek size, and
+/// dump the first element's runtime class + manifest. This is where
+/// the player's historical entries on each event template live —
+/// the most likely place for archived `wins`/`losses` ints.
+fn drill_past_entries<F>(
+    offsets: &MonoOffsets,
+    v3_addr: u64,
+    v3_class_bytes: &[u8],
+    read_mem: &F,
+) where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let f = match field::find_field_by_name_in_chain(offsets, v3_class_bytes, "PastEntries", read_mem) {
+        Some(f) if !f.is_static => f,
+        _ => {
+            println!("      [EventInfoV3.PastEntries] not resolved");
+            return;
+        }
+    };
+    let list_addr = match read_mem(v3_addr + f.offset as u64, 8).and_then(|b| read_u64(&b)) {
+        Some(0) | None => {
+            println!("      [EventInfoV3.PastEntries] NULL");
+            return;
+        }
+        Some(p) => p,
+    };
+    let Some(list_bytes) = read_class_def_for_object(list_addr, read_mem) else {
+        return;
+    };
+    println!("      [EventInfoV3.PastEntries] List addr=0x{:x}", list_addr);
+    peek_list(offsets, list_addr, &list_bytes, read_mem);
+
+    // Also read primitive values on the first element if it's an object reference.
+    let size = field::find_field_by_name(offsets, &list_bytes, "_size", read_mem)
+        .and_then(|f| read_mem(list_addr + f.offset as u64, 4))
+        .and_then(|b| if b.len() >= 4 { Some(i32::from_le_bytes([b[0], b[1], b[2], b[3]])) } else { None })
+        .unwrap_or(0);
+    let items_ptr = field::find_field_by_name(offsets, &list_bytes, "_items", read_mem)
+        .and_then(|f| read_mem(list_addr + f.offset as u64, 8))
+        .and_then(|b| read_u64(&b))
+        .unwrap_or(0);
+    if size > 0 && items_ptr != 0 {
+        // First element pointer at items_ptr + 0x20.
+        if let Some(first_ptr) =
+            read_mem(items_ptr + 0x20, 8).and_then(|b| read_u64(&b)).filter(|p| *p != 0)
+        {
+            if let Some(elem_bytes) = read_class_def_for_object(first_ptr, read_mem) {
+                println!("      [PastEntries[0] values:]");
+                print_all_primitive_field_values(offsets, first_ptr, &elem_bytes, read_mem);
+            }
+        }
+    }
+}
+
+/// Iterate every field on `class_bytes` (parent chain too) and print
+/// the value for every primitive (i32/bool/MonoString) — narrows
+/// down where wins/losses live without us having to guess names.
+fn print_all_primitive_field_values<F>(
+    offsets: &MonoOffsets,
+    obj_addr: u64,
+    class_bytes: &[u8],
+    read_mem: &F,
+) where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    print_primitive_values_one_class(offsets, obj_addr, class_bytes, read_mem);
+
+    // Recurse up the parent chain.
+    let mut cur = class_bytes.to_vec();
+    let mut depth = 0;
+    while depth < MAX_PARENT_DEPTH {
+        if cur.len() < CLASS_PARENT_OFFSET + 8 {
+            break;
+        }
+        let parent_addr = u64::from_le_bytes([
+            cur[CLASS_PARENT_OFFSET],
+            cur[CLASS_PARENT_OFFSET + 1],
+            cur[CLASS_PARENT_OFFSET + 2],
+            cur[CLASS_PARENT_OFFSET + 3],
+            cur[CLASS_PARENT_OFFSET + 4],
+            cur[CLASS_PARENT_OFFSET + 5],
+            cur[CLASS_PARENT_OFFSET + 6],
+            cur[CLASS_PARENT_OFFSET + 7],
+        ]);
+        if parent_addr == 0 {
+            break;
+        }
+        let Some(parent_bytes) = read_mem(parent_addr, CLASS_DEF_BLOB_LEN) else {
+            break;
+        };
+        let parent_name = read_class_name(&parent_bytes, read_mem).unwrap_or_default();
+        if parent_name == "Object" || parent_name == "MonoBehaviour" {
+            break;
+        }
+        print_primitive_values_one_class(offsets, obj_addr, &parent_bytes, read_mem);
+        cur = parent_bytes;
+        depth += 1;
+    }
+}
+
+fn print_primitive_values_one_class<F>(
+    offsets: &MonoOffsets,
+    obj_addr: u64,
+    class_bytes: &[u8],
+    read_mem: &F,
+) where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let fields_ptr = mono::class_fields_ptr(offsets, class_bytes, 0).unwrap_or(0);
+    let count = mono::class_def_field_count(offsets, class_bytes, 0).unwrap_or(0) as usize;
+    let bounded = count.min(MAX_FIELDS_PER_CLASS);
+    if fields_ptr == 0 || bounded == 0 {
+        return;
+    }
+    for i in 0..bounded {
+        let entry_addr = match (i as u64).checked_mul(MONO_CLASS_FIELD_SIZE as u64) {
+            Some(off) => fields_ptr + off,
+            None => continue,
+        };
+        let Some(entry_bytes) = read_mem(entry_addr, MONO_CLASS_FIELD_SIZE) else {
+            continue;
+        };
+        let name_ptr = mono::field_name_ptr(offsets, &entry_bytes, 0).unwrap_or(0);
+        let type_ptr = mono::field_type_ptr(offsets, &entry_bytes, 0).unwrap_or(0);
+        let offset_val = mono::field_offset_value(offsets, &entry_bytes, 0).unwrap_or(0);
+        let name = read_c_string(name_ptr, READ_NAME_MAX, read_mem).unwrap_or_default();
+        if name.is_empty() {
+            break;
+        }
+
+        let (attrs, type_kind) = if type_ptr != 0 {
+            match read_mem(type_ptr, 16) {
+                Some(tb) => (
+                    mono::type_attrs(offsets, &tb, 0).unwrap_or(0),
+                    // Mono MonoType.type byte is at offset 0x0a in the
+                    // MonoType struct (per Unity headers). 0x08 = i4
+                    // (int32), 0x02 = bool, 0x0e = string.
+                    tb.get(0x0a).copied().unwrap_or(0),
+                ),
+                None => (0, 0),
+            }
+        } else {
+            (0, 0)
+        };
+        if mono::attrs_is_static(attrs) || offset_val < 0 {
+            continue;
+        }
+
+        let slot = obj_addr + offset_val as u64;
+        match type_kind {
+            // MONO_TYPE_BOOLEAN
+            0x02 => {
+                let v = read_mem(slot, 1).map(|b| b.first().copied().unwrap_or(0) != 0);
+                println!("        +0x{:04x} {} = {:?} (bool)", offset_val as u32, name, v);
+            }
+            // MONO_TYPE_I4 / MONO_TYPE_U4
+            0x08 | 0x09 => {
+                let v = read_mem(slot, 4).and_then(|b| {
+                    if b.len() >= 4 { Some(i32::from_le_bytes([b[0], b[1], b[2], b[3]])) } else { None }
+                });
+                println!("        +0x{:04x} {} = {:?} (i32)", offset_val as u32, name, v);
+            }
+            // MONO_TYPE_I8
+            0x0a => {
+                let v = read_mem(slot, 8).and_then(|b| {
+                    if b.len() >= 8 {
+                        Some(i64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]))
+                    } else { None }
+                });
+                println!("        +0x{:04x} {} = {:?} (i64)", offset_val as u32, name, v);
+            }
+            // MONO_TYPE_STRING
+            0x0e => {
+                let str_ptr = read_mem(slot, 8).and_then(|b| read_u64(&b)).unwrap_or(0);
+                let s = if str_ptr == 0 {
+                    "<null>".to_string()
+                } else {
+                    mono::read_mono_string(str_ptr, MAX_STRING_CHARS, read_mem)
+                        .map(|s| format!("{:?}", s))
+                        .unwrap_or_else(|| "<unreadable>".to_string())
+                };
+                println!("        +0x{:04x} {} = {} (string)", offset_val as u32, name, s);
+            }
+            _ => {}
         }
     }
 }

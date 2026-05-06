@@ -313,6 +313,165 @@ Sources:
 - `ScryIpcHandler-x0rjOwCx/src/scry/utils/mtga/ScryBattlefieldStacks.ts`
 - `ScryIpcHandler-x0rjOwCx/src/scry/utils/mtga/ScryMatchZone.ts`
 
+### Chain 3 — active events (entry, wins/losses, in-flight state) — VERIFIED 2026-05-06
+
+Anchored at the same `PAPA._instance` static the other chains use.
+Provides the player's full list of available + in-progress event
+entries — the data behind the dashboard's "Active events" / "4-1
+in Premier Draft" surface.
+
+Verified live against MTGA build timestamp `Fri Apr 11 17:22:20 2025`.
+52 EventContexts observed; entry [12] (`DualColorPrecons`) read
+22W-17L matching MTGA's UI exactly. See
+[`spike21_active_events/FINDING.md`](../../../../mtga-duress/experiments/spikes/spike21_active_events/FINDING.md)
+for full evidence.
+
+**Tear-down behaviour:** `EventManager` and the `EventContexts` list
+persist across match boundaries — unlike `MatchSceneManager.Instance`
+(Chain 2) and `MatchManager.LocalPlayerInfo`/`OpponentInfo` (Chain 1
+post-match), this chain is safe to read at any time after MTGA
+finishes loading. Pre-login, `PAPA._instance.EventManager` is null.
+
+**PAPA → EventManager** (same anchor as Chain 1):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0110` | `<EventManager>k__BackingField` | instance, attrs `0x0001` — verified by spike20 PAPA manifest *and* spike21 |
+
+**EventManager class** (9 instance fields):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0010` | `_eventsServiceWrapper` | `AwsEventServiceWrapper` (network) |
+| `0x0018` | `_accountClient` | `WizardsAccountsClient` |
+| `0x0028` | `_cardDatabase` | `CardDatabase` (shared with other chains) |
+| **`0x0030`** | **`<EventContexts>k__BackingField`** | **`List<EventContext>` — primary collection** |
+| `0x0038` | `<DynamicFilterTags>k__BackingField` | `List<ClientDynamicFilterTag>` (Play-screen filter chips) |
+| `0x0040` | `<EventsByInternalName>k__BackingField` | `Dictionary` — empty in steady state |
+| `0x0048` | `_lastEventContextRefresh` | timestamp |
+
+**EventContext** (3 instance fields):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0010` | `PlayerEvent` | polymorphic — `BasicPlayerEvent` or `LimitedPlayerEvent` |
+| `0x0018` | `PostMatchContext` | null unless event just completed (transient) |
+| `0x0020` | `DeckSelectContext` | null unless in deck-select state (transient) |
+
+**BasicPlayerEvent** (parent class — 9 instance fields, 1 static skipped):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0010` | `<EventInfo>k__BackingField` | `BasicEventInfo` |
+| `0x0018` | `<EventUXInfo>k__BackingField` | |
+| `0x0020` | `<Format>k__BackingField` | `DeckFormat` (NULL on `LimitedPlayerEvent` — format derived from draft pool) |
+| `0x0028` | `<CourseData>k__BackingField` | public-API mirror with `CurrentEventState`/`CurrentModule` ints |
+| **`0x0038`** | **`_courseInfo`** | **private — `AwsCourseInfo` wrapper around the wire-format course mirror** |
+| `0x0040` | `_eventsServiceWrapper` | (private) |
+
+**LimitedPlayerEvent : BasicPlayerEvent** adds one field:
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0058` | `<DraftPod>k__BackingField` | `DraftPod` — populated only while a draft is in progress |
+
+**CourseData** (9 instance fields — public state, used to discriminate entries):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0040` | `Id` | course id (string) |
+| **`0x0050`** | **`CurrentEventState`** | **i32 — see "State enum values" below** |
+| `0x0054` | `CurrentModule` | i32 — round/stage pointer |
+| `0x0030` | `DraftId` | string id (limited only) |
+| `0x0038` | `MadeChoice` | bool? (deck choice flag) |
+
+**`AwsCourseInfo`** (1 instance field):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0010` | `_clientPlayerCourse` | `ClientPlayerCourseV3` — the wire-format mirror |
+
+**`ClientPlayerCourseV3`** (15 instance fields — primary state holder, where wins/losses live):
+
+| Offset | Field | Type | Notes |
+|---:|---|---|---|
+| `0x0010` | `InternalEventName` | MonoString | duplicates `EventInfoV3.InternalEventName` |
+| `0x0018` | `ModulePayload` | MonoString | empty in observed entries |
+| `0x0020` | `CourseDeckSummary` | `DTO_DeckSummaryV3 *` | name, mana cost summary, deck-art |
+| `0x0028` | `CourseDeck` | `Deck *` | submitted deck (`MainDeck`, `Sideboard`, `CommandZone`, `Companions`) |
+| `0x0030` | `CardPool` | `List<???>` | drafted cards (limited) |
+| `0x0050` | `DraftId` | MonoString | |
+| `0x0058` | `TournamentId` | MonoString | |
+| `0x0060` | `MadeChoice` | MonoString | course-instance UUID set when player picks event deck (despite the name, NOT a bool) |
+| `0x0068` | `CourseId` | MonoString | |
+| **`0x0078`** | **`CurrentModule`** | **i32** | round/module pointer (mirrors `CourseData.CurrentModule`) |
+| **`0x007c`** | **`CurrentWins`** | **i32** | win count for this entry |
+| **`0x0080`** | **`CurrentLosses`** | **i32** | loss count for this entry |
+
+**`BasicEventInfo`** (2 instance fields):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0010` | `<EntryFees>k__BackingField` | `List<???>` — entry tokens / gems |
+| `0x0018` | `_eventInfoV3` | `EventInfoV3` — canonical wire-format event-template metadata |
+
+**`EventInfoV3`** (14 instance fields — event-template metadata, not per-player progress):
+
+| Offset | Field | Notes |
+|---:|---|---|
+| `0x0010` | `InternalEventName` | MonoString — e.g. `Premier_Draft_DFT` |
+| `0x0018` | `Flags` | bitfield |
+| `0x0020` | `PastEntries` | `List<???>` — empty in observed entries (server-pushed history?) |
+| `0x0028` | `EntryFees` | duplicate of `BasicEventInfo.EntryFees` |
+| `0x0030` | `EventTags` | `List<???>` |
+| `0x0050` | `EventState` | i32 — `0` = open, `1` = closed/expired, `2` = special |
+| `0x0054` | `FormatType` | i32 — `1` = Limited, `2` = Sealed, `3` = Constructed |
+| `0x0058` | `StartTime` | DateTime |
+| `0x0070` | `WinCondition` | i32 |
+
+**State enum values (CurrentEventState / CurrentModule)** — captured live across 52 entries:
+
+| `CurrentEventState` | `CurrentModule` | Meaning | Examples |
+|---:|---:|---|---|
+| 0 | 0 | Available — never entered, root entry-point | `ColorChallenge` |
+| 0 | 1 | Available — never entered (default) | `ColorChallenge_Node5_*`, `TradDraft_SOS_…`, `Sealed_SOS_…` |
+| 1 | 7 | Entered / in progress | `Jump_In_2024`, `QuickDraft_SOS_…`, `DualColorPrecons` |
+| 3 | 11 | Standing / always-on (no entry fee) | `Play`, `Constructed_BestOf3`, `Traditional_Ladder`, `Ladder` |
+
+**Walker rule:** an entry is "actively engaged" when
+`CurrentEventState != 0`. Wins/losses can still be 0 in an `Entered`
+entry (entered but no matches played yet) — the state enum is the
+truth, not the counters.
+
+```
+PAPA._instance                                       (existing anchor)
+  .EventManager
+    .EventContexts                              : List<EventContext>
+      [i].PlayerEvent
+            .EventInfo._eventInfoV3
+              .InternalEventName              : string  ("Premier_Draft_DFT")
+              .EventState / .FormatType       : i32 enums
+              .EntryFees                      : List<entry-fee>
+            .CourseData
+              .CurrentEventState              : i32 enum (0/1/3 → see table)
+              .CurrentModule                  : i32 (1/7/11)
+            .Format._formatName               : string ("Standard", null on Limited)
+            ._courseInfo._clientPlayerCourse
+              .CurrentWins                    : i32
+              .CurrentLosses                  : i32
+              .CourseDeck                     : Deck
+      [i].PostMatchContext  ── transient post-match
+      [i].DeckSelectContext ── transient deck-select
+```
+
+**Resolution discipline:** every field above must be looked up **by
+name** (`field::find_field_by_name` / `_in_chain`). The literal
+offsets are reproduced here for documentation and unit-test fixtures
+only. Game-class field offsets are not pinned as constants — only
+`MonoOffsets` (Mono runtime offsets) are.
+
+Source: this skill block + `mtga-duress/experiments/spikes/spike21_active_events/FINDING.md`.
+
 ### Generic types the walker doesn't yet handle
 
 Both chains use Mono `List<T>` (`T[] _items + i32 _size + i32 _version`)
