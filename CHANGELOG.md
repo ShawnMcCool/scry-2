@@ -11,6 +11,10 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Card hover popups now point at the right card.** When a deck, draft pool, or match's revealed-cards section showed the same card multiple times (4× the same Island, a card that's both in the main deck and the sideboard, or a card added across two deck versions on the **Changes** tab), hovering over later copies would sometimes pop up the wrong card, and re-renders could swap cards into the wrong slot. Each copy now has a unique slot identity, so hovers and live updates target the correct one.
+
 ## v0.32.1 — 2026-05-05
 
 ### Fixed
