@@ -47,7 +47,7 @@ is clean.
 - Win-track (15-win) progress and claimed rewards — **reader+**
 - Cosmetics inventory (pets, sleeves, avatars, alt arts, emotes) — **reader+**
 - Event entry tokens (sealed, draft, premier-play) — **reader+**
-- Active event records (e.g. 4-1 in a Premier Draft) — **reader+**
+- Active event records (e.g. 4-1 in a Premier Draft) — **✅ shipped v0.33.0** (`Scry2Web.Components.ActiveEventsCard` on `/economy`; walker reads `PAPA._instance → EventManager → EventContexts → ClientPlayerCourseV3` per spike 21. Anchor unlocks event entry tokens / win-track / quests as follow-ons.)
 - Store inventory (daily deal, rotating bundles, cosmetic packs) — **reader+**
 - Pending packs by set and source — **reader+**
 - Build / version metadata (build GUID, asset version, server region) — **walker**
