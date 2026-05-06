@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.33.0 — 2026-05-06
+
 ### New
 
 - **Active events on the Economy page.** A new card under the
