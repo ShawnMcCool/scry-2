@@ -11,6 +11,15 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Active events on the Economy page.** A new card under the
+  Mastery Pass shows every event you're actively engaged with —
+  Premier Drafts in progress, Quick Drafts, Jump-In runs, plus your
+  standing on the always-on ladders (Standard, Traditional Standard,
+  Historic, etc.) — each with its current win–loss record. Reads
+  live from MTGA, so the numbers match what the game shows.
+
 ## v0.32.2 — 2026-05-06
 
 ### Fixed
