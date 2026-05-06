@@ -24,6 +24,11 @@ name = "event-manager-spike"
 path = "src/bin/event_manager_spike.rs"
 required-features = []
 
+[[bin]]
+name = "papa-managers-spike"
+path = "src/bin/papa_managers_spike.rs"
+required-features = []
+
 [dependencies]
 rustler = "0.37"
 

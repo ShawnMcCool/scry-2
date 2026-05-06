@@ -40,17 +40,17 @@ is clean.
 
 ## A. Snapshot extensions (one-shot reads, same model as today)
 
-- Account identity (username, player UUID, account-creation timestamp) — **reader+**
+- Account identity — **partially shipped** (`Scry2.Players` captures `screen_name` + `mtga_user_id` from `LoginV3` log events; player switcher in the layout uses them). Only **MTGA account-creation timestamp** is still **reader+** — see `spike22_papa_managers` for the deferred probe of `PAPA._instance.<AccountClient>k__BackingField`.
 - Constructed / Limited / Historic rank + tier + percentile — **reader+**
 - Mastery pass tier, XP, mastery orbs, season name, season end — **✅ shipped** (`Scry2Web.Components.MasteryCard` on `/economy`; walker reads `PAPA._instance → MasteryPassProvider → AwsSetMasteryStrategy → ProgressionTrack` per spike 20). Free-vs-premium intentionally dropped — not surfaced in MTGA's mastery-pass memory state for this season.
 - Daily / weekly quest contents and progress — **reader+**
 - Win-track (15-win) progress and claimed rewards — **reader+**
-- Cosmetics inventory (pets, sleeves, avatars, alt arts, emotes) — **reader+**
-- Event entry tokens (sealed, draft, premier-play) — **reader+**
+- Cosmetics inventory (pets, sleeves, avatars, alt arts, emotes) — **reader+** (spike22 binary ready: probes `PAPA._instance.<CosmeticsProvider>k__BackingField`)
+- Event entry tokens (sealed, draft, premier-play) — **partially shipped** (per-entry `entry_fee` + `entry_currency_type` already captured from `EventJoined` domain events for events the player has joined; the Event History table on `/economy` shows them). The remaining **reader+** piece is reading `EventInfoV3.EntryFees` from the EventManager chain to preview costs for available-but-not-yet-joined events.
 - Active event records (e.g. 4-1 in a Premier Draft) — **✅ shipped v0.33.0** (`Scry2Web.Components.ActiveEventsCard` on `/economy`; walker reads `PAPA._instance → EventManager → EventContexts → ClientPlayerCourseV3` per spike 21. Anchor unlocks event entry tokens / win-track / quests as follow-ons.)
 - Store inventory (daily deal, rotating bundles, cosmetic packs) — **reader+**
 - Pending packs by set and source — **reader+**
-- Build / version metadata (build GUID, asset version, server region) — **walker**
+- Build / version metadata — **partially shipped** (walker stamps `mtga_build_hint` on every snapshot; `Scry2.Collection.BuildChange` raises a banner on `/settings` when the hint changes between snapshots). **Build GUID, asset version, and server region** are still **walker** — pending a spike to find the corresponding singletons under `PAPA._instance.<FdConnectionManager>` / `<AssetLookupSystem>`.
 - Booster inventory (per-set unopened pack counts) — **✅ shipped** (`Scry2.Collection.Snapshot.boosters_json`; walker reads `ClientPlayerInventory.boosters: List<ClientBoosterInfo>` per spike 18)
 
 ## B. Reconciliation (memory-vs-log truth diffing)
