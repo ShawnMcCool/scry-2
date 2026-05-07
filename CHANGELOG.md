@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.34.0 — 2026-05-07
+
 ### New
 
 - **Mastery Pass forecast.** The Mastery Pass card on the Economy page
