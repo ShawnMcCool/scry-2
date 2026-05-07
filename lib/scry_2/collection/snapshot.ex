@@ -50,7 +50,8 @@ defmodule Scry2.Collection.Snapshot do
     :mastery_xp_in_tier,
     :mastery_orbs,
     :mastery_season_name,
-    :mastery_season_ends_at
+    :mastery_season_ends_at,
+    :cosmetics_json
   ]
 
   @required_fields [
@@ -85,6 +86,7 @@ defmodule Scry2.Collection.Snapshot do
     field :mastery_orbs, :integer
     field :mastery_season_name, :string
     field :mastery_season_ends_at, :utc_datetime
+    field :cosmetics_json, :string
 
     timestamps(type: :utc_datetime_usec)
   end
@@ -112,6 +114,91 @@ defmodule Scry2.Collection.Snapshot do
     json
     |> Jason.decode!()
     |> Enum.map(fn %{"collation_id" => cid, "count" => cnt} -> {cid, cnt} end)
+  end
+
+  @doc """
+  Encodes the cosmetics summary returned by `MtgaMemory.walk_cosmetics/1`
+  as the JSON blob stored in `cosmetics_json`. Accepts either the
+  walker's atom-keyed map or a previously-decoded string-keyed map.
+  """
+  @spec encode_cosmetics(map() | nil) :: String.t() | nil
+  def encode_cosmetics(nil), do: nil
+
+  def encode_cosmetics(%{} = summary) do
+    summary
+    |> normalise_cosmetics_keys()
+    |> Jason.encode!()
+  end
+
+  @doc """
+  Decodes `cosmetics_json` into a map with atom keys for the top-level
+  fields and atom-keyed sub-maps for `available` / `owned` / `equipped`.
+  Returns `nil` for nil / "null" / unparseable input.
+  """
+  @spec decode_cosmetics(String.t() | nil) :: map() | nil
+  def decode_cosmetics(nil), do: nil
+  def decode_cosmetics("null"), do: nil
+
+  def decode_cosmetics(json) when is_binary(json) do
+    case Jason.decode(json) do
+      {:ok, %{} = decoded} ->
+        %{
+          available: take_count_keys(decoded["available"] || %{}),
+          owned: take_count_keys(decoded["owned"] || %{}),
+          equipped: take_equipped_keys(decoded["equipped"] || %{})
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  defp normalise_cosmetics_keys(%{} = summary) do
+    %{
+      "available" => stringify_count_keys(Map.get(summary, :available, %{})),
+      "owned" => stringify_count_keys(Map.get(summary, :owned, %{})),
+      "equipped" => stringify_equipped_keys(Map.get(summary, :equipped, %{}))
+    }
+  end
+
+  defp stringify_count_keys(%{} = counts) do
+    %{
+      "art_styles" => Map.get(counts, :art_styles, Map.get(counts, "art_styles", 0)) || 0,
+      "avatars" => Map.get(counts, :avatars, Map.get(counts, "avatars", 0)) || 0,
+      "pets" => Map.get(counts, :pets, Map.get(counts, "pets", 0)) || 0,
+      "sleeves" => Map.get(counts, :sleeves, Map.get(counts, "sleeves", 0)) || 0,
+      "emotes" => Map.get(counts, :emotes, Map.get(counts, "emotes", 0)) || 0,
+      "titles" => Map.get(counts, :titles, Map.get(counts, "titles", 0)) || 0
+    }
+  end
+
+  defp stringify_equipped_keys(%{} = equipped) do
+    %{
+      "avatar" => Map.get(equipped, :avatar, Map.get(equipped, "avatar")),
+      "card_back" => Map.get(equipped, :card_back, Map.get(equipped, "card_back")),
+      "pet" => Map.get(equipped, :pet, Map.get(equipped, "pet")),
+      "title" => Map.get(equipped, :title, Map.get(equipped, "title"))
+    }
+  end
+
+  defp take_count_keys(%{} = counts) do
+    %{
+      art_styles: Map.get(counts, "art_styles", 0) || 0,
+      avatars: Map.get(counts, "avatars", 0) || 0,
+      pets: Map.get(counts, "pets", 0) || 0,
+      sleeves: Map.get(counts, "sleeves", 0) || 0,
+      emotes: Map.get(counts, "emotes", 0) || 0,
+      titles: Map.get(counts, "titles", 0) || 0
+    }
+  end
+
+  defp take_equipped_keys(%{} = equipped) do
+    %{
+      avatar: Map.get(equipped, "avatar"),
+      card_back: Map.get(equipped, "card_back"),
+      pet: Map.get(equipped, "pet"),
+      title: Map.get(equipped, "title")
+    }
   end
 
   @doc """

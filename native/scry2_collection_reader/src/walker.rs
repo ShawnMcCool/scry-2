@@ -33,6 +33,7 @@ pub mod card_holder;
 pub mod card_layout_data;
 pub mod chain;
 pub mod class_lookup;
+pub mod cosmetics;
 pub mod dict;
 pub mod dict_kv;
 pub mod domain;

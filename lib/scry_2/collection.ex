@@ -315,7 +315,9 @@ defmodule Scry2.Collection do
       :wildcards_mythic,
       :gold,
       :gems,
-      :vault_progress
+      :vault_progress,
+      :boosters_json,
+      :cosmetics_json
     ])
   end
 

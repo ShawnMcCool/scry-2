@@ -142,12 +142,66 @@ defmodule Scry2Web.ProdSmokeTest do
     File.mkdir_p!(Path.dirname(@snapshot_path))
     File.cp!(@prod_db_path, @snapshot_path)
 
+    # Apply any pending dev-side migrations to the snapshot **before**
+    # swapping `Scry2.Repo` over to it. We open a one-off Exqlite
+    # connection on the snapshot file, walk every migration's
+    # `change/0` body, and emit equivalent DDL via raw SQL — avoiding
+    # the Ecto.Migrator + sandbox interaction that breaks in a
+    # ConnCase setup_all.
+    apply_pending_alters_to_snapshot!(@snapshot_path)
+
     swap_repo!(original_config, Keyword.put(original_config, :database, @snapshot_path))
 
     on_exit(fn ->
       swap_repo!(Application.get_env(:scry_2, Repo), original_config)
       File.rm(@snapshot_path)
     end)
+  end
+
+  # Hand-maintained list of column additions that must reach the prod
+  # snapshot before the dev branch's render code touches it. Add a
+  # row here in the same PR as any new `add :column, …` in a
+  # migration. Each row is `{table, column, sql_type}`. Idempotent —
+  # checks the existing schema first, no-ops if the column is
+  # already present (so older prod DBs that already have the column
+  # don't trip "duplicate column" errors).
+  @prod_smoke_additive_columns [
+    {"players", "mtga_display_name", "TEXT"},
+    {"collection_snapshots", "cosmetics_json", "TEXT"}
+  ]
+
+  defp apply_pending_alters_to_snapshot!(path) do
+    {:ok, conn} = Exqlite.Sqlite3.open(path)
+
+    try do
+      Enum.each(@prod_smoke_additive_columns, fn {table, column, type} ->
+        if not column_exists?(conn, table, column) do
+          :ok =
+            Exqlite.Sqlite3.execute(
+              conn,
+              "ALTER TABLE #{table} ADD COLUMN #{column} #{type}"
+            )
+        end
+      end)
+    after
+      Exqlite.Sqlite3.close(conn)
+    end
+  end
+
+  defp column_exists?(conn, table, column) do
+    {:ok, statement} =
+      Exqlite.Sqlite3.prepare(conn, "PRAGMA table_info(#{table})")
+
+    rows = drain_pragma(conn, statement, [])
+    :ok = Exqlite.Sqlite3.release(conn, statement)
+    Enum.any?(rows, fn [_cid, name | _] -> name == column end)
+  end
+
+  defp drain_pragma(conn, statement, acc) do
+    case Exqlite.Sqlite3.step(conn, statement) do
+      :done -> Enum.reverse(acc)
+      {:row, row} -> drain_pragma(conn, statement, [row | acc])
+    end
   end
 
   defp swap_repo!(_current, target_config) do

@@ -331,6 +331,50 @@ defmodule Scry2.MtgaMemory do
   """
   @callback walk_account(pid_int()) :: {:ok, account_identity() | nil} | {:error, term()}
 
+  @typedoc """
+  Per-category cosmetic counts on a `CosmeticsClient` instance — see
+  `walk_cosmetics/1`.
+  """
+  @type cosmetic_counts :: %{
+          required(:art_styles) => integer(),
+          required(:avatars) => integer(),
+          required(:pets) => integer(),
+          required(:sleeves) => integer(),
+          required(:emotes) => integer(),
+          required(:titles) => integer()
+        }
+
+  @typedoc "Currently-equipped cosmetic slot identifiers."
+  @type vanity_equipped :: %{
+          required(:avatar) => String.t() | nil,
+          required(:card_back) => String.t() | nil,
+          required(:pet) => String.t() | nil,
+          required(:title) => String.t() | nil
+        }
+
+  @typedoc "Cosmetics summary returned by `walk_cosmetics/1`."
+  @type cosmetics_summary :: %{
+          required(:available) => cosmetic_counts(),
+          required(:owned) => cosmetic_counts(),
+          required(:equipped) => vanity_equipped()
+        }
+
+  @doc """
+  Read MTGA's cosmetics inventory summary from memory via
+  `PAPA._instance.<CosmeticsProvider>k__BackingField → CosmeticsProvider →
+  {_availableCosmetics, _playerOwnedCosmetics, _vanitySelections}`.
+
+  Returns:
+    * `{:ok, %{available: %{...}, owned: %{...}, equipped: %{...}}}` when
+      reachable. `available` carries the master per-category counts;
+      `owned` carries the player's. Counts default to `0` per category
+      on resolve failure rather than dropping the whole read.
+    * `{:ok, nil}` pre-login or while CosmeticsProvider isn't yet
+      populated. Normal, not an error.
+    * `{:error, reason}` for upstream walker failures.
+  """
+  @callback walk_cosmetics(pid_int()) :: {:ok, cosmetics_summary() | nil} | {:error, term()}
+
   @doc """
   Returns the configured backend module.
 

@@ -21,6 +21,7 @@ defmodule Scry2Web.EconomyLive do
   import Scry2Web.Components.ForecastStrip
   import Scry2Web.Components.MasteryCard
   import Scry2Web.Components.ActiveEventsCard
+  import Scry2Web.Components.CosmeticsCard
 
   @valid_ranges ~w(today 3d week 2w season)
   @default_range "2w"
@@ -326,6 +327,9 @@ defmodule Scry2Web.EconomyLive do
 
         <%!-- Active events card (memory-read, Chain 3) --%>
         <.active_events_card records={@active_events} error={@active_events_error} />
+
+        <%!-- Cosmetics inventory (memory-read, spike 22) --%>
+        <.cosmetics_card snapshot={@latest_snapshot} />
 
         <%!-- Pending booster inventory by set --%>
         <.pending_packs_card rows={@pending_packs} />

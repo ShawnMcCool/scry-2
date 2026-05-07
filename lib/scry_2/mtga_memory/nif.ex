@@ -71,6 +71,9 @@ defmodule Scry2.MtgaMemory.Nif do
   @impl true
   def walk_account(_pid), do: :erlang.nif_error(:nif_not_loaded)
 
+  @impl true
+  def walk_cosmetics(_pid), do: :erlang.nif_error(:nif_not_loaded)
+
   @doc false
   @spec walker_debug_classes_matching(non_neg_integer(), String.t()) ::
           {:ok, [{String.t(), String.t(), non_neg_integer()}]} | {:error, atom()}

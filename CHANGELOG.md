@@ -26,6 +26,11 @@ renames that section on tag and the release workflow extracts it.
   `#NNNNN` discriminator (e.g. *Shawn McCool#91813*) when Scry has
   read it from MTGA's memory. Falls back to the bare name from the
   log when memory hasn't been read yet.
+- **Cosmetics inventory on the Economy page.** A new card shows your
+  per-category cosmetic counts — Alt arts, Avatars, Pets, Sleeves,
+  Emotes, Titles — alongside the master totals from MTGA, with a
+  small progress bar per category. Hidden until Scry's memory reader
+  has captured a snapshot.
 
 ## v0.33.0 — 2026-05-06
 

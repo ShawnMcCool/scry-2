@@ -674,6 +674,88 @@ fn walk_account(pid: i32) -> Result<Option<WireAccountIdentity>, WalkErrorWire> 
 }
 
 // ============================================================
+// walk_cosmetics NIF — per-category cosmetics counts + equipped
+// slots per spike22_papa_managers/FINDING.md.
+// ============================================================
+
+#[derive(NifMap)]
+pub struct WireCosmeticCounts {
+    pub art_styles: i32,
+    pub avatars: i32,
+    pub pets: i32,
+    pub sleeves: i32,
+    pub emotes: i32,
+    pub titles: i32,
+}
+
+#[derive(NifMap)]
+pub struct WireVanityEquipped {
+    pub avatar: Option<String>,
+    pub card_back: Option<String>,
+    pub pet: Option<String>,
+    pub title: Option<String>,
+}
+
+#[derive(NifMap)]
+pub struct WireCosmeticsSummary {
+    pub available: WireCosmeticCounts,
+    pub owned: WireCosmeticCounts,
+    pub equipped: WireVanityEquipped,
+}
+
+fn cosmetic_counts_to_wire(c: walker::cosmetics::CosmeticCounts) -> WireCosmeticCounts {
+    WireCosmeticCounts {
+        art_styles: c.art_styles,
+        avatars: c.avatars,
+        pets: c.pets,
+        sleeves: c.sleeves,
+        emotes: c.emotes,
+        titles: c.titles,
+    }
+}
+
+fn cosmetics_summary_to_wire(s: walker::cosmetics::CosmeticsSummary) -> WireCosmeticsSummary {
+    WireCosmeticsSummary {
+        available: cosmetic_counts_to_wire(s.available),
+        owned: cosmetic_counts_to_wire(s.owned),
+        equipped: WireVanityEquipped {
+            avatar: s.equipped.avatar,
+            card_back: s.equipped.card_back,
+            pet: s.equipped.pet,
+            title: s.equipped.title,
+        },
+    }
+}
+
+/// Walks `PAPA._instance.<CosmeticsProvider>k__BackingField` and
+/// returns the per-category counts on `_availableCosmetics` vs
+/// `_playerOwnedCosmetics`, plus the four `ClientVanitySelectionsV3`
+/// scalar slot strings.
+///
+/// Returns `{:ok, nil}` when the chain isn't reachable (pre-login).
+/// Returns `{:ok, %{available: %{...}, owned: %{...}, equipped: %{...}}}`
+/// otherwise — per-sub-chain failures collapse into zero counts /
+/// `nil` strings rather than killing the read.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walk_cosmetics(pid: i32) -> Result<Option<WireCosmeticsSummary>, WalkErrorWire> {
+    let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+    let result = walker::run::walk_cosmetics_cached(pid as u32, &maps, read_mem);
+    let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
+        let counter = AtomicU64::new(0);
+        let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+        let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+        let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+        walker::run::walk_cosmetics_cached(pid as u32, &maps, read_mem)
+    })
+    .map_err(WalkErrorWire::from)?;
+    Ok(snap.map(cosmetics_summary_to_wire))
+}
+
+// ============================================================
 // walk_match_board NIF — Chain 2 (per-zone visible card arena_ids)
 // per specs/2026-05-03-chain-2-board-state-design.md
 // ============================================================

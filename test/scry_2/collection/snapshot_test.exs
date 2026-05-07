@@ -120,6 +120,56 @@ defmodule Scry2.Collection.SnapshotTest do
     end
   end
 
+  describe "cosmetics round-trip via encode/decode" do
+    test "re-materialises summary unchanged from atom-keyed walker output" do
+      summary = %{
+        available: %{
+          art_styles: 14_592,
+          avatars: 315,
+          pets: 183,
+          sleeves: 1_134,
+          emotes: 314,
+          titles: 0
+        },
+        owned: %{art_styles: 162, avatars: 28, pets: 10, sleeves: 18, emotes: 19, titles: 0},
+        equipped: %{
+          avatar: "Avatar_Basic_Teferi",
+          card_back: "CardBack_ECL_462878",
+          pet: nil,
+          title: "Title_WCore"
+        }
+      }
+
+      decoded = summary |> Snapshot.encode_cosmetics() |> Snapshot.decode_cosmetics()
+      assert decoded == summary
+    end
+
+    test "encode_cosmetics nil → nil; decode_cosmetics handles nil / 'null'" do
+      assert Snapshot.encode_cosmetics(nil) == nil
+      assert Snapshot.decode_cosmetics(nil) == nil
+      assert Snapshot.decode_cosmetics("null") == nil
+    end
+
+    test "decode_cosmetics defaults missing keys to 0 / nil rather than erroring" do
+      json = ~s({"available":{"art_styles":50},"owned":{},"equipped":{}})
+      decoded = Snapshot.decode_cosmetics(json)
+
+      assert decoded.available.art_styles == 50
+      assert decoded.available.avatars == 0
+
+      assert decoded.owned == %{
+               art_styles: 0,
+               avatars: 0,
+               pets: 0,
+               sleeves: 0,
+               emotes: 0,
+               titles: 0
+             }
+
+      assert decoded.equipped == %{avatar: nil, card_back: nil, pet: nil, title: nil}
+    end
+  end
+
   describe "changeset with match-tag columns" do
     test "accepts mtga_match_id and match_phase" do
       attrs = base_attrs(%{mtga_match_id: "abc-123", match_phase: "pre"})

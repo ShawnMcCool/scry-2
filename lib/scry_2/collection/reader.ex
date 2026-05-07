@@ -98,11 +98,13 @@ defmodule Scry2.Collection.Reader do
         {:ok, result} ->
           mastery = read_mastery_safely(mem, pid)
           identity = read_account_identity_safely(mem, pid)
+          cosmetics = read_cosmetics_safely(mem, pid)
 
           merged =
             result
             |> Map.merge(mastery_params(mastery))
             |> Map.put(:account_identity, identity)
+            |> Map.put(:cosmetics_json, encode_cosmetics(cosmetics))
 
           {:ok, merged}
 
@@ -110,6 +112,12 @@ defmodule Scry2.Collection.Reader do
           error
       end
     end
+  end
+
+  defp encode_cosmetics(nil), do: nil
+
+  defp encode_cosmetics(%{} = summary) do
+    Scry2.Collection.Snapshot.encode_cosmetics(summary)
   end
 
   defp try_walker(mem, pid, walker_check_opts) do
@@ -168,6 +176,27 @@ defmodule Scry2.Collection.Reader do
     e ->
       Log.warning(:ingester, fn ->
         "walk_account raised: #{inspect(e)} — leaving identity nil"
+      end)
+
+      nil
+  end
+
+  defp read_cosmetics_safely(mem, pid) do
+    case mem.walk_cosmetics(pid) do
+      {:ok, summary} ->
+        summary
+
+      {:error, reason} ->
+        Log.info(:ingester, fn ->
+          "walk_cosmetics failed: #{inspect(reason)} — leaving cosmetics nil"
+        end)
+
+        nil
+    end
+  rescue
+    e ->
+      Log.warning(:ingester, fn ->
+        "walk_cosmetics raised: #{inspect(e)} — leaving cosmetics nil"
       end)
 
       nil
