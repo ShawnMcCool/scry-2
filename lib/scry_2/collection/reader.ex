@@ -107,10 +107,12 @@ defmodule Scry2.Collection.Reader do
           mastery = read_mastery_safely(mem, pid)
           identity = read_account_identity_safely(mem, pid)
           cosmetics = read_cosmetics_safely(mem, pid)
+          environment = read_environment_safely(mem, pid)
 
           merged =
             result
             |> Map.merge(mastery_params(mastery))
+            |> Map.merge(environment_params(environment))
             |> Map.put(:account_identity, identity)
             |> Map.put(:cosmetics_json, encode_cosmetics(cosmetics))
 
@@ -226,6 +228,47 @@ defmodule Scry2.Collection.Reader do
       end)
 
       nil
+  end
+
+  defp read_environment_safely(mem, pid) do
+    case mem.walk_environment(pid) do
+      {:ok, info} ->
+        info
+
+      {:error, reason} ->
+        Log.info(:ingester, fn ->
+          "walk_environment failed: #{inspect(reason)} — leaving environment nil"
+        end)
+
+        nil
+    end
+  rescue
+    e ->
+      Log.warning(:ingester, fn ->
+        "walk_environment raised: #{inspect(e)} — leaving environment nil"
+      end)
+
+      nil
+  end
+
+  @environment_param_keys [
+    :mtga_environment_name,
+    :mtga_fd_host,
+    :mtga_fd_port,
+    :mtga_host_platform
+  ]
+
+  defp environment_params(nil) do
+    Map.new(@environment_param_keys, fn key -> {key, nil} end)
+  end
+
+  defp environment_params(%{} = info) do
+    %{
+      mtga_environment_name: Map.get(info, :name),
+      mtga_fd_host: Map.get(info, :fd_host),
+      mtga_fd_port: Map.get(info, :fd_port),
+      mtga_host_platform: Map.get(info, :host_platform)
+    }
   end
 
   defp mastery_params(nil) do

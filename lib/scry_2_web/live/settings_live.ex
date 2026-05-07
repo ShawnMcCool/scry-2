@@ -12,6 +12,7 @@ defmodule Scry2Web.SettingsLive do
   use Scry2Web, :live_view
 
   alias Scry2.Collection
+  alias Scry2.Collection.EnvironmentInfo
   alias Scry2.Config
   alias Scry2.Events
   alias Scry2.MtgaMemory
@@ -84,6 +85,7 @@ defmodule Scry2Web.SettingsLive do
      |> assign(:field_values, field_values)
      |> assign(:field_errors, %{})
      |> assign(:build_change_status, Collection.build_change_status())
+     |> assign(:mtga_environment, current_environment_summary())
      |> assign(:diagnostics, Events.inspect_ingestion_state())}
   end
 
@@ -628,6 +630,7 @@ defmodule Scry2Web.SettingsLive do
             </div>
 
             <.build_change_banner status={@build_change_status} />
+            <.mtga_environment_strip info={@mtga_environment} />
 
             <div class="divider my-2"></div>
 
@@ -876,4 +879,51 @@ defmodule Scry2Web.SettingsLive do
   end
 
   defp build_change_banner(assigns), do: ~H""
+
+  # Build a renderable summary of the latest snapshot's environment
+  # info. Returns `nil` when no snapshot has been captured yet (or the
+  # snapshot is from a pre-spike-23 build that didn't stamp env
+  # columns) — the strip below renders nothing in that case.
+  defp current_environment_summary do
+    case Collection.current() do
+      %Scry2.Collection.Snapshot{
+        mtga_environment_name: name,
+        mtga_fd_host: host,
+        mtga_host_platform: platform
+      }
+      when not is_nil(name) or not is_nil(host) or not is_nil(platform) ->
+        %{
+          name: name,
+          fd_host: host,
+          build_version: EnvironmentInfo.parse_build_version(host),
+          host_platform: EnvironmentInfo.host_platform_label(platform)
+        }
+
+      _ ->
+        nil
+    end
+  end
+
+  attr :info, :any, required: true
+
+  defp mtga_environment_strip(%{info: nil} = assigns), do: ~H""
+
+  defp mtga_environment_strip(assigns) do
+    ~H"""
+    <div
+      class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-base-content/60"
+      data-test="mtga-environment-strip"
+    >
+      <span :if={@info.name}>
+        Server <code class="text-base-content/80">{@info.name}</code>
+      </span>
+      <span :if={@info.build_version}>
+        · Build <code class="text-base-content/80">{@info.build_version}</code>
+      </span>
+      <span :if={@info.host_platform}>
+        · {@info.host_platform}
+      </span>
+    </div>
+    """
+  end
 end

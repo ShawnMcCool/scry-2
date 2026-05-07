@@ -402,6 +402,39 @@ defmodule Scry2.Collection.ReaderTest do
 
       assert result.entries == [{70012, 1}, {82456, 4}, {91234, 2}, {44321, 1}]
     end
+
+    test "merges environment params when walk_environment returns a map" do
+      base = walker_fixture(valid_walker_snap())
+
+      env = %{
+        name: "Prod",
+        fd_host: "frontdoor-mtga-production-2026-58-30-2.w2.mtgarena.com",
+        fd_port: 30010,
+        host_platform: 1
+      }
+
+      TestBackend.set_fixture(Map.put(base, :environment_info, env))
+
+      assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
+
+      assert result.mtga_environment_name == "Prod"
+
+      assert result.mtga_fd_host ==
+               "frontdoor-mtga-production-2026-58-30-2.w2.mtgarena.com"
+
+      assert result.mtga_fd_port == 30010
+      assert result.mtga_host_platform == 1
+    end
+
+    test "leaves environment columns nil when walk_environment returns nil" do
+      TestBackend.set_fixture(walker_fixture(valid_walker_snap()))
+
+      assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
+      assert result.mtga_environment_name == nil
+      assert result.mtga_fd_host == nil
+      assert result.mtga_fd_port == nil
+      assert result.mtga_host_platform == nil
+    end
   end
 
   describe "walker mastery merge" do

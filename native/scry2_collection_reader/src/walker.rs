@@ -37,6 +37,7 @@ pub mod cosmetics;
 pub mod dict;
 pub mod dict_kv;
 pub mod domain;
+pub mod environment;
 pub mod event_manager;
 pub mod field;
 pub mod image_lookup;

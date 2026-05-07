@@ -60,7 +60,11 @@ defmodule Scry2.Collection.Snapshot do
     :mastery_season_name,
     :mastery_season_ends_at,
     :cosmetics_json,
-    :mtga_player_cards_version
+    :mtga_player_cards_version,
+    :mtga_environment_name,
+    :mtga_fd_host,
+    :mtga_fd_port,
+    :mtga_host_platform
   ]
 
   @required_fields [
@@ -97,6 +101,10 @@ defmodule Scry2.Collection.Snapshot do
     field :mastery_season_ends_at, :utc_datetime
     field :cosmetics_json, :string
     field :mtga_player_cards_version, :integer
+    field :mtga_environment_name, :string
+    field :mtga_fd_host, :string
+    field :mtga_fd_port, :integer
+    field :mtga_host_platform, :integer
 
     timestamps(type: :utc_datetime_usec)
   end

@@ -168,7 +168,11 @@ defmodule Scry2Web.ProdSmokeTest do
   @prod_smoke_additive_columns [
     {"players", "mtga_display_name", "TEXT"},
     {"collection_snapshots", "cosmetics_json", "TEXT"},
-    {"collection_snapshots", "mtga_player_cards_version", "INTEGER"}
+    {"collection_snapshots", "mtga_player_cards_version", "INTEGER"},
+    {"collection_snapshots", "mtga_environment_name", "TEXT"},
+    {"collection_snapshots", "mtga_fd_host", "TEXT"},
+    {"collection_snapshots", "mtga_fd_port", "INTEGER"},
+    {"collection_snapshots", "mtga_host_platform", "INTEGER"}
   ]
 
   defp apply_pending_alters_to_snapshot!(path) do

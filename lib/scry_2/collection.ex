@@ -318,7 +318,11 @@ defmodule Scry2.Collection do
       :vault_progress,
       :boosters_json,
       :cosmetics_json,
-      :mtga_player_cards_version
+      :mtga_player_cards_version,
+      :mtga_environment_name,
+      :mtga_fd_host,
+      :mtga_fd_port,
+      :mtga_host_platform
     ])
   end
 

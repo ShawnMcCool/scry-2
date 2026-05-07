@@ -398,6 +398,48 @@ defmodule Scry2.MtgaMemory do
   """
   @callback walk_cosmetics(pid_int()) :: {:ok, cosmetics_summary() | nil} | {:error, term()}
 
+  @typedoc """
+  Server-environment record returned by `walk_environment/1`.
+
+  All fields are nullable independently — `name` / `fd_host` may be
+  `nil` if MTGA hasn't populated `EnvironmentDescription` yet, and the
+  i32 fields may be `nil` if MTGA renamed them on the captured build.
+
+  * `name` — human-readable environment label (e.g. `"Prod"`).
+  * `fd_host` — front-door (game server) FQDN. Embeds the MTGA build
+    version inside the hostname (e.g.
+    `"frontdoor-mtga-production-2026-58-30-2.w2.mtgarena.com"`).
+  * `fd_port` — front-door TCP port.
+  * `host_platform` — i32 enum identifying the host platform MTGA
+    thinks it's running under. `1` observed on Steam.
+  """
+  @type environment_info :: %{
+          required(:name) => String.t() | nil,
+          required(:fd_host) => String.t() | nil,
+          required(:fd_port) => integer() | nil,
+          required(:host_platform) => integer() | nil
+        }
+
+  @doc """
+  Read the MTGA server-environment record from memory via
+  `PAPA._instance.<FdConnectionManager>k__BackingField →
+  FrontDoorConnectionManager._currentEnvironment → EnvironmentDescription`.
+
+  Returns:
+    * `{:ok, %{name: ..., fd_host: ..., fd_port: ..., host_platform: ...}}`
+      when reachable. Any individual field may be `nil`.
+    * `{:ok, nil}` pre-bootstrap or while `_currentEnvironment` is
+      still null. Normal, not an error.
+    * `{:error, reason}` for upstream walker failures (mono DLL
+      missing, PAPA class not found, etc.).
+
+  Reads only the four whitelisted public fields. `EnvironmentDescription`
+  also exposes OAuth client secrets (`accountSystemSecret`,
+  `epicWASClientSecret`, `steamClientSecret`); the walker never
+  touches them — see spike 23 FINDING for the security boundary.
+  """
+  @callback walk_environment(pid_int()) :: {:ok, environment_info() | nil} | {:error, term()}
+
   @doc """
   Returns the configured backend module.
 

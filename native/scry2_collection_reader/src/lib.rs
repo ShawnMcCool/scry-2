@@ -701,6 +701,60 @@ fn walk_account(pid: i32) -> Result<Option<WireAccountIdentity>, WalkErrorWire> 
 }
 
 // ============================================================
+// walk_environment NIF — Server environment info (name, fdHost,
+// fdPort, HostPlatform) per spike23_environment_anchor/FINDING.md.
+//
+// EnvironmentDescription co-locates OAuth client secrets with the
+// public service URIs. The walker (and therefore this NIF) reads
+// only the four whitelisted public fields — see walker::environment
+// module docs for the security boundary.
+// ============================================================
+
+#[derive(NifMap)]
+pub struct WireEnvironmentInfo {
+    pub name: Option<String>,
+    pub fd_host: Option<String>,
+    pub fd_port: Option<i32>,
+    pub host_platform: Option<i32>,
+}
+
+fn environment_info_to_wire(v: walker::environment::EnvironmentInfo) -> WireEnvironmentInfo {
+    WireEnvironmentInfo {
+        name: v.name,
+        fd_host: v.fd_host,
+        fd_port: v.fd_port,
+        host_platform: v.host_platform,
+    }
+}
+
+/// Walks `PAPA._instance.<FdConnectionManager>k__BackingField` →
+/// `FrontDoorConnectionManager._currentEnvironment` →
+/// `EnvironmentDescription` and reads `name`, `fdHost`, `fdPort`,
+/// `HostPlatform`.
+///
+/// Returns `{:ok, nil}` when the chain isn't reachable (pre-bootstrap
+/// MTGA). Returns `{:ok, %{...}}` otherwise; any individual field can
+/// be `nil` if its underlying slot is null on this build.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walk_environment(pid: i32) -> Result<Option<WireEnvironmentInfo>, WalkErrorWire> {
+    let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+    let result = walker::run::walk_environment_cached(pid as u32, &maps, read_mem);
+    let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
+        let counter = AtomicU64::new(0);
+        let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+        let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+        let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+        walker::run::walk_environment_cached(pid as u32, &maps, read_mem)
+    })
+    .map_err(WalkErrorWire::from)?;
+    Ok(snap.map(environment_info_to_wire))
+}
+
+// ============================================================
 // walk_cosmetics NIF — per-category cosmetics counts + equipped
 // slots per spike22_papa_managers/FINDING.md.
 // ============================================================
