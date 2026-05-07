@@ -56,6 +56,7 @@ pub use super::limits::MAX_DICT_INT_PTR_ENTRIES as MAX_DICT_PTR_ENTRIES;
 pub fn read_int_ptr_entries<F>(
     offsets: &MonoOffsets,
     array_remote_addr: u64,
+    used_count: Option<usize>,
     read_mem: F,
 ) -> Option<Vec<DictPtrEntry>>
 where
@@ -69,8 +70,15 @@ where
         &read_mem,
     )?;
 
+    // Same hazard as `dict::read_int_int_entries`: the validity
+    // predicate `0 == 0 & 0x7FFFFFFF` trivially passes for zero-init
+    // tail slots, so we have to bound iteration by the dict's
+    // `_count` field. Production callers must pass `Some(count)`;
+    // `None` is for tests that explicitly stamp empty slots.
+    let bound = used_count.map_or(capacity, |c| c.min(capacity));
+
     let mut used = Vec::new();
-    for i in 0..capacity {
+    for i in 0..bound {
         let off = i * DICT_INT_PTR_ENTRY_SIZE;
         let hash_code =
             i32::from_le_bytes([blob[off], blob[off + 1], blob[off + 2], blob[off + 3]]);
@@ -206,7 +214,7 @@ mod tests {
         let offsets = MonoOffsets::mtga_default();
         let array_addr: u64 = 0x1000;
         let header = make_array_header(0);
-        let result = read_int_ptr_entries(&offsets, array_addr, |a, l| {
+        let result = read_int_ptr_entries(&offsets, array_addr, None, |a, l| {
             if a == array_addr {
                 Some(header[..l.min(header.len())].to_vec())
             } else {
@@ -224,7 +232,7 @@ mod tests {
             used(1, 0xdead_0000_0000_0002),
             used(2, 0xdead_0000_0000_0003),
         ]);
-        let got = read_int_ptr_entries(&offsets, fx.array_addr, |a, l| fx.read(a, l))
+        let got = read_int_ptr_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
             .ok_or("should return Some")?;
         assert_eq!(
             got,
@@ -256,7 +264,7 @@ mod tests {
             empty_slot(),
             used(2, 0xcccc),
         ]);
-        let got = read_int_ptr_entries(&offsets, fx.array_addr, |a, l| fx.read(a, l))
+        let got = read_int_ptr_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
             .ok_or("should return Some")?;
         assert_eq!(got.len(), 3);
         assert_eq!(got[0].value, 0xaaaa);
@@ -272,7 +280,7 @@ mod tests {
         // returns it as `value: 0` and lets the caller filter.
         let offsets = MonoOffsets::mtga_default();
         let fx = fixture_with(&[used(7, 0)]);
-        let got = read_int_ptr_entries(&offsets, fx.array_addr, |a, l| fx.read(a, l))
+        let got = read_int_ptr_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
             .ok_or("should return Some")?;
         assert_eq!(got, vec![DictPtrEntry { key: 7, value: 0 }]);
         Ok(())
@@ -283,7 +291,7 @@ mod tests {
         let offsets = MonoOffsets::mtga_default();
         let array_addr: u64 = 0x3000;
         let header = make_array_header(MAX_DICT_PTR_ENTRIES + 1);
-        let result = read_int_ptr_entries(&offsets, array_addr, |a, l| {
+        let result = read_int_ptr_entries(&offsets, array_addr, None, |a, l| {
             if a == array_addr {
                 Some(header[..l.min(header.len())].to_vec())
             } else {
@@ -296,7 +304,7 @@ mod tests {
     #[test]
     fn returns_none_when_header_read_fails() {
         let offsets = MonoOffsets::mtga_default();
-        let result = read_int_ptr_entries(&offsets, 0x2000, |_, _| None);
+        let result = read_int_ptr_entries(&offsets, 0x2000, None, |_, _| None);
         assert_eq!(result, None);
     }
 }

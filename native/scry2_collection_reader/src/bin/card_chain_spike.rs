@@ -146,7 +146,7 @@ fn main() -> ExitCode {
     let outer_entries_addr =
         dict_kv::entries_array_addr(&offsets, &ptm_bytes, ptm, &read_mem).unwrap();
     let outer_entries =
-        dict_kv::read_int_ptr_entries(&offsets, outer_entries_addr, &read_mem).unwrap();
+        dict_kv::read_int_ptr_entries(&offsets, outer_entries_addr, None, &read_mem).unwrap();
 
     let mut battlefield_holder: Option<u64> = None;
     let mut battlefield_seat: i32 = -1;
@@ -167,7 +167,7 @@ fn main() -> ExitCode {
             None => continue,
         };
         let inner_entries =
-            match dict_kv::read_int_ptr_entries(&offsets, inner_entries_addr, &read_mem) {
+            match dict_kv::read_int_ptr_entries(&offsets, inner_entries_addr, None, &read_mem) {
                 Some(e) => e,
                 None => continue,
             };

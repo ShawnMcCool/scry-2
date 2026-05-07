@@ -45,6 +45,21 @@ pub use super::limits::MAX_DICT_INT_INT_ENTRIES as MAX_DICT_ENTRIES;
 /// Walk a `Dictionary<int, int>._entries` `MonoArray` starting at
 /// `array_remote_addr` in the target process.
 ///
+/// `used_count` bounds iteration to the dictionary's high-water-mark
+/// of allocated slots (from the dict object's `_count` field). When
+/// `None`, every slot up to `capacity` is iterated — only safe for
+/// dicts whose unused tail is guaranteed to fail the validity
+/// predicate (e.g. test fixtures that explicitly stamp empty slots).
+/// Production callers must pass `Some(count)`.
+///
+/// **Why the bound matters.** The validity predicate `hash_code ==
+/// (key & 0x7FFFFFFF)` is satisfied by **all-zero memory** (`0 == 0
+/// & 0x7FFFFFFF`). Zero-init slots in a dict's tail (`capacity > count`)
+/// would silently pass through as `DictEntry { key: 0, value: 0 }` —
+/// which is what was happening to the cards dict before the bound
+/// landed: 4,104 spurious `(0, 0)` entries from a 4,315-entry dict
+/// with capacity 8,419.
+///
 /// `read_mem(addr, len)` is the caller-supplied byte reader (NIF
 /// `read_bytes` in production, `HashMap`-backed stub in tests).
 ///
@@ -59,6 +74,7 @@ pub use super::limits::MAX_DICT_INT_INT_ENTRIES as MAX_DICT_ENTRIES;
 pub fn read_int_int_entries<F>(
     offsets: &MonoOffsets,
     array_remote_addr: u64,
+    used_count: Option<usize>,
     read_mem: F,
 ) -> Option<Vec<DictEntry>>
 where
@@ -72,8 +88,10 @@ where
         &read_mem,
     )?;
 
+    let bound = used_count.map_or(capacity, |c| c.min(capacity));
+
     let mut used = Vec::new();
-    for i in 0..capacity {
+    for i in 0..bound {
         let off = i * DICT_INT_INT_ENTRY_SIZE;
         let hash_code =
             i32::from_le_bytes([blob[off], blob[off + 1], blob[off + 2], blob[off + 3]]);
@@ -88,8 +106,11 @@ where
         ]);
 
         // Used-slot predicate: Mono's `System.Int32.GetHashCode()`
-        // returns `value & 0x7FFFFFFF`. An unused slot has `hashCode`
+        // returns `value & 0x7FFFFFFF`. A removed slot has `hashCode`
         // set to something else (typically -1), which won't match.
+        // For never-touched zero-init slots the predicate trivially
+        // passes (0 == 0); the `bound` from `_count` keeps us out of
+        // them.
         if hash_code == (key & 0x7FFF_FFFF) {
             used.push(DictEntry { key, value });
         }
@@ -176,7 +197,7 @@ mod tests {
         let offsets = MonoOffsets::mtga_default();
         let array_addr: u64 = 0x1000;
         let header = make_array_header(0);
-        let result = read_int_int_entries(&offsets, array_addr, |a, l| {
+        let result = read_int_int_entries(&offsets, array_addr, None, |a, l| {
             if a == array_addr {
                 Some(header[..l.min(header.len())].to_vec())
             } else {
@@ -190,7 +211,7 @@ mod tests {
     fn returns_all_used_entries_in_order() -> Result<(), String> {
         let offsets = MonoOffsets::mtga_default();
         let fx = fixture_with(&[used(74116, 1), used(74117, 1), used(74118, 1)]);
-        let got = read_int_int_entries(&offsets, fx.array_addr, |a, l| fx.read(a, l))
+        let got = read_int_int_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
             .ok_or("should return Some")?;
         assert_eq!(
             got,
@@ -223,7 +244,7 @@ mod tests {
             empty_slot(),
             used(106_219, 1),
         ]);
-        let got = read_int_int_entries(&offsets, fx.array_addr, |a, l| fx.read(a, l))
+        let got = read_int_int_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
             .ok_or("should return Some")?;
         assert_eq!(
             got,
@@ -255,7 +276,7 @@ mod tests {
             make_entry(42, -1, 100, 7), // hashCode=42, key=100 — fails
             used(200, 8),
         ]);
-        let got = read_int_int_entries(&offsets, fx.array_addr, |a, l| fx.read(a, l))
+        let got = read_int_int_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
             .ok_or("should return Some")?;
         assert_eq!(
             got,
@@ -270,7 +291,7 @@ mod tests {
     #[test]
     fn returns_none_when_header_read_fails() {
         let offsets = MonoOffsets::mtga_default();
-        let result = read_int_int_entries(&offsets, 0x2000, |_, _| None);
+        let result = read_int_int_entries(&offsets, 0x2000, None, |_, _| None);
         assert_eq!(result, None);
     }
 
@@ -279,7 +300,7 @@ mod tests {
         let offsets = MonoOffsets::mtga_default();
         let array_addr: u64 = 0x3000;
         let header = make_array_header(MAX_DICT_ENTRIES + 1);
-        let result = read_int_int_entries(&offsets, array_addr, |a, l| {
+        let result = read_int_int_entries(&offsets, array_addr, None, |a, l| {
             if a == array_addr {
                 Some(header[..l.min(header.len())].to_vec())
             } else {
@@ -295,7 +316,7 @@ mod tests {
         let offsets = MonoOffsets::mtga_default();
         let array_addr: u64 = 0x4000;
         let header = make_array_header(4);
-        let result = read_int_int_entries(&offsets, array_addr, |a, l| {
+        let result = read_int_int_entries(&offsets, array_addr, None, |a, l| {
             if a == array_addr {
                 Some(header[..l.min(header.len())].to_vec())
             } else {
@@ -312,7 +333,7 @@ mod tests {
         // walker must still match.
         let offsets = MonoOffsets::mtga_default();
         let fx = fixture_with(&[used(-42, 99)]);
-        let got = read_int_int_entries(&offsets, fx.array_addr, |a, l| fx.read(a, l))
+        let got = read_int_int_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
             .ok_or("should return Some")?;
         assert_eq!(
             got,
@@ -328,9 +349,73 @@ mod tests {
     fn handles_capacity_of_one() -> Result<(), String> {
         let offsets = MonoOffsets::mtga_default();
         let fx = fixture_with(&[used(7, 13)]);
-        let got = read_int_int_entries(&offsets, fx.array_addr, |a, l| fx.read(a, l))
+        let got = read_int_int_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
             .ok_or("should return Some")?;
         assert_eq!(got, vec![DictEntry { key: 7, value: 13 }]);
+        Ok(())
+    }
+
+    #[test]
+    fn used_count_bounds_iteration_below_capacity() -> Result<(), String> {
+        // Regression: before `used_count` was wired in, the cards-dict
+        // walk passed the predicate `0 == 0 & 0x7FFFFFFF` for every
+        // zero-init slot in the dict's tail and returned 4,104
+        // spurious `(0, 0)` entries from a 4,315-entry dict with
+        // capacity 8,419. Bounding by `_count` keeps us out.
+        let offsets = MonoOffsets::mtga_default();
+        let entries: Vec<[u8; 16]> = vec![
+            used(74116, 1),
+            used(74117, 1),
+            used(74118, 1),
+            [0u8; 16],
+            [0u8; 16],
+            [0u8; 16],
+        ];
+        let fx = fixture_with(&entries);
+
+        // With the bound, only the three real entries return.
+        let bounded =
+            read_int_int_entries(&offsets, fx.array_addr, Some(3), |a, l| fx.read(a, l))
+                .ok_or("should return Some")?;
+        assert_eq!(
+            bounded,
+            vec![
+                DictEntry { key: 74116, value: 1 },
+                DictEntry { key: 74117, value: 1 },
+                DictEntry { key: 74118, value: 1 },
+            ]
+        );
+
+        // Without the bound (None), the zero-init slots pass through
+        // — this is the historical buggy behaviour and is exactly
+        // why production must always pass Some(_count).
+        let unbounded =
+            read_int_int_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
+                .ok_or("should return Some")?;
+        assert_eq!(unbounded.len(), 6);
+        assert_eq!(
+            &unbounded[3..],
+            &[
+                DictEntry { key: 0, value: 0 },
+                DictEntry { key: 0, value: 0 },
+                DictEntry { key: 0, value: 0 },
+            ]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn used_count_above_capacity_clamps_safely() -> Result<(), String> {
+        let offsets = MonoOffsets::mtga_default();
+        let fx = fixture_with(&[used(7, 13), used(8, 14)]);
+        let got = read_int_int_entries(&offsets, fx.array_addr, Some(99_999), |a, l| {
+            fx.read(a, l)
+        })
+        .ok_or("should return Some")?;
+        assert_eq!(
+            got,
+            vec![DictEntry { key: 7, value: 13 }, DictEntry { key: 8, value: 14 }]
+        );
         Ok(())
     }
 
@@ -351,7 +436,7 @@ mod tests {
             used(106_219, 3), // 3-of
         ];
         let fx = fixture_with(&entries);
-        let got = read_int_int_entries(&offsets, fx.array_addr, |a, l| fx.read(a, l))
+        let got = read_int_int_entries(&offsets, fx.array_addr, None, |a, l| fx.read(a, l))
             .ok_or("should return Some")?;
         let sum: i32 = got.iter().map(|e| e.value).sum();
         assert_eq!(sum, 4 + 1 + 1 + 2 + 3);

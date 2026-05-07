@@ -96,7 +96,25 @@ where
         "_entries",
         &read_mem,
     )?;
-    let entries = dict::read_int_int_entries(offsets, entries_array_addr, read_mem)?;
+
+    // Bound iteration by the dict's `_count` (high-water mark of
+    // allocated slots). Without this, zero-init slots in the tail
+    // (capacity - count) silently pass the validity predicate and
+    // pollute the result with `(0, 0)` entries — that's what
+    // produced the 4,104 spurious zeros that flipped the walker
+    // self-check into permanent fallback for days. `_count` lives
+    // on the dict object, so we resolve via the open-generic
+    // dictionary class.
+    let used_count = super::instance_field::read_instance_i32(
+        offsets,
+        dictionary_class_bytes,
+        cards_dict_addr,
+        "_count",
+        &read_mem,
+    )
+    .map(|n| n.max(0) as usize);
+    let entries =
+        dict::read_int_int_entries(offsets, entries_array_addr, used_count, read_mem)?;
 
     let inv_addr = object::read_instance_pointer(
         offsets,

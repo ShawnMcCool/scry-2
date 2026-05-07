@@ -156,7 +156,16 @@ where
 {
     let outer_entries_addr =
         dict_kv::entries_array_addr(offsets, ptm_class_bytes, ptm_addr, &read_mem)?;
-    let outer_entries = dict_kv::read_int_ptr_entries(offsets, outer_entries_addr, read_mem)?;
+    let outer_count = super::instance_field::read_instance_i32(
+        offsets,
+        ptm_class_bytes,
+        ptm_addr,
+        "_count",
+        &read_mem,
+    )
+    .map(|n| n.max(0) as usize);
+    let outer_entries =
+        dict_kv::read_int_ptr_entries(offsets, outer_entries_addr, outer_count, read_mem)?;
 
     // Group by seat in deterministic order. The dictionary itself is
     // unordered, so sorting by key gives a stable result regardless of
@@ -195,7 +204,15 @@ where
     let class_bytes = read_object_class_def(inner_dict_addr, read_mem)?;
     let entries_addr =
         dict_kv::entries_array_addr(offsets, &class_bytes, inner_dict_addr, read_mem)?;
-    let entries = dict_kv::read_int_ptr_entries(offsets, entries_addr, read_mem)?;
+    let inner_count = super::instance_field::read_instance_i32(
+        offsets,
+        &class_bytes,
+        inner_dict_addr,
+        "_count",
+        &read_mem,
+    )
+    .map(|n| n.max(0) as usize);
+    let entries = dict_kv::read_int_ptr_entries(offsets, entries_addr, inner_count, read_mem)?;
 
     let mut by_zone: BTreeMap<i32, u64> = BTreeMap::new();
     for DictPtrEntry {

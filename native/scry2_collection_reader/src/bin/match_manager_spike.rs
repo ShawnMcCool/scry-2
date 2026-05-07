@@ -868,7 +868,7 @@ where
             }
         };
 
-    let outer_entries = match dict_kv::read_int_ptr_entries(offsets, outer_entries_array, read_mem)
+    let outer_entries = match dict_kv::read_int_ptr_entries(offsets, outer_entries_array, None, read_mem)
     {
         Some(e) => e,
         None => {
@@ -916,7 +916,7 @@ where
             };
 
         let inner_entries =
-            match dict_kv::read_int_ptr_entries(offsets, inner_entries_array, read_mem) {
+            match dict_kv::read_int_ptr_entries(offsets, inner_entries_array, None, read_mem) {
                 Some(e) => e,
                 None => {
                     println!("  could not read inner dict entries");
