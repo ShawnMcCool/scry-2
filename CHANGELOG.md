@@ -11,6 +11,13 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Restore the v0.34.1 release.** v0.34.1 was tagged but never reached
+  the in-app updater because the release build broke during the
+  preceding dependency refresh. v0.34.2 is the same maintenance update
+  with the build issue fixed.
+
 ## v0.34.1 — 2026-05-07
 
 ### Maintenance
