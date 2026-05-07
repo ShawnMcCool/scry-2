@@ -28,9 +28,21 @@ renames that section on tag and the release workflow extracts it.
   log when memory hasn't been read yet.
 - **Cosmetics inventory on the Economy page.** A new card shows your
   per-category cosmetic counts — Alt arts, Avatars, Pets, Sleeves,
-  Emotes, Titles — alongside the master totals from MTGA, with a
-  small progress bar per category. Hidden until Scry's memory reader
-  has captured a snapshot.
+  Emotes — alongside the master totals from MTGA, with a small
+  progress bar per category. Hidden until Scry's memory reader has
+  captured a snapshot. Categories MTGA hasn't loaded yet (Titles, in
+  particular, only loads after you visit the Cosmetics screen) are
+  hidden rather than shown as 0 / 0.
+
+### Fixed
+
+- **Memory reader now populates currencies, vault, and build version.**
+  A subtle bug in how Scry walked MTGA's internal card-collection table
+  caused the memory reader to silently fall back to its slower
+  best-effort scan on every snapshot — leaving wildcards, gold, gems,
+  vault progress, and the MTGA build version blank on the Economy
+  page. With the table now read correctly, those values populate as
+  soon as MTGA is running.
 
 ## v0.33.0 — 2026-05-06
 
