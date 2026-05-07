@@ -44,8 +44,11 @@ defmodule Scry2Web.Components.CosmeticsCard.Helpers do
   @doc """
   Returns the per-category rows for rendering: a list of
   `{label, owned, available, percent}` tuples, ordered by category.
-  Owned and available default to `0`; `percent` is `0` when
-  `available` is zero (rather than dividing by zero).
+
+  Categories whose `available` count is `0` are filtered out — that
+  signals the master list isn't hydrated yet (Titles, in particular,
+  loads lazily on first UI access; see spike22 FINDING). Showing
+  `0 / 0` for a stub category is misleading; hiding it is honest.
   """
   @spec rows(map() | nil) :: [
           {label :: String.t(), owned :: non_neg_integer(), available :: non_neg_integer(),
@@ -54,12 +57,14 @@ defmodule Scry2Web.Components.CosmeticsCard.Helpers do
   def rows(nil), do: []
 
   def rows(%{available: %{} = avail, owned: %{} = owned}) do
-    Enum.map(@rarities, fn {key, label} ->
+    @rarities
+    |> Enum.map(fn {key, label} ->
       a = Map.get(avail, key, 0) || 0
       o = Map.get(owned, key, 0) || 0
       p = if a > 0, do: trunc(o * 100 / a), else: 0
       {label, o, a, p}
     end)
+    |> Enum.reject(fn {_label, _owned, available, _pct} -> available == 0 end)
   end
 
   def rows(_), do: []

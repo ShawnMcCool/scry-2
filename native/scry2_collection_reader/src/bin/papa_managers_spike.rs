@@ -131,6 +131,18 @@ const VANITY_SELECTIONS_PROBES: DeepDrill = DeepDrill {
     bool_probes: &[],
 };
 
+// Drill the `_titlesCatalog` slot on CosmeticsProvider — at spike22
+// initial capture this was NULL, so we want to know what shape it
+// takes once populated. Hypothesis: a `TitlesCatalog` (or similar)
+// object that holds owned/available title lists separately from the
+// other CosmeticsClient lists (which read 0 for Titles).
+const TITLES_CATALOG_PROBES: DeepDrill = DeepDrill {
+    sub_field: "_titlesCatalog",
+    string_probes: &[],
+    int_probes: &[],
+    bool_probes: &[],
+};
+
 const TARGETS: &[Target] = &[
     Target {
         papa_field: "AccountClient",
@@ -155,6 +167,7 @@ const TARGETS: &[Target] = &[
             COSMETICS_CLIENT_AVAILABLE_PROBES,
             COSMETICS_CLIENT_OWNED_PROBES,
             VANITY_SELECTIONS_PROBES,
+            TITLES_CATALOG_PROBES,
         ],
     },
 ];

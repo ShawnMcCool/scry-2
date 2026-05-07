@@ -36,7 +36,7 @@ defmodule Scry2Web.Components.CosmeticsCard.HelpersTest do
   end
 
   describe "rows/1" do
-    test "produces six rows in canonical order with owned, total, percent" do
+    test "produces a row per category with owned, total, percent (when available > 0)" do
       rows =
         H.rows(
           summary(
@@ -55,7 +55,21 @@ defmodule Scry2Web.Components.CosmeticsCard.HelpersTest do
              ]
     end
 
-    test "percent is 0 when available is 0 rather than dividing by zero" do
+    test "drops categories whose available count is 0 (lazy-loaded stub)" do
+      rows =
+        H.rows(
+          summary(
+            %{art_styles: 100, avatars: 50, pets: 20, sleeves: 200, emotes: 10, titles: 0},
+            %{art_styles: 25, avatars: 10, pets: 4, sleeves: 50, emotes: 1, titles: 0}
+          )
+        )
+
+      labels = Enum.map(rows, fn {l, _, _, _} -> l end)
+      assert "Titles" not in labels
+      assert length(rows) == 5
+    end
+
+    test "all-zero summary produces an empty list" do
       rows =
         H.rows(
           summary(
@@ -64,7 +78,7 @@ defmodule Scry2Web.Components.CosmeticsCard.HelpersTest do
           )
         )
 
-      assert Enum.all?(rows, fn {_, _, _, p} -> p == 0 end)
+      assert rows == []
     end
 
     test "missing category keys default to 0" do
