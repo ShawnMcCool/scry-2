@@ -621,6 +621,59 @@ fn walk_events(pid: i32) -> Result<Option<WireEventList>, WalkErrorWire> {
 }
 
 // ============================================================
+// walk_account NIF — Account identity (DisplayName + ExternalID)
+// per spike22_papa_managers/FINDING.md.
+//
+// The walker deliberately reads only DisplayName and ExternalID —
+// AccountInformation also exposes Email and AccessToken, which are
+// PII / a session-bearer token. The NIF surface mirrors the walker's
+// narrow whitelist; there is no "read everything" pathway.
+// ============================================================
+
+/// Wire shape returned to Elixir for one account-identity read. `nil`
+/// when the chain is unreachable (pre-login MTGA, AccountInformation
+/// not yet populated).
+#[derive(NifMap)]
+pub struct WireAccountIdentity {
+    pub display_name: Option<String>,
+    pub external_id: Option<String>,
+}
+
+fn account_identity_to_wire(v: walker::account::AccountIdentity) -> WireAccountIdentity {
+    WireAccountIdentity {
+        display_name: v.display_name,
+        external_id: v.external_id,
+    }
+}
+
+/// Walks `PAPA._instance.<AccountClient>k__BackingField` →
+/// `WizardsAccountsClient.<AccountInformation>k__BackingField` →
+/// `AccountInformation` and reads `DisplayName` + `ExternalID`.
+///
+/// Returns `{:ok, nil}` when the chain isn't reachable (pre-login,
+/// AccountInformation not yet populated). Returns
+/// `{:ok, %{display_name: ..., external_id: ...}}` otherwise; either
+/// field can be `nil` if its `MonoString *` slot is null.
+#[rustler::nif(schedule = "DirtyIo")]
+fn walk_account(pid: i32) -> Result<Option<WireAccountIdentity>, WalkErrorWire> {
+    let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
+    let counter = AtomicU64::new(0);
+    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+    let result = walker::run::walk_account_cached(pid as u32, &maps, read_mem);
+    let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
+        let counter = AtomicU64::new(0);
+        let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
+        let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
+        let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
+        walker::run::walk_account_cached(pid as u32, &maps, read_mem)
+    })
+    .map_err(WalkErrorWire::from)?;
+    Ok(snap.map(account_identity_to_wire))
+}
+
+// ============================================================
 // walk_match_board NIF — Chain 2 (per-zone visible card arena_ids)
 // per specs/2026-05-03-chain-2-board-state-design.md
 // ============================================================

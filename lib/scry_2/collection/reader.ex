@@ -97,7 +97,14 @@ defmodule Scry2.Collection.Reader do
       case base_result do
         {:ok, result} ->
           mastery = read_mastery_safely(mem, pid)
-          {:ok, Map.merge(result, mastery_params(mastery))}
+          identity = read_account_identity_safely(mem, pid)
+
+          merged =
+            result
+            |> Map.merge(mastery_params(mastery))
+            |> Map.put(:account_identity, identity)
+
+          {:ok, merged}
 
         {:error, _} = error ->
           error
@@ -140,6 +147,27 @@ defmodule Scry2.Collection.Reader do
     e ->
       Log.warning(:ingester, fn ->
         "walk_mastery raised: #{inspect(e)} — leaving mastery null"
+      end)
+
+      nil
+  end
+
+  defp read_account_identity_safely(mem, pid) do
+    case mem.walk_account(pid) do
+      {:ok, identity} ->
+        identity
+
+      {:error, reason} ->
+        Log.info(:ingester, fn ->
+          "walk_account failed: #{inspect(reason)} — leaving identity nil"
+        end)
+
+        nil
+    end
+  rescue
+    e ->
+      Log.warning(:ingester, fn ->
+        "walk_account raised: #{inspect(e)} — leaving identity nil"
       end)
 
       nil

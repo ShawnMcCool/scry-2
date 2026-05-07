@@ -53,50 +53,109 @@ struct Target {
     string_probes: &'static [&'static str],
     int_probes: &'static [&'static str],
     bool_probes: &'static [&'static str],
+    /// Sub-pointer field names whose target class should be drilled
+    /// (manifest + pointer drill + string/int/bool probes). Used to
+    /// follow `AccountClient → AccountInformation`,
+    /// `CosmeticsProvider → CosmeticsClient`, etc.
+    deep_drill: &'static [DeepDrill],
 }
+
+struct DeepDrill {
+    sub_field: &'static str,
+    string_probes: &'static [&'static str],
+    int_probes: &'static [&'static str],
+    bool_probes: &'static [&'static str],
+}
+
+const ACCOUNT_INFORMATION_PROBES: DeepDrill = DeepDrill {
+    sub_field: "<AccountInformation>k__BackingField",
+    string_probes: &[
+        "_screenName",
+        "ScreenName",
+        "<ScreenName>k__BackingField",
+        "_displayName",
+        "DisplayName",
+        "<DisplayName>k__BackingField",
+        "_accountId",
+        "AccountId",
+        "<AccountId>k__BackingField",
+        "_userId",
+        "UserId",
+        "<UserId>k__BackingField",
+        "_personaId",
+        "PersonaId",
+        "<PersonaId>k__BackingField",
+        "_wizardsAccountId",
+        "<WizardsAccountId>k__BackingField",
+        "_email",
+        "_personaName",
+        "_locale",
+        "<Locale>k__BackingField",
+        "_country",
+        "<Country>k__BackingField",
+        "_creationDate",
+        "<CreationDate>k__BackingField",
+        "_createdAt",
+        "_createdDate",
+        "_dateCreated",
+        "<DateCreated>k__BackingField",
+        "_birthDate",
+        "<BirthDate>k__BackingField",
+    ],
+    int_probes: &[],
+    bool_probes: &[
+        "_isVerified",
+        "<IsVerified>k__BackingField",
+        "_isUnderage",
+    ],
+};
+
+const COSMETICS_CLIENT_AVAILABLE_PROBES: DeepDrill = DeepDrill {
+    sub_field: "_availableCosmetics",
+    string_probes: &[],
+    int_probes: &[],
+    bool_probes: &[],
+};
+
+const COSMETICS_CLIENT_OWNED_PROBES: DeepDrill = DeepDrill {
+    sub_field: "_playerOwnedCosmetics",
+    string_probes: &[],
+    int_probes: &[],
+    bool_probes: &[],
+};
+
+const VANITY_SELECTIONS_PROBES: DeepDrill = DeepDrill {
+    sub_field: "_vanitySelections",
+    string_probes: &[],
+    int_probes: &[],
+    bool_probes: &[],
+};
 
 const TARGETS: &[Target] = &[
     Target {
         papa_field: "AccountClient",
-        string_probes: &[
-            "_screenName",
-            "ScreenName",
-            "<ScreenName>k__BackingField",
-            "_displayName",
-            "DisplayName",
-            "<DisplayName>k__BackingField",
-            "_accountId",
-            "AccountId",
-            "<AccountId>k__BackingField",
-            "_personaId",
-            "PersonaId",
-            "<PersonaId>k__BackingField",
-            "_userId",
-            "UserId",
-            "<UserId>k__BackingField",
-            "_wizardsAccountId",
-            "<WizardsAccountId>k__BackingField",
-            "_email",
-        ],
-        int_probes: &[],
-        bool_probes: &["_isLoggedIn", "<IsLoggedIn>k__BackingField"],
+        string_probes: &[],
+        int_probes: &["<CurrentLoginState>k__BackingField"],
+        bool_probes: &[],
+        deep_drill: &[ACCOUNT_INFORMATION_PROBES],
     },
     Target {
         papa_field: "InventoryManager",
         string_probes: &[],
-        int_probes: &[
-            "_gold",
-            "<Gold>k__BackingField",
-            "_gems",
-            "<Gems>k__BackingField",
-        ],
+        int_probes: &[],
         bool_probes: &[],
+        deep_drill: &[],
     },
     Target {
         papa_field: "CosmeticsProvider",
         string_probes: &[],
         int_probes: &[],
         bool_probes: &[],
+        deep_drill: &[
+            COSMETICS_CLIENT_AVAILABLE_PROBES,
+            COSMETICS_CLIENT_OWNED_PROBES,
+            VANITY_SELECTIONS_PROBES,
+        ],
     },
 ];
 
@@ -302,6 +361,84 @@ fn probe_target<F>(
         println!("\n  ── bool probes ──");
         for name in target.bool_probes {
             probe_bool(offsets, mgr_addr, &mgr_class_bytes, name, read_mem);
+        }
+    }
+
+    for drill in target.deep_drill {
+        println!(
+            "\n  # ── deep drill: '{}' ── ──────────────────────────",
+            drill.sub_field
+        );
+        deep_drill_one(offsets, mgr_addr, &mgr_class_bytes, drill, read_mem);
+    }
+}
+
+fn deep_drill_one<F>(
+    offsets: &MonoOffsets,
+    parent_addr: u64,
+    parent_class_bytes: &[u8],
+    drill: &DeepDrill,
+    read_mem: &F,
+) where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let Some(f) =
+        field::find_field_by_name_in_chain(offsets, parent_class_bytes, drill.sub_field, read_mem)
+    else {
+        println!("    sub-field '{}' NOT FOUND on parent", drill.sub_field);
+        return;
+    };
+    if f.is_static {
+        println!("    sub-field '{}' is STATIC — unexpected", f.name_found);
+        return;
+    }
+    let Some(sub_addr) = read_mem(parent_addr + f.offset as u64, 8).and_then(|b| read_u64(&b))
+    else {
+        println!("    could not read sub-field '{}' pointer", f.name_found);
+        return;
+    };
+    if sub_addr == 0 {
+        println!("    sub-field '{}' (offset 0x{:04x}) → NULL", f.name_found, f.offset as u32);
+        return;
+    }
+    println!(
+        "    sub-field '{}' (offset 0x{:04x}) → 0x{:x}",
+        f.name_found, f.offset as u32, sub_addr
+    );
+    let Some(sub_class) = read_object_class(sub_addr, read_mem) else {
+        println!("    could not resolve sub-object runtime class");
+        return;
+    };
+    let Some(sub_class_bytes) = read_mem(sub_class, CLASS_DEF_BLOB_LEN) else {
+        println!("    could not read sub-object class def");
+        return;
+    };
+    let class_name =
+        read_class_name(&sub_class_bytes, read_mem).unwrap_or_else(|| "<unreadable>".to_string());
+    println!("    runtime class = '{}' (class addr 0x{:x})", class_name, sub_class);
+
+    println!("\n    ── full field manifest (this + parent chain) ──");
+    dump_class_chain(offsets, &sub_class_bytes, 0, read_mem);
+
+    println!("\n    ── pointer drill (instance pointer fields, depth 1) ──");
+    drill_pointer_fields(offsets, sub_addr, &sub_class_bytes, read_mem);
+
+    if !drill.string_probes.is_empty() {
+        println!("\n    ── string probes ──");
+        for name in drill.string_probes {
+            probe_string(offsets, sub_addr, &sub_class_bytes, name, read_mem);
+        }
+    }
+    if !drill.int_probes.is_empty() {
+        println!("\n    ── i32 probes ──");
+        for name in drill.int_probes {
+            probe_i32(offsets, sub_addr, &sub_class_bytes, name, read_mem);
+        }
+    }
+    if !drill.bool_probes.is_empty() {
+        println!("\n    ── bool probes ──");
+        for name in drill.bool_probes {
+            probe_bool(offsets, sub_addr, &sub_class_bytes, name, read_mem);
         }
     }
 }

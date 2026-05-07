@@ -294,6 +294,43 @@ defmodule Scry2.MtgaMemory do
   """
   @callback walk_events(pid_int()) :: {:ok, event_list() | nil} | {:error, term()}
 
+  @typedoc """
+  Account-identity snapshot returned by `walk_account/1`.
+
+  * `display_name` — MTGA screen name **with discriminator** (e.g.
+    `"Shawn McCool#91813"`). Distinct from the bare-name screen name
+    captured from `LoginV3` log events on `Scry2.Players.screen_name`,
+    which lacks `#NNNNN`.
+  * `external_id` — canonical Wizards player UUID. Cross-validates
+    against `Scry2.Players.mtga_user_id`.
+  """
+  @type account_identity :: %{
+          required(:display_name) => String.t() | nil,
+          required(:external_id) => String.t() | nil
+        }
+
+  @doc """
+  Read the player's account identity (DisplayName + ExternalID) from
+  MTGA memory via
+  `PAPA._instance.<AccountClient>k__BackingField →
+  WizardsAccountsClient.<AccountInformation>k__BackingField →
+  AccountInformation`.
+
+  Returns:
+    * `{:ok, %{display_name: ..., external_id: ...}}` when reachable.
+      Either field can be `nil` if its `MonoString *` is null.
+    * `{:ok, nil}` pre-login or while AccountInformation is still
+      being populated. Normal, not an error.
+    * `{:error, reason}` for upstream walker failures (mono DLL
+      missing, PAPA class not found, etc.).
+
+  This walker deliberately reads only `DisplayName` and `ExternalID`.
+  `AccountInformation` also exposes `Email` (PII) and `AccessToken`
+  (session-bearer token) in the same struct; those fields are never
+  read — see spike22 FINDING for the full layout.
+  """
+  @callback walk_account(pid_int()) :: {:ok, account_identity() | nil} | {:error, term()}
+
   @doc """
   Returns the configured backend module.
 

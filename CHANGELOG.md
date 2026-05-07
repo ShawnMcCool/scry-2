@@ -21,6 +21,11 @@ renames that section on tag and the release workflow extracts it.
   turn amber when a rarity drops at or below a sensible floor — common
   50, uncommon 30, rare 15, mythic 5 — so a near-empty rarity catches
   your eye before you craft into it.
+- **MTGA discriminator in the player switcher.** The player picker in
+  the top bar now shows your full MTGA screen name with the
+  `#NNNNN` discriminator (e.g. *Shawn McCool#91813*) when Scry has
+  read it from MTGA's memory. Falls back to the bare name from the
+  log when memory hasn't been read yet.
 
 ## v0.33.0 — 2026-05-06
 

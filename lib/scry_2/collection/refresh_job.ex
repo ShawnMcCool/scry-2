@@ -25,6 +25,7 @@ defmodule Scry2.Collection.RefreshJob do
 
   alias Scry2.Collection
   alias Scry2.Collection.Reader
+  alias Scry2.Players
   alias Scry2.Topics
 
   @impl Oban.Worker
@@ -47,6 +48,8 @@ defmodule Scry2.Collection.RefreshJob do
 
     case Reader.read(reader_opts) do
       {:ok, result} ->
+        apply_account_identity(result)
+
         case Collection.save_snapshot(result) do
           {:ok, snapshot} ->
             Log.info(:system, fn ->
@@ -75,4 +78,15 @@ defmodule Scry2.Collection.RefreshJob do
         {:discard, err}
     end
   end
+
+  # Memory-read screen-name-with-discriminator (e.g. "Shawn McCool#91813")
+  # arrives on the Reader result as `:account_identity`. We stamp it onto
+  # the matching Player record by bare-name prefix so the layout's player
+  # switcher can render the discriminator-bearing form.
+  defp apply_account_identity(%{account_identity: %{display_name: display_name}})
+       when is_binary(display_name) do
+    Players.update_display_name_by_screen_name_prefix(display_name)
+  end
+
+  defp apply_account_identity(_), do: :ok
 end

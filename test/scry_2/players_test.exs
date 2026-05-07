@@ -93,4 +93,55 @@ defmodule Scry2.PlayersTest do
       assert Players.count() == 2
     end
   end
+
+  describe "update_display_name_by_screen_name_prefix/1" do
+    test "stamps mtga_display_name when the prefix matches an existing player" do
+      Players.get_or_create!("ABC123", "Alice")
+
+      assert {:ok, player} =
+               Players.update_display_name_by_screen_name_prefix("Alice#12345")
+
+      assert player.screen_name == "Alice"
+      assert player.mtga_display_name == "Alice#12345"
+    end
+
+    test "is idempotent — repeated calls don't broadcast spurious updates" do
+      Players.get_or_create!("ABC123", "Alice")
+      assert {:ok, _} = Players.update_display_name_by_screen_name_prefix("Alice#12345")
+
+      Topics.subscribe(Topics.players_updates())
+      assert {:ok, _} = Players.update_display_name_by_screen_name_prefix("Alice#12345")
+
+      refute_received {:player_updated, _}
+    end
+
+    test "broadcasts :player_updated when the discriminator changes" do
+      Players.get_or_create!("ABC123", "Alice")
+      assert {:ok, _} = Players.update_display_name_by_screen_name_prefix("Alice#11111")
+
+      Topics.subscribe(Topics.players_updates())
+      assert {:ok, _} = Players.update_display_name_by_screen_name_prefix("Alice#22222")
+
+      assert_received {:player_updated, %{mtga_display_name: "Alice#22222"}}
+    end
+
+    test "returns :no_match when no player has the bare-name prefix" do
+      Players.get_or_create!("ABC123", "Alice")
+
+      assert :no_match = Players.update_display_name_by_screen_name_prefix("Bob#99999")
+    end
+
+    test "returns :no_match for a malformed display_name (no '#')" do
+      Players.get_or_create!("ABC123", "Alice")
+
+      assert :no_match = Players.update_display_name_by_screen_name_prefix("AliceNoTag")
+    end
+
+    test "ignores nil / empty display_name" do
+      Players.get_or_create!("ABC123", "Alice")
+
+      assert :no_match = Players.update_display_name_by_screen_name_prefix(nil)
+      assert :no_match = Players.update_display_name_by_screen_name_prefix("")
+    end
+  end
 end

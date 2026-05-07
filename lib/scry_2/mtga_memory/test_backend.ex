@@ -145,6 +145,18 @@ defmodule Scry2.MtgaMemory.TestBackend do
     end
   end
 
+  @impl true
+  def walk_account(_pid) do
+    with {:ok, fixture} <- fetch_fixture() do
+      case Map.fetch(fixture, :account_identity) do
+        :error -> {:ok, nil}
+        {:ok, {:error, _} = err} -> err
+        {:ok, nil} -> {:ok, nil}
+        {:ok, snap} -> {:ok, snap}
+      end
+    end
+  end
+
   defp fetch_fixture do
     case Process.get(@fixture_key) do
       nil -> {:error, :no_fixture}

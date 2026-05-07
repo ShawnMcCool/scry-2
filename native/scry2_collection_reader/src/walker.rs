@@ -26,6 +26,7 @@
 //! specifically `experiments/spikes/spike5_mono_metadata/` and
 //! `experiments/spikes/spike7_papa_walk/`.
 
+pub mod account;
 pub mod boosters;
 pub mod build_hint;
 pub mod card_holder;

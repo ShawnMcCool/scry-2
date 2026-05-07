@@ -109,7 +109,7 @@ defmodule Scry2Web.Layouts do
 
     assigns =
       assign(assigns,
-        display_name: if(active_player, do: active_player.screen_name, else: "All Players"),
+        display_name: if(active_player, do: player_label(active_player), else: "All Players"),
         avatar_letter: if(active_player, do: String.first(active_player.screen_name), else: "?")
       )
 
@@ -142,7 +142,7 @@ defmodule Scry2Web.Layouts do
             )
           ]}
         >
-          {player.screen_name}
+          {player_label(player)}
         </div>
         <div
           phx-click="select_player"
@@ -185,6 +185,13 @@ defmodule Scry2Web.Layouts do
   defp settings_group?("/operations" <> _), do: true
   defp settings_group?("/settings" <> _), do: true
   defp settings_group?(_), do: false
+
+  # Layout-side helper: prefer the memory-read DisplayName-with-discriminator
+  # (e.g. "Shawn McCool#91813") when the walker has populated it, falling
+  # back to the bare screen_name from log events. Pure function, kept tiny
+  # so it can sit inline in this layout module.
+  defp player_label(%{mtga_display_name: name}) when is_binary(name) and name != "", do: name
+  defp player_label(%{screen_name: name}), do: name
 
   defp close_dropdown(id) do
     JS.remove_attribute("open", to: "##{id}")
