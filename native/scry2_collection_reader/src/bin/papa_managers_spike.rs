@@ -143,6 +143,37 @@ const TITLES_CATALOG_PROBES: DeepDrill = DeepDrill {
     bool_probes: &[],
 };
 
+// Drill the EnvironmentDescription object on FrontDoorConnectionManager
+// — the spike's first PAPA pass discovered `_currentEnvironment` is an
+// `EnvironmentDescription`. That's the server-region anchor for the
+// plans.md "server region / environment" `reader+` item. Probe candidate
+// fields aggressively; whatever lights up gets a real walker chain.
+const CURRENT_ENVIRONMENT_PROBES: DeepDrill = DeepDrill {
+    sub_field: "_currentEnvironment",
+    // PUBLIC fields only — `EnvironmentDescription` also carries
+    // `accountSystemSecret`, `epicWASClientSecret`, `steamClientSecret`
+    // (production OAuth client secrets visible in process memory).
+    // The eventual walker for this anchor MUST never read those.
+    string_probes: &[
+        "name",
+        "fdHost",
+        "ecoUri",
+        "accountSystemBaseUri",
+        "accountSystemId",
+        "doorbellUri",
+        "mdHost",
+        "bikeUri",
+        "xsollaTransactionType",
+    ],
+    int_probes: &[
+        "fdPort",
+        "mdPort",
+        "accountSystemEnvironment",
+        "HostPlatform",
+    ],
+    bool_probes: &[],
+};
+
 const TARGETS: &[Target] = &[
     Target {
         papa_field: "AccountClient",
@@ -169,6 +200,85 @@ const TARGETS: &[Target] = &[
             VANITY_SELECTIONS_PROBES,
             TITLES_CATALOG_PROBES,
         ],
+    },
+    // Build / asset / region anchors — speculative names from
+    // plans.md A. The spike skips cleanly with "field NOT FOUND on
+    // PAPA" if the backing-field name doesn't exist; rerun after
+    // the PAPA manifest dump above narrows down the real names.
+    Target {
+        papa_field: "FdConnectionManager",
+        string_probes: &[],
+        int_probes: &[
+            "_autoLoginState",
+        ],
+        bool_probes: &[
+            "_idleTimerActive",
+            "_disconnecting",
+        ],
+        deep_drill: &[CURRENT_ENVIRONMENT_PROBES],
+    },
+    Target {
+        papa_field: "AssetLookupSystem",
+        string_probes: &[
+            "_assetVersion",
+            "AssetVersion",
+            "<AssetVersion>k__BackingField",
+            "_assetBundleVersion",
+            "<AssetBundleVersion>k__BackingField",
+            "_manifestVersion",
+            "<ManifestVersion>k__BackingField",
+            "_buildVersion",
+            "<BuildVersion>k__BackingField",
+            "_dataVersion",
+            "<DataVersion>k__BackingField",
+        ],
+        int_probes: &[],
+        bool_probes: &[],
+        deep_drill: &[],
+    },
+    Target {
+        papa_field: "BuildVersionProvider",
+        string_probes: &[
+            "_buildVersion",
+            "BuildVersion",
+            "<BuildVersion>k__BackingField",
+            "_version",
+            "Version",
+            "<Version>k__BackingField",
+            "_buildNumber",
+            "<BuildNumber>k__BackingField",
+            "_buildGuid",
+            "<BuildGuid>k__BackingField",
+        ],
+        int_probes: &[],
+        bool_probes: &[],
+        deep_drill: &[],
+    },
+    Target {
+        papa_field: "ClientConfigProvider",
+        string_probes: &[
+            "_environment",
+            "<Environment>k__BackingField",
+            "_serverRegion",
+            "<ServerRegion>k__BackingField",
+            "_dataCenter",
+            "<DataCenter>k__BackingField",
+        ],
+        int_probes: &[],
+        bool_probes: &[],
+        deep_drill: &[],
+    },
+    Target {
+        papa_field: "EnvironmentManager",
+        string_probes: &[
+            "_environment",
+            "<Environment>k__BackingField",
+            "_region",
+            "<Region>k__BackingField",
+        ],
+        int_probes: &[],
+        bool_probes: &[],
+        deep_drill: &[],
     },
 ];
 
@@ -269,6 +379,12 @@ fn main() -> ExitCode {
         "[spike] PAPA._instance singleton = 0x{:x}",
         papa_singleton_addr
     );
+
+    println!("\n# ─────────────────────────────────────────────────────────");
+    println!("# Reference: every field on PAPA itself (look for backing-field");
+    println!("# names ending in 'Manager', 'Provider', 'System', 'Service',");
+    println!("# 'Client' — those are the manager singleton hooks.)");
+    dump_class_chain(&offsets, &papa_bytes, 0, &read_mem);
 
     for target in TARGETS {
         println!(
