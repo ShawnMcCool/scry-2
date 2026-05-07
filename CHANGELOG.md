@@ -11,6 +11,13 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Maintenance
+
+- **Internal dependency refresh.** Updated Phoenix, Bandit, Oban,
+  Ecto, Jason, the Rust NIF crates, and the Go tray modules to their
+  latest compatible versions. No behavior changes — this is a routine
+  maintenance pass to keep the upstream libraries current.
+
 ## v0.34.0 — 2026-05-07
 
 ### New
