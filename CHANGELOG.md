@@ -11,6 +11,25 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Memory reading is faster on subsequent polls.** When the cards
+  in your collection haven't changed since the last memory snapshot,
+  the reader now skips re-walking the cards table and reuses the
+  prior list. Currencies, mastery, cosmetics, and the rest of the
+  inventory still update every poll — the optimisation only skips
+  the part that hasn't moved. Frees up budget for future per-snapshot
+  data without raising the cost ceiling.
+
+### New
+
+- **MTGA environment line on Settings.** A small line under the
+  memory-reading toggle now shows the server you're connected to
+  (Prod, etc.), the MTGA build version, and the host platform
+  (Steam). Useful for confirming you're on the build a friend just
+  patched to, or for filing bug reports with the exact build you
+  were running.
+
 ## v0.34.2 — 2026-05-07
 
 ### Fixed
