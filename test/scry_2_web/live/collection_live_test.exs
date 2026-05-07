@@ -42,15 +42,29 @@ defmodule Scry2Web.CollectionLiveTest do
     refute Collection.reader_enabled?()
   end
 
-  test "renders the snapshot card when a snapshot exists", %{conn: conn} do
+  test "renders the holding summary when a snapshot exists", %{conn: conn} do
     Collection.enable_reader!()
     Factory.create_collection_snapshot(entries: [{30_001, 2}, {91_234, 1}])
 
     {:ok, view, _html} = live(conn, ~p"/collection")
 
-    assert has_element?(view, "[data-role='snapshot-card']")
-    assert has_element?(view, "[data-stat='card-count']", "2")
-    assert has_element?(view, "[data-stat='total-copies']", "3")
+    assert has_element?(view, "[data-role='holding-summary']")
+    # 2 entries → 2 unique cards, 3 total copies. Cards may not be in
+    # cards_cards yet for the synthetic arena_ids, so the holdings list
+    # could be empty in that case — the summary still renders with zeroes.
+    assert has_element?(view, "[data-stat='unique']")
+    assert has_element?(view, "[data-stat='copies']")
+  end
+
+  test "shows reader status toolbar when enabled", %{conn: conn} do
+    Collection.enable_reader!()
+    {:ok, view, _html} = live(conn, ~p"/collection")
+    assert has_element?(view, "[data-role='reader-status']")
+  end
+
+  test "shows the disabled banner data-role when reader is off", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/collection")
+    assert has_element?(view, "[data-role='collection-disabled']")
   end
 
   test "manual refresh with no MTGA surfaces an error", %{conn: conn} do

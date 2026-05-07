@@ -41,6 +41,21 @@ defmodule Scry2.Cards do
   end
 
   @doc """
+  Lists every known set, newest-first by `released_at`. Sets without a
+  `released_at` are returned after dated ones, sorted by `code`.
+  """
+  @spec list_sets() :: [Set.t()]
+  def list_sets do
+    Set
+    |> order_by([s],
+      asc: fragment("CASE WHEN ? IS NULL THEN 1 ELSE 0 END", s.released_at),
+      desc: s.released_at,
+      asc: s.code
+    )
+    |> Repo.all()
+  end
+
+  @doc """
   Upserts a set by its `code`. Returns the persisted record.
   """
   def upsert_set!(%{code: code} = attrs) when is_binary(code) do

@@ -21,6 +21,31 @@ defmodule Scry2.CardsTest do
     end
   end
 
+  describe "list_sets/0" do
+    test "returns sets newest-first by released_at" do
+      _old = Cards.upsert_set!(%{code: "OLD", name: "Old", released_at: ~D[2024-01-01]})
+      _mid = Cards.upsert_set!(%{code: "MID", name: "Mid", released_at: ~D[2025-01-01]})
+      _new = Cards.upsert_set!(%{code: "NEW", name: "New", released_at: ~D[2026-01-01]})
+
+      codes = Cards.list_sets() |> Enum.map(& &1.code)
+
+      assert codes == ["NEW", "MID", "OLD"]
+    end
+
+    test "places sets without released_at last" do
+      _dated = Cards.upsert_set!(%{code: "DTD", name: "Dated", released_at: ~D[2026-01-01]})
+      _undated = Cards.upsert_set!(%{code: "UND", name: "Undated"})
+
+      codes = Cards.list_sets() |> Enum.map(& &1.code)
+
+      assert codes == ["DTD", "UND"]
+    end
+
+    test "returns an empty list when no sets exist" do
+      assert Cards.list_sets() == []
+    end
+  end
+
   describe "synthesize_card!/1" do
     test "creates a new card keyed on arena_id" do
       card =

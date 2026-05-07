@@ -28,6 +28,9 @@ defmodule Scry2.Application do
         Scry2.Console.RecentEntries,
         # Card image cache — ensures cache directory exists on startup.
         Scry2.Cards.ImageCache,
+        # Keeps the SetRoster :persistent_term cache fresh on synthesis.
+        # Cheap to start; lazily computes on first SetRoster.all/0 call.
+        Scry2.Cards.SetRosterRefresher,
         # TaskSupervisor must come BEFORE VersionCheck. A full reingest
         # invokes the projector rebuild via `Task.Supervisor.async_stream(
         # Scry2.TaskSupervisor, …)`; if the supervisor isn't up yet the

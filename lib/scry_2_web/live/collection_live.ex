@@ -2,54 +2,104 @@ defmodule Scry2Web.CollectionLive do
   @moduledoc """
   LiveView for the memory-read card collection (ADR 034).
 
-  Three states:
+  Reads as a derivation pipeline. After loading the latest
+  `Scry2.Collection.Snapshot`, every other section is computed from
+  named domain types under `Scry2.Collection.*`:
 
-    * **disabled** — the memory reader is off by default; shows the
-      disclosure banner and an "Enable memory reader" button. Until
-      the user enables the feature, no memory access happens.
-    * **enabled, no snapshot** — reader enabled but no collection has
-      been captured yet; shows a refresh CTA.
-    * **enabled, with snapshot** — shows the latest snapshot summary
-      (card count, total copies, reader confidence, last refresh) and,
-      when a previous snapshot exists, a "Recent acquisitions" panel
-      derived from the latest `Scry2.Collection.Diff` row.
+      snapshot     ← Collection.current()
+      cards        ← Cards.list_by_arena_ids(arena_ids)
+      rosters      ← Cards.SetRoster.all()
+      holdings     ← Holding.from_snapshot(snapshot, cards)
+      composition  ← Composition.from_holdings(holdings)
+      completions  ← Completion.from_holdings(holdings, rosters)
+      craft_plan   ← CraftPlan.from_holdings(holdings, snapshot)
+      diffs        ← Collection.list_diffs(limit: 10)
 
-  Subscribes to `Scry2.Topics.collection_snapshots/0` and
-  `Scry2.Topics.collection_diffs/0` so a successful refresh and its
-  computed delta both update the view in-place.
+  The view wires those values into focused function components in
+  `Scry2Web.Collection.*` — one component per concept, no business logic
+  in templates.
+
+  States:
+
+    * **disabled** — `<.disabled_banner>` consent CTA.
+    * **enabled, no snapshot** — `<.reader_status>` toolbar + an empty-state.
+    * **enabled, with snapshot** — full eight-section pipeline.
+
+  URL filters (decoded by `Scry2Web.CardsHelpers`) round-trip via
+  `push_patch`: `q`, `r`, `set`. Selecting a set tile patches `?set=CODE`
+  and scopes the holding browser + craft plan to that set.
   """
 
   use Scry2Web, :live_view
 
+  import Scry2Web.Collection.AcquisitionHistory, only: [acquisition_history: 1]
+  import Scry2Web.Collection.Composition, only: [composition: 1]
+  import Scry2Web.Collection.Completion, only: [completion: 1]
+  import Scry2Web.Collection.CraftPlan, only: [craft_plan: 1]
+  import Scry2Web.Collection.DisabledBanner, only: [disabled_banner: 1]
+  import Scry2Web.Collection.HoldingBrowser, only: [holding_browser: 1]
+  import Scry2Web.Collection.HoldingSummary, only: [holding_summary: 1]
+  import Scry2Web.Collection.ReaderStatus, only: [reader_status: 1]
+  import Scry2Web.Collection.RecentAcquisitions, only: [recent_acquisitions: 1]
+  import Scry2Web.Collection.WildcardSummary, only: [wildcard_summary: 1]
+
   alias Scry2.Cards
+  alias Scry2.Cards.ImageCache
+  alias Scry2.Cards.SetRoster
   alias Scry2.Collection
-  alias Scry2.Collection.DiffView
+  alias Scry2.Collection.Composition
+  alias Scry2.Collection.Completion
+  alias Scry2.Collection.CraftPlan
+  alias Scry2.Collection.Holding
+  alias Scry2.Collection.Snapshot
   alias Scry2.Topics
+  alias Scry2Web.CardsHelpers
+
+  @browser_limit 100
 
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Topics.subscribe(Topics.collection_snapshots())
       Topics.subscribe(Topics.collection_diffs())
+      Topics.subscribe(Topics.cards_updates())
     end
 
-    diff = Collection.latest_diff()
+    socket =
+      socket
+      |> assign(:reader_enabled, Collection.reader_enabled?())
+      |> assign(:refreshing, false)
+      |> assign(:last_error, nil)
+      |> assign(:build_change_status, Collection.build_change_status())
+      |> assign(:search, "")
+      |> assign(:filter_rarities, MapSet.new())
+      |> assign(:active_set, nil)
+      |> load_snapshot_state()
 
-    {:ok,
-     assign(socket,
-       reader_enabled: Collection.reader_enabled?(),
-       snapshot: Collection.current(),
-       latest_diff: diff,
-       diff_cards: cards_for(diff),
-       refreshing: false,
-       last_error: nil
-     )}
+    {:ok, socket}
+  end
+
+  @impl true
+  def handle_params(params, _uri, socket) do
+    socket =
+      socket
+      |> assign(:search, CardsHelpers.decode_search(params))
+      |> assign(:filter_rarities, CardsHelpers.decode_rarities(params))
+      |> assign(:active_set, normalise_set(params["set"]))
+      |> apply_browser_filters()
+
+    {:noreply, socket}
   end
 
   @impl true
   def handle_event("enable_reader", _params, socket) do
     :ok = Collection.enable_reader!()
-    {:noreply, assign(socket, reader_enabled: true)}
+
+    {:noreply,
+     socket
+     |> assign(:reader_enabled, true)
+     |> load_snapshot_state()
+     |> apply_browser_filters()}
   end
 
   def handle_event("disable_reader", _params, socket) do
@@ -66,40 +116,226 @@ defmodule Scry2Web.CollectionLive do
       {:ok, _job} ->
         {:noreply,
          socket
-         |> assign(refreshing: true, last_error: nil)
-         # In inline-Oban (tests) the job has already run; reload now so
-         # the snapshot/state assigns reflect reality. In async-Oban
-         # (prod) we'll get the snapshot_saved broadcast instead.
-         |> reload_after_refresh()}
+         |> assign(:refreshing, true)
+         |> assign(:last_error, nil)
+         # Inline-Oban (tests) runs the job synchronously; reload now so
+         # the assigns reflect reality. Async-Oban (prod) gets the snapshot
+         # via the broadcast handler below.
+         |> load_snapshot_state()
+         |> apply_browser_filters()
+         |> assign(:refreshing, false)}
 
       {:error, reason} ->
         {:noreply, assign(socket, refreshing: false, last_error: friendly_error(reason))}
     end
   end
 
-  @impl true
-  def handle_info({:snapshot_saved, snapshot}, socket) do
-    {:noreply,
-     socket
-     |> assign(snapshot: snapshot, refreshing: false, last_error: nil)
-     |> put_flash(:info, "Collection refreshed (#{snapshot.card_count} cards).")}
+  def handle_event("acknowledge_build_change", _params, socket) do
+    _ = Collection.acknowledge_current_build!()
+    {:noreply, assign(socket, :build_change_status, Collection.build_change_status())}
   end
 
-  def handle_info({:diff_saved, diff}, socket) do
-    {:noreply, assign(socket, latest_diff: diff, diff_cards: cards_for(diff))}
+  def handle_event("search", %{"search" => term}, socket) do
+    {:noreply, push_patch(socket, to: build_path(socket, %{"q" => term}))}
+  end
+
+  def handle_event("clear_search", _params, socket) do
+    {:noreply, push_patch(socket, to: build_path(socket, %{"q" => ""}))}
+  end
+
+  def handle_event("toggle_rarity", %{"rarity" => rarity}, socket) do
+    rarities = toggle(socket.assigns.filter_rarities, rarity)
+    {:noreply, push_patch(socket, to: build_path(socket, %{"r" => encode_set(rarities)}))}
+  end
+
+  def handle_event("select_set", %{"set" => code}, socket) do
+    new_code = if socket.assigns.active_set == code, do: "", else: code
+    {:noreply, push_patch(socket, to: build_path(socket, %{"set" => new_code}))}
+  end
+
+  def handle_event("clear_set", _params, socket) do
+    {:noreply, push_patch(socket, to: build_path(socket, %{"set" => ""}))}
+  end
+
+  @impl true
+  def handle_info({:snapshot_saved, _snapshot}, socket) do
+    {:noreply,
+     socket
+     |> assign(:refreshing, false)
+     |> assign(:last_error, nil)
+     |> assign(:build_change_status, Collection.build_change_status())
+     |> load_snapshot_state()
+     |> apply_browser_filters()
+     |> put_flash(:info, "Collection refreshed.")}
+  end
+
+  def handle_info({:diff_saved, _diff}, socket) do
+    {:noreply,
+     socket
+     |> assign(:latest_diff, Collection.latest_diff())
+     |> assign(:diff_cards, diff_cards(Collection.latest_diff()))
+     |> assign(:recent_diffs, Collection.list_diffs(limit: 10))}
   end
 
   def handle_info({:refresh_failed, reason}, socket) do
     {:noreply, assign(socket, refreshing: false, last_error: friendly_error(reason))}
   end
 
+  def handle_info({:cards_refreshed, _}, socket) do
+    {:noreply,
+     socket
+     |> load_snapshot_state()
+     |> apply_browser_filters()}
+  end
+
   def handle_info(_other, socket), do: {:noreply, socket}
 
-  defp cards_for(nil), do: %{}
+  # ── Pipeline -------------------------------------------------------------
 
-  defp cards_for(diff) do
-    diff |> DiffView.arena_ids() |> Cards.list_by_arena_ids()
+  defp load_snapshot_state(socket) do
+    snapshot = Collection.current()
+    rosters = SetRoster.all()
+    cards = cards_by_arena_id(snapshot)
+    holdings = Holding.from_snapshot(snapshot, cards)
+
+    socket
+    |> assign(:snapshot, snapshot)
+    |> assign(:cards_by_arena_id, cards)
+    |> assign(:set_rosters, rosters)
+    |> assign(:holdings, holdings)
+    |> assign(:composition, Composition.from_holdings(holdings))
+    |> assign(:completions, Completion.from_holdings(holdings, rosters))
+    |> assign(:craft_plan, build_craft_plan(holdings, snapshot))
+    |> assign(:latest_diff, Collection.latest_diff())
+    |> assign(:diff_cards, diff_cards(Collection.latest_diff()))
+    |> assign(:recent_diffs, Collection.list_diffs(limit: 10))
+    |> assign(:cached_arena_ids, cached_set(cards))
   end
+
+  defp apply_browser_filters(socket) do
+    holdings = socket.assigns[:holdings] || []
+    search = socket.assigns.search
+    rarities = socket.assigns.filter_rarities
+    set_id = active_set_id(socket.assigns.set_rosters || %{}, socket.assigns.active_set)
+
+    filtered =
+      holdings
+      |> Enum.filter(&matches_search?(&1, search))
+      |> Enum.filter(&matches_rarity?(&1, rarities))
+      |> Enum.filter(&matches_set?(&1, set_id))
+      |> Enum.sort_by(&(&1.card.name || ""))
+
+    visible = Enum.take(filtered, @browser_limit)
+
+    socket
+    |> assign(:browser_holdings, visible)
+    |> assign(:browser_total, length(filtered))
+  end
+
+  defp build_craft_plan(_holdings, nil),
+    do: %CraftPlan{
+      incomplete_playsets: [],
+      wildcards_owned: %{"common" => 0, "uncommon" => 0, "rare" => 0, "mythic" => 0},
+      wildcards_needed_by_rarity: %{}
+    }
+
+  defp build_craft_plan(holdings, snapshot), do: CraftPlan.from_holdings(holdings, snapshot)
+
+  defp cards_by_arena_id(nil), do: %{}
+
+  defp cards_by_arena_id(%Snapshot{cards_json: cards_json}) do
+    cards_json
+    |> Snapshot.decode_entries()
+    |> Enum.map(&elem(&1, 0))
+    |> Cards.list_by_arena_ids()
+  end
+
+  defp diff_cards(nil), do: %{}
+
+  defp diff_cards(diff) do
+    diff
+    |> Scry2.Collection.DiffView.arena_ids()
+    |> Cards.list_by_arena_ids()
+  end
+
+  defp cached_set(cards) when is_map(cards) do
+    cards
+    |> Map.keys()
+    |> Enum.filter(&ImageCache.cached?/1)
+    |> MapSet.new()
+  end
+
+  # ── Filter helpers -------------------------------------------------------
+
+  defp matches_search?(_holding, ""), do: true
+
+  defp matches_search?(holding, term) when is_binary(term) do
+    name = (holding.card.name || "") |> String.downcase()
+    String.contains?(name, String.downcase(term))
+  end
+
+  defp matches_rarity?(holding, rarities) do
+    if MapSet.size(rarities) == 0 do
+      true
+    else
+      MapSet.member?(rarities, holding_rarity(holding))
+    end
+  end
+
+  defp holding_rarity(holding), do: holding.card.rarity || "unknown"
+
+  defp matches_set?(_holding, nil), do: true
+  defp matches_set?(holding, set_id), do: holding.card.set_id == set_id
+
+  defp active_set_id(_rosters, nil), do: nil
+
+  defp active_set_id(rosters, code) when is_binary(code) do
+    Enum.find_value(rosters, fn
+      {id, %SetRoster{set: %{code: ^code}}} -> id
+      _ -> nil
+    end)
+  end
+
+  defp toggle(set, value) do
+    if MapSet.member?(set, value), do: MapSet.delete(set, value), else: MapSet.put(set, value)
+  end
+
+  defp encode_set(set) do
+    set |> MapSet.to_list() |> Enum.sort() |> Enum.join(",")
+  end
+
+  defp normalise_set(nil), do: nil
+  defp normalise_set(""), do: nil
+  defp normalise_set(code) when is_binary(code), do: code
+
+  defp build_path(socket, overrides) do
+    current =
+      CardsHelpers.params_from_filters(
+        socket.assigns.search,
+        MapSet.new(),
+        socket.assigns.filter_rarities,
+        MapSet.new(),
+        MapSet.new()
+      )
+
+    set =
+      case Map.get(overrides, "set", socket.assigns.active_set) do
+        "" -> nil
+        nil -> nil
+        value -> value
+      end
+
+    params =
+      current
+      |> Map.merge(Map.delete(overrides, "set"))
+      |> Map.reject(fn {_k, v} -> v in [nil, ""] end)
+      |> maybe_put_set(set)
+
+    "/collection?" <> URI.encode_query(params)
+  end
+
+  defp maybe_put_set(params, nil), do: params
+  defp maybe_put_set(params, code), do: Map.put(params, "set", code)
 
   defp friendly_error(:mtga_not_running),
     do: "MTGA is not running. Start the game, then click Refresh now."
@@ -114,9 +350,7 @@ defmodule Scry2Web.CollectionLive do
 
   defp friendly_error(other), do: "Reader failed: #{inspect(other)}"
 
-  defp reload_after_refresh(socket) do
-    assign(socket, snapshot: Collection.current(), refreshing: false)
-  end
+  # ── Render ---------------------------------------------------------------
 
   @impl true
   def render(assigns) do
@@ -131,219 +365,46 @@ defmodule Scry2Web.CollectionLive do
       <h1 class="text-2xl font-semibold mb-6 font-beleren">Collection</h1>
 
       <%= if @reader_enabled do %>
-        <.enabled_view
-          snapshot={@snapshot}
-          latest_diff={@latest_diff}
-          diff_cards={@diff_cards}
-          refreshing={@refreshing}
-          last_error={@last_error}
-        />
+        <div class="space-y-6" data-role="collection-enabled">
+          <.reader_status
+            refreshing={@refreshing}
+            last_error={@last_error}
+            build_change_status={@build_change_status}
+          />
+
+          <%= if @snapshot do %>
+            <.holding_summary holdings={@holdings} />
+            <.wildcard_summary snapshot={@snapshot} />
+            <.recent_acquisitions diff={@latest_diff} cards={@diff_cards} />
+            <.composition value={@composition} />
+            <.completion rows={@completions} active_set={@active_set} />
+            <.holding_browser
+              holdings={@browser_holdings}
+              total_count={@browser_total}
+              search={@search}
+              rarities={@filter_rarities}
+              active_set={@active_set}
+              cached_arena_ids={@cached_arena_ids}
+            />
+            <.craft_plan value={@craft_plan} cached_arena_ids={@cached_arena_ids} />
+            <.acquisition_history diffs={@recent_diffs} />
+          <% else %>
+            <div
+              class="card bg-base-200 border border-base-300 max-w-xl"
+              data-role="no-snapshot"
+            >
+              <div class="card-body">
+                <p class="text-sm opacity-80">
+                  No snapshot yet. Make sure MTGA is running, then click <strong>Refresh now</strong>.
+                </p>
+              </div>
+            </div>
+          <% end %>
+        </div>
       <% else %>
-        <.disabled_view />
+        <.disabled_banner />
       <% end %>
     </Layouts.app>
     """
   end
-
-  # --- view helpers ---
-
-  attr :rest, :global
-
-  defp disabled_view(assigns) do
-    ~H"""
-    <div class="card bg-base-200 border border-base-300 max-w-3xl" data-role="collection-disabled">
-      <div class="card-body space-y-4">
-        <h2 class="card-title">Memory reader is off</h2>
-        <p class="text-sm opacity-80">
-          Scry&nbsp;2 can read your full MTGA collection (including cards you have never
-          played) directly from the running MTGA process. This requires scanning the
-          game's memory while it is running.
-        </p>
-        <p class="text-sm opacity-80">
-          No files are modified. No data leaves your machine. You can disable the reader
-          at any time; nothing else in Scry&nbsp;2 depends on it.
-        </p>
-        <div class="card-actions justify-end">
-          <button class="btn btn-primary btn-sm" phx-click="enable_reader">
-            Enable memory reader
-          </button>
-        </div>
-      </div>
-    </div>
-    """
-  end
-
-  attr :snapshot, :any, required: true
-  attr :latest_diff, :any, required: true
-  attr :diff_cards, :map, required: true
-  attr :refreshing, :boolean, required: true
-  attr :last_error, :any, required: true
-
-  defp enabled_view(assigns) do
-    ~H"""
-    <div class="space-y-6" data-role="collection-enabled">
-      <div class="flex items-center gap-3">
-        <button
-          class="btn btn-soft btn-primary btn-sm"
-          phx-click="refresh"
-          disabled={@refreshing}
-        >
-          <span :if={@refreshing}>Refreshing…</span>
-          <span :if={not @refreshing}>Refresh now</span>
-        </button>
-        <button class="btn btn-ghost btn-sm" phx-click="disable_reader">
-          Disable reader
-        </button>
-        <.link navigate={~p"/collection/diagnostics"} class="btn btn-ghost btn-sm">
-          Diagnostics
-        </.link>
-      </div>
-
-      <div
-        :if={@last_error}
-        class="alert alert-soft alert-warning max-w-3xl"
-        data-role="collection-error"
-      >
-        <span>{@last_error}</span>
-      </div>
-
-      <%= if @snapshot do %>
-        <.snapshot_card snapshot={@snapshot} />
-      <% else %>
-        <div class="card bg-base-200 border border-base-300 max-w-xl" data-role="no-snapshot">
-          <div class="card-body">
-            <p class="text-sm opacity-80">
-              No snapshot yet. Make sure MTGA is running, then click <strong>Refresh now</strong> .
-            </p>
-          </div>
-        </div>
-      <% end %>
-
-      <.diff_card :if={@latest_diff} diff={@latest_diff} cards={@diff_cards} />
-    </div>
-    """
-  end
-
-  attr :diff, :any, required: true
-  attr :cards, :map, required: true
-
-  defp diff_card(assigns) do
-    assigns =
-      assign(assigns,
-        acquired: DiffView.entries(assigns.diff.cards_added_json, assigns.cards),
-        removed: DiffView.entries(assigns.diff.cards_removed_json, assigns.cards)
-      )
-
-    ~H"""
-    <div class="card bg-base-200 border border-base-300 max-w-3xl" data-role="diff-card">
-      <div class="card-body">
-        <h2 class="card-title">Recent acquisitions</h2>
-        <p
-          class="text-xs text-base-content/60"
-          title={Calendar.strftime(@diff.inserted_at, "%Y-%m-%d %H:%M UTC")}
-        >
-          {relative_time(@diff.inserted_at)} · +{@diff.total_acquired} · −{@diff.total_removed}
-        </p>
-
-        <div :if={@acquired != []} class="mt-3">
-          <div class="text-xs uppercase tracking-wide text-base-content/60 mb-1">Acquired</div>
-          <ul class="space-y-1" data-role="diff-acquired">
-            <li :for={entry <- @acquired} class="flex items-center gap-2 text-sm">
-              <span class="badge badge-soft badge-success badge-sm tabular-nums">
-                +{entry.count}
-              </span>
-              <span class="truncate">{entry.name}</span>
-            </li>
-          </ul>
-        </div>
-
-        <div :if={@removed != []} class="mt-3">
-          <div class="text-xs uppercase tracking-wide text-base-content/60 mb-1">Removed</div>
-          <ul class="space-y-1" data-role="diff-removed">
-            <li :for={entry <- @removed} class="flex items-center gap-2 text-sm">
-              <span class="badge badge-soft badge-warning badge-sm tabular-nums">
-                −{entry.count}
-              </span>
-              <span class="truncate">{entry.name}</span>
-            </li>
-          </ul>
-        </div>
-
-        <div :if={@acquired == [] and @removed == []} class="mt-3 text-sm text-base-content/60">
-          No card changes since the previous snapshot.
-        </div>
-      </div>
-    </div>
-    """
-  end
-
-  attr :snapshot, :any, required: true
-
-  defp snapshot_card(assigns) do
-    ~H"""
-    <div class="card bg-base-200 border border-base-300 max-w-3xl" data-role="snapshot-card">
-      <div class="card-body">
-        <h2 class="card-title">Latest snapshot</h2>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4">
-          <.stat label="Cards" value={format_number(@snapshot.card_count)} key="card-count" />
-          <.stat
-            label="Total copies"
-            value={format_number(@snapshot.total_copies)}
-            key="total-copies"
-          />
-          <.stat
-            label="Reader path"
-            value={humanize_reader(@snapshot.reader_confidence)}
-            key="confidence"
-            tone={:muted}
-          />
-          <.stat
-            label="Captured"
-            value={relative_time(@snapshot.snapshot_ts)}
-            title={Calendar.strftime(@snapshot.snapshot_ts, "%Y-%m-%d %H:%M UTC")}
-            key="captured-at"
-            tone={:muted}
-          />
-        </div>
-      </div>
-    </div>
-    """
-  end
-
-  attr :label, :string, required: true
-  attr :value, :any, required: true
-  attr :key, :string, required: true
-  attr :title, :string, default: nil
-  attr :tone, :atom, default: :numeric, values: [:numeric, :muted]
-
-  defp stat(assigns) do
-    ~H"""
-    <div class="bg-base-100 rounded-lg p-4 min-w-0" data-stat={@key}>
-      <div class="text-xs text-base-content/60">{@label}</div>
-      <div class={["mt-1 truncate", stat_value_class(@tone)]} title={@title}>
-        {@value}
-      </div>
-    </div>
-    """
-  end
-
-  defp stat_value_class(:numeric), do: "text-2xl font-semibold tabular-nums"
-  defp stat_value_class(:muted), do: "text-sm text-base-content/80"
-
-  defp humanize_reader("walker"), do: "Direct read"
-  defp humanize_reader("fallback_scan"), do: "Fallback scan"
-  defp humanize_reader(other) when is_binary(other), do: String.replace(other, "_", " ")
-  defp humanize_reader(_), do: "—"
-
-  defp format_number(n) when is_integer(n) do
-    n
-    |> Integer.to_string()
-    |> String.graphemes()
-    |> Enum.reverse()
-    |> Enum.chunk_every(3)
-    |> Enum.join(",")
-    |> String.reverse()
-  end
-
-  defp format_number(other), do: to_string(other)
 end
