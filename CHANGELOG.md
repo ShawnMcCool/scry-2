@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.34.2 — 2026-05-07
+
 ### Fixed
 
 - **Restore the v0.34.1 release.** v0.34.1 was tagged but never reached
