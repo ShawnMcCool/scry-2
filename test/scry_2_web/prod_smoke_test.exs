@@ -167,7 +167,8 @@ defmodule Scry2Web.ProdSmokeTest do
   # don't trip "duplicate column" errors).
   @prod_smoke_additive_columns [
     {"players", "mtga_display_name", "TEXT"},
-    {"collection_snapshots", "cosmetics_json", "TEXT"}
+    {"collection_snapshots", "cosmetics_json", "TEXT"},
+    {"collection_snapshots", "mtga_player_cards_version", "INTEGER"}
   ]
 
   defp apply_pending_alters_to_snapshot!(path) do

@@ -81,7 +81,14 @@ defmodule Scry2.MtgaMemory do
           required(:gems) => integer(),
           required(:vault_progress) => float(),
           required(:build_hint) => String.t() | nil,
-          required(:reader_version) => String.t()
+          required(:reader_version) => String.t(),
+          # Monotonic counter on MTGA's InventoryManager (the
+          # `_playerCardsVersion` field). Bumps whenever the cards
+          # dictionary changes — used by the Reader as a cache signal
+          # to skip the full walk when the value hasn't moved.
+          # `nil` when the chain didn't resolve (treat as "version
+          # unknown — must walk").
+          optional(:cards_version) => integer() | nil
         }
 
   @doc """

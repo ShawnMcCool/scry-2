@@ -150,6 +150,10 @@ pub struct WalkSnapshot {
     pub boosters: Vec<BoosterRow>,
     pub build_hint: Option<String>,
     pub reader_version: String,
+    /// `InventoryManager._playerCardsVersion` — `nil` when the field
+    /// can't be resolved on this MTGA build. Reader uses it to
+    /// short-circuit cards reads across successive snapshots.
+    pub cards_version: Option<i32>,
 }
 
 /// Wire-format mirror of [`walker::run::WalkError`]. Variants
@@ -216,6 +220,7 @@ fn snapshot_to_wire(snap: walker::run::Snapshot) -> WalkSnapshot {
             .collect(),
         build_hint: snap.mtga_build_hint,
         reader_version: READER_VERSION.to_string(),
+        cards_version: snap.cards_version,
     }
 }
 

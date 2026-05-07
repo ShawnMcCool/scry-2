@@ -17,6 +17,14 @@ defmodule Scry2.Collection.Snapshot do
   ProgressionTrack` resolves. Between mastery seasons or when the
   runtime strategy isn't `AwsSetMasteryStrategy`, the walker returns
   `{:ok, nil}` and the columns stay null. See spike 20 for the chain.
+
+  `mtga_player_cards_version` mirrors MTGA's `_playerCardsVersion` i32
+  on `InventoryManager` — a monotonic counter that bumps every time
+  the player's cards dictionary changes (pack open, draft pick, vault
+  open, etc). Stamping it on each snapshot lets the reader detect
+  steady-state polls (consecutive snapshots with the same version =
+  no card changes) and short-circuit the expensive cards walk.
+  Nullable; older walker builds and unreachable chains leave it nil.
   """
 
   use Ecto.Schema
@@ -51,7 +59,8 @@ defmodule Scry2.Collection.Snapshot do
     :mastery_orbs,
     :mastery_season_name,
     :mastery_season_ends_at,
-    :cosmetics_json
+    :cosmetics_json,
+    :mtga_player_cards_version
   ]
 
   @required_fields [
@@ -87,6 +96,7 @@ defmodule Scry2.Collection.Snapshot do
     field :mastery_season_name, :string
     field :mastery_season_ends_at, :utc_datetime
     field :cosmetics_json, :string
+    field :mtga_player_cards_version, :integer
 
     timestamps(type: :utc_datetime_usec)
   end

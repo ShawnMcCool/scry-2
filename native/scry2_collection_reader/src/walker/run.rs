@@ -92,6 +92,12 @@ pub struct Snapshot {
     /// top of walker output: when the GUID changes between runs the
     /// walker offsets may have shifted.
     pub mtga_build_hint: Option<String>,
+    /// `InventoryManager._playerCardsVersion` — monotonic counter MTGA
+    /// bumps when the cards-owned cache changes (per spike 22).
+    /// `None` when the field can't be resolved on this build. Surfaced
+    /// to Elixir so the Reader can short-circuit cards reads when the
+    /// version hasn't moved across successive snapshots.
+    pub cards_version: Option<i32>,
 }
 
 /// One row in `/proc/<pid>/maps`-style output, in the shape
@@ -167,6 +173,7 @@ where
         inventory: walk.inventory,
         boosters: walk.boosters,
         mtga_build_hint: build_hint(),
+        cards_version: walk.cards_version,
     })
 }
 
@@ -798,6 +805,7 @@ where
         inventory: walk.inventory,
         boosters: walk.boosters,
         mtga_build_hint: build_hint(),
+        cards_version: walk.cards_version,
     })
 }
 

@@ -261,7 +261,8 @@ defmodule Scry2.Collection.Reader do
       gems: gems,
       vault_progress: vault,
       boosters_json: Scry2.Collection.Snapshot.encode_boosters(boosters),
-      mtga_build_hint: build_hint
+      mtga_build_hint: build_hint,
+      mtga_player_cards_version: Map.get(walker_result, :cards_version)
     }
   end
 

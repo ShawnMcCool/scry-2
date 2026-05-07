@@ -48,6 +48,12 @@ pub struct WalkResult {
     pub inventory: InventoryValues,
     /// Booster inventory — `(collation_id, count)` rows.
     pub boosters: Vec<BoosterRow>,
+    /// `InventoryManager._playerCardsVersion` — monotonic counter
+    /// MTGA bumps when the cards-owned cache changes (per spike 22).
+    /// `None` when the field can't be resolved on this build. Reader
+    /// uses this to short-circuit cards reads when unchanged across
+    /// successive snapshots.
+    pub cards_version: Option<i32>,
 }
 
 /// Walk from a resolved `InventoryServiceWrapper` object, deriving
@@ -141,6 +147,11 @@ where
         entries,
         inventory: inventory_values,
         boosters,
+        // `from_service_wrapper` doesn't see InventoryManager and
+        // therefore can't read `_playerCardsVersion`. The outer
+        // `from_papa_class` writes it onto the result after this
+        // returns; the inner-only path (tests) leaves it `None`.
+        cards_version: None,
     })
 }
 
@@ -205,12 +216,27 @@ where
         &read_mem,
     )?;
 
-    from_service_wrapper(
+    // `_playerCardsVersion` is a sibling i32 on InventoryManager.
+    // Cheap to read (4 bytes after the same hops we just did); the
+    // reader uses it to short-circuit cards-dict iteration when
+    // unchanged across snapshots. None when the field can't be
+    // resolved (build drift); Reader treats that as "always re-read".
+    let cards_version = super::instance_field::read_instance_i32(
+        offsets,
+        &inventory_manager_class_bytes,
+        inventory_manager_addr,
+        "_playerCardsVersion",
+        &read_mem,
+    );
+
+    let mut result = from_service_wrapper(
         offsets,
         service_wrapper_addr,
         dictionary_class_bytes,
         read_mem,
-    )
+    )?;
+    result.cards_version = cards_version;
+    Some(result)
 }
 
 /// Resolve `field_name` on the class at `class_base` inside

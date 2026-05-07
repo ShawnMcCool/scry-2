@@ -317,7 +317,8 @@ defmodule Scry2.Collection do
       :gems,
       :vault_progress,
       :boosters_json,
-      :cosmetics_json
+      :cosmetics_json,
+      :mtga_player_cards_version
     ])
   end
 

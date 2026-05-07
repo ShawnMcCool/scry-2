@@ -324,6 +324,22 @@ defmodule Scry2.Collection.ReaderTest do
       assert result.reader_confidence == "walker"
       assert result.mtga_build_hint == nil
     end
+
+    test "walker success surfaces cards_version when present" do
+      snap = Map.put(valid_walker_snap(), :cards_version, 4_217)
+      TestBackend.set_fixture(walker_fixture(snap))
+
+      assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
+      assert result.mtga_player_cards_version == 4_217
+    end
+
+    test "walker success leaves cards_version nil when walker omits it" do
+      # Older walker builds / unreachable chain → key absent.
+      TestBackend.set_fixture(walker_fixture(valid_walker_snap()))
+
+      assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
+      assert result.mtga_player_cards_version == nil
+    end
   end
 
   describe "walker mastery merge" do
