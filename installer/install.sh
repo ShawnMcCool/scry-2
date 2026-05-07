@@ -12,7 +12,7 @@
 #   --version <vX.Y.Z>   Install a specific release tag instead of latest.
 #
 # Supported platforms:
-#   Linux x86_64 (glibc)   — XDG autostart + tray
+#   Linux x86_64 (glibc)   — systemd user service + .desktop launcher
 #   macOS aarch64 (Apple Silicon) — LaunchAgent + tray
 #
 # Windows users: use the MSI from the GitHub Releases page instead.
