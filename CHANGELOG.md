@@ -11,6 +11,20 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Linux: Scry now runs as a proper systemd user service.** The system
+  tray icon is gone on Linux; the backend is managed by
+  `systemctl --user start/stop/status scry_2` instead, and a
+  **Scry2** entry shows up in your application launcher that opens
+  the dashboard in your default browser. Auto-start on login and
+  crash-restart are handled by systemd, the same way every other
+  long-running personal service on your machine works. Existing
+  installs are migrated automatically on the next update — the old
+  tray and its autostart entry are removed and replaced with the
+  systemd unit. Your database, config, and snapshots are untouched.
+  Windows and macOS continue to use the tray.
+
 ## v0.35.0 — 2026-05-07
 
 ### Improved
