@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.35.0 — 2026-05-07
+
 ### Improved
 
 - **Memory reading is faster on subsequent polls.** When the cards
