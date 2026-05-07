@@ -26,6 +26,7 @@ defmodule Scry2.Collection.Reader do
   require Scry2.Log, as: Log
 
   alias Scry2.Collection.Reader.{Discovery, Scanner, SelfCheck}
+  alias Scry2.Collection.Snapshot
   alias Scry2.MtgaMemory
 
   @default_chunk_size 4 * 1024 * 1024
@@ -56,6 +57,12 @@ defmodule Scry2.Collection.Reader do
     * `:min_scan_entries` — minimum entries a scan must produce for
       `SelfCheck.scan_result_ok?/2` to pass (default 500; tests may
       lower it).
+    * `:prior_snapshot` — the most recent persisted `%Snapshot{}`,
+      or `nil`. Used to short-circuit the cards-dict walk when
+      MTGA's `_playerCardsVersion` hasn't moved since the last read.
+      Defaults to `nil` — callers that want the optimization (e.g.
+      `Scry2.Collection.RefreshJob`) pass it explicitly. Reader
+      stays DB-free.
 
   Returns `{:ok, result}` on success or `{:error, reason}` on any
   pipeline failure. Errors from the self-check gate are
@@ -69,12 +76,13 @@ defmodule Scry2.Collection.Reader do
     max_regions = Keyword.get(opts, :max_regions, @default_max_regions)
     scan_check_opts = Keyword.take(opts, [:min_scan_entries])
     walker_check_opts = Keyword.take(opts, [:min_walker_cards])
+    prior = Keyword.get(opts, :prior_snapshot)
 
     with {:ok, pid} <- Discovery.find_mtga(mem),
          {:ok, maps} <- mem.list_maps(pid),
          :ok <- SelfCheck.discovery_ok?(maps) do
       base_result =
-        case try_walker(mem, pid, walker_check_opts) do
+        case try_walker(mem, pid, walker_check_opts, prior) do
           {:ok, walker_result} ->
             {:ok, walker_result}
 
@@ -120,12 +128,30 @@ defmodule Scry2.Collection.Reader do
     Scry2.Collection.Snapshot.encode_cosmetics(summary)
   end
 
-  defp try_walker(mem, pid, walker_check_opts) do
-    with {:ok, snapshot} <- mem.walk_collection(pid),
-         :ok <- SelfCheck.walker_result_ok?(snapshot, walker_check_opts) do
-      {:ok, summarize_walker(snapshot)}
+  defp try_walker(mem, pid, walker_check_opts, prior) do
+    walk_opts =
+      case prior_cards_version(prior) do
+        nil -> []
+        version -> [expected_cards_version: version]
+      end
+
+    with {:ok, snapshot} <- mem.walk_collection(pid, walk_opts),
+         :ok <- walker_result_ok_with_skip?(snapshot, walker_check_opts) do
+      {:ok, summarize_walker(snapshot, prior)}
     end
   end
+
+  defp prior_cards_version(%Snapshot{mtga_player_cards_version: v}) when is_integer(v), do: v
+  defp prior_cards_version(_), do: nil
+
+  # The cards-dict skip path returns `cards: []` legitimately. The
+  # min-walker-cards self-check would otherwise reject it as an
+  # invalid walk. Treat skipped walks as pre-validated (the version
+  # match itself is the validation signal).
+  defp walker_result_ok_with_skip?(%{cards_skipped: true}, _opts), do: :ok
+
+  defp walker_result_ok_with_skip?(snapshot, opts),
+    do: SelfCheck.walker_result_ok?(snapshot, opts)
 
   # .NET DateTime.Ticks are 100-nanosecond intervals since 0001-01-01 UTC.
   # 62_135_596_800 = seconds between 0001-01-01 and the Unix epoch.
@@ -235,9 +261,8 @@ defmodule Scry2.Collection.Reader do
     end
   end
 
-  defp summarize_walker(walker_result) do
+  defp summarize_walker(walker_result, prior) do
     %{
-      cards: cards,
       wildcards: %{common: c, uncommon: u, rare: r, mythic: m},
       gold: gold,
       gems: gems,
@@ -246,11 +271,11 @@ defmodule Scry2.Collection.Reader do
     } = walker_result
 
     boosters = Map.get(walker_result, :boosters, [])
-    total_copies = Enum.reduce(cards, 0, fn {_, count}, acc -> acc + count end)
+    {entries, card_count, total_copies} = pick_cards(walker_result, prior)
 
     %{
-      entries: cards,
-      card_count: length(cards),
+      entries: entries,
+      card_count: card_count,
       total_copies: total_copies,
       reader_confidence: "walker",
       wildcards_common: c,
@@ -264,6 +289,25 @@ defmodule Scry2.Collection.Reader do
       mtga_build_hint: build_hint,
       mtga_player_cards_version: Map.get(walker_result, :cards_version)
     }
+  end
+
+  # When the walker took the version-matched skip path, the live walk
+  # didn't enumerate the cards dict. Carry the cards forward from the
+  # prior snapshot — same shape, no DB miss.
+  #
+  # Defensive: if the walker reported skipped but we somehow have no
+  # prior (race / first read), fall through with empty cards rather
+  # than crashing. The next refresh after a real prior lands restores
+  # the chain.
+  defp pick_cards(%{cards_skipped: true}, %Snapshot{cards_json: json} = prior)
+       when is_binary(json) do
+    entries = Snapshot.decode_entries(json)
+    {entries, prior.card_count, prior.total_copies}
+  end
+
+  defp pick_cards(%{cards: cards}, _prior) do
+    total_copies = Enum.reduce(cards, 0, fn {_, count}, acc -> acc + count end)
+    {cards, length(cards), total_copies}
   end
 
   # --- scan orchestration ---

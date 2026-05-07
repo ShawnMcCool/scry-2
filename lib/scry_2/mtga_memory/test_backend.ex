@@ -87,15 +87,38 @@ defmodule Scry2.MtgaMemory.TestBackend do
   end
 
   @impl true
-  def walk_collection(_pid) do
+  def walk_collection(_pid, opts \\ []) do
+    expected = Keyword.get(opts, :expected_cards_version)
+
     with {:ok, fixture} <- fetch_fixture() do
       case Map.fetch(fixture, :walker_snapshot) do
-        :error -> {:error, :no_walker_snapshot}
-        {:ok, {:error, _} = err} -> err
-        {:ok, snap} -> {:ok, snap}
+        :error ->
+          {:error, :no_walker_snapshot}
+
+        {:ok, {:error, _} = err} ->
+          err
+
+        {:ok, snap} ->
+          {:ok, maybe_apply_skip(snap, expected)}
       end
     end
   end
+
+  # When the fixture's walker_snapshot carries a `:cards_version` and
+  # the caller passed a matching `:expected_cards_version`, simulate
+  # what the production walker does: blank out `:cards` and stamp
+  # `:cards_skipped => true`. This lets Reader tests exercise the
+  # short-circuit path without needing a real MTGA process.
+  defp maybe_apply_skip(snap, nil), do: Map.put(snap, :cards_skipped, false)
+
+  defp maybe_apply_skip(%{cards_version: live} = snap, expected)
+       when is_integer(live) and live == expected do
+    snap
+    |> Map.put(:cards, [])
+    |> Map.put(:cards_skipped, true)
+  end
+
+  defp maybe_apply_skip(snap, _expected), do: Map.put(snap, :cards_skipped, false)
 
   @impl true
   def walk_match_info(_pid) do

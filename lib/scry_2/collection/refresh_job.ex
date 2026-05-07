@@ -44,7 +44,10 @@ defmodule Scry2.Collection.RefreshJob do
   end
 
   defp run_refresh(trigger) do
-    reader_opts = Application.get_env(:scry_2, :collection_reader_opts, [])
+    reader_opts =
+      :scry_2
+      |> Application.get_env(:collection_reader_opts, [])
+      |> Keyword.put_new(:prior_snapshot, Collection.current())
 
     case Reader.read(reader_opts) do
       {:ok, result} ->

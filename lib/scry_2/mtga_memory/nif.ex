@@ -54,7 +54,16 @@ defmodule Scry2.MtgaMemory.Nif do
   end
 
   @impl true
-  def walk_collection(_pid), do: :erlang.nif_error(:nif_not_loaded)
+  def walk_collection(pid, opts \\ []) do
+    expected = Keyword.get(opts, :expected_cards_version)
+    walk_collection_nif(pid, expected)
+  end
+
+  @doc false
+  # Rustler replaces this clause: signature matches the Rust
+  # `walk_collection_nif(pid, expected_cards_version)` NIF arity-2.
+  def walk_collection_nif(_pid, _expected_cards_version),
+    do: :erlang.nif_error(:nif_not_loaded)
 
   @impl true
   def walk_match_info(_pid), do: :erlang.nif_error(:nif_not_loaded)

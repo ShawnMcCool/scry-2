@@ -77,8 +77,8 @@ defmodule Scry2.MtgaMemory.TestBackendTest do
     end
   end
 
-  describe "walk_collection/1" do
-    test "returns the configured :walker_snapshot fixture verbatim" do
+  describe "walk_collection/2" do
+    test "returns the configured :walker_snapshot fixture with cards_skipped: false on the no-hint path" do
       snap = %{
         cards: [{70012, 4}, {82456, 2}, {91234, 1}],
         wildcards: %{common: 42, uncommon: 17, rare: 5, mythic: 2},
@@ -90,7 +90,50 @@ defmodule Scry2.MtgaMemory.TestBackendTest do
       }
 
       TestBackend.set_fixture(walker_snapshot: snap)
-      assert TestBackend.walk_collection(1) == {:ok, snap}
+      assert TestBackend.walk_collection(1) == {:ok, Map.put(snap, :cards_skipped, false)}
+    end
+
+    test "blanks cards and stamps cards_skipped: true when expected version matches" do
+      snap = %{
+        cards: [{70012, 4}, {82456, 2}],
+        wildcards: %{common: 1, uncommon: 1, rare: 1, mythic: 1},
+        gold: 0,
+        gems: 0,
+        vault_progress: 0.0,
+        build_hint: nil,
+        reader_version: "scry2-walker-0.1.0",
+        cards_version: 4_217
+      }
+
+      TestBackend.set_fixture(walker_snapshot: snap)
+
+      assert {:ok, result} =
+               TestBackend.walk_collection(1, expected_cards_version: 4_217)
+
+      assert result.cards == []
+      assert result.cards_skipped == true
+      assert result.cards_version == 4_217
+    end
+
+    test "walks cards normally when expected version differs" do
+      snap = %{
+        cards: [{70012, 4}],
+        wildcards: %{common: 1, uncommon: 1, rare: 1, mythic: 1},
+        gold: 0,
+        gems: 0,
+        vault_progress: 0.0,
+        build_hint: nil,
+        reader_version: "scry2-walker-0.1.0",
+        cards_version: 4_217
+      }
+
+      TestBackend.set_fixture(walker_snapshot: snap)
+
+      assert {:ok, result} =
+               TestBackend.walk_collection(1, expected_cards_version: 4_216)
+
+      assert result.cards == [{70012, 4}]
+      assert result.cards_skipped == false
     end
 
     test "returns {:error, :no_walker_snapshot} when fixture is set but :walker_snapshot is omitted" do

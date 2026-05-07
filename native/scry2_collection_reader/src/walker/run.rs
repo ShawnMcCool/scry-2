@@ -98,6 +98,11 @@ pub struct Snapshot {
     /// to Elixir so the Reader can short-circuit cards reads when the
     /// version hasn't moved across successive snapshots.
     pub cards_version: Option<i32>,
+    /// True when the walker took the version-matched skip path —
+    /// `entries` is empty and the caller (Reader) is expected to
+    /// carry forward cards from the prior snapshot. Always false on
+    /// the scanner-fallback path.
+    pub cards_skipped: bool,
 }
 
 /// One row in `/proc/<pid>/maps`-style output, in the shape
@@ -117,6 +122,7 @@ pub fn walk_collection<F, B>(
     maps: &[MapEntry],
     read_mem: F,
     build_hint: B,
+    expected_cards_version: Option<i32>,
 ) -> Result<Snapshot, WalkError>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
@@ -164,6 +170,7 @@ where
         domain_addr,
         &papa_bytes,
         &dict_bytes,
+        expected_cards_version,
         read_mem,
     )
     .ok_or(WalkError::ChainFailed)?;
@@ -174,6 +181,7 @@ where
         boosters: walk.boosters,
         mtga_build_hint: build_hint(),
         cards_version: walk.cards_version,
+        cards_skipped: walk.cards_skipped,
     })
 }
 
@@ -756,6 +764,7 @@ pub fn walk_collection_cached<F, B>(
     maps: &[MapEntry],
     read_mem: F,
     build_hint: B,
+    expected_cards_version: Option<i32>,
 ) -> Result<Snapshot, WalkError>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
@@ -796,6 +805,7 @@ where
         domain_addr,
         &papa.class_bytes,
         &dict.class_bytes,
+        expected_cards_version,
         read_mem,
     )
     .ok_or(WalkError::ChainFailed)?;
@@ -806,6 +816,7 @@ where
         boosters: walk.boosters,
         mtga_build_hint: build_hint(),
         cards_version: walk.cards_version,
+        cards_skipped: walk.cards_skipped,
     })
 }
 
@@ -1106,7 +1117,7 @@ mod tests {
         let maps: Vec<MapEntry> = vec![];
         let mem = FakeMem::default();
         assert_eq!(
-            walk_collection(&maps, |a, l| mem.read(a, l), || None),
+            walk_collection(&maps, |a, l| mem.read(a, l), || None, None),
             Err(WalkError::MonoDllReadFailed)
         );
     }
@@ -1137,7 +1148,7 @@ mod tests {
         // Budget = 0 starves every read.
         let bounded = crate::read_budget::bounded(&counter, 0, inner);
 
-        let result = walk_collection(&maps, bounded, || None);
+        let result = walk_collection(&maps, bounded, || None, None);
         assert_eq!(
             result,
             Err(WalkError::MonoDllReadFailed),

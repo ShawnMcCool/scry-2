@@ -340,6 +340,68 @@ defmodule Scry2.Collection.ReaderTest do
       assert {:ok, result} = Reader.read(mem: TestBackend, min_walker_cards: 1)
       assert result.mtga_player_cards_version == nil
     end
+
+    test "carries cards forward from the prior snapshot when version-matched skip fires" do
+      snap = Map.put(valid_walker_snap(), :cards_version, 4_217)
+      TestBackend.set_fixture(walker_fixture(snap))
+
+      prior = %Scry2.Collection.Snapshot{
+        mtga_player_cards_version: 4_217,
+        cards_json:
+          Scry2.Collection.Snapshot.encode_entries([{11111, 2}, {22222, 1}, {33333, 4}]),
+        card_count: 3,
+        total_copies: 7
+      }
+
+      assert {:ok, result} =
+               Reader.read(
+                 mem: TestBackend,
+                 min_walker_cards: 1,
+                 prior_snapshot: prior
+               )
+
+      assert result.entries == [{11111, 2}, {22222, 1}, {33333, 4}]
+      assert result.card_count == 3
+      assert result.total_copies == 7
+      assert result.mtga_player_cards_version == 4_217
+    end
+
+    test "walks cards live when prior version differs from MTGA's live version" do
+      snap = Map.put(valid_walker_snap(), :cards_version, 4_217)
+      TestBackend.set_fixture(walker_fixture(snap))
+
+      prior = %Scry2.Collection.Snapshot{
+        mtga_player_cards_version: 4_216,
+        cards_json: Scry2.Collection.Snapshot.encode_entries([{11111, 99}]),
+        card_count: 1,
+        total_copies: 99
+      }
+
+      assert {:ok, result} =
+               Reader.read(
+                 mem: TestBackend,
+                 min_walker_cards: 1,
+                 prior_snapshot: prior
+               )
+
+      # Live walk used; prior cards ignored.
+      assert result.entries == [{70012, 1}, {82456, 4}, {91234, 2}, {44321, 1}]
+      assert result.mtga_player_cards_version == 4_217
+    end
+
+    test "no prior snapshot → no hint passed → full walk runs" do
+      snap = Map.put(valid_walker_snap(), :cards_version, 4_217)
+      TestBackend.set_fixture(walker_fixture(snap))
+
+      assert {:ok, result} =
+               Reader.read(
+                 mem: TestBackend,
+                 min_walker_cards: 1,
+                 prior_snapshot: nil
+               )
+
+      assert result.entries == [{70012, 1}, {82456, 4}, {91234, 2}, {44321, 1}]
+    end
   end
 
   describe "walker mastery merge" do

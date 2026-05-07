@@ -88,18 +88,34 @@ defmodule Scry2.MtgaMemory do
           # to skip the full walk when the value hasn't moved.
           # `nil` when the chain didn't resolve (treat as "version
           # unknown — must walk").
-          optional(:cards_version) => integer() | nil
+          optional(:cards_version) => integer() | nil,
+          # `true` when the walker matched the caller's
+          # `:expected_cards_version` opt and skipped the cards-dict
+          # iteration. `cards` is empty in that case; the Reader is
+          # responsible for carrying forward cards from the prior
+          # snapshot. Always `false` on the no-hint path.
+          optional(:cards_skipped) => boolean()
         }
 
   @doc """
   Walk MTGA's process memory and return the parsed collection +
   inventory in one shot.
 
+  Options:
+    * `:expected_cards_version` — when supplied as an integer matching
+      MTGA's live `_playerCardsVersion`, the walker skips iterating
+      the cards dictionary and returns `cards: []` with
+      `cards_skipped: true`. Currencies, boosters, and version are
+      still populated. Used by `Scry2.Collection.Reader` to short-
+      circuit the expensive part of the walk on steady-state polls.
+      `nil` (the default) runs the full walk.
+
   Implementations should propagate any walker-internal failure as
   `{:error, atom() | tuple()}`. The Reader uses any error as a
   signal to fall back to the structural-scan path.
   """
-  @callback walk_collection(pid_int()) :: {:ok, walker_snapshot()} | {:error, term()}
+  @callback walk_collection(pid_int(), keyword()) ::
+              {:ok, walker_snapshot()} | {:error, term()}
 
   @typedoc """
   PlayerInfo block returned by `walk_match_info/1` — same shape for

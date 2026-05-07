@@ -42,7 +42,9 @@ use super::vtable;
 /// equality checks.
 #[derive(Clone, Debug, PartialEq)]
 pub struct WalkResult {
-    /// Used entries from the `Cards` dictionary.
+    /// Used entries from the `Cards` dictionary. Empty when
+    /// `cards_skipped` is true — the caller is expected to carry
+    /// forward cards from a prior snapshot.
     pub entries: Vec<DictEntry>,
     /// Wildcards / currencies / vault progress.
     pub inventory: InventoryValues,
@@ -54,6 +56,13 @@ pub struct WalkResult {
     /// uses this to short-circuit cards reads when unchanged across
     /// successive snapshots.
     pub cards_version: Option<i32>,
+    /// True when `from_papa_class` skipped the cards-dict iteration
+    /// because the caller's `expected_cards_version` matched what
+    /// MTGA reports. `entries` is empty in that case; the caller is
+    /// responsible for carrying forward cards from the prior snapshot.
+    /// Always false from `from_service_wrapper` (it has no version
+    /// to compare against).
+    pub cards_skipped: bool,
 }
 
 /// Walk from a resolved `InventoryServiceWrapper` object, deriving
@@ -152,6 +161,44 @@ where
         // `from_papa_class` writes it onto the result after this
         // returns; the inner-only path (tests) leaves it `None`.
         cards_version: None,
+        cards_skipped: false,
+    })
+}
+
+/// Same as [`from_service_wrapper`] but skips the cards-dict
+/// iteration entirely. Used by [`from_papa_class`] when the caller's
+/// `expected_cards_version` matches MTGA's live `_playerCardsVersion`
+/// — the cards haven't changed, so re-iterating ~4.3K entries to
+/// produce the same list is wasted work. Inventory + boosters still
+/// run because they have no cheap version signal of their own.
+fn from_service_wrapper_skip_cards<F>(
+    offsets: &MonoOffsets,
+    service_wrapper_addr: u64,
+    read_mem: F,
+) -> Option<WalkResult>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let wrapper_class_bytes = object::read_runtime_class_bytes(service_wrapper_addr, &read_mem)?;
+
+    let inv_addr = object::read_instance_pointer(
+        offsets,
+        &wrapper_class_bytes,
+        service_wrapper_addr,
+        "m_inventory",
+        &read_mem,
+    )?;
+    let inventory_class_bytes = object::read_runtime_class_bytes(inv_addr, &read_mem)?;
+    let inventory_values =
+        inventory::read_inventory(offsets, &inventory_class_bytes, inv_addr, read_mem)?;
+    let boosters = boosters::read_boosters(offsets, &inventory_class_bytes, inv_addr, read_mem);
+
+    Some(WalkResult {
+        entries: Vec::new(),
+        inventory: inventory_values,
+        boosters,
+        cards_version: None,
+        cards_skipped: true,
     })
 }
 
@@ -176,6 +223,12 @@ where
 ///   the static `_instance` field and the instance
 ///   `<InventoryManager>k__BackingField`).
 /// - `read_mem(addr, len)` — remote-memory reader.
+/// - `expected_cards_version` — when `Some(v)` and MTGA's live
+///   `_playerCardsVersion` equals `v`, skip the cards-dict
+///   iteration. The returned `WalkResult` carries `cards_skipped:
+///   true` and `entries: vec![]`, but inventory + boosters are
+///   still populated. When `None` or when the live version differs,
+///   the full walk runs as before.
 ///
 /// Returns `None` on any miss along the chain.
 pub fn from_papa_class<F>(
@@ -184,6 +237,7 @@ pub fn from_papa_class<F>(
     domain_addr: u64,
     papa_class_bytes: &[u8],
     dictionary_class_bytes: &[u8],
+    expected_cards_version: Option<i32>,
     read_mem: F,
 ) -> Option<WalkResult>
 where
@@ -229,12 +283,25 @@ where
         &read_mem,
     );
 
-    let mut result = from_service_wrapper(
-        offsets,
-        service_wrapper_addr,
-        dictionary_class_bytes,
-        read_mem,
-    )?;
+    // Skip the dict iteration when the caller's hint matches MTGA's
+    // live counter. Both sides must be Some(_) and equal — `None` on
+    // either side falls through to the full walk (treat unknown
+    // version as "must re-read").
+    let skip_cards = matches!(
+        (expected_cards_version, cards_version),
+        (Some(expected), Some(live)) if expected == live,
+    );
+
+    let mut result = if skip_cards {
+        from_service_wrapper_skip_cards(offsets, service_wrapper_addr, read_mem)?
+    } else {
+        from_service_wrapper(
+            offsets,
+            service_wrapper_addr,
+            dictionary_class_bytes,
+            read_mem,
+        )?
+    };
     result.cards_version = cards_version;
     Some(result)
 }
@@ -807,6 +874,7 @@ mod tests {
             domain_addr,
             &papa_class_bytes,
             &dict_class_bytes,
+            None,
             |a, l| mem.read(a, l),
         )
         .ok_or("walk should succeed")?;
@@ -817,6 +885,173 @@ mod tests {
             value: 1
         }));
         assert_eq!(result.inventory.gold, 12_345);
+        assert!(!result.cards_skipped, "no hint => no skip");
+        Ok(())
+    }
+
+    /// Build a PAPA→IM→wrapper fixture mirroring
+    /// `from_papa_class_walks_static_then_runtime_classes`, but with
+    /// IM also exposing a `_playerCardsVersion` i32 field. Returns
+    /// the `(papa_class_addr, papa_class_bytes, dict_class_bytes,
+    /// domain_addr)` tuple ready for the walker.
+    fn build_papa_with_cards_version(
+        mem: &mut FakeMem,
+        cards_version_value: i32,
+    ) -> (u64, Vec<u8>, Vec<u8>, u64) {
+        let offsets = MonoOffsets::mtga_default();
+
+        let wrapper_addr = build_service_wrapper_fixture(
+            mem,
+            &[("Cards", 0x10, false), ("m_inventory", 0x20, false)],
+            &[(74116, 1), (32388, 4)],
+            [42, 17, 5, 2, 12_345, 3_000],
+            30.1,
+        );
+
+        // ---- IM object + class with _playerCardsVersion i32 at 0x40
+        let im_addr: u64 = 0x90_0000;
+        let im_vtable: u64 = 0x91_0000;
+        let im_class: u64 = 0x92_0000;
+        let im_fields_addr: u64 = 0x93_0000;
+        install_fields(
+            mem,
+            im_fields_addr,
+            0x94_0000,
+            0x95_0000,
+            &[
+                ("_inventoryServiceWrapper", 0x30, false),
+                ("_playerCardsVersion", 0x40, false),
+            ],
+        );
+        write_class_def_simple(mem, im_class, im_fields_addr, 2);
+        let mut im_obj = vec![0u8; 0x80];
+        im_obj[0x30..0x38].copy_from_slice(&wrapper_addr.to_le_bytes());
+        im_obj[0x40..0x44].copy_from_slice(&cards_version_value.to_le_bytes());
+        link_object_to_class(mem, im_addr, im_obj, im_vtable, im_class);
+
+        // ---- PAPA class + static storage + singleton wired to IM
+        let papa_class_addr: u64 = 0xB0_0000;
+        let papa_fields_addr: u64 = 0xA0_0000;
+        let papa_rti: u64 = 0xB1_0000;
+        let papa_vtable: u64 = 0xB2_0000;
+        let papa_storage: u64 = 0xB3_0000;
+        let domain_addr: u64 = 0xB4_0000;
+        let papa_vtable_size: i32 = 3;
+
+        install_fields(
+            mem,
+            papa_fields_addr,
+            0xA1_0000,
+            0xA2_0000,
+            &[
+                ("_instance", 0x10, true),
+                ("<InventoryManager>k__BackingField", 0x40, false),
+            ],
+        );
+        write_class_def_with_vtable(
+            mem,
+            papa_class_addr,
+            papa_fields_addr,
+            2,
+            papa_rti,
+            papa_vtable_size,
+        );
+
+        let mut domain = vec![0u8; 0x100];
+        domain[offsets.domain_id..offsets.domain_id + 4].copy_from_slice(&0u32.to_le_bytes());
+        mem.add(domain_addr, domain);
+        install_static_storage_chain(
+            mem,
+            papa_rti,
+            papa_vtable,
+            papa_storage,
+            papa_vtable_size,
+        );
+
+        let papa_singleton: u64 = 0xC0_0000;
+        let mut storage = vec![0u8; 0x40];
+        storage[0x10..0x18].copy_from_slice(&papa_singleton.to_le_bytes());
+        mem.add(papa_storage, storage);
+
+        let mut papa_obj = vec![0u8; 0x80];
+        papa_obj[0x40..0x48].copy_from_slice(&im_addr.to_le_bytes());
+        mem.add(papa_singleton, papa_obj);
+
+        let papa_class_bytes = mem.read(papa_class_addr, mono::CLASS_DEF_BLOB_LEN).unwrap();
+        let dict_class_bytes = mem.read(0x32_0000, mono::CLASS_DEF_BLOB_LEN).unwrap();
+        (papa_class_addr, papa_class_bytes, dict_class_bytes, domain_addr)
+    }
+
+    #[test]
+    fn from_papa_class_skips_cards_when_hint_matches() -> Result<(), String> {
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+        let (papa_class_addr, papa_bytes, dict_bytes, domain_addr) =
+            build_papa_with_cards_version(&mut mem, 4_217);
+
+        let result = from_papa_class(
+            &offsets,
+            papa_class_addr,
+            domain_addr,
+            &papa_bytes,
+            &dict_bytes,
+            Some(4_217),
+            |a, l| mem.read(a, l),
+        )
+        .ok_or("walk should succeed")?;
+
+        assert!(result.cards_skipped);
+        assert!(result.entries.is_empty());
+        assert_eq!(result.cards_version, Some(4_217));
+        // Inventory still populated.
+        assert_eq!(result.inventory.gold, 12_345);
+        Ok(())
+    }
+
+    #[test]
+    fn from_papa_class_walks_cards_when_hint_differs() -> Result<(), String> {
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+        let (papa_class_addr, papa_bytes, dict_bytes, domain_addr) =
+            build_papa_with_cards_version(&mut mem, 4_217);
+
+        let result = from_papa_class(
+            &offsets,
+            papa_class_addr,
+            domain_addr,
+            &papa_bytes,
+            &dict_bytes,
+            Some(4_216), /* prior version, before bump */
+            |a, l| mem.read(a, l),
+        )
+        .ok_or("walk should succeed")?;
+
+        assert!(!result.cards_skipped);
+        assert_eq!(result.entries.len(), 2);
+        assert_eq!(result.cards_version, Some(4_217));
+        Ok(())
+    }
+
+    #[test]
+    fn from_papa_class_walks_cards_when_hint_is_none() -> Result<(), String> {
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+        let (papa_class_addr, papa_bytes, dict_bytes, domain_addr) =
+            build_papa_with_cards_version(&mut mem, 4_217);
+
+        let result = from_papa_class(
+            &offsets,
+            papa_class_addr,
+            domain_addr,
+            &papa_bytes,
+            &dict_bytes,
+            None,
+            |a, l| mem.read(a, l),
+        )
+        .ok_or("walk should succeed")?;
+
+        assert!(!result.cards_skipped);
+        assert_eq!(result.entries.len(), 2);
         Ok(())
     }
 }

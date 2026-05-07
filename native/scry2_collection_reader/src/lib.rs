@@ -154,6 +154,12 @@ pub struct WalkSnapshot {
     /// can't be resolved on this MTGA build. Reader uses it to
     /// short-circuit cards reads across successive snapshots.
     pub cards_version: Option<i32>,
+    /// `true` when the walker matched the caller's
+    /// `expected_cards_version` and skipped iterating the cards
+    /// dictionary. `cards` is empty in that case; the Elixir Reader
+    /// is responsible for carrying forward cards from the prior
+    /// snapshot. Always `false` on the no-hint path.
+    pub cards_skipped: bool,
 }
 
 /// Wire-format mirror of [`walker::run::WalkError`]. Variants
@@ -221,29 +227,45 @@ fn snapshot_to_wire(snap: walker::run::Snapshot) -> WalkSnapshot {
         build_hint: snap.mtga_build_hint,
         reader_version: READER_VERSION.to_string(),
         cards_version: snap.cards_version,
+        cards_skipped: snap.cards_skipped,
     }
 }
 
 #[rustler::nif(schedule = "DirtyIo")]
-fn walk_collection(pid: i32) -> Result<WalkSnapshot, WalkErrorWire> {
+fn walk_collection_nif(
+    pid: i32,
+    expected_cards_version: Option<i32>,
+) -> Result<WalkSnapshot, WalkErrorWire> {
     let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
     let counter = AtomicU64::new(0);
     let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
     let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
     let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
-    let result = walker::run::walk_collection_cached(pid as u32, &maps, read_mem, || {
-        walker::build_hint::find_mtga_root(&maps)
-            .and_then(|root| walker::build_hint::read_build_guid(&root))
-    });
+    let result = walker::run::walk_collection_cached(
+        pid as u32,
+        &maps,
+        read_mem,
+        || {
+            walker::build_hint::find_mtga_root(&maps)
+                .and_then(|root| walker::build_hint::read_build_guid(&root))
+        },
+        expected_cards_version,
+    );
     let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
         let counter = AtomicU64::new(0);
         let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
         let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
         let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
-        walker::run::walk_collection_cached(pid as u32, &maps, read_mem, || {
-            walker::build_hint::find_mtga_root(&maps)
-                .and_then(|root| walker::build_hint::read_build_guid(&root))
-        })
+        walker::run::walk_collection_cached(
+            pid as u32,
+            &maps,
+            read_mem,
+            || {
+                walker::build_hint::find_mtga_root(&maps)
+                    .and_then(|root| walker::build_hint::read_build_guid(&root))
+            },
+            expected_cards_version,
+        )
     })
     .map_err(WalkErrorWire::from)?;
     Ok(snapshot_to_wire(snap))
