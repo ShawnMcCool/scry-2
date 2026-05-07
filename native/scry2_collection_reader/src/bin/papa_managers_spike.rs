@@ -143,6 +143,75 @@ const TITLES_CATALOG_PROBES: DeepDrill = DeepDrill {
     bool_probes: &[],
 };
 
+// Drill the LoadPattern + CachePattern objects on AssetLookupTreeLoader.
+// First spike pass showed AssetLookupTreeLoader has only Loader/Saver
+// pattern slots — no version field directly. Asset bundle / catalog
+// version probably lives on one of these pattern objects. Probe a
+// generous list of candidate names; whatever lights up wins.
+const LOAD_PATTERN_PROBES: DeepDrill = DeepDrill {
+    sub_field: "<LoadPattern>k__BackingField",
+    string_probes: &[
+        "_version",
+        "Version",
+        "<Version>k__BackingField",
+        "_assetVersion",
+        "<AssetVersion>k__BackingField",
+        "_manifestVersion",
+        "<ManifestVersion>k__BackingField",
+        "_catalogVersion",
+        "<CatalogVersion>k__BackingField",
+        "_dataVersion",
+        "<DataVersion>k__BackingField",
+        "_bundleVersion",
+        "<BundleVersion>k__BackingField",
+        "_buildVersion",
+        "<BuildVersion>k__BackingField",
+        "_revision",
+        "<Revision>k__BackingField",
+        "_hash",
+        "Hash",
+        "<Hash>k__BackingField",
+        "_root",
+        "Root",
+        "<Root>k__BackingField",
+        "_basePath",
+        "<BasePath>k__BackingField",
+        "_url",
+        "<Url>k__BackingField",
+        "_path",
+        "<Path>k__BackingField",
+    ],
+    int_probes: &[],
+    bool_probes: &[],
+};
+
+const CACHE_PATTERN_PROBES: DeepDrill = DeepDrill {
+    sub_field: "<CachePattern>k__BackingField",
+    string_probes: &[
+        "_version",
+        "Version",
+        "<Version>k__BackingField",
+        "_assetVersion",
+        "<AssetVersion>k__BackingField",
+        "_manifestVersion",
+        "<ManifestVersion>k__BackingField",
+        "_catalogVersion",
+        "<CatalogVersion>k__BackingField",
+        "_dataVersion",
+        "<DataVersion>k__BackingField",
+        "_path",
+        "<Path>k__BackingField",
+        "_basePath",
+        "<BasePath>k__BackingField",
+        "_cacheRoot",
+        "<CacheRoot>k__BackingField",
+        "_root",
+        "<Root>k__BackingField",
+    ],
+    int_probes: &[],
+    bool_probes: &[],
+};
+
 // Drill the EnvironmentDescription object on FrontDoorConnectionManager
 // — the spike's first PAPA pass discovered `_currentEnvironment` is an
 // `EnvironmentDescription`. That's the server-region anchor for the
@@ -219,22 +288,10 @@ const TARGETS: &[Target] = &[
     },
     Target {
         papa_field: "AssetLookupSystem",
-        string_probes: &[
-            "_assetVersion",
-            "AssetVersion",
-            "<AssetVersion>k__BackingField",
-            "_assetBundleVersion",
-            "<AssetBundleVersion>k__BackingField",
-            "_manifestVersion",
-            "<ManifestVersion>k__BackingField",
-            "_buildVersion",
-            "<BuildVersion>k__BackingField",
-            "_dataVersion",
-            "<DataVersion>k__BackingField",
-        ],
+        string_probes: &[],
         int_probes: &[],
-        bool_probes: &[],
-        deep_drill: &[],
+        bool_probes: &["_isPlaying"],
+        deep_drill: &[LOAD_PATTERN_PROBES, CACHE_PATTERN_PROBES],
     },
     Target {
         papa_field: "BuildVersionProvider",
