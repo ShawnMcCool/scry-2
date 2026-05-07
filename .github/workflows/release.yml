@@ -148,7 +148,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version-file: tray/go.mod
           cache-dependency-path: tray/go.sum
 
       - name: Install tray system dependencies (Linux)

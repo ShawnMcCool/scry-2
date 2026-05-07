@@ -66,7 +66,9 @@ defmodule Scry2.MixProject do
       {:bandit, "~> 1.5"},
       # Scry2-specific
       {:file_system, "~> 1.0"},
-      {:oban, "~> 2.19"},
+      # Pinned to 2.21.x — 2.22 added startup-time migration verification
+      # that fights `Ecto.Adapters.SQL.Sandbox` ownership in tests.
+      {:oban, "~> 2.21.0"},
       {:req, "~> 0.5"},
       {:nimble_csv, "~> 1.2"},
       {:toml, "~> 0.7"},
