@@ -30,7 +30,11 @@ path = "src/bin/papa_managers_spike.rs"
 required-features = []
 
 [dependencies]
-rustler = "0.37"
+# Pinned to 0.37.3 to match the Hex `:rustler` mix dep version. Cargo
+# resolving to 0.37.4 against an Elixir-side 0.37.3 produces a NIF whose
+# on_load fails on CI (works locally, but the BEAM ABI surface drifted
+# enough between patch versions to break the cross-compile).
+rustler = "= 0.37.3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
+libc = "= 0.2.185"
