@@ -2,32 +2,43 @@
 set -euo pipefail
 
 INSTALL_DIR="$HOME/.local/lib/scry_2"
-DESKTOP_FILE="$HOME/.config/autostart/scry2.desktop"
+UNIT_PATH="$HOME/.config/systemd/user/scry_2.service"
+DESKTOP_PATH="$HOME/.local/share/applications/scry_2.desktop"
+LEGACY_AUTOSTART="$HOME/.config/autostart/scry2.desktop"
 DATA_DIR="$HOME/.local/share/scry_2"
 CONFIG_DIR="$HOME/.config/scry_2"
 DB_FILE="$DATA_DIR/scry_2.db"
+SERVICE="scry_2.service"
 
 echo "Uninstalling Scry2..."
 
-# Stop tray (it will also stop the backend on exit)
+# ── 1. Stop + disable systemd unit ──────────────────────────────────
+if systemctl --user is-active --quiet "$SERVICE" 2>/dev/null; then
+  systemctl --user stop "$SERVICE"
+fi
+systemctl --user disable "$SERVICE" 2>/dev/null || true
+
+# ── 2. Stop legacy tray, if any (older installs) ────────────────────
 if pgrep -x scry2-tray &>/dev/null; then
-    pkill -x scry2-tray 2>/dev/null || true
-    sleep 2
+  pkill -x scry2-tray 2>/dev/null || true
+  sleep 1
 fi
 
-# Stop backend directly in case tray was not running
-if [[ -f "$INSTALL_DIR/bin/scry_2" ]]; then
-    "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
+# ── 3. Belt-and-braces graceful BEAM stop ───────────────────────────
+if [ -x "$INSTALL_DIR/bin/scry_2" ]; then
+  "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
 fi
 
-# Remove autostart entry
-rm -f "$DESKTOP_FILE"
+# ── 4. Remove files ─────────────────────────────────────────────────
+rm -f "$UNIT_PATH" "$DESKTOP_PATH" "$LEGACY_AUTOSTART"
 
-# Remove install directory (binaries only — data dir is untouched)
-if [[ -d "$INSTALL_DIR" ]]; then
-    rm -rf "$INSTALL_DIR"
-    echo "Removed $INSTALL_DIR"
+if [ -d "$INSTALL_DIR" ]; then
+  rm -rf "$INSTALL_DIR"
+  echo "Removed $INSTALL_DIR"
 fi
+
+# ── 5. Reload systemd so the removed unit is forgotten ──────────────
+systemctl --user daemon-reload 2>/dev/null || true
 
 echo ""
 echo "Scry2 has been uninstalled."
@@ -35,12 +46,12 @@ echo ""
 echo "Your database has NOT been deleted."
 echo ""
 
-if [[ -f "$DB_FILE" ]]; then
-    DB_SIZE=$(du -h "$DB_FILE" | cut -f1)
-    echo "  Database: $DB_FILE"
-    echo "  Size:     $DB_SIZE"
+if [ -f "$DB_FILE" ]; then
+  DB_SIZE=$(du -h "$DB_FILE" | cut -f1)
+  echo "  Database: $DB_FILE"
+  echo "  Size:     $DB_SIZE"
 else
-    echo "  Database: $DB_FILE (not found)"
+  echo "  Database: $DB_FILE (not found)"
 fi
 
 echo "  Config:   $CONFIG_DIR/config.toml"

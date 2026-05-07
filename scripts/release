@@ -22,17 +22,18 @@ MIX_ENV=prod mix assets.deploy
 banner "Building Elixir release"
 MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8 MIX_ENV=prod mix release
 
-banner "Building tray binary"
 case "$(uname -s)" in
   Linux)
-    (cd tray && go build -o ../scry2-tray .)
     install_script="scripts/install-linux"
     uninstall_script="scripts/uninstall-linux"
+    package_tray=false
     ;;
   Darwin)
+    banner "Building tray binary"
     (cd tray && go build -o ../scry2-tray .)
     install_script="scripts/install-macos"
     uninstall_script="scripts/uninstall-macos"
+    package_tray=true
     ;;
   *)
     echo "Error: local builds not supported on $(uname -s)."
@@ -46,10 +47,28 @@ package="_build/prod/package"
 rm -rf "$package"
 mkdir -p "$package"
 cp -r _build/prod/rel/scry_2/. "$package/"
-cp scry2-tray "$package/"
 cp "$install_script" "$package/install"
 cp "$uninstall_script" "$package/uninstall"
-chmod +x "$package/install" "$package/uninstall" "$package/scry2-tray"
+chmod +x "$package/install" "$package/uninstall"
+
+# Linux runs as a systemd user service; tray binary is not packaged.
+# macOS still uses the tray as the launcher.
+if [ "$package_tray" = "true" ]; then
+  cp scry2-tray "$package/"
+  chmod +x "$package/scry2-tray"
+fi
+
+# Strip the Windows install/uninstall scripts that ship as overlays
+# in _build/prod/rel/scry_2/ — they don't belong in Linux/macOS
+# packages. Matches the CI release.yml packaging step.
+rm -f "$package/install.bat" "$package/uninstall.bat"
+
+# Linux ships the systemd unit + desktop launcher templates next to
+# the install script, which materialises them at user-config paths.
+if [ "$(uname -s)" = "Linux" ]; then
+  cp defaults/scry_2.service "$package/scry_2.service"
+  cp defaults/scry_2.desktop "$package/scry_2.desktop"
+fi
 
 banner "Release staged at $package"
 echo "  Install locally:  scripts/install"

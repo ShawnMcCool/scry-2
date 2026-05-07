@@ -151,12 +151,8 @@ jobs:
           go-version-file: tray/go.mod
           cache-dependency-path: tray/go.sum
 
-      - name: Install tray system dependencies (Linux)
-        if: matrix.os == 'ubuntu-latest'
-        run: sudo apt-get update && sudo apt-get install -y libayatana-appindicator3-dev
-
-      - name: Build tray binary (Linux/macOS)
-        if: matrix.os != 'windows-latest'
+      - name: Build tray binary (macOS)
+        if: matrix.os == 'macos-latest'
         run: cd tray && go build -o ../scry2-tray .
 
       - name: Build tray binary (Windows)
@@ -164,16 +160,19 @@ jobs:
         shell: pwsh
         run: cd tray && go build -ldflags="-H windowsgui" -o ../scry2-tray.exe .
 
+      # Linux runs the BEAM as a systemd user service — no tray binary
+      # is packaged. Service control: `systemctl --user start/stop scry_2`.
       - name: Package release (Linux)
         if: matrix.os == 'ubuntu-latest'
         run: |
           ARCHIVE="scry_2-${{ github.ref_name }}-${{ matrix.platform }}"
           mkdir "$ARCHIVE"
           cp -r _build/prod/rel/scry_2/. "$ARCHIVE/"
-          cp scry2-tray "$ARCHIVE/scry2-tray"
           rm -f "$ARCHIVE/install.bat" "$ARCHIVE/uninstall.bat"
           cp scripts/install-linux "$ARCHIVE/install"
           cp scripts/uninstall-linux "$ARCHIVE/uninstall"
+          cp defaults/scry_2.service "$ARCHIVE/scry_2.service"
+          cp defaults/scry_2.desktop "$ARCHIVE/scry_2.desktop"
           printf "Run ./install to set up Scry2.\nSee https://github.com/${{ github.repository }} for full instructions.\n" > "$ARCHIVE/README.txt"
           tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
 

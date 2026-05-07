@@ -3,7 +3,8 @@ defmodule Scry2.SelfUpdate.Handoff do
   Spawns the platform installer as a detached process that outlives the
   BEAM. After handoff the caller is expected to call `System.stop/1`; the
   installer is responsible for replacing files, removing the apply lock,
-  and relaunching the tray binary.
+  and bringing the new release back up — relaunching the tray binary on
+  Windows / macOS, or `systemctl --user restart scry_2.service` on Linux.
 
   ## Security posture
 
@@ -35,10 +36,10 @@ defmodule Scry2.SelfUpdate.Handoff do
   @type spawner :: (String.t(), [String.t()], [{String.t(), String.t()}] -> :ok)
 
   # GUI session vars (DISPLAY / WAYLAND_DISPLAY / XAUTHORITY) are
-  # required by the relaunched scry2-tray — without them GTK can't open
-  # a display, the tray exits, and the watchdog never starts the BEAM.
-  # The original whitelist stripped them along with RELEASE_*, breaking
-  # every in-app update on Linux/macOS desktops.
+  # required by the relaunched scry2-tray on macOS — without them GTK
+  # can't open a display, the tray exits, and the watchdog never starts
+  # the BEAM. They're harmless on Linux (the systemd installer doesn't
+  # need them) but kept in the whitelist for cross-platform symmetry.
   @minimal_unix_env_keys ~w(
     HOME
     XDG_RUNTIME_DIR

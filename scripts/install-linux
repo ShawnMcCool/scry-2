@@ -1,68 +1,102 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Linux installer — runs both as `scripts/install-linux` (in-repo) and
+# as the bundled `install` script inside the release tarball (renamed
+# by scripts/release / the CI release workflow). When invoked by the
+# self-updater, $SCRIPT_DIR points at the staged release root.
+
 INSTALL_DIR="$HOME/.local/lib/scry_2"
-DESKTOP_FILE="$HOME/.config/autostart/scry2.desktop"
+UNIT_PATH="$HOME/.config/systemd/user/scry_2.service"
+DESKTOP_PATH="$HOME/.local/share/applications/scry_2.desktop"
+LEGACY_AUTOSTART="$HOME/.config/autostart/scry2.desktop"
+SERVICE="scry_2.service"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# When run from the in-app self-updater on Scry2 ≤ 0.25.2, the BEAM
-# spawns this script under `env -i` with a whitelist that did not
-# include DISPLAY / WAYLAND_DISPLAY / XAUTHORITY. Without those, the
-# tray we relaunch below crashes with "Gtk-WARNING: cannot open
-# display:" and the BEAM never starts. Rehydrate the GUI session env
-# from systemd if it's missing — XDG_RUNTIME_DIR + DBUS were always in
-# the whitelist, so `systemctl --user` works in the stripped env.
-if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ] && command -v systemctl &>/dev/null; then
-    while IFS= read -r line; do
-        export "$line"
-    done < <(systemctl --user show-environment 2>/dev/null \
-             | grep -E '^(DISPLAY|WAYLAND_DISPLAY|XAUTHORITY|XDG_SESSION_TYPE|XDG_CURRENT_DESKTOP)=')
-fi
+# When run from the in-app self-updater, the BEAM spawns this script
+# under `env -i` with a small whitelist. systemctl --user works in
+# that whitelist (XDG_RUNTIME_DIR + DBUS_SESSION_BUS_ADDRESS + HOME
+# are present); xdg-open + browser launch don't run from this script
+# anymore, so we no longer need to rehydrate DISPLAY / WAYLAND_DISPLAY.
 
-echo "Installing Scry2..."
+echo "Installing Scry2 (systemd user service)..."
 
-# Stop existing backend and tray if running
-if [ -x "$INSTALL_DIR/bin/scry_2" ]; then
-    echo "Stopping existing Scry2 backend..."
-    "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
-fi
+# ── 1. Stop anything already running ────────────────────────────────
+# Old tray-based install: kill scry2-tray + autostart entry. Idempotent
+# — these run no-op on a fresh system.
 if pgrep -x scry2-tray &>/dev/null; then
-    echo "Stopping existing Scry2 tray..."
-    pkill -x scry2-tray 2>/dev/null || true
-    sleep 1
+  echo "Stopping legacy Scry2 tray..."
+  pkill -x scry2-tray 2>/dev/null || true
+  sleep 1
+fi
+if [ -f "$LEGACY_AUTOSTART" ]; then
+  echo "Removing legacy autostart entry..."
+  rm -f "$LEGACY_AUTOSTART"
 fi
 
-# Copy release files
+# Stop the systemd unit if it's already running so file replacement
+# doesn't fight an active BEAM. `is-active` exits non-zero on
+# inactive — guard against set -e.
+if systemctl --user is-active --quiet "$SERVICE" 2>/dev/null; then
+  echo "Stopping running Scry2 service..."
+  systemctl --user stop "$SERVICE"
+fi
+
+# Belt-and-braces: stop any orphaned BEAM that wasn't under systemd
+# (e.g. user started it manually before the systemd switch).
+if [ -x "$INSTALL_DIR/bin/scry_2" ]; then
+  "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
+fi
+
+# ── 2. Replace install directory ────────────────────────────────────
 echo "Copying files to $INSTALL_DIR..."
 rm -rf "$INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
 cp -r "$SCRIPT_DIR/." "$INSTALL_DIR/"
-chmod +x "$INSTALL_DIR/scry2-tray"
 
-# Enable autostart on login via XDG
-mkdir -p "$(dirname "$DESKTOP_FILE")"
-cat > "$DESKTOP_FILE" << EOF
-[Desktop Entry]
-Type=Application
-Name=Scry2
-Exec=$INSTALL_DIR/scry2-tray
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-EOF
+# ── 3. Install systemd unit ─────────────────────────────────────────
+# The unit template lives next to the release in `scry_2.service` —
+# scripts/release / CI copies it into the package alongside `install`.
+# We materialise it under ~/.config/systemd/user/ with the staged
+# install dir patched into ExecStart / ExecStop.
+echo "Installing systemd unit..."
+mkdir -p "$(dirname "$UNIT_PATH")"
+sed \
+  -e "s|/path/to/scry_2/bin/scry_2 start|$INSTALL_DIR/bin/scry_2 start|" \
+  -e "s|/path/to/scry_2/bin/scry_2 stop|$INSTALL_DIR/bin/scry_2 stop|" \
+  "$INSTALL_DIR/scry_2.service" > "$UNIT_PATH"
 
-# Clear any stale update lock from previous crash or successful apply
+# ── 4. Install desktop launcher ─────────────────────────────────────
+echo "Installing desktop launcher..."
+mkdir -p "$(dirname "$DESKTOP_PATH")"
+cp "$INSTALL_DIR/scry_2.desktop" "$DESKTOP_PATH"
+# Refresh the desktop database so the entry shows up in launchers
+# without a re-login. update-desktop-database is part of
+# desktop-file-utils — present on most desktops, optional here.
+if command -v update-desktop-database &>/dev/null; then
+  update-desktop-database "$(dirname "$DESKTOP_PATH")" 2>/dev/null || true
+fi
+
+# ── 5. Clear stale apply.lock ───────────────────────────────────────
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/scry_2"
 rm -f "$DATA_DIR/apply.lock"
 
-# Launch tray (which will start the backend)
-echo "Starting Scry2..."
-"$INSTALL_DIR/scry2-tray" &
+# ── 6. Reload + enable + start ──────────────────────────────────────
+systemctl --user daemon-reload
+systemctl --user enable "$SERVICE" >/dev/null 2>&1 || systemctl --user enable "$SERVICE"
+systemctl --user start "$SERVICE"
+
+# Linger keeps the user manager running across logout — the service
+# stays up while the machine is up, regardless of an active session.
+# Quietly ignored if loginctl isn't available (rare on systemd hosts).
+loginctl enable-linger "$USER" 2>/dev/null || true
 
 echo ""
-echo "Scry2 installed! It will start automatically on login."
-echo "Access your stats at: http://localhost:6015"
+echo "Scry2 installed and running under systemd."
+echo "  URL:     http://localhost:6015"
+echo "  Logs:    journalctl --user -u $SERVICE -f"
+echo "  Stop:    systemctl --user stop $SERVICE"
+echo "  Status:  systemctl --user status $SERVICE"
 echo ""
-echo "To uninstall later, run: $INSTALL_DIR/uninstall"
-echo ""
-echo "Note: On GNOME, install 'gnome-shell-extension-appindicator' if the tray icon does not appear."
+echo "Uninstall: $INSTALL_DIR/uninstall"

@@ -166,7 +166,7 @@ scripts/tag-release 0.2.0    # run precommit, bump version, tag, push — trigge
 
 The release workflow:
 
-1. **Local build** — `scripts/release` builds the Elixir release and tray binary, stages everything in `_build/prod/package/`. Use this to verify a release builds before tagging.
+1. **Local build** — `scripts/release` builds the Elixir release (plus the tray binary on macOS) and stages everything in `_build/prod/package/`. On Linux the package omits the tray and includes the systemd unit + `.desktop` templates instead. Use this to verify a release builds before tagging.
 2. **Local install** — `scripts/install` builds and installs in one step. Use this to test the production release on your machine, or to keep the production app installed for your own gameplay analysis.
 3. **Tag and publish** — `scripts/tag-release <version>` runs `mix precommit`, bumps the version in `mix.exs`, creates a jj tag, and pushes to GitHub. GitHub Actions then builds all three platform archives (Linux, macOS, Windows) and publishes them to GitHub Releases.
 
@@ -205,16 +205,18 @@ Both paths register autostart via `HKCU\Software\Microsoft\Windows\CurrentVersio
 - **`build-msi.ps1` generates fragments programmatically** because WiX v5's `<Files>` element doesn't work reliably with the CLI tool. The fragments enumerate every file in the Elixir release and create Component/File/Directory entries.
 - **Don't add custom actions to delete INSTALLFOLDER on uninstall.** MSI's standard `RemoveFiles` already removes every file and directory tracked in the Component/Directory tables — including INSTALLFOLDER. Both `util:RemoveFolderEx` (timing: runs before INSTALLFOLDER is set in the session) and a deferred `WixQuietExec64` with `rmdir /s /q` (quoting: requires `"cmd.exe"` in quotes, errors 0x80070057 otherwise) were attempted — both were redundant and introduced bugs. The real failure mode is **locked files**: if erl.exe / beam.smp / epmd.exe are still running when uninstall starts, rmdir blocks. Solution is to stop the backend first (the tray does this on normal shutdown; CI kills processes explicitly before uninstall).
 
-### Tray Binary
+### Lifecycle: Linux is systemd; Windows + macOS use the tray
 
-The system tray binary (`tray/`, Go) is a **thin desktop launcher** on all platforms. It:
+**Linux** runs the Elixir backend as a **systemd user service** (`scry_2.service`, installed at `~/.config/systemd/user/scry_2.service`). The tray binary is **not packaged on Linux** — `systemctl --user start/stop scry_2` is the supported control surface, and a `.desktop` launcher in `~/.local/share/applications/scry_2.desktop` opens the dashboard at `http://localhost:6015`. `loginctl enable-linger` keeps the unit running across logout. The unit + desktop templates live at `defaults/scry_2.service` and `defaults/scry_2.desktop`; `scripts/install-linux` materialises them with the install dir patched in.
+
+**Windows + macOS** run the system tray binary (`tray/`, Go) as a thin desktop launcher. It:
 
 - Starts and stops the Elixir backend (`bin/scry_2 start/stop`)
 - Provides a system tray icon with menu (**Open**, **Open Settings**, **Auto-start on login**, **Quit**)
 - Opens the browser to `http://localhost:6015` on first launch
 - Runs a watchdog that restarts the backend if it crashes — but **respects the apply-lock file** (see [ADR-033]) and skips restart while an update is in progress
 
-The tray has **no update logic**. Self-update is entirely in Elixir (see Self-Update below). The same `scry2-tray` / `scry2-tray.exe` binary is used on every platform and by both the zip and MSI install paths on Windows — no build-time variants, no `-X` ldflags for versioning or installer type.
+The tray has **no update logic**. Self-update is entirely in Elixir (see Self-Update below). The same `scry2-tray` / `scry2-tray.exe` binary is used on Windows and macOS; both installer paths on Windows (zip + MSI) wire it as the autostart entry. On Linux, the unit's `Restart=on-failure` directive is the equivalent of the watchdog, and the staged installer's `systemctl --user restart scry_2.service` is the equivalent of relaunching the tray after self-update.
 
 ### Self-Update
 

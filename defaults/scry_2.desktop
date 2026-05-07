@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Scry2
+GenericName=MTGA Companion
+Comment=Open the Scry2 dashboard
+# Uses xdg-open so the user's default browser handles the URL. The
+# Scry2 backend runs as a systemd user service; this entry is just the
+# launcher shortcut. Service control:
+#   systemctl --user start scry_2
+#   systemctl --user stop scry_2
+#   systemctl --user status scry_2
+Exec=xdg-open http://localhost:6015
+Terminal=false
+Categories=Utility;Game;
+Keywords=mtga;magic;arena;
