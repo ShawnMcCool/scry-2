@@ -82,6 +82,13 @@ defmodule Scry2.MtgaLogIngestion do
 
   Returns `{inserted_count, nil}`.
   """
+  # SQLite bind-variable limit: MAX_VARIABLE_NUMBER=32766 (compiled into
+  # the bundled exqlite). Repo.insert_all does NOT auto-split. The
+  # rows we build below use 8 columns, so the hard ceiling is 4095 per
+  # call. 3_000 keeps comfortable headroom; matches the chunking
+  # convention used in `Scry2.Events.append_batch!/1`.
+  @insert_chunk_size 3_000
+
   def insert_events!(events_attrs) when is_list(events_attrs) do
     now = DateTime.utc_now(:second)
 
@@ -93,11 +100,18 @@ defmodule Scry2.MtgaLogIngestion do
         |> Map.put_new(:processed, false)
       end)
 
-    {count, _} =
-      Repo.insert_all(EventRecord, rows,
-        on_conflict: :nothing,
-        conflict_target: [:source_file, :log_epoch, :file_offset]
-      )
+    count =
+      rows
+      |> Enum.chunk_every(@insert_chunk_size)
+      |> Enum.reduce(0, fn chunk, acc ->
+        {chunk_count, _} =
+          Repo.insert_all(EventRecord, chunk,
+            on_conflict: :nothing,
+            conflict_target: [:source_file, :log_epoch, :file_offset]
+          )
+
+        acc + chunk_count
+      end)
 
     if count > 0 do
       Topics.broadcast(Topics.mtga_logs_events(), {:events_inserted, count})

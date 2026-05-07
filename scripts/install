@@ -11,7 +11,7 @@ set -euo pipefail
 #   2. Runs the staged platform installer from inside that directory
 #
 # The staged installer is one of:
-#   scripts/install-linux   (Linux — XDG autostart + tray)
+#   scripts/install-linux   (Linux — systemd user service + .desktop launcher)
 #   scripts/install-macos   (macOS — LaunchAgent + tray)
 #
 # Usage:

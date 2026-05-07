@@ -11,6 +11,15 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Catching up after a long offline window no longer crashes Scry.**
+  When Scry started up against a large backlog of unread MTGA events
+  (after an extended pause, an MTGA update, or a system reboot), the
+  initial bulk insert tried to stuff every event into a single SQL
+  statement and tripped SQLite's hard 32,766-placeholder ceiling. The
+  insert is now chunked, so any backlog size catches up cleanly.
+
 ## v0.36.0 — 2026-05-08
 
 ### Improved

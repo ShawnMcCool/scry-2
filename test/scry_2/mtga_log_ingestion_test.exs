@@ -53,6 +53,40 @@ defmodule Scry2.MtgaLogIngestionTest do
     end
   end
 
+  describe "insert_events!/1" do
+    test "chunks bulk inserts so they don't blow SQLite's 32766 placeholder ceiling" do
+      # Regression for the v0.35.0 → v0.36.0 transition where a large
+      # raw-event backlog (after a long offline window) crashed the
+      # Watcher with `Exqlite.Error: variable number must be between
+      # ?1 and ?32766`. With 8 columns per row, the practical ceiling
+      # is 4095; 5_000 rows in one batch must therefore be chunked
+      # to succeed.
+      events =
+        Enum.map(1..5_000, fn i ->
+          %{
+            event_type: "MatchStart",
+            file_offset: i,
+            source_file: "/tmp/bulk-chunk.log",
+            log_epoch: 0,
+            raw_json: ~s({"i":#{i}})
+          }
+        end)
+
+      assert {count, nil} = MtgaLogIngestion.insert_events!(events)
+      assert count == 5_000
+
+      total =
+        Scry2.Repo.aggregate(
+          Scry2.MtgaLogIngestion.EventRecord
+          |> Ecto.Query.where([e], e.source_file == "/tmp/bulk-chunk.log"),
+          :count,
+          :id
+        )
+
+      assert total == 5_000
+    end
+  end
+
   describe "list_unprocessed/1 and mark_processed!/1" do
     test "only returns unprocessed rows and marks them as processed" do
       a = TestFactory.create_event_record(%{event_type: "MatchStart"})
