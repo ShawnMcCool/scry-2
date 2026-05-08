@@ -31,6 +31,13 @@ defmodule Scry2.Cards.SetRosterRefresher do
     rosters = SetRoster.refresh()
     Log.info(:importer, "set roster cache refreshed (#{map_size(rosters)} sets)")
     {:noreply, state}
+  rescue
+    # Tests broadcast `cards_refreshed` from synthesize integration tests; the
+    # GenServer runs outside the test's sandbox, so the refresh query has no
+    # ownership and raises `DBConnection.OwnershipError`. Production calls
+    # always have ownership (via the Oban worker / supervisor tree), so the
+    # rescue is a no-op outside of test harnesses.
+    DBConnection.OwnershipError -> {:noreply, state}
   end
 
   def handle_info(_other, state), do: {:noreply, state}
