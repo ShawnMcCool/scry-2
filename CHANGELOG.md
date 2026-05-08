@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.39.0 — 2026-05-08
+
 ### Improved
 
 - **The settings gear no longer disappears at narrow window widths.** The
