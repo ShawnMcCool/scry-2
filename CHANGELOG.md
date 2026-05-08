@@ -11,6 +11,21 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Collection page now shows your newest sets correctly.** Sets
+  released before Scryfall finishes tagging Arena IDs — for example
+  Secrets of Strixhaven, Teenage Mutant Ninja Turtles, and Avatar: The
+  Last Airbender — were appearing as bare three-letter codes (`SOS`,
+  `TMT`, `TLA`) with no release date, sorted to the bottom of the grid.
+  They now show their proper printed names and release dates and sort
+  correctly with the rest of your collection.
+- **Cards from those new sets now show full card data.** Type lines,
+  rarity, and other detail were previously stripped down to basic
+  MTGA-only metadata for any card that Scryfall hadn't yet tagged with
+  an Arena ID. Over a thousand cards across the three sets above are
+  now fully recognized.
+
 ## v0.39.1 — 2026-05-08
 
 ### Fixed
