@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.39.1 — 2026-05-08
+
 ### Fixed
 
 - **Linux: self-updates that ran after the v0.37.x systemd-rename
