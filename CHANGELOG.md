@@ -11,6 +11,23 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Set completion percentages on the Collection page were
+  wildly inflated for new sets.** Secrets of Strixhaven and Teenage
+  Mutant Ninja Turtles showed completions like 2125% and 1930% — the
+  expected card count was being computed from a tiny set of mis-tagged
+  rows instead of the real per-rarity totals. Both numerator and
+  denominator now line up with the actual cards available in the set.
+  This fix runs automatically as a post-update task on first boot
+  after the update.
+
+### Improved
+
+- **Rarity bars on each set tile are sorted most-rare to least-rare.**
+  Mythic sits on the left, then rare, uncommon, common, so the cards
+  that actually drive completion progress catch your eye first.
+
 ## v0.41.1 — 2026-05-08
 
 ### New
