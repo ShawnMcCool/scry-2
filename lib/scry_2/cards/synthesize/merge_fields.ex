@@ -45,7 +45,7 @@ defmodule Scry2.Cards.Synthesize.MergeFields do
       color_identity: resolve_color_identity(scryfall),
       mana_value: resolve_mana_value(mtga, scryfall),
       types: types,
-      is_booster: resolve_booster(scryfall),
+      is_booster: resolve_booster(mtga, scryfall),
       is_creature: type_flags.is_creature,
       is_instant: type_flags.is_instant,
       is_sorcery: type_flags.is_sorcery,
@@ -203,7 +203,12 @@ defmodule Scry2.Cards.Synthesize.MergeFields do
   defp resolve_mana_value(%MtgaCard{mana_value: mv}, _) when is_integer(mv), do: mv
   defp resolve_mana_value(_, _), do: 0
 
-  defp resolve_booster(%ScryfallCard{booster: b}) when is_boolean(b), do: b
+  # Tokens are never in booster packs — the default-true fallback for
+  # missing Scryfall data must not flip them on. Pairing.for_mtga/2
+  # skips tokens, so the synthesis path always reaches this clause for
+  # token rows with `scryfall = nil`.
+  defp resolve_booster(%MtgaCard{is_token: true}, _), do: false
+  defp resolve_booster(_mtga, %ScryfallCard{booster: b}) when is_boolean(b), do: b
   # Default true matches existing schema default — most cards are boosterable.
-  defp resolve_booster(_), do: true
+  defp resolve_booster(_, _), do: true
 end

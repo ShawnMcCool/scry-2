@@ -77,6 +77,123 @@ defmodule Scry2.Cards.SetRosterTest do
       assert rosters[set.id].totals == %{"rare" => 1}
     end
 
+    test "regression: includes non-booster cards when the set has zero booster signal (Scryfall lag)" do
+      # Mirrors the SOS / TMT case as of 2026-05-08: Scryfall's bulk data
+      # has the cards but `booster=false` for every row in the set.
+      # Without the lag fallback, the roster would be empty.
+      sos = TestFactory.create_set(%{code: "SOS", name: "Secrets of Strixhaven"})
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_001,
+          set_id: sos.id,
+          rarity: "common",
+          is_booster: false
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_002,
+          set_id: sos.id,
+          rarity: "uncommon",
+          is_booster: false
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_003,
+          set_id: sos.id,
+          rarity: "rare",
+          is_booster: false
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_004,
+          set_id: sos.id,
+          rarity: "mythic",
+          is_booster: false
+        })
+
+      rosters = SetRoster.compute()
+
+      assert rosters[sos.id].totals == %{
+               "common" => 1,
+               "uncommon" => 1,
+               "rare" => 1,
+               "mythic" => 1
+             }
+    end
+
+    test "excludes tokens and basics regardless of booster signal" do
+      # Even when a set has no booster-tagged cards (lag fallback active),
+      # tokens and basics stay out of the completion roster.
+      newset = TestFactory.create_set(%{code: "NEW", name: "Brand New"})
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_101,
+          set_id: newset.id,
+          rarity: "common",
+          is_booster: false
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_102,
+          set_id: newset.id,
+          rarity: "token",
+          is_booster: false
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_103,
+          set_id: newset.id,
+          rarity: "basic",
+          is_booster: false
+        })
+
+      assert SetRoster.compute()[newset.id].totals == %{"common" => 1}
+    end
+
+    test "lag fallback is per-set: a set with any booster signal still uses the strict filter" do
+      # Sanity: confirm the fallback doesn't leak into well-tagged sets.
+      lag = TestFactory.create_set(%{code: "LAG", name: "Lagged"})
+      ok = TestFactory.create_set(%{code: "OK", name: "Tagged"})
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_201,
+          set_id: lag.id,
+          rarity: "rare",
+          is_booster: false
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_202,
+          set_id: ok.id,
+          rarity: "rare",
+          is_booster: true
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 99_203,
+          set_id: ok.id,
+          rarity: "rare",
+          is_booster: false
+        })
+
+      rosters = SetRoster.compute()
+
+      # Lagged set: fallback engages → both implicit + explicit rares counted (one row, count=1).
+      assert rosters[lag.id].totals == %{"rare" => 1}
+      # Tagged set: strict filter → only the booster=true row.
+      assert rosters[ok.id].totals == %{"rare" => 1}
+    end
+
     test "ignores cards without a set_id" do
       _ =
         TestFactory.create_card(%{

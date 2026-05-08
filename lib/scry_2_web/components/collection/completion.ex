@@ -14,7 +14,10 @@ defmodule Scry2Web.Collection.Completion do
 
   alias Scry2.Collection.Completion, as: CompletionStruct
 
-  @rarity_order ~w(common uncommon rare mythic)
+  # Most-rare → least-rare. Mythic on the left, common on the right
+  # so the eye lands on the high-impact rarities first when scanning
+  # a row of set tiles.
+  @rarity_order ~w(mythic rare uncommon common)
 
   attr :rows, :list, required: true
   attr :active_set, :any, default: nil

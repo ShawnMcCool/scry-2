@@ -175,6 +175,20 @@ defmodule Scry2.Cards.Synthesize.MergeFieldsTest do
       assert attrs.color_identity == ""
     end
 
+    test "tokens never get is_booster=true (Pairing skips tokens, default-true must not flip them on)" do
+      token =
+        TestFactory.build_mtga_card(
+          arena_id: 92_500,
+          name: "Goblin Token",
+          rarity: 0,
+          is_token: true,
+          expansion_code: "SOS",
+          collector_number: "001"
+        )
+
+      assert MergeFields.build(token, nil).is_booster == false
+    end
+
     test "decodes MTGA rarity enum (0=token, 1=basic, 2=common, 3=uncommon, 4=rare, 5=mythic)" do
       assert MergeFields.build(TestFactory.build_mtga_card(arena_id: 1, rarity: 0), nil).rarity ==
                "token"

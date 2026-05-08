@@ -63,7 +63,8 @@ defmodule Scry2.PostDeployTasks do
         }
 
   @registered_tasks [
-    Scry2.PostDeployTasks.Tasks.SynthesisAlgoV2
+    Scry2.PostDeployTasks.Tasks.SynthesisAlgoV2,
+    Scry2.PostDeployTasks.Tasks.SynthesisTokenBoosterFixV1
   ]
 
   @applied_at_prefix "post_deploy."

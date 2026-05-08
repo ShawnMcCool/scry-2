@@ -37,9 +37,31 @@ defmodule Scry2.Cards.SetRoster do
 
   @cache_key {__MODULE__, :v1}
 
+  # Rarities counted toward set completion: every rarity that drops in
+  # a booster pack. `"token"` and `"basic"` never drop in boosters and
+  # are excluded by definition.
+  @booster_rarities ~w(common uncommon rare mythic)
+
   @doc """
   Computes a fresh `%{set_id => SetRoster.t()}` map directly from the
   database. Always hits the DB.
+
+  ## Filter
+
+  A card counts toward set completion when its rarity is one of
+  `common | uncommon | rare | mythic` (tokens and basics excluded by
+  definition) AND either:
+
+    * Scryfall has tagged the card with `booster = true`, OR
+    * Scryfall has not tagged ANY card in this set with `booster = true`
+      (the new-set lag — Scryfall's bulk data leaves `booster` empty
+      for weeks after a Standard release; same lag shape as the
+      `arena_id` case fixed in ADR-038)
+
+  Without the lag fallback, a brand-new set like Secrets of Strixhaven
+  would show only 12 cards in its roster instead of ~340, breaking the
+  Collection page's completion percentages on the very sets the user
+  is actively drafting.
   """
   @spec compute() :: %{integer() => t()}
   def compute do
@@ -48,11 +70,16 @@ defmodule Scry2.Cards.SetRoster do
       |> Repo.all()
       |> Map.new(&{&1.id, &1})
 
+    sets_in_scryfall_lag = sets_with_no_booster_signal()
+
     totals_by_set =
       Card
-      |> where([c], c.is_booster == true)
       |> where([c], not is_nil(c.set_id))
-      |> where([c], not is_nil(c.rarity))
+      |> where([c], c.rarity in @booster_rarities)
+      |> where(
+        [c],
+        c.is_booster == true or c.set_id in ^MapSet.to_list(sets_in_scryfall_lag)
+      )
       |> group_by([c], [c.set_id, c.rarity])
       |> select([c], {c.set_id, c.rarity, count(c.arena_id)})
       |> Repo.all()
@@ -66,6 +93,22 @@ defmodule Scry2.Cards.SetRoster do
         into: %{} do
       {set_id, %__MODULE__{set: set, totals: totals}}
     end
+  end
+
+  # Sets whose entire `cards_cards` slice has `is_booster = false` —
+  # almost certainly Scryfall lag, not a deliberate "no boosters in
+  # this set" decision. Returned as a `MapSet` so the membership check
+  # in the main query stays cheap regardless of how many sets are in
+  # the lag bucket.
+  @spec sets_with_no_booster_signal() :: MapSet.t(integer())
+  defp sets_with_no_booster_signal do
+    Card
+    |> where([c], not is_nil(c.set_id))
+    |> group_by([c], c.set_id)
+    |> having([c], sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", c.is_booster)) == 0)
+    |> select([c], c.set_id)
+    |> Repo.all()
+    |> MapSet.new()
   end
 
   @doc """
