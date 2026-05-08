@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.41.0 — 2026-05-08
+
 ### New
 
 - **Post-update tasks now run automatically.** When an app update
