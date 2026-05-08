@@ -5,6 +5,8 @@ defmodule Scry2Web.Layouts do
   """
   use Scry2Web, :html
 
+  alias Scry2Web.NavHelpers
+
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
   # skeleton of your application, namely HTML headers
@@ -35,35 +37,43 @@ defmodule Scry2Web.Layouts do
   attr :active_player_id, :integer, default: nil
   attr :current_path, :string, default: "/"
 
+  attr :nav_update, :map,
+    default: %{summary: %{status: :no_data, checking: false}},
+    doc: "set by Scry2Web.NavUpdateScope on_mount; powers the gear update badge"
+
   slot :inner_block, required: true
 
   def app(assigns) do
     ~H"""
-    <header class="navbar px-4 sm:px-6 lg:px-8 border-b border-base-300">
-      <div class="flex-1 flex items-center gap-5">
-        <.link navigate={~p"/"} class="flex items-center gap-2 text-lg font-semibold font-beleren">
+    <header class="navbar flex-nowrap px-4 sm:px-6 lg:px-8 border-b border-base-300">
+      <div class="flex-1 min-w-0 flex items-center gap-5">
+        <.link
+          navigate={~p"/"}
+          class="flex items-center gap-2 text-lg font-semibold font-beleren shrink-0"
+        >
           <.icon name="hero-eye" class="size-6 text-primary" /> Scry&nbsp;2
         </.link>
-        <div class="w-px h-5 bg-base-300"></div>
-        <nav class="flex gap-1">
-          <.nav_link path={~p"/matches"} label="Matches" current_path={@current_path} />
-          <.nav_link path={~p"/decks"} label="Decks" current_path={@current_path} />
-          <.nav_link path={~p"/drafts"} label="Drafts" current_path={@current_path} />
-          <.nav_link path={~p"/cards"} label="Cards" current_path={@current_path} />
-          <.nav_link path={~p"/player"} label="Player" current_path={@current_path} />
-          <.nav_link path={~p"/ranks"} label="Ranks" current_path={@current_path} />
-          <.nav_link path={~p"/economy"} label="Economy" current_path={@current_path} />
-          <.nav_link path={~p"/match-economy"} label="Match economy" current_path={@current_path} />
-          <.nav_link path={~p"/collection"} label="Collection" current_path={@current_path} />
+        <div class="w-px h-5 bg-base-300 shrink-0"></div>
+
+        <nav class="hidden lg:flex gap-1 min-w-0">
+          <.nav_link
+            :for={item <- NavHelpers.items()}
+            path={item.path}
+            label={item.label}
+            current_path={@current_path}
+          />
         </nav>
+
+        <.nav_overflow_dropdown current_path={@current_path} />
       </div>
-      <div class="flex-none flex items-center gap-3">
+
+      <div class="ml-auto flex-shrink-0 flex items-center gap-3">
         <.profile_dropdown
           players={@players}
           active_player_id={@active_player_id}
           current_path={@current_path}
         />
-        <.gear_link current_path={@current_path} />
+        <.gear_dropdown current_path={@current_path} nav_update={@nav_update} />
       </div>
     </header>
 
@@ -163,20 +173,146 @@ defmodule Scry2Web.Layouts do
   end
 
   attr :current_path, :string, required: true
+  attr :nav_update, :map, required: true
 
-  defp gear_link(assigns) do
-    assigns = assign(assigns, :active, settings_group?(assigns.current_path))
+  defp gear_dropdown(assigns) do
+    indicator = NavHelpers.gear_indicator(assigns.nav_update)
+
+    assigns =
+      assign(assigns,
+        active: settings_group?(assigns.current_path),
+        indicator: indicator
+      )
+
+    ~H"""
+    <details
+      id="gear-dropdown"
+      class="dropdown dropdown-end"
+      phx-click-away={close_dropdown("gear-dropdown")}
+    >
+      <summary
+        class={[
+          "btn btn-ghost btn-sm gap-1.5 border border-base-300 px-2",
+          @active && "text-primary"
+        ]}
+        phx-click={close_dropdown("profile-dropdown")}
+      >
+        <.icon name="hero-cog-6-tooth" class="size-4 text-base-content/60" />
+        <span
+          :if={@indicator.kind == :badge}
+          class="badge badge-xs badge-soft badge-info"
+        >
+          {@indicator.label}
+        </span>
+      </summary>
+      <div class="dropdown-content z-50 mt-2 w-56 rounded-lg border border-base-300 bg-base-200 shadow-xl p-2">
+        <.gear_menu_item
+          path={~p"/"}
+          label="System"
+          icon="hero-heart"
+          current_path={@current_path}
+          exact?
+        />
+        <.gear_menu_item
+          path={~p"/operations"}
+          label="Operations"
+          icon="hero-wrench-screwdriver"
+          current_path={@current_path}
+        />
+        <.link
+          navigate={~p"/settings"}
+          phx-click={close_dropdown("gear-dropdown")}
+          class={[
+            "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm",
+            if(NavHelpers.active?(@current_path, "/settings"),
+              do: "bg-primary/10 text-primary font-medium",
+              else: "text-base-content/70 hover:bg-base-300"
+            )
+          ]}
+        >
+          <.icon name="hero-cog-6-tooth" class="size-4" />
+          <span>Settings</span>
+          <span
+            :if={@indicator.kind == :badge}
+            class="badge badge-xs badge-soft badge-info ml-auto"
+          >
+            {@indicator.label}
+          </span>
+        </.link>
+        <.gear_menu_item
+          path={~p"/console"}
+          label="Console"
+          icon="hero-command-line"
+          current_path={@current_path}
+        />
+      </div>
+    </details>
+    """
+  end
+
+  attr :path, :string, required: true
+  attr :label, :string, required: true
+  attr :icon, :string, required: true
+  attr :current_path, :string, required: true
+  attr :exact?, :boolean, default: false
+
+  defp gear_menu_item(assigns) do
+    active =
+      if assigns.exact? do
+        assigns.current_path == assigns.path
+      else
+        NavHelpers.active?(assigns.current_path, assigns.path)
+      end
+
+    assigns = assign(assigns, :active, active)
 
     ~H"""
     <.link
-      navigate={~p"/"}
+      navigate={@path}
+      phx-click={close_dropdown("gear-dropdown")}
       class={[
-        "btn btn-ghost btn-sm btn-square border border-base-300",
-        @active && "text-primary"
+        "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm",
+        if(@active,
+          do: "bg-primary/10 text-primary font-medium",
+          else: "text-base-content/70 hover:bg-base-300"
+        )
       ]}
     >
-      <.icon name="hero-cog-6-tooth" class="size-4 text-base-content/50" />
+      <.icon name={@icon} class="size-4" />
+      <span>{@label}</span>
     </.link>
+    """
+  end
+
+  attr :current_path, :string, required: true
+
+  defp nav_overflow_dropdown(assigns) do
+    ~H"""
+    <details
+      id="nav-overflow-dropdown"
+      class="dropdown lg:hidden"
+      phx-click-away={close_dropdown("nav-overflow-dropdown")}
+    >
+      <summary class="btn btn-ghost btn-sm btn-square border border-base-300">
+        <.icon name="hero-bars-3" class="size-4 text-base-content/70" />
+      </summary>
+      <div class="dropdown-content z-50 mt-2 w-56 rounded-lg border border-base-300 bg-base-200 shadow-xl p-2">
+        <.link
+          :for={item <- NavHelpers.items()}
+          navigate={item.path}
+          phx-click={close_dropdown("nav-overflow-dropdown")}
+          class={[
+            "block px-3 py-1.5 rounded-md text-sm",
+            if(NavHelpers.active?(@current_path, item.path),
+              do: "bg-primary/10 text-primary font-medium",
+              else: "text-base-content/70 hover:bg-base-300"
+            )
+          ]}
+        >
+          {item.label}
+        </.link>
+      </div>
+    </details>
     """
   end
 
@@ -184,6 +320,7 @@ defmodule Scry2Web.Layouts do
   defp settings_group?("/"), do: true
   defp settings_group?("/operations" <> _), do: true
   defp settings_group?("/settings" <> _), do: true
+  defp settings_group?("/console" <> _), do: true
   defp settings_group?(_), do: false
 
   # Layout-side helper: prefer the memory-read DisplayName-with-discriminator

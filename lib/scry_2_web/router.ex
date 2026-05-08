@@ -34,7 +34,8 @@ defmodule Scry2Web.Router do
         # Gate must run first — it halts first-run users before any other
         # hook tries to load data that doesn't exist yet.
         {Scry2Web.SetupGate, :default},
-        {Scry2Web.PlayerScope, :default}
+        {Scry2Web.PlayerScope, :default},
+        {Scry2Web.NavUpdateScope, :default}
       ] do
       live "/", HealthLive, :index
       live "/player", PlayerLive, :index
