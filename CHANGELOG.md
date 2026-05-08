@@ -11,6 +11,21 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The settings gear no longer disappears at narrow window widths.** The
+  header now reserves space for the gear and the player picker on the
+  right edge so they're always visible — no more hunting for them when
+  the window is shared with another app.
+- **The settings gear is now a dropdown.** Click it to jump straight to
+  System, Operations, Settings, or Console without first landing on the
+  System page and clicking through tabs. When an update is waiting, a
+  small `vX.Y.Z` chip appears next to the cog and inside the dropdown
+  so you can spot it from any page.
+- **Top-nav links collapse to a hamburger menu on narrower windows.** At
+  half-screen widths the 9 main nav items fold into a single menu so the
+  header no longer overflows.
+
 ## v0.38.0 — 2026-05-08
 
 ### Improved
