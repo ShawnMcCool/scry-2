@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.40.0 — 2026-05-08
+
 ### Fixed
 
 - **The Collection page now shows your newest sets correctly.** Sets
