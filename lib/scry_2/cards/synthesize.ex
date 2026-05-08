@@ -51,6 +51,28 @@ defmodule Scry2.Cards.Synthesize do
 
   require Scry2.Log, as: Log
 
+  @algo_version 2
+
+  @doc """
+  Integer version of the synthesis algorithm. Bump when the join logic
+  or merge rules change in a way that requires re-running synthesis on
+  every existing install (not just when sources are stale).
+
+  `Scry2.Cards.Bootstrap` compares this against the value persisted in
+  `Settings` under `"synthesis.algo_version"`; if Settings is behind, it
+  enqueues a one-shot synthesis on the next boot. The worker writes the
+  current value back on success, so subsequent boots are no-ops.
+
+  ## Version history
+
+  | Version | Released | Reason |
+  |---------|----------|--------|
+  | 1       | pre-v0.40 | original `arena_id`-keyed join |
+  | 2       | v0.40.1  | ADR-038 `(set_code, collector_number)`-keyed join — required to flow Scryfall enrichment into pre-existing `cards_cards` rows for sets where Scryfall lags `arena_id` (SOS / TMT / TLA) |
+  """
+  @spec algo_version() :: pos_integer()
+  def algo_version, do: @algo_version
+
   @type run_result ::
           {:ok,
            %{

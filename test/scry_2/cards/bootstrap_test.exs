@@ -44,7 +44,7 @@ defmodule Scry2.Cards.BootstrapTest do
     end
   end
 
-  describe "decide/3" do
+  describe "decide/4" do
     @empty_counts %{mtga_client: 0, scryfall: 0, synthesized: 0}
     @fresh_timestamps %{
       mtga_client_updated_at: @fresh,
@@ -59,13 +59,13 @@ defmodule Scry2.Cards.BootstrapTest do
         synthesized_updated_at: nil
       }
 
-      assert Bootstrap.decide(@empty_counts, timestamps, @now) ==
+      assert Bootstrap.decide(@empty_counts, timestamps, @now, false) ==
                [:mtga_client, :scryfall, :synthesize]
     end
 
-    test "enqueues nothing when all sources are fresh" do
+    test "enqueues nothing when all sources are fresh and the synthesis algo is current" do
       counts = %{mtga_client: 100, scryfall: 100, synthesized: 100}
-      assert Bootstrap.decide(counts, @fresh_timestamps, @now) == []
+      assert Bootstrap.decide(counts, @fresh_timestamps, @now, false) == []
     end
 
     test "enqueues only MTGA client when only its source is missing" do
@@ -76,7 +76,7 @@ defmodule Scry2.Cards.BootstrapTest do
       }
 
       counts = %{mtga_client: 0, scryfall: 100, synthesized: 100}
-      assert Bootstrap.decide(counts, timestamps, @now) == [:mtga_client]
+      assert Bootstrap.decide(counts, timestamps, @now, false) == [:mtga_client]
     end
 
     test "enqueues only Scryfall when only its source is missing" do
@@ -87,7 +87,7 @@ defmodule Scry2.Cards.BootstrapTest do
       }
 
       counts = %{mtga_client: 100, scryfall: 0, synthesized: 100}
-      assert Bootstrap.decide(counts, timestamps, @now) == [:scryfall]
+      assert Bootstrap.decide(counts, timestamps, @now, false) == [:scryfall]
     end
 
     test "enqueues only synthesis when only the synthesised model is missing" do
@@ -98,7 +98,7 @@ defmodule Scry2.Cards.BootstrapTest do
       }
 
       counts = %{mtga_client: 100, scryfall: 100, synthesized: 0}
-      assert Bootstrap.decide(counts, timestamps, @now) == [:synthesize]
+      assert Bootstrap.decide(counts, timestamps, @now, false) == [:synthesize]
     end
 
     test "enqueues all stale sources" do
@@ -110,7 +110,7 @@ defmodule Scry2.Cards.BootstrapTest do
 
       counts = %{mtga_client: 100, scryfall: 100, synthesized: 100}
 
-      assert Bootstrap.decide(counts, timestamps, @now) ==
+      assert Bootstrap.decide(counts, timestamps, @now, false) ==
                [:mtga_client, :scryfall, :synthesize]
     end
 
@@ -122,7 +122,23 @@ defmodule Scry2.Cards.BootstrapTest do
       }
 
       counts = %{mtga_client: 100, scryfall: 100, synthesized: 100}
-      assert Bootstrap.decide(counts, timestamps, @now) == [:mtga_client]
+      assert Bootstrap.decide(counts, timestamps, @now, false) == [:mtga_client]
+    end
+
+    test "enqueues synthesis when the algo version is outdated even if sources are fresh" do
+      counts = %{mtga_client: 100, scryfall: 100, synthesized: 100}
+      assert Bootstrap.decide(counts, @fresh_timestamps, @now, true) == [:synthesize]
+    end
+
+    test "outdated algo only adds synthesis once even when synthesis would already be enqueued" do
+      timestamps = %{
+        mtga_client_updated_at: @fresh,
+        scryfall_updated_at: @fresh,
+        synthesized_updated_at: @old
+      }
+
+      counts = %{mtga_client: 100, scryfall: 100, synthesized: 100}
+      assert Bootstrap.decide(counts, timestamps, @now, true) == [:synthesize]
     end
   end
 end
