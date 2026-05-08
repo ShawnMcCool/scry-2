@@ -11,6 +11,14 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Linux: the systemd unit is now `scry-2.service`** (with a dash, matching the dev unit).
+  `systemctl --user start scry-2` is now the supported control surface — old
+  `scry_2.service` (underscore) installs are migrated automatically: the old unit is
+  stopped, disabled, and removed before the new one is installed and started. Your
+  database, config, and snapshots are untouched.
+
 ## v0.37.0 — 2026-05-08
 
 ### New
