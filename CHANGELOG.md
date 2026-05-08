@@ -11,6 +11,17 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **The Collection page is rebuilt with much more detail.** You can now see your collection broken down several ways:
+  - **Composition** — your owned cards by rarity, colour, and type.
+  - **Completion** — per-set rarity ratios, so you can see how close you are to completing each set.
+  - **Craft plan** — incomplete playsets paired with your wildcard counts, so you know what's worth crafting next.
+  - **Holding browser** — browse your owned cards directly, with filtering and grouping.
+  - **Recent acquisitions** — what's been added to your collection lately.
+  - **Wildcard summary** — wildcard counts at a glance.
+- **Build-change banner.** When MTGA installs a new build, the banner that already showed on Settings now also appears on the Collection page so you know when card data is refreshing.
+
 ## v0.36.1 — 2026-05-08
 
 ### Fixed
