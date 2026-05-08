@@ -1,7 +1,7 @@
 defmodule Scry2Web.OperationsLive do
   use Scry2Web, :live_view
 
-  alias Scry2.{Events, MtgaLogIngestion, Operations, Service, Topics}
+  alias Scry2.{Events, MtgaLogIngestion, Operations, PostDeployTasks, Service, Topics}
   alias Scry2.Diagnostics.CrashDump
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.ProjectorRegistry
@@ -16,6 +16,7 @@ defmodule Scry2Web.OperationsLive do
       Topics.subscribe(Topics.domain_events())
       Topics.subscribe(Topics.matches_updates())
       Topics.subscribe(Topics.drafts_updates())
+      Topics.subscribe(Topics.settings_updates())
     end
 
     {:ok,
@@ -103,6 +104,7 @@ defmodule Scry2Web.OperationsLive do
     |> assign(:deferred_with_payloads, deferred_with_payloads)
     |> assign(:errors, errors)
     |> assign(:last_crash, CrashDump.latest_summary())
+    |> assign(:post_deploy_tasks, PostDeployTasks.list())
   end
 
   # Orders a `type => count` map by count descending — used by the raw
@@ -183,6 +185,15 @@ defmodule Scry2Web.OperationsLive do
 
   def handle_event("service_stop", _params, socket) do
     {:noreply, run_service_action(socket, &Service.stop/0, "Stopping backend…")}
+  end
+
+  def handle_event("rerun_post_deploy_task", %{"id" => task_id}, socket) do
+    PostDeployTasks.rerun!(task_id)
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "Re-running post-update task: #{task_id}")
+     |> assign(:post_deploy_tasks, PostDeployTasks.list())}
   end
 
   defp run_service_action(socket, action, info_message) do
@@ -340,6 +351,15 @@ defmodule Scry2Web.OperationsLive do
      |> put_flash(:error, "#{operation_label(type)} failed: #{reason}")
      |> load_status()}
   end
+
+  # Refresh the post-update tasks card whenever a relevant setting changes.
+  # The framework writes "post_deploy.<id>.applied_at" on success; the
+  # `mark_applied!/1` helper broadcasts via Settings.put!.
+  def handle_info({:setting_changed, "post_deploy." <> _}, socket) do
+    {:noreply, assign(socket, :post_deploy_tasks, PostDeployTasks.list())}
+  end
+
+  def handle_info({:setting_changed, _key}, socket), do: {:noreply, socket}
 
   def handle_info({ref, _result}, socket) when is_reference(ref) do
     Process.demonitor(ref, [:flush])
@@ -629,6 +649,43 @@ defmodule Scry2Web.OperationsLive do
         </div>
       </section>
 
+      <%!-- Post-update tasks --%>
+      <section :if={@post_deploy_tasks != []} class="card bg-base-200">
+        <div class="card-body p-5">
+          <h3 class="card-title text-base">
+            <.icon name="hero-rocket-launch" class="size-5" /> Post-update tasks
+          </h3>
+          <p class="text-sm text-base-content/60">
+            One-shot data work that runs automatically on first boot after an
+            update introduces it (synthesis re-runs, projection rebuilds).
+            Already-applied tasks are skipped on subsequent boots; failed
+            tasks can be re-run from here.
+          </p>
+          <ul class="mt-2 divide-y divide-base-300">
+            <li :for={task <- @post_deploy_tasks} class="py-3 flex items-start gap-3">
+              <span class={["badge badge-sm", post_deploy_badge_class(task.status)]}>
+                {post_deploy_status_label(task.status)}
+              </span>
+              <div class="flex-1 min-w-0">
+                <p class="font-medium text-sm"><code>{task.id}</code></p>
+                <p class="text-xs text-base-content/70">{task.description}</p>
+                <p :if={task.applied_at} class="text-xs text-base-content/50 mt-1">
+                  Applied {Calendar.strftime(task.applied_at, "%Y-%m-%d %H:%M UTC")}
+                </p>
+              </div>
+              <button
+                phx-click="rerun_post_deploy_task"
+                phx-value-id={task.id}
+                disabled={task.status == :running}
+                class="btn btn-ghost btn-xs"
+              >
+                Re-run
+              </button>
+            </li>
+          </ul>
+        </div>
+      </section>
+
       <%!-- Unrecognized event types (moved from the old dashboard) --%>
       <section :if={map_size(@unrecognized) > 0} class="alert alert-soft alert-warning">
         <.icon name="hero-exclamation-triangle" class="size-5" />
@@ -899,4 +956,16 @@ defmodule Scry2Web.OperationsLive do
     </Layouts.app>
     """
   end
+
+  @doc false
+  def post_deploy_badge_class(:applied), do: "badge-success badge-soft"
+  def post_deploy_badge_class(:running), do: "badge-info badge-soft"
+  def post_deploy_badge_class(:failed), do: "badge-error badge-soft"
+  def post_deploy_badge_class(:pending), do: "badge-ghost"
+
+  @doc false
+  def post_deploy_status_label(:applied), do: "Applied"
+  def post_deploy_status_label(:running), do: "Running"
+  def post_deploy_status_label(:failed), do: "Failed"
+  def post_deploy_status_label(:pending), do: "Pending"
 end

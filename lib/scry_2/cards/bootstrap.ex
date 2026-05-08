@@ -39,9 +39,7 @@ defmodule Scry2.Cards.Bootstrap do
   require Scry2.Log, as: Log
 
   alias Scry2.Cards
-  alias Scry2.Cards.Synthesize
   alias Scry2.Config
-  alias Scry2.Settings
   alias Scry2.Workers.PeriodicallyImportMtgaClientCards
   alias Scry2.Workers.PeriodicallyImportScryfallCards
   alias Scry2.Workers.PeriodicallySynthesizeCards
@@ -66,13 +64,7 @@ defmodule Scry2.Cards.Bootstrap do
         synthesized: Cards.count()
       }
 
-      to_enqueue =
-        decide(
-          counts,
-          Cards.import_timestamps(),
-          DateTime.utc_now(),
-          algo_outdated?()
-        )
+      to_enqueue = decide(counts, Cards.import_timestamps(), DateTime.utc_now())
 
       Enum.each(to_enqueue, &dispatch/1)
       to_enqueue
@@ -88,10 +80,6 @@ defmodule Scry2.Cards.Bootstrap do
     * `counts` — `%{mtga_client: int, scryfall: int, synthesized: int}`
     * `timestamps` — `Scry2.Cards.import_timestamps/0` result
     * `now` — current time (injected for determinism)
-    * `algo_outdated?` — true when the recorded synthesis algorithm
-      version is behind the running code's version (forces a one-shot
-      synthesis even when sources are fresh; see
-      `Scry2.Cards.Synthesize.algo_version/0`)
   """
   @spec decide(
           %{
@@ -104,10 +92,9 @@ defmodule Scry2.Cards.Bootstrap do
             scryfall_updated_at: DateTime.t() | nil,
             synthesized_updated_at: DateTime.t() | nil
           },
-          DateTime.t(),
-          boolean()
+          DateTime.t()
         ) :: [job_tag()]
-  def decide(counts, timestamps, now, algo_outdated?) do
+  def decide(counts, timestamps, now) do
     %{
       mtga_client: mtga_client_count,
       scryfall: scryfall_count,
@@ -122,23 +109,9 @@ defmodule Scry2.Cards.Bootstrap do
 
     mtga_client = if needs?(mtga_client_count, mtga_client_at, now), do: :mtga_client
     scryfall = if needs?(scryfall_count, scryfall_at, now), do: :scryfall
-
-    synthesize =
-      if needs?(synthesized_count, synthesized_at, now) or algo_outdated?,
-        do: :synthesize
+    synthesize = if needs?(synthesized_count, synthesized_at, now), do: :synthesize
 
     [mtga_client, scryfall, synthesize] |> Enum.reject(&is_nil/1)
-  end
-
-  @doc """
-  Returns true when the persisted synthesis `algo_version` is behind
-  the running code's version. A fresh install (no setting yet) defaults
-  to `0`, which is treated as outdated against any current version.
-  """
-  @spec algo_outdated?() :: boolean()
-  def algo_outdated? do
-    recorded = Settings.get(PeriodicallySynthesizeCards.algo_version_setting(), 0)
-    recorded < Synthesize.algo_version()
   end
 
   @doc """

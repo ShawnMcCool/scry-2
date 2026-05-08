@@ -58,6 +58,16 @@ defmodule Scry2.Application do
           id: :cards_bootstrap,
           restart: :temporary
         ),
+        # One-shot task: enqueue any post-deploy data tasks that haven't been
+        # applied yet (synthesis re-runs after algo changes, projection
+        # rebuilds, etc). See `Scry2.PostDeployTasks`. Idempotent — already-
+        # applied tasks are skipped. Runs after Oban is up so jobs can be
+        # inserted; in test/disabled envs Oban itself is the gate (no queue
+        # consumers, jobs sit until inspected).
+        Supervisor.child_spec({Task, &Scry2.PostDeployTasks.run!/0},
+          id: :post_deploy_tasks,
+          restart: :temporary
+        ),
         {Scry2.SelfUpdate.Updater,
          lock_path: Scry2.SelfUpdate.apply_lock_path(),
          staging_root: Scry2.SelfUpdate.staging_root()},
