@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.37.2 — 2026-05-08
+
 ### Fixed
 
 - **Linux: stopping the systemd unit no longer leaves it in `failed` state.**
