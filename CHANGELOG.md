@@ -11,6 +11,29 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Post-update tasks now run automatically.** When an app update
+  introduces work that needs to happen once on your existing data —
+  for example, re-running card synthesis after the join-key change in
+  v0.40.0 — it now runs automatically on the first boot after the
+  update. You no longer have to wait for the daily refresh window or
+  hunt for a manual button.
+- **Settings → Operations → Post-update tasks.** A new card on the
+  Operations page lists every post-update task: what it does, whether
+  it has been applied, and when. If a task fails, you can re-run it
+  from here without restarting the app.
+
+### Improved
+
+- **Cards from Secrets of Strixhaven, Teenage Mutant Ninja Turtles,
+  and Avatar: The Last Airbender now show full data on existing
+  installs.** v0.40.0 introduced the join-key change that fixes these
+  sets, but on an already-running install nothing triggered a fresh
+  synthesis until the next daily refresh. The new post-update tasks
+  framework re-runs synthesis automatically, so the fix lands
+  immediately after this update applies.
+
 ## v0.40.0 — 2026-05-08
 
 ### Fixed
