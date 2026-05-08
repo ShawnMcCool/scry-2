@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.41.2 — 2026-05-08
+
 ### Fixed
 
 - **Set completion percentages on the Collection page were
