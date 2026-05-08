@@ -40,8 +40,14 @@ defmodule Scry2.SelfUpdate.Handoff do
   # can't open a display, the tray exits, and the watchdog never starts
   # the BEAM. They're harmless on Linux (the systemd installer doesn't
   # need them) but kept in the whitelist for cross-platform symmetry.
+  # USER is included because the Linux installer's `loginctl enable-linger`
+  # call references "$USER", and the install script runs under `set -u` —
+  # an unset $USER would crash the script mid-install (after files are
+  # copied but before the unit is started). Belt-and-braces: the install
+  # script also has its own `${USER:-$(id -un)}` fallback.
   @minimal_unix_env_keys ~w(
     HOME
+    USER
     XDG_RUNTIME_DIR
     DBUS_SESSION_BUS_ADDRESS
     XDG_DATA_DIRS

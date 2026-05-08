@@ -11,6 +11,18 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Linux: self-updates that ran after the v0.37.x systemd-rename
+  series finished cleanly halfway through.** The installer crashed on
+  `loginctl enable-linger "$USER"` because the in-app updater spawns
+  the installer with a stripped environment and `$USER` was not in the
+  whitelist. The result was a partially-installed release: files
+  copied, unit installed, but the service never started by the
+  installer (only by systemd's auto-restart). Both the script's
+  fallback (`${USER:-$(id -un)}`) and the updater's env whitelist now
+  cover this.
+
 ## v0.39.0 — 2026-05-08
 
 ### Improved

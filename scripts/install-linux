@@ -130,7 +130,13 @@ systemctl --user start "$SERVICE"
 # Linger keeps the user manager running across logout — the service
 # stays up while the machine is up, regardless of an active session.
 # Quietly ignored if loginctl isn't available (rare on systemd hosts).
-loginctl enable-linger "$USER" 2>/dev/null || true
+#
+# `${USER:-$(id -un)}` provides a fallback because the in-app
+# self-updater spawns this script via `env -i`, which wipes $USER. Set
+# -u (nounset) would otherwise crash the script before it reaches the
+# end of the install, leaving the new release files copied but the
+# unit unstarted.
+loginctl enable-linger "${USER:-$(id -un)}" 2>/dev/null || true
 
 echo ""
 echo "Scry2 installed and running under systemd."

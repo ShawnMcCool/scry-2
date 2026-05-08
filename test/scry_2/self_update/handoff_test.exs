@@ -130,6 +130,26 @@ defmodule Scry2.SelfUpdate.HandoffTest do
       assert "XAUTHORITY=/run/user/1000/.Xauthority" in args
     end
 
+    test "linux: USER survives env -i isolation (loginctl enable-linger needs it)" do
+      env_fn = fn
+        "USER" -> "shawn"
+        "HOME" -> "/home/shawn"
+        "XDG_RUNTIME_DIR" -> "/run/user/1000"
+        _ -> nil
+      end
+
+      :ok =
+        Handoff.spawn_detached(
+          %{staged_root: "/tmp/staged", archive_filename: "scry_2-v0.15.0-linux-x86_64.tar.gz"},
+          os_type: {:unix, :linux},
+          spawner: capture_spawner(),
+          env_fn: env_fn
+        )
+
+      assert_receive {:spawn, "setsid", args, _env}
+      assert "USER=shawn" in args
+    end
+
     test "macos: DISPLAY survives env -i isolation" do
       env_fn = fn
         "DISPLAY" -> ":0"
