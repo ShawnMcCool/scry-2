@@ -11,6 +11,15 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Linux: stopping the systemd unit no longer leaves it in `failed` state.**
+  The `bin/scry_2 stop` helper completed its job (the running BEAM drained gracefully)
+  but the helper's own cleanup crashed on Elixir 1.19.5, exiting non-zero and pushing
+  systemd to mark the unit as failed. A failed unit refuses to auto-start at boot —
+  which is why the service didn't come back up after a system restart. The unit now
+  ignores the helper's exit code; graceful shutdown is unchanged.
+
 ## v0.37.1 — 2026-05-08
 
 ### Improved

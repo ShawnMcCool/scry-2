@@ -13,7 +13,14 @@ Type=exec
 # under $HOME/.local/lib/scry_2.
 ExecStart=/path/to/scry_2/bin/scry_2 start
 # `bin/scry_2 stop` sends a graceful shutdown via the BEAM RPC API.
-ExecStop=/path/to/scry_2/bin/scry_2 stop
+# The leading `-` makes systemd ignore the exit code: on Elixir 1.19.5
+# the helper BEAM that issues the RPC crashes during its own at_exit
+# cleanup (System.stop → :elixir_config gen_server not running in the
+# minimal helper), which used to leave the unit in `failed` state and
+# blocked auto-start at boot. The graceful drain on the running node
+# completes before the helper crashes — only the helper's exit code
+# was the problem.
+ExecStop=-/path/to/scry_2/bin/scry_2 stop
 Restart=on-failure
 RestartSec=5
 # `mixed` sends SIGTERM to the main pid (so `bin/scry_2 stop` can run
