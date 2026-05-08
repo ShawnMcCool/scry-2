@@ -6,6 +6,26 @@ set -euo pipefail
 # by scripts/release / the CI release workflow). When invoked by the
 # self-updater, $SCRIPT_DIR points at the staged release root.
 
+# ── 0. Escape the parent cgroup ─────────────────────────────────────
+# When the BEAM spawns this script via Port.open + setsid (Handoff),
+# the script inherits scry-2.service's cgroup. KillMode=mixed kills
+# every process in that cgroup the moment the unit stops — and the
+# unit stops the moment we issue `systemctl --user stop scry-2.service`
+# (or the BEAM finishes exiting). We get SIGKILLed mid-install with
+# the new unit never started. Fix: re-exec ourselves under
+# `systemd-run --user --scope` which moves the process into a fresh
+# scope unit owned by the user manager, in its own cgroup, independent
+# of scry-2.service. SCRY2_INSTALL_REEXECED guards against recursion;
+# falling through on systemd-run failure is better than crashing.
+if [ -z "${SCRY2_INSTALL_REEXECED:-}" ] && command -v systemd-run >/dev/null 2>&1; then
+  export SCRY2_INSTALL_REEXECED=1
+  if systemd-run --user --scope --collect --quiet -- "$0" "$@"; then
+    exit 0
+  fi
+  echo "Warning: systemd-run failed; continuing without cgroup escape." >&2
+  unset SCRY2_INSTALL_REEXECED
+fi
+
 INSTALL_DIR="$HOME/.local/lib/scry_2"
 UNIT_PATH="$HOME/.config/systemd/user/scry-2.service"
 DESKTOP_PATH="$HOME/.local/share/applications/scry-2.desktop"

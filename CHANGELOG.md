@@ -11,6 +11,17 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Linux: self-updates no longer get cut short halfway through.**
+  The installer that runs during a self-update lived inside the same
+  systemd cgroup as the running Scry service. The moment the service
+  stopped (which the installer itself triggers, by design), the
+  installer was killed along with it — leaving the new version
+  half-installed and the unit unstarted. The installer now relocates
+  itself out of the parent cgroup before doing any work, so it runs
+  to completion regardless of what happens to the old service.
+
 ## v0.37.2 — 2026-05-08
 
 ### Fixed
