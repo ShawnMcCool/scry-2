@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.38.0 — 2026-05-08
+
 ### Improved
 
 - **Collection page now shows real set names and expansion symbols.** The
