@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.37.1 — 2026-05-08
+
 ### Improved
 
 - **Linux: the systemd unit is now `scry-2.service`** (with a dash, matching the dev unit).
