@@ -35,6 +35,8 @@ defmodule Scry2.Cards.ScryfallCard do
     field :arena_id, :integer
     field :name, :string
     field :set_code, :string
+    field :set_name, :string
+    field :released_at, :date
     field :collector_number, :string
     field :type_line, :string
     field :oracle_text, :string
@@ -61,6 +63,8 @@ defmodule Scry2.Cards.ScryfallCard do
       :arena_id,
       :name,
       :set_code,
+      :set_name,
+      :released_at,
       :collector_number,
       :type_line,
       :oracle_text,

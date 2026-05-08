@@ -296,12 +296,18 @@ defmodule Scry2.Cards.Synthesize do
   # ── Set resolution ─────────────────────────────────────────────────────────
 
   defp upsert_sets_from_sources(mtga_index, scryfall_index) do
-    scryfall_codes =
+    scryfall_meta_by_code =
       scryfall_index
       |> Map.values()
-      |> Enum.map(& &1.set_code)
-      |> Enum.reject(&blank?/1)
-      |> Enum.map(&String.upcase/1)
+      |> Enum.reduce(%{}, fn %ScryfallCard{set_code: code} = card, acc when is_binary(code) ->
+        upper = String.upcase(code)
+        existing = Map.get(acc, upper, %{name: nil, released_at: nil})
+
+        Map.put(acc, upper, %{
+          name: existing.name || card.set_name,
+          released_at: earliest_date(existing.released_at, card.released_at)
+        })
+      end)
 
     mtga_codes =
       mtga_index
@@ -309,14 +315,27 @@ defmodule Scry2.Cards.Synthesize do
       |> Enum.map(& &1.expansion_code)
       |> Enum.reject(&blank?/1)
       |> Enum.map(&String.upcase/1)
+      |> MapSet.new()
 
-    (scryfall_codes ++ mtga_codes)
-    |> Enum.uniq()
-    |> Map.new(fn code ->
-      set = Cards.upsert_set!(%{code: code, name: code})
+    all_codes = mtga_codes |> MapSet.union(MapSet.new(Map.keys(scryfall_meta_by_code)))
+
+    Map.new(all_codes, fn code ->
+      meta = Map.get(scryfall_meta_by_code, code, %{name: nil, released_at: nil})
+
+      set =
+        Cards.upsert_set!(%{
+          code: code,
+          name: meta.name || code,
+          released_at: meta.released_at
+        })
+
       {code, set.id}
     end)
   end
+
+  defp earliest_date(nil, b), do: b
+  defp earliest_date(a, nil), do: a
+  defp earliest_date(a, b), do: if(Date.compare(a, b) == :lt, do: a, else: b)
 
   defp resolve_set_id(set_ids_by_code, _mtga, %ScryfallCard{set_code: code})
        when is_binary(code) and code != "" do

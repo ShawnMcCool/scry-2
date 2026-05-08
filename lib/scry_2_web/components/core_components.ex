@@ -753,6 +753,38 @@ defmodule Scry2Web.CoreComponents do
   end
 
   @doc """
+  Renders an MTG set as a horizontal label: expansion symbol followed by
+  the printed set name. Use this anywhere the set is the subject of the
+  display (completion tiles, scope breadcrumbs, deck headers); pair with
+  `set_icon/1` when you only want the symbol.
+
+  ## Attributes
+
+  - `:set` — required. A `%Scry2.Cards.Set{}` (or `nil`, which renders nothing).
+  - `:size` — optional. Forwarded to `set_icon/1` (e.g. `"2x"`).
+  - `:class` — optional wrapper classes.
+
+  ## Examples
+
+      <.set_label set={@active_set_record} />
+      <.set_label set={set} size="2x" class="text-base-content/60" />
+  """
+  attr :set, :any, required: true
+  attr :size, :string, default: nil
+  attr :class, :string, default: nil
+
+  def set_label(%{set: nil} = assigns), do: ~H""
+
+  def set_label(assigns) do
+    ~H"""
+    <span class={["inline-flex items-center gap-1.5 min-w-0", @class]}>
+      <.set_icon code={@set.code} size={@size} class="shrink-0" />
+      <span class="truncate">{@set.name}</span>
+    </span>
+    """
+  end
+
+  @doc """
   Renders an inline MTGA currency icon (gold coin or gem).
 
   ## Attributes

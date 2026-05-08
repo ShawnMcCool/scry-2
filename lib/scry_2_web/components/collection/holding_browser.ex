@@ -17,7 +17,7 @@ defmodule Scry2Web.Collection.HoldingBrowser do
   use Phoenix.Component
 
   import Scry2Web.CardComponents, only: [card_image: 1, card_name: 1]
-  import Scry2Web.CoreComponents, only: [icon: 1, rarity_badge: 1]
+  import Scry2Web.CoreComponents, only: [icon: 1, rarity_badge: 1, set_label: 1]
 
   @rarities ~w(mythic rare uncommon common)
 
@@ -26,6 +26,7 @@ defmodule Scry2Web.Collection.HoldingBrowser do
   attr :search, :string, default: ""
   attr :rarities, :any, default: nil
   attr :active_set, :any, default: nil
+  attr :active_set_record, :any, default: nil
   attr :cached_arena_ids, :any, default: nil
 
   def holding_browser(assigns) do
@@ -42,9 +43,11 @@ defmodule Scry2Web.Collection.HoldingBrowser do
       <div class="card-body space-y-3">
         <div class="flex items-baseline justify-between">
           <h2 class="card-title">My cards</h2>
-          <span :if={@active_set} class="flex items-center gap-2 text-xs">
-            <span class="badge badge-soft badge-primary">{@active_set}</span>
-            <button class="link" phx-click="clear_set">Clear</button>
+          <span :if={@active_set} class="flex items-center gap-2 text-xs min-w-0">
+            <span class="badge badge-soft badge-primary max-w-[16rem]">
+              <.set_label set={@active_set_record || %{code: @active_set, name: @active_set}} />
+            </span>
+            <button class="link shrink-0" phx-click="clear_set">Clear</button>
           </span>
         </div>
 

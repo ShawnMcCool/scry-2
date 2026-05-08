@@ -74,6 +74,7 @@ defmodule Scry2Web.CollectionLive do
       |> assign(:search, "")
       |> assign(:filter_rarities, MapSet.new())
       |> assign(:active_set, nil)
+      |> assign(:active_set_record, nil)
       |> load_snapshot_state()
 
     {:ok, socket}
@@ -216,7 +217,9 @@ defmodule Scry2Web.CollectionLive do
     holdings = socket.assigns[:holdings] || []
     search = socket.assigns.search
     rarities = socket.assigns.filter_rarities
-    set_id = active_set_id(socket.assigns.set_rosters || %{}, socket.assigns.active_set)
+    rosters = socket.assigns.set_rosters || %{}
+    code = socket.assigns.active_set
+    set_id = active_set_id(rosters, code)
 
     filtered =
       holdings
@@ -230,6 +233,7 @@ defmodule Scry2Web.CollectionLive do
     socket
     |> assign(:browser_holdings, visible)
     |> assign(:browser_total, length(filtered))
+    |> assign(:active_set_record, active_set_record(rosters, code))
   end
 
   defp build_craft_plan(_holdings, nil),
@@ -292,6 +296,15 @@ defmodule Scry2Web.CollectionLive do
   defp active_set_id(rosters, code) when is_binary(code) do
     Enum.find_value(rosters, fn
       {id, %SetRoster{set: %{code: ^code}}} -> id
+      _ -> nil
+    end)
+  end
+
+  defp active_set_record(_rosters, nil), do: nil
+
+  defp active_set_record(rosters, code) when is_binary(code) do
+    Enum.find_value(rosters, fn
+      {_id, %SetRoster{set: %{code: ^code} = set}} -> set
       _ -> nil
     end)
   end
@@ -384,6 +397,7 @@ defmodule Scry2Web.CollectionLive do
               search={@search}
               rarities={@filter_rarities}
               active_set={@active_set}
+              active_set_record={@active_set_record}
               cached_arena_ids={@cached_arena_ids}
             />
             <.craft_plan value={@craft_plan} cached_arena_ids={@cached_arena_ids} />

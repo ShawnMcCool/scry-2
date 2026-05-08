@@ -93,6 +93,23 @@ defmodule Scry2.Collection.CompletionTest do
 
       assert Enum.map(result, & &1.set.code) == ["NEW", "MID", "OLD"]
     end
+
+    test "orders chronologically when dates differ across day, month, and year" do
+      # Regression: `Enum.sort_by(..., :desc)` falls back to term comparison
+      # on `%Date{}`, which compares by alphabetical map-key order
+      # (`:calendar`, `:day`, `:month`, `:year`). With dates that differ on
+      # day-of-month, the buggy comparator returns the wrong order.
+      newest = roster(1, "NEW", %{"common" => 1})
+      newest = put_in(newest.set.released_at, ~D[2024-09-27])
+      middle = roster(2, "MID", %{"common" => 1})
+      middle = put_in(middle.set.released_at, ~D[2017-09-29])
+      oldest = roster(3, "OLD", %{"common" => 1})
+      oldest = put_in(oldest.set.released_at, ~D[2016-09-30])
+
+      result = Completion.from_holdings([], %{1 => newest, 2 => middle, 3 => oldest})
+
+      assert Enum.map(result, & &1.set.code) == ["NEW", "MID", "OLD"]
+    end
   end
 
   describe "completion_ratio/1" do

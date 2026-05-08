@@ -77,6 +77,8 @@ defmodule Scry2.Cards.Scryfall do
       arena_id: card["arena_id"],
       name: name,
       set_code: set,
+      set_name: card["set_name"],
+      released_at: parse_date(card["released_at"]),
       collector_number: card["collector_number"],
       type_line: card["type_line"],
       oracle_text: card["oracle_text"],
@@ -98,6 +100,17 @@ defmodule Scry2.Cards.Scryfall do
   defp parse_cmc(nil), do: nil
   defp parse_cmc(value) when is_number(value), do: value / 1
   defp parse_cmc(_), do: nil
+
+  defp parse_date(nil), do: nil
+
+  defp parse_date(value) when is_binary(value) do
+    case Date.from_iso8601(value) do
+      {:ok, date} -> date
+      _ -> nil
+    end
+  end
+
+  defp parse_date(_), do: nil
 
   defp join_list(nil), do: ""
   defp join_list(list) when is_list(list), do: Enum.join(list)

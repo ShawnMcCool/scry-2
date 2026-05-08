@@ -10,6 +10,8 @@ defmodule Scry2Web.Collection.Completion do
 
   use Phoenix.Component
 
+  import Scry2Web.CoreComponents, only: [set_label: 1]
+
   alias Scry2.Collection.Completion, as: CompletionStruct
 
   @rarity_order ~w(common uncommon rare mythic)
@@ -53,11 +55,9 @@ defmodule Scry2Web.Collection.Completion do
             data-set={row.set.code}
           >
             <div class="card-body p-3 space-y-2">
-              <div class="flex items-baseline justify-between">
-                <span class="font-semibold truncate" title={row.set.name}>
-                  {row.set.code}
-                </span>
-                <span class="text-xs text-base-content/60 tabular-nums">
+              <div class="flex items-baseline justify-between gap-2">
+                <.set_label set={row.set} class="font-semibold text-sm" />
+                <span class="text-xs text-base-content/60 tabular-nums shrink-0">
                   {row.owned_unique}/{row.total_unique}
                 </span>
               </div>

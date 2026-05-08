@@ -332,6 +332,71 @@ defmodule Scry2.Cards.SynthesizeTest do
       assert Cards.get_set_by_code("FDN") != nil
     end
 
+    test "populates set name and released_at from Scryfall metadata" do
+      Scry2.TestFactory.create_scryfall_card(%{
+        scryfall_id: "syn-set-meta",
+        arena_id: 80_011,
+        name: "Meta Card",
+        type_line: "Instant",
+        set_code: "stx",
+        set_name: "Strixhaven: School of Mages",
+        released_at: ~D[2021-04-23],
+        rarity: "common"
+      })
+
+      assert {:ok, _} = Synthesize.run([])
+
+      set = Cards.get_set_by_code("STX")
+      assert set.name == "Strixhaven: School of Mages"
+      assert set.released_at == ~D[2021-04-23]
+    end
+
+    test "takes the earliest released_at across cards in a set" do
+      Scry2.TestFactory.create_scryfall_card(%{
+        scryfall_id: "syn-set-late",
+        arena_id: 80_012,
+        name: "Reprint",
+        type_line: "Instant",
+        set_code: "j25",
+        set_name: "Foundations Jumpstart",
+        released_at: ~D[2024-12-15],
+        rarity: "common"
+      })
+
+      Scry2.TestFactory.create_scryfall_card(%{
+        scryfall_id: "syn-set-early",
+        arena_id: 80_013,
+        name: "Original",
+        type_line: "Instant",
+        set_code: "j25",
+        set_name: "Foundations Jumpstart",
+        released_at: ~D[2024-11-01],
+        rarity: "common"
+      })
+
+      assert {:ok, _} = Synthesize.run([])
+
+      set = Cards.get_set_by_code("J25")
+      assert set.released_at == ~D[2024-11-01]
+    end
+
+    test "leaves released_at nil for sets with no Scryfall data (MTGA-only)" do
+      Scry2.TestFactory.create_mtga_card(%{
+        arena_id: 80_014,
+        name: "MTGA Solo Set",
+        expansion_code: "OBSCURE",
+        types: "2",
+        rarity: 4
+      })
+
+      assert {:ok, _} = Synthesize.run([])
+
+      set = Cards.get_set_by_code("OBSCURE")
+      assert set != nil
+      assert set.name == "OBSCURE"
+      assert set.released_at == nil
+    end
+
     test "broadcasts cards_updates with the synthesized count" do
       Scry2.Topics.subscribe(Scry2.Topics.cards_updates())
 

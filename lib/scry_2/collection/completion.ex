@@ -88,6 +88,11 @@ defmodule Scry2.Collection.Completion do
   end
 
   # Newest released_at first; nil dates sort last; ties broken by code asc.
-  defp sort_key(%Set{released_at: nil, code: code}), do: {0, ~D[0001-01-01], code}
-  defp sort_key(%Set{released_at: date, code: code}), do: {1, date, code}
+  #
+  # Dates are converted to `{y, m, d}` erl tuples because `Enum.sort_by/3`
+  # with `:desc` uses term comparison, and `%Date{}` structs sort by
+  # alphabetical map-key order (`:calendar`, `:day`, `:month`, `:year`),
+  # which yields a day-of-month sort instead of a chronological one.
+  defp sort_key(%Set{released_at: nil, code: code}), do: {0, {0, 0, 0}, code}
+  defp sort_key(%Set{released_at: date, code: code}), do: {1, Date.to_erl(date), code}
 end
