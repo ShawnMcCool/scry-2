@@ -11,6 +11,23 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Collection page now shows real set names and expansion symbols.** The
+  per-set tiles on the Collection page used to show just a 3-letter code
+  (`FIN`, `TDM`, `FDN`); they now show the proper name (*Final Fantasy*,
+  *Tarkir: Dragonstorm*, *Foundations*) alongside the familiar Magic
+  expansion symbol. The active-set breadcrumb above your card grid uses
+  the same treatment.
+- **Sets are sorted by release date, most recent first.** Newer sets
+  appear at the top of the Collection grid, so the set you're actively
+  drafting or building decks for is right where you'd look. Sets with
+  no Scryfall release date (a few archival codes) sort to the bottom.
+- **Set names and release dates flow in from Scryfall on the next refresh.**
+  After this update, the next time Scry refreshes its card data (hourly,
+  or via **Settings → Card data → Refresh now**), every Arena set gets
+  populated with its proper name and date.
+
 ## v0.37.3 — 2026-05-08
 
 ### Fixed
