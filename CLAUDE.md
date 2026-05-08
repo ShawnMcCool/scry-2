@@ -207,7 +207,7 @@ Both paths register autostart via `HKCU\Software\Microsoft\Windows\CurrentVersio
 
 ### Lifecycle: Linux is systemd; Windows + macOS use the tray
 
-**Linux** runs the Elixir backend as a **systemd user service** (`scry_2.service`, installed at `~/.config/systemd/user/scry_2.service`). The tray binary is **not packaged on Linux** — `systemctl --user start/stop scry_2` is the supported control surface, and a `.desktop` launcher in `~/.local/share/applications/scry_2.desktop` opens the dashboard at `http://localhost:6015`. `loginctl enable-linger` keeps the unit running across logout. The unit + desktop templates live at `defaults/scry_2.service` and `defaults/scry_2.desktop`; `scripts/install-linux` materialises them with the install dir patched in.
+**Linux** runs the Elixir backend as a **systemd user service** (`scry-2.service`, installed at `~/.config/systemd/user/scry-2.service`). The tray binary is **not packaged on Linux** — `systemctl --user start/stop scry-2` is the supported control surface, and a `.desktop` launcher in `~/.local/share/applications/scry-2.desktop` opens the dashboard at `http://localhost:6015`. `loginctl enable-linger` keeps the unit running across logout. The unit + desktop templates live at `defaults/scry-2.service` and `defaults/scry-2.desktop`; `scripts/install-linux` materialises them with the install dir patched in (and migrates legacy pre-v0.37.1 `scry_2.service` installs by stopping/disabling/removing the old unit before installing the new one).
 
 **Windows + macOS** run the system tray binary (`tray/`, Go) as a thin desktop launcher. It:
 
@@ -216,7 +216,7 @@ Both paths register autostart via `HKCU\Software\Microsoft\Windows\CurrentVersio
 - Opens the browser to `http://localhost:6015` on first launch
 - Runs a watchdog that restarts the backend if it crashes — but **respects the apply-lock file** (see [ADR-033]) and skips restart while an update is in progress
 
-The tray has **no update logic**. Self-update is entirely in Elixir (see Self-Update below). The same `scry2-tray` / `scry2-tray.exe` binary is used on Windows and macOS; both installer paths on Windows (zip + MSI) wire it as the autostart entry. On Linux, the unit's `Restart=on-failure` directive is the equivalent of the watchdog, and the staged installer's `systemctl --user restart scry_2.service` is the equivalent of relaunching the tray after self-update.
+The tray has **no update logic**. Self-update is entirely in Elixir (see Self-Update below). The same `scry2-tray` / `scry2-tray.exe` binary is used on Windows and macOS; both installer paths on Windows (zip + MSI) wire it as the autostart entry. On Linux, the unit's `Restart=on-failure` directive is the equivalent of the watchdog, and the staged installer's `systemctl --user restart scry-2.service` is the equivalent of relaunching the tray after self-update.
 
 ### Self-Update
 

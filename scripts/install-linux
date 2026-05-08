@@ -7,10 +7,13 @@ set -euo pipefail
 # self-updater, $SCRIPT_DIR points at the staged release root.
 
 INSTALL_DIR="$HOME/.local/lib/scry_2"
-UNIT_PATH="$HOME/.config/systemd/user/scry_2.service"
-DESKTOP_PATH="$HOME/.local/share/applications/scry_2.desktop"
+UNIT_PATH="$HOME/.config/systemd/user/scry-2.service"
+DESKTOP_PATH="$HOME/.local/share/applications/scry-2.desktop"
 LEGACY_AUTOSTART="$HOME/.config/autostart/scry2.desktop"
-SERVICE="scry_2.service"
+LEGACY_UNIT_PATH="$HOME/.config/systemd/user/scry_2.service"
+LEGACY_DESKTOP_PATH="$HOME/.local/share/applications/scry_2.desktop"
+SERVICE="scry-2.service"
+LEGACY_SERVICE="scry_2.service"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -43,6 +46,23 @@ if systemctl --user is-active --quiet "$SERVICE" 2>/dev/null; then
   systemctl --user stop "$SERVICE"
 fi
 
+# v0.37.1 renamed the unit from scry_2.service to scry-2.service. On
+# upgrade from v0.36.x / v0.37.0, stop and remove the old unit so we
+# don't end up with two copies of Scry2 fighting for the same install
+# dir and port.
+if systemctl --user is-active --quiet "$LEGACY_SERVICE" 2>/dev/null; then
+  echo "Stopping legacy $LEGACY_SERVICE..."
+  systemctl --user stop "$LEGACY_SERVICE"
+fi
+systemctl --user disable "$LEGACY_SERVICE" 2>/dev/null || true
+if [ -f "$LEGACY_UNIT_PATH" ]; then
+  echo "Removing legacy $LEGACY_UNIT_PATH..."
+  rm -f "$LEGACY_UNIT_PATH"
+fi
+if [ -f "$LEGACY_DESKTOP_PATH" ]; then
+  rm -f "$LEGACY_DESKTOP_PATH"
+fi
+
 # Belt-and-braces: stop any orphaned BEAM that wasn't under systemd
 # (e.g. user started it manually before the systemd switch).
 if [ -x "$INSTALL_DIR/bin/scry_2" ]; then
@@ -56,7 +76,7 @@ mkdir -p "$INSTALL_DIR"
 cp -r "$SCRIPT_DIR/." "$INSTALL_DIR/"
 
 # ── 3. Install systemd unit ─────────────────────────────────────────
-# The unit template lives next to the release in `scry_2.service` —
+# The unit template lives next to the release in `scry-2.service` —
 # scripts/release / CI copies it into the package alongside `install`.
 # We materialise it under ~/.config/systemd/user/ with the staged
 # install dir patched into ExecStart / ExecStop.
@@ -65,12 +85,12 @@ mkdir -p "$(dirname "$UNIT_PATH")"
 sed \
   -e "s|/path/to/scry_2/bin/scry_2 start|$INSTALL_DIR/bin/scry_2 start|" \
   -e "s|/path/to/scry_2/bin/scry_2 stop|$INSTALL_DIR/bin/scry_2 stop|" \
-  "$INSTALL_DIR/scry_2.service" > "$UNIT_PATH"
+  "$INSTALL_DIR/scry-2.service" > "$UNIT_PATH"
 
 # ── 4. Install desktop launcher ─────────────────────────────────────
 echo "Installing desktop launcher..."
 mkdir -p "$(dirname "$DESKTOP_PATH")"
-cp "$INSTALL_DIR/scry_2.desktop" "$DESKTOP_PATH"
+cp "$INSTALL_DIR/scry-2.desktop" "$DESKTOP_PATH"
 # Refresh the desktop database so the entry shows up in launchers
 # without a re-login. update-desktop-database is part of
 # desktop-file-utils — present on most desktops, optional here.

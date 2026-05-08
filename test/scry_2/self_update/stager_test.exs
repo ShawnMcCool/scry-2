@@ -14,7 +14,7 @@ defmodule Scry2.SelfUpdate.StagerTest do
   describe "safe_entry?/1" do
     test "accepts normal paths" do
       assert Stager.safe_entry?("bin/scry_2") == true
-      assert Stager.safe_entry?("share/systemd/scry_2.service") == true
+      assert Stager.safe_entry?("share/systemd/scry-2.service") == true
       assert Stager.safe_entry?("lib/x/y.beam") == true
     end
 

@@ -171,8 +171,8 @@ jobs:
           rm -f "$ARCHIVE/install.bat" "$ARCHIVE/uninstall.bat"
           cp scripts/install-linux "$ARCHIVE/install"
           cp scripts/uninstall-linux "$ARCHIVE/uninstall"
-          cp defaults/scry_2.service "$ARCHIVE/scry_2.service"
-          cp defaults/scry_2.desktop "$ARCHIVE/scry_2.desktop"
+          cp defaults/scry-2.service "$ARCHIVE/scry-2.service"
+          cp defaults/scry-2.desktop "$ARCHIVE/scry-2.desktop"
           printf "Run ./install to set up Scry2.\nSee https://github.com/${{ github.repository }} for full instructions.\n" > "$ARCHIVE/README.txt"
           tar czf "${ARCHIVE}.tar.gz" "$ARCHIVE"
 

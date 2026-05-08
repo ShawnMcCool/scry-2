@@ -4,7 +4,7 @@ defmodule Scry2.SelfUpdate.Handoff do
   BEAM. After handoff the caller is expected to call `System.stop/1`; the
   installer is responsible for replacing files, removing the apply lock,
   and bringing the new release back up — relaunching the tray binary on
-  Windows / macOS, or `systemctl --user restart scry_2.service` on Linux.
+  Windows / macOS, or `systemctl --user restart scry-2.service` on Linux.
 
   ## Security posture
 
