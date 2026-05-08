@@ -29,6 +29,8 @@ defmodule Scry2.Cards.ScryfallCard do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   schema "cards_scryfall_cards" do
     field :scryfall_id, :string
     field :oracle_id, :string

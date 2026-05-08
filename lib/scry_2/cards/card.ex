@@ -14,6 +14,7 @@ defmodule Scry2.Cards.Card do
   schema "cards_cards" do
     field :arena_id, :integer
     field :name, :string
+    field :collector_number, :string
     field :rarity, :string
     field :color_identity, :string, default: ""
     field :mana_value, :integer
@@ -41,6 +42,7 @@ defmodule Scry2.Cards.Card do
     |> cast(attrs, [
       :arena_id,
       :name,
+      :collector_number,
       :rarity,
       :color_identity,
       :mana_value,

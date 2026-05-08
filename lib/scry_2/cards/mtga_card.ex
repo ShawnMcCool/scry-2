@@ -25,6 +25,8 @@ defmodule Scry2.Cards.MtgaCard do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   schema "cards_mtga_cards" do
     field :arena_id, :integer
     field :name, :string
