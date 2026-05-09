@@ -17,7 +17,7 @@ defmodule Scry2.Collection.PendingPacks do
   without seeding the real disk-backed cache.
   """
 
-  alias Scry2.Cards.BoosterCollation
+  alias Scry2.Cards
   alias Scry2.Collection.Snapshot
 
   @type row :: %{set_code: String.t() | nil, count: integer()}
@@ -32,7 +32,7 @@ defmodule Scry2.Collection.PendingPacks do
   no snapshots have been captured yet).
   """
   @spec summarize(Snapshot.t() | nil, (integer() -> String.t() | nil)) :: [row()]
-  def summarize(snapshot, lookup \\ &BoosterCollation.lookup/1)
+  def summarize(snapshot, lookup \\ &Cards.lookup_booster_collation/1)
 
   def summarize(nil, _lookup), do: []
 

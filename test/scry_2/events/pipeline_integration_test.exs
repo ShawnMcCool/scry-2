@@ -66,7 +66,14 @@ defmodule Scry2.Events.PipelineIntegrationTest do
 
     projectors
     |> Map.values()
-    |> Enum.each(&:sys.get_state/1)
+    |> Enum.each(fn name ->
+      # Projectors buffer watermark UPSERTs and flush via a 1s timer.
+      # Send `:flush_watermark` first; mailboxes are FIFO so the
+      # subsequent `:sys.get_state` only returns after the flush has
+      # been processed.
+      send(name, :flush_watermark)
+      :sys.get_state(name)
+    end)
 
     :ok
   end

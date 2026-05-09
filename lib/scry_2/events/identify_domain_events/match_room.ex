@@ -21,7 +21,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.MatchRoom do
         self_user_id,
         _match_context
       ) do
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          {:ok, info} <- extract_game_room_info(payload) do
       case info["stateType"] do
         "MatchGameRoomStateType_Playing" ->

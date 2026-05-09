@@ -11,25 +11,13 @@ defmodule Scry2.Crafts.IngestCollectionDiffs do
   is no domain-event log to keep, no self-user state to remember.
   """
 
-  use GenServer
+  use Scry2.Events.MemoryObservationConsumer, topic: Scry2.Topics.collection_diffs()
 
   require Scry2.Log, as: Log
 
   alias Scry2.Collection.{Diff, Snapshot}
   alias Scry2.Crafts
   alias Scry2.Repo
-  alias Scry2.Topics
-
-  def start_link(opts \\ []) do
-    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
-    GenServer.start_link(__MODULE__, opts, name: name)
-  end
-
-  @impl true
-  def init(_opts) do
-    Topics.subscribe(Topics.collection_diffs())
-    {:ok, %{}}
-  end
 
   @impl true
   def handle_info({:diff_saved, %Diff{} = diff}, state) do

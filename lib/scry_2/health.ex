@@ -43,11 +43,17 @@ defmodule Scry2.Health do
   """
   @spec run_all() :: Report.t()
   def run_all do
+    # `count_by_type` was previously executed twice — once for `:ingestion`
+    # and again for `:processing`. Hoist the GROUP BY scan out so the
+    # full report stays cheap when the live page reruns it.
+    events_by_type = MtgaLogIngestion.count_by_type()
+    known_types = IdentifyDomainEvents.known_event_types()
+
     checks =
       List.flatten([
-        run_category(:ingestion),
+        run_category(:ingestion, events_by_type: events_by_type, known_types: known_types),
         run_category(:card_data),
-        run_category(:processing),
+        run_category(:processing, events_by_type: events_by_type, known_types: known_types),
         run_category(:config)
       ])
 
@@ -57,14 +63,19 @@ defmodule Scry2.Health do
   @doc """
   Runs the checks for a single category and returns a list of
   `%Check{}` results.
+
+  `events_by_type` and `known_types` may be passed in to avoid re-querying
+  when several categories are run together (see `run_all/0`).
   """
-  @spec run_category(Check.category()) :: [Check.t()]
-  def run_category(:ingestion) do
+  @spec run_category(Check.category(), keyword()) :: [Check.t()]
+  def run_category(category, opts \\ [])
+
+  def run_category(:ingestion, opts) do
     locate_result = LocateLogFile.resolve()
     watcher_status = Watcher.status()
     total_raw = MtgaLogIngestion.count_all()
-    events_by_type = MtgaLogIngestion.count_by_type()
-    known_types = IdentifyDomainEvents.known_event_types()
+    events_by_type = opts[:events_by_type] || MtgaLogIngestion.count_by_type()
+    known_types = opts[:known_types] || IdentifyDomainEvents.known_event_types()
 
     [
       Ingestion.player_log_locatable(locate_result),
@@ -73,7 +84,7 @@ defmodule Scry2.Health do
     ]
   end
 
-  def run_category(:card_data) do
+  def run_category(:card_data, _opts) do
     timestamps = Cards.import_timestamps()
     synthesized_count = Cards.count()
     scryfall_count = Cards.scryfall_count()
@@ -86,10 +97,10 @@ defmodule Scry2.Health do
     ]
   end
 
-  def run_category(:processing) do
+  def run_category(:processing, opts) do
     error_count = MtgaLogIngestion.count_errors()
-    events_by_type = MtgaLogIngestion.count_by_type()
-    known_types = IdentifyDomainEvents.known_event_types()
+    events_by_type = opts[:events_by_type] || MtgaLogIngestion.count_by_type()
+    known_types = opts[:known_types] || IdentifyDomainEvents.known_event_types()
     projector_statuses = ProjectorRegistry.status_all()
 
     [
@@ -99,7 +110,7 @@ defmodule Scry2.Health do
     ]
   end
 
-  def run_category(:config) do
+  def run_category(:config, _opts) do
     [
       Config.database_writable(AppConfig.get(:database_path)),
       Config.data_dirs_exist(

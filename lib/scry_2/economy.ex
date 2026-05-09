@@ -117,6 +117,40 @@ defmodule Scry2.Economy do
     transaction
   end
 
+  @doc """
+  Sums gold and gems delta from `Transaction` rows whose `occurred_at`
+  falls in `[start_at, end_at]` (inclusive). Used by MatchEconomy to
+  reconcile a match window against memory observations.
+  """
+  @spec sum_gold_gems_in_window(DateTime.t(), DateTime.t()) :: %{
+          gold: integer(),
+          gems: integer()
+        }
+  def sum_gold_gems_in_window(start_at, end_at) do
+    from(t in Transaction,
+      where: t.occurred_at >= ^start_at and t.occurred_at <= ^end_at,
+      select: %{
+        gold: coalesce(sum(t.gold_delta), 0),
+        gems: coalesce(sum(t.gems_delta), 0)
+      }
+    )
+    |> Repo.one()
+  end
+
+  @doc """
+  Returns the most recent `InventorySnapshot` whose `occurred_at` is at
+  or before the given timestamp, or `nil` if none exists.
+  """
+  @spec latest_inventory_snapshot_at_or_before(DateTime.t()) :: struct() | nil
+  def latest_inventory_snapshot_at_or_before(timestamp) do
+    from(s in InventorySnapshot,
+      where: s.occurred_at <= ^timestamp,
+      order_by: [desc: s.occurred_at],
+      limit: 1
+    )
+    |> Repo.one()
+  end
+
   # ── Card grants ────────────────────────────────────────────────────
 
   @doc "Lists recent card grants, newest first."

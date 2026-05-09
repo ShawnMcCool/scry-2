@@ -9,22 +9,10 @@ defmodule Scry2.Decks.MergeMatchResultObservation do
   same broadcast, different projection table.
   """
 
-  use GenServer
+  use Scry2.Events.MemoryObservationConsumer, topic: Scry2.Topics.live_match_final()
 
   alias Scry2.Decks
   alias Scry2.LiveState.Snapshot
-  alias Scry2.Topics
-
-  def start_link(opts \\ []) do
-    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
-    GenServer.start_link(__MODULE__, opts, name: name)
-  end
-
-  @impl true
-  def init(_opts) do
-    Topics.subscribe(Topics.live_match_final())
-    {:ok, %{}}
-  end
 
   @impl true
   def handle_info({:final, %Snapshot{} = snapshot}, state) do

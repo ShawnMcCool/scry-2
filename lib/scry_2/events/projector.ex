@@ -191,15 +191,28 @@ defmodule Scry2.Events.Projector do
         :ok
       end
 
+      # Buffer per-event watermark UPSERTs and flush at most once per
+      # second. Per-event UPSERTs were tens of percent of the live
+      # ingestion DB load with 5 projectors. Crash recovery from a stale
+      # watermark is safe: replaying already-projected events is a no-op
+      # (idempotent upserts).
+      @watermark_flush_interval_ms 1_000
+
       @impl true
       def init(_opts) do
         Topics.subscribe(Topics.domain_events())
         Topics.subscribe(Topics.domain_control())
         after_init(_opts)
-        {:ok, %{}}
+        {:ok, %{pending_watermark: nil, flush_timer: nil}}
       end
 
       def after_init(_opts), do: :ok
+
+      @impl true
+      def terminate(_reason, state) do
+        flush_pending_watermark(state)
+        :ok
+      end
 
       @doc """
       Hook invoked at the end of `rebuild!/1`, `catch_up!/1`, and the
@@ -285,20 +298,36 @@ defmodule Scry2.Events.Projector do
       @impl true
       def handle_info({:domain_event, id, type_slug, event}, state)
           when type_slug in @claimed_slugs do
-        safe_project_live(event, id, type_slug)
-        {:noreply, state}
+        new_state =
+          case safe_project_live(event, id, type_slug) do
+            :ok -> bump_pending_watermark(state, id)
+            :error -> state
+          end
+
+        {:noreply, new_state}
       end
 
       # 3-tuple fallback: legacy or catch-up messages — fetch from DB
       @impl true
       def handle_info({:domain_event, id, type_slug}, state)
           when type_slug in @claimed_slugs do
-        safe_project_live({:lazy_fetch, id}, id, type_slug)
-        {:noreply, state}
+        new_state =
+          case safe_project_live({:lazy_fetch, id}, id, type_slug) do
+            :ok -> bump_pending_watermark(state, id)
+            :error -> state
+          end
+
+        {:noreply, new_state}
       end
 
       def handle_info({:domain_event, _id, _type_slug, _event}, state), do: {:noreply, state}
       def handle_info({:domain_event, _id, _type_slug}, state), do: {:noreply, state}
+
+      def handle_info(:flush_watermark, state) do
+        flush_pending_watermark(state)
+        {:noreply, %{state | pending_watermark: nil, flush_timer: nil}}
+      end
+
       def handle_info(msg, state), do: handle_extra_info(msg, state)
 
       def handle_extra_info(_msg, state), do: {:noreply, state}
@@ -362,20 +391,41 @@ defmodule Scry2.Events.Projector do
             end
 
           project(event)
-          Events.put_watermark!(@projector_name, id)
+          :ok
         rescue
           error ->
             Log.error(
               :ingester,
               "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (rescue): #{inspect(error)}"
             )
+
+            :error
         catch
           kind, reason ->
             Log.error(
               :ingester,
               "#{__MODULE__} failed on domain_event id=#{id} type=#{type_slug} (#{kind}): #{inspect(reason) |> String.slice(0, 300)}"
             )
+
+            :error
         end
+      end
+
+      defp bump_pending_watermark(state, id) when is_integer(id) do
+        new_max = max(state.pending_watermark || 0, id)
+
+        timer =
+          state.flush_timer ||
+            Process.send_after(self(), :flush_watermark, @watermark_flush_interval_ms)
+
+        %{state | pending_watermark: new_max, flush_timer: timer}
+      end
+
+      defp flush_pending_watermark(%{pending_watermark: nil}), do: :ok
+
+      defp flush_pending_watermark(%{pending_watermark: id}) when is_integer(id) do
+        Events.put_watermark!(@projector_name, id)
+        :ok
       end
 
       defoverridable after_init: 1, handle_extra_info: 2, post_rebuild: 0

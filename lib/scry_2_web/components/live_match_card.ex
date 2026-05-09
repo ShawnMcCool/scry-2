@@ -17,7 +17,7 @@ defmodule Scry2Web.Components.LiveMatchCard do
   use Phoenix.Component
 
   alias Scry2.LiveState.RankClass
-  alias Scry2.Matches.RankFormat
+  alias Scry2.Ranks.Format, as: RankFormat
   alias Scry2Web.Components.RankBadge
 
   @placeholder_screen_names ["Local Player", "Opponent"]

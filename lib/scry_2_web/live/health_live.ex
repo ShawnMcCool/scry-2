@@ -56,6 +56,7 @@ defmodule Scry2Web.HealthLive do
      socket
      |> assign(:page_title, "System")
      |> assign(:report, nil)
+     |> assign(:reload_timer, nil)
      |> assign(:updates_current_version, current_version)
      |> assign(:updates_last_check_at, SelfUpdate.last_check_at())
      |> assign(:updates_summary, updates_summary)
@@ -166,11 +167,20 @@ defmodule Scry2Web.HealthLive do
      )}
   end
 
+  def handle_info(:reload_data, socket) do
+    {:noreply,
+     socket
+     |> assign(:report, Health.run_all())
+     |> assign(:reload_timer, nil)}
+  end
+
   def handle_info(_msg, socket) do
-    # Any other PubSub update triggers a full re-read of the health report.
-    # The report is cheap (no heavy queries) and keeping a single data
-    # source is simpler than tracking deltas per message type.
-    {:noreply, assign(socket, :report, Health.run_all())}
+    # Any other PubSub update schedules a debounced reload of the report.
+    # We subscribe to `domain:events` (the firehose) so a per-message
+    # recompute would issue a dozen aggregate queries per ingested raw
+    # event during live play. `schedule_reload/2` collapses bursts into
+    # one re-read after the quiet period.
+    {:noreply, Scry2Web.LiveHelpers.schedule_reload(socket, 750)}
   end
 
   @impl true

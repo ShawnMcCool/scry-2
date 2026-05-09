@@ -63,6 +63,7 @@ defmodule Scry2.Events.IngestRawEvents do
   alias Scry2.Events
   alias Scry2.Events.IdentifyDomainEvents
   alias Scry2.Events.IngestionState
+  alias Scry2.Events.RawPayload
   alias Scry2.Events.SnapshotConvert
   alias Scry2.Events.SnapshotDiff
   alias Scry2.MtgaLogIngestion
@@ -287,24 +288,36 @@ defmodule Scry2.Events.IngestRawEvents do
           "catching up #{length(records)} unprocessed raw events from id=#{ingestion.last_raw_event_id}"
         )
 
-        Enum.reduce(records, ingestion, fn record, acc ->
-          try do
-            process_raw_event(record, acc, true)
-          rescue
-            error ->
-              if transient_error?(error) do
-                Log.warning(
-                  :ingester,
-                  "transient error on catch-up id=#{record.id}, will retry on next catch-up: #{inspect(error)}"
-                )
-              else
-                Log.error(:ingester, "catch-up failed on id=#{record.id}: #{inspect(error)}")
-                MtgaLogIngestion.mark_error!(record.id, error)
-              end
+        # Defer the `processed` mark until the whole batch is done — one
+        # `bulk_mark_processed!` UPDATE instead of N single-row UPDATEs on
+        # `mtga_logs_events`. Re-processing a successfully-handled but
+        # not-yet-marked event on a crash is harmless: the domain event
+        # `on_conflict: :nothing` upsert no-ops on duplicates.
+        {final_ingestion, processed_ids} =
+          Enum.reduce(records, {ingestion, []}, fn record, {acc, ids} ->
+            try do
+              {process_raw_event(record, acc, true, mark_processed: false), [record.id | ids]}
+            rescue
+              error ->
+                if transient_error?(error) do
+                  Log.warning(
+                    :ingester,
+                    "transient error on catch-up id=#{record.id}, will retry on next catch-up: #{inspect(error)}"
+                  )
+                else
+                  Log.error(:ingester, "catch-up failed on id=#{record.id}: #{inspect(error)}")
+                  MtgaLogIngestion.mark_error!(record.id, error)
+                end
 
-              acc
-          end
-        end)
+                {acc, ids}
+            end
+          end)
+
+        if processed_ids != [] do
+          MtgaLogIngestion.bulk_mark_processed!(Enum.reverse(processed_ids))
+        end
+
+        final_ingestion
     end
   end
 
@@ -317,7 +330,17 @@ defmodule Scry2.Events.IngestRawEvents do
   # messages into match state. MTGA sends hand card data (gameObjects)
   # in a GameStateMessage that precedes the MulliganReq. The translator
   # uses cached objects as fallback when the MulliganReq itself lacks them.
-  defp process_raw_event(record, state, checkpointing) do
+  defp process_raw_event(record, state, checkpointing, opts \\ []) do
+    try do
+      do_process_raw_event(record, state, checkpointing, opts)
+    after
+      RawPayload.forget(record.id)
+    end
+  end
+
+  defp do_process_raw_event(record, state, checkpointing, opts) do
+    mark_processed? = Keyword.get(opts, :mark_processed, true)
+
     state = maybe_cache_game_objects(record, state)
     state = maybe_capture_rank(record, state)
 
@@ -347,7 +370,7 @@ defmodule Scry2.Events.IngestRawEvents do
 
     case domain_events do
       [] ->
-        MtgaLogIngestion.mark_processed!(record.id)
+        if mark_processed?, do: MtgaLogIngestion.mark_processed!(record.id)
         state
 
       events ->
@@ -372,7 +395,7 @@ defmodule Scry2.Events.IngestRawEvents do
           end)
           |> then(fn {final_state, _sequence, total} -> {final_state, total} end)
 
-        MtgaLogIngestion.mark_processed!(record.id)
+        if mark_processed?, do: MtgaLogIngestion.mark_processed!(record.id)
 
         advanced = IngestionState.advance(new_state, record.id)
         new_state = if checkpointing, do: IngestionState.persist!(advanced), else: advanced
@@ -391,6 +414,14 @@ defmodule Scry2.Events.IngestRawEvents do
   # of writing to the DB. Used by retranslate_all! to accumulate the full
   # translation in memory before committing atomically.
   defp process_raw_event_for_batch(record, state) do
+    try do
+      do_process_raw_event_for_batch(record, state)
+    after
+      RawPayload.forget(record.id)
+    end
+  end
+
+  defp do_process_raw_event_for_batch(record, state) do
     state = maybe_cache_game_objects(record, state)
     state = maybe_capture_rank(record, state)
 
@@ -535,7 +566,7 @@ defmodule Scry2.Events.IngestRawEvents do
   # game_object_states tracks per-object tap/power/toughness for delta detection.
   # power and toughness arrive as nested %{"value" => int} maps on creature objects.
   defp maybe_cache_game_objects(%EventRecord{event_type: "GreToClientEvent"} = record, state) do
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- RawPayload.decode(record),
          messages when is_list(messages) <-
            get_in(payload, ["greToClientEvent", "greToClientMessages"]) do
       {new_objects, new_object_states} =
@@ -588,7 +619,7 @@ defmodule Scry2.Events.IngestRawEvents do
   # This fires periodically and on login — we track the latest rank
   # in state and stamp it onto MatchCreated events.
   defp maybe_capture_rank(%EventRecord{event_type: "RankGetCombinedRankInfo"} = record, state) do
-    with {:ok, payload} <- Jason.decode(record.raw_json) do
+    with {:ok, payload} <- RawPayload.decode(record) do
       constructed =
         case {payload["constructedClass"], payload["constructedLevel"]} do
           {class, level} when is_binary(class) and is_integer(level) ->

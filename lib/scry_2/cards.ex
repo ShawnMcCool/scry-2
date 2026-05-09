@@ -21,17 +21,49 @@ defmodule Scry2.Cards do
      upserts `cards_cards`. Disposable read model.
 
   See ADR-014 for the `arena_id` identity invariant.
+
+  ## Cross-context consumption
+
+  Other contexts read card reference data freely. The intentionally-public
+  surface of `Scry2.Cards` is:
+
+    * **Functions on this module** (`get_card_by_arena_id/1`,
+      `lookup_booster_collation/1`, `list_sets/0`, …) — preferred for
+      lookups and computations.
+    * **Struct types** `%Scry2.Cards.Card{}`, `%Scry2.Cards.Set{}`, and
+      `%Scry2.Cards.SetRoster{}` — exposed as value types because the
+      collection consumers (`Scry2.Collection.Holding`,
+      `Scry2.Collection.Completion`) operate on them in `@type` specs and
+      pattern matches. These shapes are part of the contract.
+
+  Anything else under `lib/scry_2/cards/` is internal — do not alias from
+  outside the context.
   """
 
   import Ecto.Query
 
-  alias Scry2.Cards.{Card, MtgaCard, ScryfallCard, Set}
+  alias Scry2.Cards.{BoosterCollation, Card, MtgaCard, ScryfallCard, Set}
   alias Scry2.Repo
   alias Scry2.Settings
 
   @synthesis_refresh_key "cards_synthesized_last_refresh_at"
   @scryfall_refresh_key "cards_scryfall_last_refresh_at"
   @mtga_client_refresh_key "cards_mtga_client_last_refresh_at"
+
+  # ── Booster collation ───────────────────────────────────────────────────
+
+  @doc """
+  Resolves a MTGA `collationId` to a set code via the cached booster
+  collation index, or `nil` if the id has no recorded mapping.
+
+  Public-API surface for `Scry2.Collection.PendingPacks` and any other
+  consumer that needs to label boosters by set without reaching into
+  the cache module's internal state.
+  """
+  @spec lookup_booster_collation(integer()) :: String.t() | nil
+  def lookup_booster_collation(collation_id) when is_integer(collation_id) do
+    BoosterCollation.lookup(collation_id)
+  end
 
   # ── Sets ────────────────────────────────────────────────────────────────
 

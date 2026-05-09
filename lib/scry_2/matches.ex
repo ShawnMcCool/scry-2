@@ -14,17 +14,14 @@ defmodule Scry2.Matches do
 
   import Ecto.Query
 
+  alias Scry2.Analytics.RollingWindow
   alias Scry2.LiveState.{RankClass, Snapshot}
-  alias Scry2.Matches.{DeckSubmission, Game, Match, RankFormat}
+  alias Scry2.Matches.{DeckSubmission, Game, Match}
+  alias Scry2.Ranks.Format, as: RankFormat
   alias Scry2.Repo
   alias Scry2.Topics
 
   require Scry2.Log, as: Log
-
-  # Minimum samples required for a rolling-window point to be plotted.
-  # With < 5 samples a single win/loss flips the rate by ≥ 20pp, which
-  # is too noisy to display as a trend.
-  @rolling_min_samples 5
 
   @doc """
   Returns the most recent matches, newest first.
@@ -359,89 +356,13 @@ defmodule Scry2.Matches do
 
     case days do
       nil ->
-        cumulative_points(matches)
+        RollingWindow.cumulative_points(matches)
 
-      n when is_integer(n) and n > 0 ->
+      window_days when is_integer(window_days) and window_days > 0 ->
         matches
-        |> rolling_points(n)
-        |> filter_to_display_window(n, now)
+        |> RollingWindow.rolling_points(window_days)
+        |> RollingWindow.filter_to_display_window(window_days, now)
     end
-  end
-
-  # Restrict the plotted points to the visible time window: only emit
-  # points whose timestamp falls in [now - N days, now]. The rolling-rate
-  # computation still considers earlier matches as context for points
-  # near the left edge of the window.
-  defp filter_to_display_window(points, days, now) do
-    cutoff_iso = now |> DateTime.add(-days, :day) |> DateTime.to_iso8601()
-    Enum.filter(points, &(&1.timestamp >= cutoff_iso))
-  end
-
-  # Cumulative reduction: each point counts every match up to and including itself.
-  defp cumulative_points(matches) do
-    matches
-    |> Enum.reduce({0, 0, []}, fn match, {wins, total, acc} ->
-      wins = if match.won, do: wins + 1, else: wins
-      total = total + 1
-      {wins, total, [point(match.started_at, wins, total) | acc]}
-    end)
-    |> elem(2)
-    |> Enum.reverse()
-  end
-
-  # Two-pointer sliding window: for each match, advance `left` past matches
-  # whose started_at is before the cutoff, then count wins in [left..i].
-  # O(n) overall — both pointers move forward monotonically.
-  #
-  # Minimum sample threshold: only emits points where the window contains
-  # at least @rolling_min_samples matches. A 1- or 2-sample rolling rate
-  # is too noisy to be informative (always 0% or 100%), and starting the
-  # line there is misleading. With a 5-sample floor the first plotted
-  # point has at least 5W+5L of data behind it.
-  defp rolling_points([], _days), do: []
-
-  defp rolling_points(matches, days) do
-    window_seconds = days * 86_400
-    indexed = matches |> Enum.with_index() |> Map.new(fn {m, i} -> {i, m} end)
-    n = map_size(indexed)
-
-    {points, _} =
-      Enum.reduce(0..(n - 1)//1, {[], 0}, fn i, {acc, left} ->
-        cutoff = DateTime.add(indexed[i].started_at, -window_seconds, :second)
-        new_left = advance_left(indexed, left, i, cutoff)
-        {wins, total} = count_window(indexed, new_left, i)
-
-        if total >= @rolling_min_samples do
-          {[point(indexed[i].started_at, wins, total) | acc], new_left}
-        else
-          {acc, new_left}
-        end
-      end)
-
-    Enum.reverse(points)
-  end
-
-  defp advance_left(indexed, left, right, cutoff) do
-    if left <= right and DateTime.compare(indexed[left].started_at, cutoff) == :lt do
-      advance_left(indexed, left + 1, right, cutoff)
-    else
-      left
-    end
-  end
-
-  defp count_window(indexed, left, right) do
-    Enum.reduce(left..right//1, {0, 0}, fn i, {wins, total} ->
-      if indexed[i].won, do: {wins + 1, total + 1}, else: {wins, total + 1}
-    end)
-  end
-
-  defp point(started_at, wins, total) do
-    %{
-      timestamp: DateTime.to_iso8601(started_at),
-      win_rate: Float.round(wins / total * 100, 1),
-      wins: wins,
-      total: total
-    }
   end
 
   @doc deprecated: "Use rolling_win_rate/1 instead. Same semantics with no :days opt."

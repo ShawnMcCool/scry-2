@@ -7,7 +7,7 @@ defmodule Scry2Web.Components.RankBadge do
 
   Inputs:
     * `:rank` — pre-composed string (e.g. `"Diamond 3"`, `"Mythic"`).
-      Compose via `Scry2.Matches.RankFormat.compose/2` from the
+      Compose via `Scry2.Ranks.Format.compose/2` from the
       raw class+tier pair.
     * `:mythic_placement` — leaderboard placement when applicable.
       Treated as absent when nil or non-positive.

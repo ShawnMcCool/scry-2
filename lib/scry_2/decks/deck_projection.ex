@@ -55,7 +55,7 @@ defmodule Scry2.Decks.DeckProjection do
   alias Scry2.Events.EventName
   alias Scry2.Events.Gameplay.{CardDrawn, MulliganOffered}
   alias Scry2.Events.Match.{GameCompleted, MatchCompleted, MatchCreated}
-  alias Scry2.Matches.RankFormat
+  alias Scry2.Ranks.Format, as: RankFormat
   alias Scry2.Repo
 
   # ── Projection handlers ─────────────────────────────────────────────

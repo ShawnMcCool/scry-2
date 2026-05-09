@@ -3,37 +3,25 @@ defmodule Scry2.MatchEconomy.AggregateLog do
   Aggregates log-derived economy state over a match window into per-currency
   deltas the way `Compute.diffs/2` expects.
 
-  Two underlying sources:
+  Two underlying sources, both consumed through the `Scry2.Economy` public
+  API rather than reaching into Economy's internal schemas:
 
-    * `Economy.Transaction` — discrete gold/gems deltas from
-      `InventoryChanged` events. Summed inclusively over the window.
-    * `Economy.InventorySnapshot` — full balances from `InventoryUpdated`
-      events. Wildcard deltas come from diffing the most-recent snapshots
-      on either side of the window.
+    * `Economy.sum_gold_gems_in_window/2` — discrete gold/gems deltas
+      summed inclusively over the window.
+    * `Economy.latest_inventory_snapshot_at_or_before/1` — full-balance
+      snapshots used to compute wildcard deltas across the window.
 
   Returns nil for a currency when its source data is unavailable.
   """
 
-  import Ecto.Query
-  alias Scry2.Repo
-  alias Scry2.Economy.Transaction
-  alias Scry2.Economy.InventorySnapshot
+  alias Scry2.Economy
 
   @doc """
   Gold and gems delta from `Economy.Transaction` rows with `occurred_at`
   in `[start_at, end_at]` (inclusive).
   """
   @spec gold_gems(DateTime.t(), DateTime.t()) :: %{gold: integer(), gems: integer()}
-  def gold_gems(start_at, end_at) do
-    from(t in Transaction,
-      where: t.occurred_at >= ^start_at and t.occurred_at <= ^end_at,
-      select: %{
-        gold: coalesce(sum(t.gold_delta), 0),
-        gems: coalesce(sum(t.gems_delta), 0)
-      }
-    )
-    |> Repo.one()
-  end
+  def gold_gems(start_at, end_at), do: Economy.sum_gold_gems_in_window(start_at, end_at)
 
   @doc """
   Wildcard delta computed from the most-recent `InventorySnapshot` rows
@@ -48,8 +36,8 @@ defmodule Scry2.MatchEconomy.AggregateLog do
             mythic: integer() | nil
           }
   def wildcards(start_at, end_at) do
-    pre = latest_snapshot_at_or_before(start_at)
-    post = latest_snapshot_at_or_before(end_at)
+    pre = Economy.latest_inventory_snapshot_at_or_before(start_at)
+    post = Economy.latest_inventory_snapshot_at_or_before(end_at)
 
     cond do
       is_nil(pre) or is_nil(post) ->
@@ -84,15 +72,6 @@ defmodule Scry2.MatchEconomy.AggregateLog do
       wildcards_rare: rare,
       wildcards_mythic: mythic
     }
-  end
-
-  defp latest_snapshot_at_or_before(ts) do
-    from(s in InventorySnapshot,
-      where: s.occurred_at <= ^ts,
-      order_by: [desc: s.occurred_at],
-      limit: 1
-    )
-    |> Repo.one()
   end
 
   defp sub(nil, _), do: nil

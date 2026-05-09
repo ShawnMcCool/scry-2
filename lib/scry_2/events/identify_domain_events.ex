@@ -286,7 +286,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          messages when is_list(messages) <-
            get_in(payload, ["greToClientEvent", "greToClientMessages"]) do
       match_id = Helpers.extract_match_id(messages)
@@ -367,7 +367,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          {:ok, request} <- decode_request_field(payload) do
       event_name = request["EventName"]
       set_code = EventName.parse(event_name).set_code
@@ -382,7 +382,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
        ], []}
     else
       _ ->
-        case Jason.decode(record.raw_json) do
+        case Scry2.Events.RawPayload.decode(record) do
           {:ok, %{"Payload" => _}} ->
             translate_bot_pack_response(record)
 
@@ -412,12 +412,12 @@ defmodule Scry2.Events.IdentifyDomainEvents do
         _self_user_id,
         _match_context
       ) do
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          {:ok, request} <- decode_request_field(payload) do
       translate_draft_pick_request(request, record)
     else
       _ ->
-        case Jason.decode(record.raw_json) do
+        case Scry2.Events.RawPayload.decode(record) do
           {:ok, %{"Payload" => _}} -> translate_bot_pack_response(record)
           _ -> draft_pick_warning(record)
         end
@@ -440,7 +440,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          false <- Map.has_key?(payload, "method"),
          draft_id when is_binary(draft_id) <- payload["draftId"],
          pack_cards when is_binary(pack_cards) <- payload["PackCards"] do
@@ -484,7 +484,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          false <- Map.has_key?(payload, "request"),
          false <- pick_ack?(payload),
          grp_ids when is_list(grp_ids) <- payload["GrpIds"],
@@ -517,7 +517,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          false <- Map.has_key?(payload, "request"),
          course_id when is_binary(course_id) <- payload["CourseId"] do
       {[
@@ -544,7 +544,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          %{"authenticateResponse" => auth} <- payload do
       {[
          %SessionStarted{
@@ -592,7 +592,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       when event_type in @rank_event_types do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          false <- Map.has_key?(payload, "request") do
       {[
          %RankSnapshot{
@@ -653,7 +653,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          %{"Course" => course, "InventoryInfo" => inventory_info} <- payload do
       event_name = course["InternalEventName"]
 
@@ -703,7 +703,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          %{"Course" => course, "InventoryInfo" => inventory} <- payload do
       all_changes = inventory["Changes"] || []
       changes = List.first(all_changes) || %{}
@@ -769,7 +769,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          {:ok, request} <- decode_request_field(payload) do
       {[
          %PairingEntered{
@@ -795,7 +795,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       when type in ["EventSetDeckV2", "EventSetDeckV3"] do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          {:ok, request} <- decode_request_field(payload) do
       summary = request["Summary"] || %{}
       deck = request["Deck"] || %{}
@@ -830,7 +830,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       when type in ["DeckUpsertDeckV2", "DeckUpsertDeckV3"] do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          {:ok, request} <- decode_request_field(payload) do
       summary = request["Summary"] || %{}
       deck = request["Deck"] || %{}
@@ -868,7 +868,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          %{"Summaries" => summaries} when is_list(summaries) <- payload do
       decks =
         Enum.map(summaries, fn summary ->
@@ -901,7 +901,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          %{"quests" => quests} when is_list(quests) <- payload do
       quest_data =
         Enum.map(quests, fn quest ->
@@ -933,7 +933,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          daily when is_integer(daily) <- payload["_dailyRewardSequenceId"] do
       {[
          %DailyWinsStatus{
@@ -959,7 +959,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          courses when is_list(courses) <- payload["Courses"] do
       events =
         courses
@@ -989,7 +989,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   def translate(%EventRecord{event_type: "StartHook"} = record, _self_user_id, _match_context) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          %{"InventoryInfo" => inventory} when is_map(inventory) <- payload do
       event = %InventoryUpdated{
         gold: inventory["Gold"],
@@ -1019,7 +1019,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          %{"NodeStates" => node_states} when is_map(node_states) <- payload do
       total = map_size(node_states)
 
@@ -1061,7 +1061,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          false <- Map.has_key?(payload, "request") do
       # Payload is a flat map of "arena_id_string" => count
       card_counts =
@@ -1098,7 +1098,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          false <- Map.has_key?(payload, "request") do
       boosters =
         case payload["Boosters"] do
@@ -1323,7 +1323,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   defp translate_bot_pack_response(record) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
-    with {:ok, outer} <- Jason.decode(record.raw_json),
+    with {:ok, outer} <- Scry2.Events.RawPayload.decode(record),
          payload_str when is_binary(payload_str) <- outer["Payload"],
          {:ok, inner} <- Jason.decode(payload_str),
          [_ | _] = pack_strs <- inner["DraftPack"],

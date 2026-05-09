@@ -105,19 +105,82 @@ defmodule Scry2.Drafts.DraftProjection do
       nil ->
         {:noreply, state}
 
-      _match ->
-        # The single-event_name recount we used to do here was wrong for
-        # human drafts (Premier, Pick Two, Trad), which use a shared
-        # event_name across many drafts of the same format/set/date and
-        # only differentiate via the per-event mtga_draft_id. Calling the
-        # full time-window reconciliation in `post_rebuild/0` is one fast
-        # SQL statement and is correct in every case.
-        post_rebuild()
+      match ->
+        # The full reconciliation in `post_rebuild/0` is correct everywhere
+        # but pays an O(drafts × matches) cost on every match update — and
+        # `Matches.upsert_match!` fires once per game completion plus once
+        # per deck submission. Reconcile only the draft whose time window
+        # this match falls into. Falls back to a full reconcile if the
+        # match lacks the data needed to identify a single draft window
+        # (event_name, player_id, started_at).
+        reconcile_for_match(match)
         {:noreply, state}
     end
   end
 
   def handle_extra_info(_msg, state), do: {:noreply, state}
+
+  defp reconcile_for_match(%{
+         event_name: event_name,
+         player_id: player_id,
+         started_at: started_at
+       })
+       when is_binary(event_name) and is_integer(player_id) and not is_nil(started_at) do
+    Repo.query!(
+      """
+      WITH windows AS (
+        SELECT
+          d.id AS draft_id,
+          d.event_name,
+          d.player_id,
+          d.started_at,
+          LEAD(d.started_at) OVER (
+            PARTITION BY d.event_name, d.player_id
+            ORDER BY d.started_at
+          ) AS next_started_at
+        FROM drafts_drafts d
+        WHERE d.event_name = ? AND d.player_id = ?
+      ),
+      affected AS (
+        SELECT w.draft_id, w.event_name, w.player_id, w.started_at, w.next_started_at
+        FROM windows w
+        WHERE w.started_at <= ?
+          AND (w.next_started_at IS NULL OR w.next_started_at > ?)
+      ),
+      counts AS (
+        SELECT
+          a.draft_id,
+          COALESCE(SUM(CASE WHEN m.won = 1 THEN 1 ELSE 0 END), 0) AS wins,
+          COALESCE(SUM(CASE WHEN m.won = 0 THEN 1 ELSE 0 END), 0) AS losses
+        FROM affected a
+        LEFT JOIN matches_matches m
+          ON m.event_name = a.event_name
+         AND m.player_id  = a.player_id
+         AND m.started_at >= a.started_at
+         AND (a.next_started_at IS NULL OR m.started_at < a.next_started_at)
+        GROUP BY a.draft_id
+      )
+      UPDATE drafts_drafts
+      SET
+        wins   = COALESCE((SELECT wins   FROM counts WHERE counts.draft_id = drafts_drafts.id), 0),
+        losses = COALESCE((SELECT losses FROM counts WHERE counts.draft_id = drafts_drafts.id), 0),
+        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
+      WHERE drafts_drafts.id IN (SELECT draft_id FROM affected)
+      """,
+      [event_name, player_id, encode_dt(started_at), encode_dt(started_at)]
+    )
+
+    :ok
+  end
+
+  defp reconcile_for_match(_), do: post_rebuild()
+
+  # SQLite stores `:utc_datetime` columns as ISO8601 text; passing a
+  # `%DateTime{}` struct directly via `Repo.query!` skips the Ecto type
+  # coercion that an Ecto.Query would apply, leaving the bound value
+  # incomparable to the stored text. Encode explicitly to match.
+  defp encode_dt(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
+  defp encode_dt(other), do: other
 
   defp project(%DraftStarted{} = event) do
     attrs = %{

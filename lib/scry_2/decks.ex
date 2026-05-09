@@ -15,18 +15,26 @@ defmodule Scry2.Decks do
 
   import Ecto.Query
 
+  alias Scry2.Analytics.RollingWindow
   alias Scry2.Cards.MtgaCard
-  alias Scry2.Decks.{Deck, DeckVersion, GameDraw, GameSubmission, MatchResult, MulliganHand}
+
+  alias Scry2.Decks.{
+    Deck,
+    DeckSummary,
+    DeckVersion,
+    FormatStats,
+    GameDraw,
+    GameSubmission,
+    MatchResult,
+    MulliganHand
+  }
+
   alias Scry2.LiveState.{RankClass, Snapshot}
-  alias Scry2.Matches.RankFormat
+  alias Scry2.Ranks.Format, as: RankFormat
   alias Scry2.Repo
   alias Scry2.Topics
 
   require Scry2.Log, as: Log
-
-  # Minimum samples required for a rolling-window point to be plotted.
-  # See Scry2.Matches for rationale.
-  @rolling_min_samples 5
 
   # ── Reads ─────────────────────────────────────────────────────────────────
 
@@ -40,11 +48,10 @@ defmodule Scry2.Decks do
   Played decks sort by `last_played_at` descending; unplayed decks follow,
   sorted by `last_updated_at` descending.
 
-  Each entry is a map:
-    * `:deck` — `%Deck{}`
-    * `:bo1` — `%{total, wins, losses, win_rate}`
-    * `:bo3` — `%{total, wins, losses, win_rate}`
+  Each entry is a `%Scry2.Decks.DeckSummary{}` struct with `:deck`, `:bo1`,
+  and `:bo3` (the latter two are `%Scry2.Decks.FormatStats{}`).
   """
+  @spec list_decks_with_stats(integer() | nil, keyword()) :: [DeckSummary.t()]
   def list_decks_with_stats(player_id \\ nil, opts \\ []) do
     only_played = Keyword.get(opts, :only_played, true)
 
@@ -57,22 +64,21 @@ defmodule Scry2.Decks do
     decks
     |> maybe_filter_played_from_deck(only_played)
     |> Enum.map(fn deck ->
-      %{
+      %DeckSummary{
         deck: deck,
-        bo1: %{
-          total: deck.bo1_wins + deck.bo1_losses,
-          wins: deck.bo1_wins,
-          losses: deck.bo1_losses,
-          win_rate: win_rate(deck.bo1_wins, deck.bo1_wins + deck.bo1_losses)
-        },
-        bo3: %{
-          total: deck.bo3_wins + deck.bo3_losses,
-          wins: deck.bo3_wins,
-          losses: deck.bo3_losses,
-          win_rate: win_rate(deck.bo3_wins, deck.bo3_wins + deck.bo3_losses)
-        }
+        bo1: format_stats(deck.bo1_wins, deck.bo1_losses),
+        bo3: format_stats(deck.bo3_wins, deck.bo3_losses)
       }
     end)
+  end
+
+  defp format_stats(wins, losses) do
+    %FormatStats{
+      total: wins + losses,
+      wins: wins,
+      losses: losses,
+      win_rate: win_rate(wins, wins + losses)
+    }
   end
 
   @doc "Returns the deck with the given MTGA deck id, or nil."
@@ -895,17 +901,18 @@ defmodule Scry2.Decks do
   end
 
   defp bo3_game_split(rows) do
-    Enum.reduce(rows, {0, 0, 0, 0}, fn row, {g1w, g1t, lw, lt} ->
+    Enum.reduce(rows, {0, 0, 0, 0}, fn row, acc ->
+      {game1_wins, game1_total, later_wins, later_total} = acc
       game_results = (row.game_results && row.game_results["results"]) || []
       game1 = Enum.find(game_results, &(&1["game"] == 1))
       later = Enum.filter(game_results, &(&1["game"] > 1))
 
-      g1w_new = if game1 && game1["won"], do: g1w + 1, else: g1w
-      g1t_new = if game1, do: g1t + 1, else: g1t
-      lw_new = lw + Enum.count(later, & &1["won"])
-      lt_new = lt + length(later)
-
-      {g1w_new, g1t_new, lw_new, lt_new}
+      {
+        if(game1 && game1["won"], do: game1_wins + 1, else: game1_wins),
+        if(game1, do: game1_total + 1, else: game1_total),
+        later_wins + Enum.count(later, & &1["won"]),
+        later_total + length(later)
+      }
     end)
   end
 
@@ -923,82 +930,13 @@ defmodule Scry2.Decks do
 
     case days do
       nil ->
-        deck_cumulative_points(rows)
+        RollingWindow.cumulative_points(rows)
 
-      n when is_integer(n) and n > 0 ->
+      window_days when is_integer(window_days) and window_days > 0 ->
         rows
-        |> deck_rolling_points(n)
-        |> deck_filter_to_display_window(n, now)
+        |> RollingWindow.rolling_points(window_days)
+        |> RollingWindow.filter_to_display_window(window_days, now)
     end
-  end
-
-  defp deck_filter_to_display_window(points, days, now) do
-    cutoff_iso = now |> DateTime.add(-days, :day) |> DateTime.to_iso8601()
-    Enum.filter(points, &(&1.timestamp >= cutoff_iso))
-  end
-
-  defp deck_cumulative_points(rows) do
-    rows
-    |> Enum.map_reduce({0, 0}, fn row, {wins, total} ->
-      new_wins = if row.won, do: wins + 1, else: wins
-      new_total = total + 1
-
-      point = %{
-        timestamp: DateTime.to_iso8601(row.started_at),
-        win_rate: win_rate(new_wins, new_total),
-        wins: new_wins,
-        total: new_total
-      }
-
-      {point, {new_wins, new_total}}
-    end)
-    |> elem(0)
-  end
-
-  # Two-pointer sliding window — see `Matches.rolling_win_rate/1` for the
-  # same algorithm against `matches_matches`.
-  defp deck_rolling_points([], _days), do: []
-
-  defp deck_rolling_points(rows, days) do
-    window_seconds = days * 86_400
-    indexed = rows |> Enum.with_index() |> Map.new(fn {r, i} -> {i, r} end)
-    n = map_size(indexed)
-
-    {points, _} =
-      Enum.reduce(0..(n - 1)//1, {[], 0}, fn i, {acc, left} ->
-        cutoff = DateTime.add(indexed[i].started_at, -window_seconds, :second)
-        new_left = deck_advance_left(indexed, left, i, cutoff)
-        {wins, total} = deck_count_window(indexed, new_left, i)
-
-        if total >= @rolling_min_samples do
-          point = %{
-            timestamp: DateTime.to_iso8601(indexed[i].started_at),
-            win_rate: win_rate(wins, total),
-            wins: wins,
-            total: total
-          }
-
-          {[point | acc], new_left}
-        else
-          {acc, new_left}
-        end
-      end)
-
-    Enum.reverse(points)
-  end
-
-  defp deck_advance_left(indexed, left, right, cutoff) do
-    if left <= right and DateTime.compare(indexed[left].started_at, cutoff) == :lt do
-      deck_advance_left(indexed, left + 1, right, cutoff)
-    else
-      left
-    end
-  end
-
-  defp deck_count_window(indexed, left, right) do
-    Enum.reduce(left..right//1, {0, 0}, fn i, {wins, total} ->
-      if indexed[i].won, do: {wins + 1, total + 1}, else: {wins, total + 1}
-    end)
   end
 
   # A match is BO3 if format_type is "Traditional" (ranked queues) OR
@@ -1079,7 +1017,7 @@ defmodule Scry2.Decks do
     (main ++ side)
     |> Enum.group_by(fn card -> card["arena_id"] || card[:arena_id] end)
     |> Map.new(fn {arena_id, cards} ->
-      {arena_id, Enum.sum(Enum.map(cards, fn c -> c["count"] || c[:count] || 1 end))}
+      {arena_id, Enum.sum(Enum.map(cards, fn card -> card["count"] || card[:count] || 1 end))}
     end)
   end
 

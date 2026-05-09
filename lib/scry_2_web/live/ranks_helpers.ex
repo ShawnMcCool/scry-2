@@ -3,14 +3,14 @@ defmodule Scry2Web.RanksHelpers do
   Pure helper functions for `Scry2Web.RanksLive`. Extracted per ADR-013.
   """
 
-  alias Scry2.Matches.RankFormat
+  alias Scry2.Ranks.Format, as: RankFormat
 
   @class_order ~w(Bronze Silver Gold Platinum Diamond)
 
   @doc """
   Formats a rank for display in the UI.
 
-  Delegates to `Scry2.Matches.RankFormat.compose/2` for the canonical
+  Delegates to `Scry2.Ranks.Format.compose/2` for the canonical
   rank-string composition (handling Mythic-tier collapse and the
   `"None"` sentinel) and substitutes the dash placeholder `"—"` when
   the composer returns `nil`.

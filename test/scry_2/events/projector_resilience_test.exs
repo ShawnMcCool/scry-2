@@ -9,6 +9,8 @@ defmodule Scry2.Events.ProjectorResilienceTest do
   """
   use Scry2.DataCase, async: false
 
+  import Scry2.TestFactory, only: [create_domain_event_record!: 1]
+
   alias Scry2.Events
   alias Scry2.Events.EventRecord
 
@@ -38,27 +40,15 @@ defmodule Scry2.Events.ProjectorResilienceTest do
   end
 
   defp insert_session_event!(sequence) do
-    payload = %{
-      "client_id" => "TEST_USER_#{sequence}",
-      "screen_name" => "TestUser#{sequence}",
-      "session_id" => "session-#{sequence}",
-      "occurred_at" => "2026-04-28T00:00:00Z"
-    }
-
-    # Use Events.append! through the wire format — but we don't have a
-    # raw event id here. Insert directly via Ecto since we own the test DB.
-    %EventRecord{}
-    |> Ecto.Changeset.cast(
-      %{
-        event_type: "session_started",
-        payload: payload,
-        sequence: sequence,
-        mtga_timestamp: ~U[2026-04-28 00:00:00Z],
-        inserted_at: DateTime.utc_now(:second)
+    create_domain_event_record!(
+      payload: %{
+        "client_id" => "TEST_USER_#{sequence}",
+        "screen_name" => "TestUser#{sequence}",
+        "session_id" => "session-#{sequence}",
+        "occurred_at" => "2026-04-28T00:00:00Z"
       },
-      [:event_type, :payload, :sequence, :mtga_timestamp, :inserted_at]
+      sequence: sequence
     )
-    |> Repo.insert!()
   end
 
   setup do

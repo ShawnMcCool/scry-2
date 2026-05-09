@@ -99,18 +99,24 @@ defmodule Scry2Web.SettingsLive do
 
   @impl true
   def handle_event("start_edit", %{"field" => field}, socket) do
-    field_atom = String.to_existing_atom(field)
-    {:noreply, start_editing(socket, field_atom)}
+    case parse_editable_field(field) do
+      {:ok, field_atom} -> {:noreply, start_editing(socket, field_atom)}
+      :error -> {:noreply, socket}
+    end
   end
 
   def handle_event("cancel_edit", %{"field" => field}, socket) do
-    field_atom = String.to_existing_atom(field)
+    case parse_editable_field(field) do
+      {:ok, field_atom} ->
+        {:noreply,
+         socket
+         |> put_field_value(field_atom, stored_value(field_atom))
+         |> clear_field_error(field_atom)
+         |> stop_editing(field_atom)}
 
-    {:noreply,
-     socket
-     |> put_field_value(field_atom, stored_value(field_atom))
-     |> clear_field_error(field_atom)
-     |> stop_editing(field_atom)}
+      :error ->
+        {:noreply, socket}
+    end
   end
 
   def handle_event("save_player_log_path", %{"value" => value}, socket) do
@@ -369,6 +375,21 @@ defmodule Scry2Web.SettingsLive do
 
   defp stored_value(:poll_interval_ms),
     do: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms)
+
+  # Whitelisted dispatch for the "field" param submitted by start_edit /
+  # cancel_edit. Adding a new editable field here is a deliberate change,
+  # rather than relying on whatever atoms the BEAM happens to know about.
+  defp parse_editable_field("player_log_path"), do: {:ok, :player_log_path}
+  defp parse_editable_field("data_dir"), do: {:ok, :data_dir}
+  defp parse_editable_field("refresh_cron"), do: {:ok, :refresh_cron}
+  defp parse_editable_field("poll_interval_ms"), do: {:ok, :poll_interval_ms}
+  defp parse_editable_field("live_polling_enabled"), do: {:ok, :live_polling_enabled}
+
+  defp parse_editable_field("live_state_verbose_diagnostics"),
+    do: {:ok, :live_state_verbose_diagnostics}
+
+  defp parse_editable_field("economy_capture_enabled"), do: {:ok, :economy_capture_enabled}
+  defp parse_editable_field(_), do: :error
 
   # One-shot walker probe for the "Run diagnostic capture now" button.
   # Resolves the MTGA process and runs both walker chains once via the

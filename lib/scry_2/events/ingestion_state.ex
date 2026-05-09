@@ -192,22 +192,28 @@ defmodule Scry2.Events.IngestionState do
 
   @doc "Persists the current state to the database."
   def persist!(%__MODULE__{} = state) do
+    # Ecto's `:map` field type Jason-encodes once on write; we hand it
+    # plain maps here (Map.from_struct/1 is O(struct size)) instead of
+    # the encode→decode round-trip that previously paid 2x JSON cost
+    # per raw event in the live ingestion path.
+    #
+    # turn_phase_state, game_object_states, game_objects are volatile
+    # delta-tracking maps — not persisted; rebuilt naturally as new
+    # GameStateMessage events arrive after restart. pending_deck is a
+    # struct that doesn't survive restart cleanly.
+    match_map =
+      state.match
+      |> Map.from_struct()
+      |> Map.put(:game_objects, %{})
+      |> Map.put(:turn_phase_state, %{})
+      |> Map.put(:game_object_states, %{})
+      |> Map.put(:pending_deck, nil)
+
     attrs = %{
       version: state.version,
       last_raw_event_id: state.last_raw_event_id,
-      session: Jason.decode!(Jason.encode!(state.session)),
-      match:
-        Jason.decode!(
-          Jason.encode!(%{
-            state.match
-            | game_objects: %{},
-              # turn_phase_state and game_object_states are volatile delta-tracking maps — not persisted.
-              # They are rebuilt naturally as new GameStateMessage events arrive after restart.
-              turn_phase_state: %{},
-              game_object_states: %{},
-              pending_deck: nil
-          })
-        )
+      session: Map.from_struct(state.session),
+      match: match_map
     }
 
     case Repo.get(Snapshot, @singleton_id) do

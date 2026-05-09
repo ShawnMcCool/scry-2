@@ -11,6 +11,22 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The dashboard stays responsive while MTGA emits events.** The
+  System (health) card no longer re-runs its full snapshot on every
+  ingested event — it now coalesces bursts into one refresh, so the
+  dashboard doesn't slow down during long play sessions with heavy
+  activity.
+- **Faster deck history as it grows.** Added covering database
+  indexes for the Decks → Matches tab and the per-deck win-rate
+  charts. The pages already feel instant today; this keeps them that
+  way as your match history accumulates.
+- **Lighter ingestion footprint.** Several internal write paths
+  during MTGA log processing have been batched and de-duplicated,
+  reducing the SQLite write rate during steady play. No change in
+  what gets recorded — just less churn getting it there.
+
 ## v0.41.2 — 2026-05-08
 
 ### Fixed

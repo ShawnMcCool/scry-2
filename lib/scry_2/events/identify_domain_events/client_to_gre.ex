@@ -37,7 +37,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.ClientToGre do
     occurred_at = record.mtga_timestamp || record.inserted_at
     match_id = match_context[:current_match_id]
 
-    with {:ok, payload} <- Jason.decode(record.raw_json),
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          %{"type" => msg_type} = gre_payload <- payload["payload"] || payload do
       game_number = match_context[:current_game_number]
 

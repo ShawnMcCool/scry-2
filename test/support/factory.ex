@@ -18,6 +18,7 @@ defmodule Scry2.TestFactory do
   alias Scry2.Drafts
   alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Events
+  alias Scry2.Events.EventRecord, as: DomainEventRecord
   alias Scry2.Events.Deck.{DeckSelected, DeckSubmitted, DeckUpdated}
 
   alias Scry2.Events.Draft.{
@@ -891,6 +892,36 @@ defmodule Scry2.TestFactory do
   def create_domain_event(domain_event, opts \\ []) do
     source_record = Keyword.get(opts, :source_record)
     Events.append!(domain_event, source_record, opts)
+  end
+
+  @doc """
+  Inserts a row into the `domain_events` table directly via the EventRecord
+  changeset. Bypasses the IdentifyDomainEvents translator — use this when a
+  test wants to control fields like `:sequence`, `:event_type`, and
+  `:payload` without producing a real source raw event first.
+
+  Defaults match the sample shape used by the resilience tests; override
+  any field by passing it in `attrs`.
+  """
+  def create_domain_event_record!(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    defaults = %{
+      event_type: "session_started",
+      payload: %{
+        "client_id" => "TEST_USER_#{random_suffix()}",
+        "screen_name" => "Test Player",
+        "session_id" => "session-#{random_suffix()}",
+        "occurred_at" => "2026-04-28T00:00:00Z"
+      },
+      sequence: 0,
+      mtga_timestamp: ~U[2026-04-28 00:00:00Z],
+      inserted_at: DateTime.utc_now(:second)
+    }
+
+    %DomainEventRecord{}
+    |> DomainEventRecord.changeset(Map.merge(defaults, attrs))
+    |> Scry2.Repo.insert!()
   end
 
   # ── create_* (persisted) ────────────────────────────────────────────────
