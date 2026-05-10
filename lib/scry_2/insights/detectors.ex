@@ -24,7 +24,14 @@ defmodule Scry2.Insights.Detectors do
   def all do
     [
       Scry2.Insights.Detectors.OnPlayVsOnDraw,
-      Scry2.Insights.Detectors.EventROI
+      Scry2.Insights.Detectors.EventROI,
+      Scry2.Insights.Detectors.MulliganOutcome,
+      Scry2.Insights.Detectors.BO1VsBO3Gap,
+      Scry2.Insights.Detectors.P1P1RarityCorrelation,
+      Scry2.Insights.Detectors.FormatBaseline,
+      Scry2.Insights.Detectors.CraftingVelocity,
+      Scry2.Insights.Detectors.DeckHeater,
+      Scry2.Insights.Detectors.DeckColorOutlier
     ]
   end
 end

@@ -30,6 +30,29 @@ defmodule Scry2.Showcase.Templates do
       }),
       do: "#{humanize_event_type(m["event_type"])} is gem-negative"
 
+  def render_title(%Insight{title_template: "mulligan_outcome.title"}),
+    do: "Mulligan tax"
+
+  def render_title(%Insight{title_template: "bo1_vs_bo3_gap.title"}),
+    do: "BO1 vs BO3 split"
+
+  def render_title(%Insight{title_template: "p1p1_rarity.title"}),
+    do: "First-pick rarity bias"
+
+  def render_title(%Insight{title_template: "format_baseline.title", measurements: m}),
+    do: "Best format: #{humanize_format(m["best_format"])}"
+
+  def render_title(%Insight{title_template: "crafting_velocity.title"}),
+    do: "This week's crafting"
+
+  def render_title(%Insight{title_template: "deck_heater.title", measurements: m}),
+    do: "#{deck_label(m["deck_name"])} on a heater"
+
+  def render_title(%Insight{title_template: "deck_color_outlier.title", measurements: m}) do
+    direction = if m["direction"] == "above", do: "above", else: "below"
+    "#{m["colors"]} #{direction} your baseline"
+  end
+
   def render_title(%Insight{title_template: key}),
     do: "(missing title template: #{key})"
 
@@ -64,6 +87,60 @@ defmodule Scry2.Showcase.Templates do
     "Over #{days} days, #{n} entries: spent #{spent} gems, earned #{earned}. Net #{net}."
   end
 
+  def render_body(%Insight{body_template: "mulligan_outcome.body", measurements: m}) do
+    kept = pct(m["kept_wr"])
+    mull = pct(m["mull_wr"])
+    n = m["total_n"] || 0
+    "#{kept} on a kept hand, #{mull} after a mulligan. n=#{n} matches."
+  end
+
+  def render_body(%Insight{body_template: "bo1_vs_bo3_gap.body", measurements: m}) do
+    bo1 = pct(m["bo1_wr"])
+    bo3 = pct(m["bo3_wr"])
+    "#{bo1} in BO1 (n=#{m["bo1_n"] || 0}), #{bo3} in BO3 (n=#{m["bo3_n"] || 0})."
+  end
+
+  def render_body(%Insight{body_template: "p1p1_rarity.body", measurements: m}) do
+    rare = pct(m["rare_wr"])
+    other = pct(m["other_wr"])
+
+    "Rare/mythic P1P1 → #{rare} draft WR. Common/uncommon P1P1 → #{other}. n=#{m["total_n"] || 0} drafts."
+  end
+
+  def render_body(%Insight{body_template: "format_baseline.body", measurements: m}) do
+    best = humanize_format(m["best_format"])
+    wr = pct(m["best_wr"])
+    n = m["best_n"] || 0
+    "#{wr} in #{best} (n=#{n}) across #{m["format_count"] || 0} formats with significant samples."
+  end
+
+  def render_body(%Insight{body_template: "crafting_velocity.body", measurements: m}) do
+    days = m["lookback_days"] || 7
+    mythics = m["mythics"] || 0
+    rares = m["rares"] || 0
+    uncommons = m["uncommons"] || 0
+    "Last #{days} days: #{mythics} mythic, #{rares} rare, #{uncommons} uncommon wildcards spent."
+  end
+
+  def render_body(%Insight{body_template: "deck_heater.body", measurements: m}) do
+    deck = deck_label(m["deck_name"])
+    deck_wr = pct(m["deck_wr"])
+    base_wr = pct(m["baseline_wr"])
+    n = m["deck_n"] || 0
+    days = m["lookback_days"] || 7
+
+    "#{deck} is at #{deck_wr} over the last #{days}d (n=#{n}) vs your overall #{base_wr} baseline. Statistically significant."
+  end
+
+  def render_body(%Insight{body_template: "deck_color_outlier.body", measurements: m}) do
+    colors = m["colors"] || "?"
+    combo_wr = pct(m["combo_wr"])
+    base_wr = pct(m["baseline_wr"])
+    n = m["combo_n"] || 0
+
+    "#{combo_wr} with #{colors} (n=#{n}) vs your overall #{base_wr} baseline. Statistically significant."
+  end
+
   def render_body(%Insight{body_template: _}), do: nil
 
   defp pct(nil), do: "0%"
@@ -71,6 +148,16 @@ defmodule Scry2.Showcase.Templates do
 
   defp pct_abs(nil), do: "0"
   defp pct_abs(rate) when is_number(rate), do: "#{abs(round(rate * 100))}"
+
+  defp humanize_format("Traditional"), do: "BO3"
+  defp humanize_format("Constructed"), do: "BO1 Constructed"
+  defp humanize_format("Limited"), do: "Limited"
+  defp humanize_format(s) when is_binary(s), do: s
+  defp humanize_format(_), do: "Unknown"
+
+  defp deck_label(nil), do: "A deck"
+  defp deck_label(""), do: "A deck"
+  defp deck_label(name) when is_binary(name), do: name
 
   defp humanize_event_type(nil), do: "Event"
 
