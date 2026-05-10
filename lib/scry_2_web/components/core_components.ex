@@ -31,6 +31,72 @@ defmodule Scry2Web.CoreComponents do
   alias Phoenix.LiveView.JS
 
   @doc """
+  Renders a kicker / kind label — small uppercase tracking-wider primary-color
+  text used as a kicker above a section title or above a tile title. Pulled
+  from the homepage Tile design language so detail pages feel continuous
+  with the homepage exhibit.
+
+  ## Examples
+
+      <.kind_label>match</.kind_label>
+      <.kind_label class="mb-2">games</.kind_label>
+  """
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def kind_label(assigns) do
+    ~H"""
+    <div class={[
+      "text-[10px] uppercase tracking-[0.10em] font-semibold text-primary/85",
+      @class
+    ]}>
+      {render_slot(@inner_block)}
+    </div>
+    """
+  end
+
+  @doc """
+  Renders a small monospace pill carrying a measurement provenance hint —
+  usually a sample size (`n=174`) or a confidence figure (`p<0.05`). Part
+  of the design language: every measurement that the user can see should
+  be paired with the data behind it.
+
+  ## Examples
+
+      <.sample_pill>n=174</.sample_pill>
+      <.sample_pill tone={:warning}>tier 2</.sample_pill>
+  """
+  attr :tone, :atom, default: :neutral, values: [:neutral, :success, :warning]
+  attr :class, :string, default: nil
+  slot :inner_block, required: true
+
+  def sample_pill(assigns) do
+    tone_class =
+      case assigns.tone do
+        :success ->
+          "bg-success/12 text-success border-success/30"
+
+        :warning ->
+          "bg-warning/12 text-warning border-warning/30"
+
+        _ ->
+          "bg-base-content/[0.04] text-base-content/65 border-base-content/15"
+      end
+
+    assigns = assign(assigns, :tone_class, tone_class)
+
+    ~H"""
+    <span class={[
+      "inline-block text-[10px] tracking-wide font-mono px-1.5 py-0.5 rounded border",
+      @tone_class,
+      @class
+    ]}>
+      {render_slot(@inner_block)}
+    </span>
+    """
+  end
+
+  @doc """
   Renders flash notices.
 
   ## Examples

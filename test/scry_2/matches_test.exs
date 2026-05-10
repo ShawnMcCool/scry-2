@@ -549,6 +549,24 @@ defmodule Scry2.MatchesTest do
       assert p3.total == 3
     end
 
+    test "ignores matches with nil started_at when computing a rolling window" do
+      # Real-world data sometimes has matches with nil started_at (events
+      # without a clean MatchCreated). The rolling window must skip them
+      # rather than crash on `DateTime.add(nil, …)`.
+      TestFactory.create_match(%{won: true, started_at: nil})
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-01-02 12:00:00Z]})
+      TestFactory.create_match(%{won: false, started_at: ~U[2026-01-03 12:00:00Z]})
+
+      assert is_list(Matches.rolling_win_rate(days: 14, now: ~U[2026-01-04 00:00:00Z]))
+    end
+
+    test "ignores matches with nil started_at in cumulative mode" do
+      TestFactory.create_match(%{won: true, started_at: nil})
+      TestFactory.create_match(%{won: true, started_at: ~U[2026-01-02 12:00:00Z]})
+
+      assert is_list(Matches.rolling_win_rate())
+    end
+
     # Tests pin :now to a fixed point so they don't depend on the wall clock.
     # All test data is dated within the resulting display window.
     @rolling_now ~U[2026-04-15 12:00:00Z]

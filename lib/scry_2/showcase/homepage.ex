@@ -38,7 +38,7 @@ defmodule Scry2.Showcase.Homepage do
       |> Enum.take(3)
       |> Enum.map(&TileTypes.CoachInsight.build/1)
 
-    activity_tile = TileTypes.LatestMatch.build()
+    activity_tile = first_available_activity_tile()
 
     ([activity_tile] ++ coach_tiles)
     |> Enum.reject(&is_nil/1)
@@ -46,12 +46,23 @@ defmodule Scry2.Showcase.Homepage do
   end
 
   defp activity_mode_tiles do
+    activity_pool()
+    |> Enum.take(@max_tiles)
+  end
+
+  # Pool order = priority. Pattern mode picks the first available; activity
+  # mode takes the top @max_tiles. Add new builders here.
+  defp activity_pool do
     [
-      TileTypes.LatestMatch.build()
-      # More activity-mode tile builders join here as later tasks add
-      # latest_draft, climb, recent_crafts, etc.
+      TileTypes.LatestMatch.build(),
+      TileTypes.LatestDraft.build(),
+      TileTypes.Climb.build(),
+      TileTypes.RecentCrafts.build()
     ]
     |> Enum.reject(&is_nil/1)
-    |> Enum.take(@max_tiles)
+  end
+
+  defp first_available_activity_tile do
+    activity_pool() |> List.first()
   end
 end

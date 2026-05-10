@@ -97,6 +97,21 @@ defmodule Scry2Web.OpponentHelpersTest do
       assert label == "2W–1L"
     end
 
+    test "excludes matches with nil started_at from series" do
+      # Real-world data sometimes includes matches without a started_at
+      # timestamp. The chart series must skip them rather than crash on
+      # `DateTime.compare(_, nil)` from Enum.sort_by.
+      history = [
+        build_match(won: true, started_at: ~U[2026-01-01 10:00:00Z]),
+        build_match(won: true, started_at: nil),
+        build_match(won: true, started_at: ~U[2026-01-03 10:00:00Z]),
+        build_match(won: false, started_at: ~U[2026-01-04 10:00:00Z])
+      ]
+
+      series = Jason.decode!(OpponentHelpers.chart_series(history))
+      assert length(series) == 3
+    end
+
     test "excludes matches with nil won from series" do
       history = [
         build_match(won: true, started_at: ~U[2026-01-01 10:00:00Z]),

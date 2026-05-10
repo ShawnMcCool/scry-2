@@ -35,27 +35,34 @@ defmodule Scry2Web.HomeLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="space-y-6">
-      <header class="flex items-baseline justify-between">
-        <h1 class="text-2xl font-beleren">Home</h1>
-        <div class="text-xs text-base-content/55">
-          {tile_count_label(@tiles)}
-        </div>
-      </header>
-
-      <div
-        :if={@tiles == []}
-        class="rounded-lg border border-dashed border-base-content/20 p-12 text-center text-base-content/55"
-      >
-        Nothing to show yet. Play a few matches and the homepage will start filling in.
-      </div>
-
-      <div :if={@tiles != []} class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <.tile :for={spec <- @tiles} spec={spec} />
-      </div>
-    </div>
-
     <Layouts.console_mount socket={@socket} />
+    <Layouts.app
+      flash={@flash}
+      players={@players}
+      active_player_id={@active_player_id}
+      current_path={@player_scope_uri}
+      nav_update={@nav_update}
+    >
+      <div class="space-y-6">
+        <header class="flex items-baseline justify-between">
+          <h1 class="text-2xl font-beleren">Home</h1>
+          <div class="text-xs text-base-content/55">
+            {tile_count_label(@tiles)}
+          </div>
+        </header>
+
+        <div
+          :if={@tiles == []}
+          class="rounded-lg border border-dashed border-base-content/20 p-12 text-center text-base-content/55"
+        >
+          Nothing to show yet. Play a few matches and the homepage will start filling in.
+        </div>
+
+        <div :if={@tiles != []} class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <.tile :for={spec <- @tiles} spec={spec} />
+        </div>
+      </div>
+    </Layouts.app>
     """
   end
 

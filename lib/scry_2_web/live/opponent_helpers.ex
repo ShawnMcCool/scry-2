@@ -71,8 +71,8 @@ defmodule Scry2Web.OpponentHelpers do
 
     sorted =
       history
+      |> Enum.filter(&(not is_nil(&1.won) and not is_nil(&1.started_at)))
       |> Enum.sort_by(& &1.started_at, DateTime)
-      |> Enum.filter(&(not is_nil(&1.won)))
 
     points =
       case days do

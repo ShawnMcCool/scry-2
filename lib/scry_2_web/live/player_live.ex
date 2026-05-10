@@ -89,7 +89,10 @@ defmodule Scry2Web.PlayerLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <h1 class="text-2xl font-semibold mb-6 font-beleren">Player</h1>
+      <div class="mb-6 mt-4">
+        <.kind_label class="mb-1">profile</.kind_label>
+        <h1 class="text-2xl font-beleren leading-tight">Player</h1>
+      </div>
 
       <.empty_state :if={@stats.total == 0}>
         No completed matches yet. Play some games to see your performance profile.
@@ -160,7 +163,8 @@ defmodule Scry2Web.PlayerLive do
 
     ~H"""
     <section :if={@sorted_formats != []}>
-      <h2 class="text-base font-semibold mb-3 font-beleren">Format Performance</h2>
+      <.kind_label class="mb-1">formats</.kind_label>
+      <h2 class="text-lg font-beleren mb-3">Format Performance</h2>
       <div class="overflow-x-auto">
         <table class="table table-sm">
           <thead>
@@ -199,7 +203,8 @@ defmodule Scry2Web.PlayerLive do
   defp play_draw(assigns) do
     ~H"""
     <section :if={@by_on_play != []}>
-      <h2 class="text-base font-semibold mb-3 font-beleren">Play vs Draw</h2>
+      <.kind_label class="mb-1">first turn</.kind_label>
+      <h2 class="text-lg font-beleren mb-3">Play vs Draw</h2>
       <div class="grid grid-cols-2 gap-4">
         <div :for={row <- @by_on_play} class="card bg-base-200">
           <div class="card-body p-4 text-center">
@@ -225,8 +230,11 @@ defmodule Scry2Web.PlayerLive do
   defp win_rate_chart(assigns) do
     ~H"""
     <section>
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-base font-semibold font-beleren">Win Rate</h2>
+      <div class="flex items-end justify-between mb-3">
+        <div>
+          <.kind_label class="mb-1">win rate</.kind_label>
+          <h2 class="text-lg font-beleren">Cumulative trend</h2>
+        </div>
         <.winrate_period_toggle selected={@winrate_period} />
       </div>
       <div
@@ -277,7 +285,8 @@ defmodule Scry2Web.PlayerLive do
   defp top_decks(assigns) do
     ~H"""
     <section :if={@decks != []}>
-      <h2 class="text-base font-semibold mb-3 font-beleren">Top Decks</h2>
+      <.kind_label class="mb-1">decks</.kind_label>
+      <h2 class="text-lg font-beleren mb-3">Top Decks</h2>
       <div class="flex flex-col gap-2">
         <.link
           :for={deck <- @decks}

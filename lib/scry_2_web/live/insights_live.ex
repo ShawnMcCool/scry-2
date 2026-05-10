@@ -37,33 +37,40 @@ defmodule Scry2Web.InsightsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <div class="space-y-6">
-      <header class="flex items-baseline justify-between">
-        <h1 class="text-2xl font-beleren">Insights</h1>
-        <div class="text-xs text-base-content/55">
-          {tile_count_label(@tiles)}
-        </div>
-      </header>
-
-      <p class="text-sm text-base-content/70 max-w-2xl leading-relaxed">
-        Patterns the app noticed in your play. Every measurement shows its sample size
-        and confidence — coach voice fires only when a detector earned the right to speak.
-      </p>
-
-      <div
-        :if={@tiles == []}
-        class="rounded-lg border border-dashed border-base-content/20 p-12 text-center text-base-content/55"
-      >
-        No active insights yet. Run <code>Scry2.Insights.compute_all/0</code> from IEx
-        or wait for the daily 06:00 UTC cron pass.
-      </div>
-
-      <div :if={@tiles != []} class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <.tile :for={spec <- @tiles} spec={spec} />
-      </div>
-    </div>
-
     <Layouts.console_mount socket={@socket} />
+    <Layouts.app
+      flash={@flash}
+      players={@players}
+      active_player_id={@active_player_id}
+      current_path={@player_scope_uri}
+      nav_update={@nav_update}
+    >
+      <div class="space-y-6">
+        <header class="flex items-baseline justify-between">
+          <h1 class="text-2xl font-beleren">Insights</h1>
+          <div class="text-xs text-base-content/55">
+            {tile_count_label(@tiles)}
+          </div>
+        </header>
+
+        <p class="text-sm text-base-content/70 max-w-2xl leading-relaxed">
+          Patterns the app noticed in your play. Every measurement shows its sample size
+          and confidence — coach voice fires only when a detector earned the right to speak.
+        </p>
+
+        <div
+          :if={@tiles == []}
+          class="rounded-lg border border-dashed border-base-content/20 p-12 text-center text-base-content/55"
+        >
+          No active insights yet. Run <code>Scry2.Insights.compute_all/0</code> from IEx
+          or wait for the daily 06:00 UTC cron pass.
+        </div>
+
+        <div :if={@tiles != []} class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <.tile :for={spec <- @tiles} spec={spec} />
+        </div>
+      </div>
+    </Layouts.app>
     """
   end
 

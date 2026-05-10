@@ -144,8 +144,11 @@ defmodule Scry2Web.DecksLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-semibold font-beleren">Decks</h1>
+      <div class="flex items-center justify-between mb-6 mt-4">
+        <div>
+          <.kind_label class="mb-1">deck library</.kind_label>
+          <h1 class="text-2xl font-beleren leading-tight">Decks</h1>
+        </div>
         <div class="flex items-center gap-1">
           <.link
             patch={~p"/decks?filter=played"}
@@ -227,25 +230,23 @@ defmodule Scry2Web.DecksLive do
       current_path={@player_scope_uri}
     >
       <%!-- Deck header --%>
-      <div class="flex items-start justify-between mb-6">
+      <div class="flex items-start justify-between mb-6 mt-4">
         <div>
-          <div class="flex items-center gap-2 mb-1">
-            <.link
-              navigate={~p"/decks"}
-              class="text-sm text-base-content/50 hover:text-base-content transition-colors"
-            >
-              Decks
-            </.link>
-            <span class="text-base-content/30">/</span>
-            <span class="text-sm text-base-content/70">{@deck.current_name || "Unnamed Deck"}</span>
-          </div>
-          <h1 class="text-2xl font-semibold font-beleren">{@deck.current_name || "Unnamed Deck"}</h1>
-          <div class="flex items-center gap-3 mt-1 text-sm text-base-content/60">
+          <.link
+            navigate={~p"/decks"}
+            class="text-xs text-base-content/55 inline-flex items-center gap-1 mb-2"
+          >
+            <.icon name="hero-arrow-long-left" class="size-3" /> all decks
+          </.link>
+          <.kind_label class="mb-1">deck</.kind_label>
+          <h1 class="text-2xl font-beleren leading-tight">{@deck.current_name || "Unnamed Deck"}</h1>
+          <div class="flex items-center gap-3 mt-2 text-sm text-base-content/60">
             <.mana_pips
               :if={DecksHelpers.deck_colors(@deck) != ""}
               colors={DecksHelpers.deck_colors(@deck)}
               class="text-[0.65rem]"
             />
+            <span :if={@deck.format} class="text-xs text-base-content/55">{@deck.format}</span>
           </div>
         </div>
       </div>
@@ -417,9 +418,7 @@ defmodule Scry2Web.DecksLive do
         </div>
 
         <%!-- Deck View header --%>
-        <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mt-8">
-          Main Deck ({@main_deck_total})
-        </h3>
+        <.kind_label class="mt-8">main deck ({@main_deck_total})</.kind_label>
 
         <%!-- Compact deck grid — responsive, no wrapping --%>
         <div id="deck-view-compact" phx-hook="DeckView" class="mt-3">
@@ -507,9 +506,7 @@ defmodule Scry2Web.DecksLive do
 
     ~H"""
     <div id="sideboard-splay" class="mt-8" data-sideboard-splay>
-      <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-3">
-        Sideboard ({@total})
-      </h3>
+      <.kind_label class="mb-3">sideboard ({@total})</.kind_label>
       <div data-splay-container class="flex items-end pb-4">
         <div :for={card <- @cards} class="relative flex-shrink-0" data-splay-card>
           <.card_image
@@ -966,7 +963,8 @@ defmodule Scry2Web.DecksLive do
     ~H"""
     <%!-- Mulligan Analytics Section --%>
     <section class="mb-10">
-      <h3 class="text-lg font-semibold mb-4">Mulligan Analytics</h3>
+      <.kind_label class="mb-1">mulligans</.kind_label>
+      <h3 class="text-lg font-beleren mb-4">Hand profile and keep rate</h3>
 
       <%!-- Headline stat cards --%>
       <div class="grid grid-cols-3 gap-4 mb-6">
@@ -1054,8 +1052,9 @@ defmodule Scry2Web.DecksLive do
 
     <%!-- Card Performance Section --%>
     <section :if={@card_performance != []}>
+      <.kind_label class="mb-1">card performance</.kind_label>
       <div class="flex items-baseline justify-between mb-3">
-        <h3 class="text-lg font-semibold">Card Performance</h3>
+        <h3 class="text-lg font-beleren">Per-card win rate and impact</h3>
         <div class="flex items-center gap-1">
           <span class="text-xs text-base-content/40 mr-1">Sort:</span>
           <button

@@ -204,7 +204,10 @@ defmodule Scry2Web.EconomyLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <h1 class="text-2xl font-semibold mb-6 font-beleren">Economy</h1>
+      <div class="mb-6 mt-4">
+        <.kind_label class="mb-1">economy</.kind_label>
+        <h1 class="text-2xl font-beleren leading-tight">Inventory and event history</h1>
+      </div>
 
       <.empty_state :if={is_nil(@inventory) and @entries == []}>
         No economy data yet. Join an event or play a match to start tracking.
@@ -345,7 +348,8 @@ defmodule Scry2Web.EconomyLive do
 
         <%!-- Event history --%>
         <section :if={@entries != []}>
-          <h2 class="text-lg font-semibold mb-3 font-beleren">Event History</h2>
+          <.kind_label class="mb-1">events</.kind_label>
+          <h2 class="text-lg font-beleren mb-3">Event history</h2>
           <div class="overflow-x-auto rounded-lg border border-base-content/5">
             <table class="table table-sm">
               <thead>

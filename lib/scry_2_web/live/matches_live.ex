@@ -315,7 +315,10 @@ defmodule Scry2Web.MatchesLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <h1 class="text-2xl font-semibold mb-6 font-beleren">Matches</h1>
+      <div class="mb-6 mt-4">
+        <.kind_label class="mb-1">match log</.kind_label>
+        <h1 class="text-2xl font-beleren leading-tight">Matches</h1>
+      </div>
 
       <%!-- Dashboard stats --%>
       <.dashboard
@@ -814,8 +817,9 @@ defmodule Scry2Web.MatchesLive do
       </div>
 
       <div class="flex-1 min-w-0">
+        <.kind_label class="mb-1">match</.kind_label>
         <div class="flex items-baseline gap-3 flex-wrap">
-          <h1 class="text-xl font-semibold text-base-content font-beleren">
+          <h1 class="text-2xl font-beleren text-base-content leading-tight">
             vs {@match.opponent_screen_name || "Unknown"}
           </h1>
           <RankBadge.rank_badge
@@ -870,7 +874,8 @@ defmodule Scry2Web.MatchesLive do
   defp game_breakdown(assigns) do
     ~H"""
     <section class="mb-8">
-      <h2 class="text-lg font-semibold mb-3 font-beleren">Games</h2>
+      <.kind_label class="mb-1">games</.kind_label>
+      <h2 class="text-lg font-beleren mb-3 text-base-content">Game-by-game</h2>
       <div class="flex gap-3 flex-wrap">
         <div
           :for={game <- Enum.sort_by(@games, & &1.game_number)}
@@ -900,7 +905,8 @@ defmodule Scry2Web.MatchesLive do
 
     ~H"""
     <section class="mb-8">
-      <h2 class="text-lg font-semibold mb-3 font-beleren">Deck List</h2>
+      <.kind_label class="mb-1">your deck</.kind_label>
+      <h2 class="text-lg font-beleren mb-3 text-base-content">Submitted list</h2>
       <div class="bg-base-200 rounded-box p-4">
         <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-0.5 text-sm">
           <div :for={{count, name} <- @main_deck} class="flex gap-2">

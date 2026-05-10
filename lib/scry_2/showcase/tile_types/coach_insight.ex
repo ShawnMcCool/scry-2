@@ -32,9 +32,14 @@ defmodule Scry2.Showcase.TileTypes.CoachInsight do
   end
 
   defp label_for_detector("OnPlayVsOnDraw"), do: "play vs draw"
+  defp label_for_detector("MulliganOutcome"), do: "mulligan tax"
+  defp label_for_detector("BO1VsBO3Gap"), do: "BO1 vs BO3"
+  defp label_for_detector("P1P1RarityCorrelation"), do: "draft signal"
+  defp label_for_detector("FormatBaseline"), do: "your formats"
+  defp label_for_detector("CraftingVelocity"), do: "this week's crafting"
   defp label_for_detector("EventROI"), do: "this week's economy"
   defp label_for_detector("DeckHeater"), do: "deck on a heater"
-  defp label_for_detector("ColorMatchupOutlier"), do: "matchup pattern"
+  defp label_for_detector("DeckColorOutlier"), do: "color combo"
   defp label_for_detector(_), do: "pattern noticed"
 
   defp stats_list(stats) when is_map(stats) do

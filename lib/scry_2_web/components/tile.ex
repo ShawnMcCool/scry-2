@@ -13,6 +13,8 @@ defmodule Scry2Web.Tile do
 
   use Phoenix.Component
 
+  import Scry2Web.CoreComponents
+
   alias Scry2.Showcase.TileSpec
 
   attr :spec, :any, required: true, doc: "a %Scry2.Showcase.TileSpec{}"
@@ -26,29 +28,34 @@ defmodule Scry2Web.Tile do
       navigate={@target}
       class={[
         "tile group relative flex flex-col gap-3 rounded-lg border border-base-content/10",
-        "bg-base-200/50 p-4 min-h-[200px] no-underline",
+        "bg-base-200/50 p-5 min-h-[200px] no-underline",
         "transition-colors hover:border-primary/30 hover:bg-base-200"
       ]}
     >
-      <div
-        :if={@spec.kind_label}
-        class="tile-kind-label text-[10px] uppercase tracking-[0.10em] font-semibold text-primary/85"
-      >
-        {@spec.kind_label}
-      </div>
+      <.kind_label :if={@spec.kind_label}>{@spec.kind_label}</.kind_label>
 
-      <div class="tile-art flex-1 min-h-[80px] rounded bg-gradient-to-br from-primary/15 to-secondary/8 relative overflow-hidden">
-        <div
-          :if={@spec.art == nil}
-          class="absolute inset-3 rounded bg-gradient-to-b from-amber-700/20 to-amber-950/10"
-          aria-hidden="true"
-        >
+      <div class="flex gap-4 items-start">
+        <img
+          :if={art_kind(@spec.art) == :card_image}
+          src={"/images/cards/#{@spec.art[:arena_id]}"}
+          alt={@spec.art[:name] || ""}
+          class="w-20 h-auto rounded shadow-lg ring-1 ring-base-content/10 flex-shrink-0"
+          loading="lazy"
+        />
+        <div class="space-y-1 min-w-0 flex-1">
+          <div class="tile-title font-beleren text-2xl leading-tight text-base-content">
+            {@spec.title}
+          </div>
+          <div :if={@spec.body} class="tile-subtitle text-sm text-base-content/70 leading-snug">
+            {@spec.body}
+          </div>
+          <div :if={art_kind(@spec.art) == :deck_colors} class="pt-1">
+            <.mana_pips colors={@spec.art[:colors]} class="text-base" />
+          </div>
         </div>
       </div>
 
-      <div class="tile-title font-beleren text-base leading-snug text-base-content">
-        {@spec.title}
-      </div>
+      <div class="flex-1"></div>
 
       <div
         :if={@spec.meta != []}
@@ -72,23 +79,13 @@ defmodule Scry2Web.Tile do
       navigate={@target}
       class={[
         "tile group relative flex flex-col gap-2 rounded-lg border border-base-content/10",
-        "bg-base-200/50 p-4 min-h-[240px] no-underline",
+        "bg-base-200/50 p-5 min-h-[240px] no-underline",
         "transition-colors hover:border-primary/30 hover:bg-base-200"
       ]}
     >
       <div class="tile-kind-row flex items-center gap-2">
-        <div
-          :if={@spec.kind_label}
-          class="text-[10px] uppercase tracking-[0.10em] font-semibold text-primary/85"
-        >
-          {@spec.kind_label}
-        </div>
-        <span
-          :if={@spec.badge == :tier_2}
-          class="text-[9px] uppercase tracking-wide bg-warning/12 text-warning border border-warning/30 rounded px-1.5 py-0.5 font-mono"
-        >
-          tier 2
-        </span>
+        <.kind_label :if={@spec.kind_label}>{@spec.kind_label}</.kind_label>
+        <.sample_pill :if={@spec.badge == :tier_2} tone={:warning}>tier 2</.sample_pill>
       </div>
 
       <div class="tile-title font-beleren text-base leading-snug text-base-content">
@@ -121,4 +118,8 @@ defmodule Scry2Web.Tile do
     </.link>
     """
   end
+
+  defp art_kind(%{type: type}) when is_atom(type), do: type
+  defp art_kind(%{kind: kind}) when is_atom(kind), do: kind
+  defp art_kind(_), do: nil
 end

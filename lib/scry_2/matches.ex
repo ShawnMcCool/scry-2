@@ -349,7 +349,7 @@ defmodule Scry2.Matches do
       opts
       |> Keyword.drop([:days, :now])
       |> base_query()
-      |> where([m], not is_nil(m.won))
+      |> where([m], not is_nil(m.won) and not is_nil(m.started_at))
       |> order_by([m], asc: m.started_at)
       |> select([m], %{started_at: m.started_at, won: m.won})
       |> Repo.all()

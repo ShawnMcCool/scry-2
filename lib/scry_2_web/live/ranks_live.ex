@@ -135,8 +135,11 @@ defmodule Scry2Web.RanksLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <div class="flex items-center justify-between mb-6">
-        <h1 class="text-2xl font-semibold font-beleren">Rank Progression</h1>
+      <div class="flex items-center justify-between mb-6 mt-4">
+        <div>
+          <.kind_label class="mb-1">climb</.kind_label>
+          <h1 class="text-2xl font-beleren leading-tight">Rank Progression</h1>
+        </div>
       </div>
 
       <div :if={@seasons != []} class="flex items-center gap-3 mb-6">
@@ -329,9 +332,7 @@ defmodule Scry2Web.RanksLive do
 
     ~H"""
     <section>
-      <h2 class="text-lg font-semibold mb-4 text-base-content/70 uppercase tracking-wider text-sm">
-        {@title}
-      </h2>
+      <.kind_label class="mb-3">{String.downcase(@title)}</.kind_label>
 
       <.rank_card
         :if={@rank_class}

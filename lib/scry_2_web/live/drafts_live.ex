@@ -161,7 +161,10 @@ defmodule Scry2Web.DraftsLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <h1 class="text-2xl font-semibold font-beleren">Drafts</h1>
+      <div class="mt-4">
+        <.kind_label class="mb-1">draft library</.kind_label>
+        <h1 class="text-2xl font-beleren leading-tight">Drafts</h1>
+      </div>
 
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
         <.stat_card title="Total Drafts" value={@stats.total} data-stat="total-drafts" />
@@ -302,11 +305,12 @@ defmodule Scry2Web.DraftsLive do
     >
       <.back_link navigate={~p"/drafts"} label="All drafts" />
 
-      <div class="mt-2">
-        <h1 class="text-2xl font-semibold font-beleren">
+      <div class="mt-4">
+        <.kind_label class="mb-1">draft</.kind_label>
+        <h1 class="text-2xl font-beleren leading-tight">
           {@draft.set_code} {DraftsHelpers.format_label(@draft.format)}
         </h1>
-        <div class="flex items-center gap-3 mt-1">
+        <div class="flex items-center gap-3 mt-2">
           <span class={[
             "text-2xl font-black tabular-nums",
             DraftsHelpers.record_color_class(@draft)
@@ -450,9 +454,7 @@ defmodule Scry2Web.DraftsLive do
   defp deck_tab(assigns) do
     ~H"""
     <div data-section="submitted-decks">
-      <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-3">
-        Submitted Decks
-      </h3>
+      <.kind_label class="mb-3">submitted decks</.kind_label>
       <.empty_state :if={@submitted_decks == []}>
         No match data yet — decks appear after the first match is played.
       </.empty_state>
@@ -478,9 +480,7 @@ defmodule Scry2Web.DraftsLive do
       </div>
     </div>
     <div data-section="draft-pool">
-      <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-3">
-        Full Draft Pool
-      </h3>
+      <.kind_label class="mb-3">full draft pool</.kind_label>
       <.empty_state :if={@card_pool_groups == []}>
         Pool available after the draft is complete.
       </.empty_state>
