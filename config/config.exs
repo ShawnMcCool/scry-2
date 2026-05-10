@@ -40,6 +40,10 @@ config :scry_2, Oban,
        # Daily 05:30 UTC — synthesise cards_cards from MTGA + Scryfall.
        # Runs after both upstream imports have had a chance to refresh.
        {"30 5 * * *", Scry2.Workers.PeriodicallySynthesizeCards},
+       # Daily 06:00 UTC — recompute insights (Insights.compute_all/0).
+       # Runs after card synthesis so detectors that depend on cards
+       # see fresh reference data.
+       {"0 6 * * *", Scry2.Workers.PeriodicallyComputeInsights},
        # Hourly at :17 — check GitHub Releases for a new Scry2 version.
        # Offset from the :00 slots above so the cron firings don't pile up.
        {"17 * * * *", Scry2.SelfUpdate.CheckerJob, args: %{"trigger" => "cron"}}

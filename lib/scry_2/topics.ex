@@ -104,6 +104,16 @@ defmodule Scry2.Topics do
   """
   def crafts_updates, do: "crafts:updates"
 
+  # ── Insights ─────────────────────────────────────────────────────────────
+  @doc """
+  Insights subsystem updates. Subscribers (e.g. `HomeLive`, `InsightsLive`)
+  receive:
+
+    * `:insights_recomputed` — a `compute_all` pass finished and the
+      active insight set may have changed.
+  """
+  def insights_updates, do: "insights:updates"
+
   # ── Settings ─────────────────────────────────────────────────────────────
   @doc "Runtime configuration changed."
   def settings_updates, do: "settings:updates"
