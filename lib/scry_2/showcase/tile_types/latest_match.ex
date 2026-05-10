@@ -23,6 +23,7 @@ defmodule Scry2.Showcase.TileTypes.LatestMatch do
   defp render(match) do
     %TileSpec{
       kind: :latest_match,
+      kind_label: "latest match",
       composition: :activity,
       title: title(match),
       art: nil,

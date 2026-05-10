@@ -23,7 +23,7 @@ defmodule Scry2Web.FirstRunSmokeTest do
     :ok
   end
 
-  test "first-run user completes the tour and lands on the health screen", %{conn: conn} do
+  test "first-run user completes the tour and lands on the home screen", %{conn: conn} do
     # Gate redirects fresh user away from /
     assert {:error, {:redirect, %{to: "/setup"}}} = live(conn, ~p"/")
 
@@ -44,16 +44,18 @@ defmodule Scry2Web.FirstRunSmokeTest do
     assert {:error, {:live_redirect, %{to: "/"}}} =
              view |> element("button", "Go to dashboard") |> render_click()
 
-    # Tour is now dismissed — / renders the health screen
+    # Tour is now dismissed — / renders the home screen (Curator exhibit)
     assert SetupFlow.completed_persisted?()
     refute SetupFlow.required?()
 
-    {:ok, health_view, _html} = live(conn, ~p"/")
-    assert has_element?(health_view, "h1", "Settings")
+    {:ok, home_view, _html} = live(conn, ~p"/")
+    assert has_element?(home_view, "h1", "Home")
 
-    # "Run setup tour again" loops back to the tour
+    # "Run setup tour again" loops back to the tour from the System page
+    {:ok, system_view, _html} = live(conn, ~p"/system")
+
     assert {:error, {:live_redirect, %{to: "/setup"}}} =
-             health_view |> element("button", "Run setup tour again") |> render_click()
+             system_view |> element("button", "Run setup tour again") |> render_click()
 
     refute SetupFlow.completed_persisted?()
   end

@@ -20,6 +20,7 @@ defmodule Scry2.Showcase.TileTypes.CoachInsight do
   def build(%Insight{} = insight) do
     %TileSpec{
       kind: :coach_insight,
+      kind_label: label_for_detector(insight.detector),
       composition: :insight,
       title: Templates.render_title(insight),
       body: Templates.render_body(insight),
@@ -29,6 +30,12 @@ defmodule Scry2.Showcase.TileTypes.CoachInsight do
       badge: badge_for_tier(insight.tier)
     }
   end
+
+  defp label_for_detector("OnPlayVsOnDraw"), do: "play vs draw"
+  defp label_for_detector("EventROI"), do: "this week's economy"
+  defp label_for_detector("DeckHeater"), do: "deck on a heater"
+  defp label_for_detector("ColorMatchupOutlier"), do: "matchup pattern"
+  defp label_for_detector(_), do: "pattern noticed"
 
   defp stats_list(stats) when is_map(stats) do
     [stats["primary"], stats["secondary"], stats["tertiary"]]

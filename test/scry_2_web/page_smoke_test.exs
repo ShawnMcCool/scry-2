@@ -54,7 +54,9 @@ defmodule Scry2Web.PageSmokeTest do
   end
 
   for {path, label} <- [
-        {"/", "health"},
+        {"/", "home"},
+        {"/system", "system (health)"},
+        {"/insights", "insights browser"},
         {"/player", "player"},
         {"/ranks", "ranks"},
         {"/economy", "economy"},

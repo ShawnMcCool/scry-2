@@ -3,7 +3,7 @@ defmodule Scry2Web.HealthLive do
   System tab of the Settings group — the scry_2 health screen plus
   the self-update status card.
 
-  Mounted at `/` as the permanent landing page and first tab of the
+  Mounted at `/system` (gear dropdown → System) as the first tab of the
   Settings group (System | Operations | Settings). Runs a full
   `Scry2.Health.run_all/0` snapshot on every mount/patch and subscribes
   to PubSub for live updates as the watcher reports status changes,

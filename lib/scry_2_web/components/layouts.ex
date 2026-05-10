@@ -207,11 +207,10 @@ defmodule Scry2Web.Layouts do
       </summary>
       <div class="dropdown-content z-50 mt-2 w-56 rounded-lg border border-base-300 bg-base-200 shadow-xl p-2">
         <.gear_menu_item
-          path={~p"/"}
+          path={~p"/system"}
           label="System"
           icon="hero-heart"
           current_path={@current_path}
-          exact?
         />
         <.gear_menu_item
           path={~p"/operations"}
@@ -317,7 +316,7 @@ defmodule Scry2Web.Layouts do
   end
 
   defp settings_group?(nil), do: false
-  defp settings_group?("/"), do: true
+  defp settings_group?("/system" <> _), do: true
   defp settings_group?("/operations" <> _), do: true
   defp settings_group?("/settings" <> _), do: true
   defp settings_group?("/console" <> _), do: true

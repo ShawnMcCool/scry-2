@@ -15,6 +15,7 @@ defmodule Scry2.Showcase.TileSpec do
   @type stat :: %{required(String.t()) => String.t()}
   @type t :: %__MODULE__{
           kind: atom(),
+          kind_label: String.t() | nil,
           composition: composition(),
           title: String.t(),
           body: String.t() | nil,
@@ -28,6 +29,7 @@ defmodule Scry2.Showcase.TileSpec do
   @enforce_keys [:kind, :composition, :title, :target]
 
   defstruct kind: nil,
+            kind_label: nil,
             composition: nil,
             title: nil,
             body: nil,

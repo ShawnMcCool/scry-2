@@ -37,7 +37,10 @@ defmodule Scry2Web.Router do
         {Scry2Web.PlayerScope, :default},
         {Scry2Web.NavUpdateScope, :default}
       ] do
-      live "/", HealthLive, :index
+      live "/", HomeLive, :index
+      live "/system", HealthLive, :index
+      live "/insights", InsightsLive, :index
+      live "/insights/:id", InsightShowLive, :show
       live "/player", PlayerLive, :index
       live "/ranks", RanksLive, :index
       live "/economy", EconomyLive, :index
