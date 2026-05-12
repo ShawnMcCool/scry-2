@@ -53,6 +53,9 @@ defmodule Scry2.Showcase.Templates do
     "#{m["colors"]} #{direction} your baseline"
   end
 
+  def render_title(%Insight{title_template: "rank_milestone.title", measurements: m}),
+    do: "You reached #{m["class"]} #{humanize_rank_format(m["format"])}"
+
   def render_title(%Insight{title_template: key}),
     do: "(missing title template: #{key})"
 
@@ -141,6 +144,18 @@ defmodule Scry2.Showcase.Templates do
     "#{combo_wr} with #{colors} (n=#{n}) vs your overall #{base_wr} baseline. Statistically significant."
   end
 
+  def render_body(%Insight{body_template: "rank_milestone.body", measurements: m}) do
+    class = m["class"] || "?"
+    format = humanize_rank_format(m["format"])
+    days = m["days_ago"] || 0
+    promotions = m["promotions_this_season"] || 0
+
+    when_str =
+      if days == 0, do: "today", else: "#{days} day#{if days == 1, do: "", else: "s"} ago"
+
+    "Crossed into #{class} #{format} #{when_str} — #{promotions} class promotion#{if promotions == 1, do: "", else: "s"} this season."
+  end
+
   def render_body(%Insight{body_template: _}), do: nil
 
   defp pct(nil), do: "0%"
@@ -154,6 +169,11 @@ defmodule Scry2.Showcase.Templates do
   defp humanize_format("Limited"), do: "Limited"
   defp humanize_format(s) when is_binary(s), do: s
   defp humanize_format(_), do: "Unknown"
+
+  defp humanize_rank_format("constructed"), do: "Constructed"
+  defp humanize_rank_format("limited"), do: "Limited"
+  defp humanize_rank_format(s) when is_binary(s), do: s
+  defp humanize_rank_format(_), do: ""
 
   defp deck_label(nil), do: "A deck"
   defp deck_label(""), do: "A deck"

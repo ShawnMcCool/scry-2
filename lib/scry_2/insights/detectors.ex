@@ -31,7 +31,8 @@ defmodule Scry2.Insights.Detectors do
       Scry2.Insights.Detectors.FormatBaseline,
       Scry2.Insights.Detectors.CraftingVelocity,
       Scry2.Insights.Detectors.DeckHeater,
-      Scry2.Insights.Detectors.DeckColorOutlier
+      Scry2.Insights.Detectors.DeckColorOutlier,
+      Scry2.Insights.Detectors.RankMilestone
     ]
   end
 end
