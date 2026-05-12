@@ -56,6 +56,9 @@ defmodule Scry2.Showcase.Templates do
   def render_title(%Insight{title_template: "rank_milestone.title", measurements: m}),
     do: "You reached #{m["class"]} #{humanize_rank_format(m["format"])}"
 
+  def render_title(%Insight{title_template: "draft_conversion_rate.title", measurements: m}),
+    do: "Draft conversion: #{format_avg(m["avg_wins"])} wins per run"
+
   def render_title(%Insight{title_template: key}),
     do: "(missing title template: #{key})"
 
@@ -144,6 +147,15 @@ defmodule Scry2.Showcase.Templates do
     "#{combo_wr} with #{colors} (n=#{n}) vs your overall #{base_wr} baseline. Statistically significant."
   end
 
+  def render_body(%Insight{body_template: "draft_conversion_rate.body", measurements: m}) do
+    n = m["drafts_n"] || 0
+    avg = format_avg(m["avg_wins"])
+    trophies = m["trophies"] || 0
+    trophy_str = if trophies == 1, do: "1 trophy", else: "#{trophies} trophies"
+
+    "Last #{n} drafts averaged #{avg} wins per run, with #{trophy_str}."
+  end
+
   def render_body(%Insight{body_template: "rank_milestone.body", measurements: m}) do
     class = m["class"] || "?"
     format = humanize_rank_format(m["format"])
@@ -174,6 +186,11 @@ defmodule Scry2.Showcase.Templates do
   defp humanize_rank_format("limited"), do: "Limited"
   defp humanize_rank_format(s) when is_binary(s), do: s
   defp humanize_rank_format(_), do: ""
+
+  defp format_avg(nil), do: "0.0"
+
+  defp format_avg(avg) when is_number(avg),
+    do: :erlang.float_to_binary(avg / 1, decimals: 1)
 
   defp deck_label(nil), do: "A deck"
   defp deck_label(""), do: "A deck"
