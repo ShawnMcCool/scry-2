@@ -67,6 +67,14 @@ defmodule Scry2.Showcase.Templates do
     end
   end
 
+  def render_title(%Insight{title_template: "comeback_artist.title", measurements: m}) do
+    case m["direction"] do
+      "comeback" -> "You're a comeback artist"
+      "front_runner" -> "You're a front-runner"
+      _ -> "BO3 resilience pattern"
+    end
+  end
+
   def render_title(%Insight{title_template: key}),
     do: "(missing title template: #{key})"
 
@@ -153,6 +161,15 @@ defmodule Scry2.Showcase.Templates do
     n = m["combo_n"] || 0
 
     "#{combo_wr} with #{colors} (n=#{n}) vs your overall #{base_wr} baseline. Statistically significant."
+  end
+
+  def render_body(%Insight{body_template: "comeback_artist.body", measurements: m}) do
+    comeback_wr = pct(m["comeback_wr"])
+    up_wr = pct(m["up_1_0_wr"])
+    cn = m["comeback_n"] || 0
+    un = m["up_1_0_n"] || 0
+
+    "#{comeback_wr} match WR after dropping game 1 (n=#{cn}) vs #{up_wr} after winning it (n=#{un}). Statistically significant."
   end
 
   def render_body(%Insight{body_template: "weekend_warrior.body", measurements: m}) do

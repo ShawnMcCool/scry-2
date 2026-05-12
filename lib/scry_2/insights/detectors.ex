@@ -34,7 +34,8 @@ defmodule Scry2.Insights.Detectors do
       Scry2.Insights.Detectors.DeckColorOutlier,
       Scry2.Insights.Detectors.RankMilestone,
       Scry2.Insights.Detectors.DraftConversionRate,
-      Scry2.Insights.Detectors.WeekendWarrior
+      Scry2.Insights.Detectors.WeekendWarrior,
+      Scry2.Insights.Detectors.ComebackArtist
     ]
   end
 end
