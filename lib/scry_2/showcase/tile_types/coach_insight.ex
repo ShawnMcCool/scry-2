@@ -42,6 +42,7 @@ defmodule Scry2.Showcase.TileTypes.CoachInsight do
   defp label_for_detector("DeckColorOutlier"), do: "color combo"
   defp label_for_detector("RankMilestone"), do: "rank milestone"
   defp label_for_detector("DraftConversionRate"), do: "draft conversion"
+  defp label_for_detector("WeekendWarrior"), do: "play schedule"
   defp label_for_detector(_), do: "pattern noticed"
 
   defp stats_list(stats) when is_map(stats) do

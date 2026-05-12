@@ -59,6 +59,14 @@ defmodule Scry2.Showcase.Templates do
   def render_title(%Insight{title_template: "draft_conversion_rate.title", measurements: m}),
     do: "Draft conversion: #{format_avg(m["avg_wins"])} wins per run"
 
+  def render_title(%Insight{title_template: "weekend_warrior.title", measurements: m}) do
+    case m["direction"] do
+      "weekend" -> "You're a weekend warrior"
+      "weeknight" -> "You're a weeknight grinder"
+      _ -> "Play schedule pattern"
+    end
+  end
+
   def render_title(%Insight{title_template: key}),
     do: "(missing title template: #{key})"
 
@@ -145,6 +153,15 @@ defmodule Scry2.Showcase.Templates do
     n = m["combo_n"] || 0
 
     "#{combo_wr} with #{colors} (n=#{n}) vs your overall #{base_wr} baseline. Statistically significant."
+  end
+
+  def render_body(%Insight{body_template: "weekend_warrior.body", measurements: m}) do
+    weekend_n = m["weekend_n"] || 0
+    weekday_n = m["weekday_n"] || 0
+    total = weekend_n + weekday_n
+    weekend_pct = if total > 0, do: "#{round(weekend_n / total * 100)}%", else: "0%"
+
+    "#{weekend_n} of your #{total} matches (#{weekend_pct}) happened on Saturday or Sunday — well off the uniform 29% baseline."
   end
 
   def render_body(%Insight{body_template: "draft_conversion_rate.body", measurements: m}) do
