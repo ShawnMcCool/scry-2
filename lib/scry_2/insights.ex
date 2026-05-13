@@ -89,10 +89,24 @@ defmodule Scry2.Insights do
     surface = Keyword.get(opts, :surface, :home)
     detectors = Detectors.for_surface(surface)
 
+    # Detectors are independent and read-only — fan them out under the
+    # shared Task.Supervisor so the daily cron doesn't serialize on N
+    # round-trips. WAL allows concurrent reads. Concurrency 4 is a
+    # conservative cap; the SQLite pool has 10 connections.
     insights =
-      detectors
-      |> Enum.map(& &1.detect([]))
-      |> Enum.reject(&is_nil/1)
+      Scry2.TaskSupervisor
+      |> Task.Supervisor.async_stream_nolink(
+        detectors,
+        fn detector -> detector.detect([]) end,
+        max_concurrency: 4,
+        ordered: false,
+        timeout: :timer.minutes(2)
+      )
+      |> Enum.flat_map(fn
+        {:ok, nil} -> []
+        {:ok, %Insight{} = insight} -> [insight]
+        {:exit, _reason} -> []
+      end)
 
     {:ok, _} = Repo.transaction(fn -> persist_pass(insights) end)
     Topics.broadcast(Topics.insights_updates(), :insights_recomputed)

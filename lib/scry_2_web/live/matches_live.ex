@@ -32,12 +32,15 @@ defmodule Scry2Web.MatchesLive do
       Topics.subscribe(Topics.live_match_board_final())
     end
 
+    # `recent_match_economies` doesn't depend on any filter param —
+    # compute once on mount instead of re-running on every chip click.
     {:ok,
      assign(socket,
        reload_timer: nil,
        show_all_formats: false,
        live_match_tick: nil,
-       live_match_commander_names: %{}
+       live_match_commander_names: %{},
+       recent_match_economies: MatchEconomy.recent_summaries(limit: 10)
      )}
   end
 
@@ -204,16 +207,36 @@ defmodule Scry2Web.MatchesLive do
       |> maybe_add(:bo, bo)
       |> maybe_add(:won, parse_result(result))
 
-    stats = Matches.aggregate_stats(filter_opts)
+    rolling_opts = filter_opts ++ [days: winrate_period_to_days(winrate_period)]
+    list_opts = filter_opts ++ [limit: @per_page, offset: (page - 1) * @per_page]
+    format_counts_opts = Keyword.delete(filter_opts, :format)
 
-    cumulative_series =
-      Matches.rolling_win_rate(filter_opts ++ [days: winrate_period_to_days(winrate_period)])
-
-    category_counts = Matches.category_counts(filter_opts)
-    format_counts = Matches.format_counts(Keyword.delete(filter_opts, :format))
-
-    matches =
-      Matches.list_matches(filter_opts ++ [limit: @per_page, offset: (page - 1) * @per_page])
+    # Five independent read queries — fan out under the shared
+    # Task.Supervisor. SQLite WAL allows concurrent readers, so this
+    # cuts perceived latency on every chip click. `ordered: true`
+    # preserves positional binding to {key, result} below.
+    [
+      {:stats, stats},
+      {:cumulative_series, cumulative_series},
+      {:category_counts, category_counts},
+      {:format_counts, format_counts},
+      {:matches, matches}
+    ] =
+      Scry2.TaskSupervisor
+      |> Task.Supervisor.async_stream_nolink(
+        [
+          {:stats, fn -> Matches.aggregate_stats(filter_opts) end},
+          {:cumulative_series, fn -> Matches.rolling_win_rate(rolling_opts) end},
+          {:category_counts, fn -> Matches.category_counts(filter_opts) end},
+          {:format_counts, fn -> Matches.format_counts(format_counts_opts) end},
+          {:matches, fn -> Matches.list_matches(list_opts) end}
+        ],
+        fn {key, fun} -> {key, fun.()} end,
+        max_concurrency: 5,
+        ordered: true,
+        timeout: :timer.seconds(30)
+      )
+      |> Enum.map(fn {:ok, pair} -> pair end)
 
     total_pages = max(1, ceil(stats.total / @per_page))
 
@@ -237,8 +260,7 @@ defmodule Scry2Web.MatchesLive do
       active_category: category,
       active_format: format,
       active_bo: bo,
-      active_result: result,
-      recent_match_economies: MatchEconomy.recent_summaries(limit: 10)
+      active_result: result
     )
   end
 

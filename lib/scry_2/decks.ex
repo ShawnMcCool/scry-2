@@ -55,14 +55,11 @@ defmodule Scry2.Decks do
   def list_decks_with_stats(player_id \\ nil, opts \\ []) do
     only_played = Keyword.get(opts, :only_played, true)
 
-    decks =
-      Deck
-      |> maybe_filter_by_player(player_id)
-      |> order_by([d], desc_nulls_last: d.last_played_at, desc: d.last_updated_at)
-      |> Repo.all()
-
-    decks
-    |> maybe_filter_played_from_deck(only_played)
+    Deck
+    |> maybe_filter_by_player(player_id)
+    |> maybe_filter_played_in_sql(only_played)
+    |> order_by([d], desc_nulls_last: d.last_played_at, desc: d.last_updated_at)
+    |> Repo.all()
     |> Enum.map(fn deck ->
       %DeckSummary{
         deck: deck,
@@ -84,18 +81,6 @@ defmodule Scry2.Decks do
   @doc "Returns the deck with the given MTGA deck id, or nil."
   def get_deck(mtga_deck_id) when is_binary(mtga_deck_id) do
     Repo.get_by(Deck, mtga_deck_id: mtga_deck_id)
-  end
-
-  @doc """
-  Returns every deck's `mtga_deck_id` and current main-deck composition.
-
-  Used by the projector to find the stable deck UUID that matches a freshly
-  submitted card list. Light projection — composition columns only.
-  """
-  def list_deck_compositions do
-    Deck
-    |> select([d], %{mtga_deck_id: d.mtga_deck_id, current_main_deck: d.current_main_deck})
-    |> Repo.all()
   end
 
   @doc "Returns the number of deck versions for a deck."
@@ -458,16 +443,20 @@ defmodule Scry2.Decks do
     total_matches = total_matches || 0
     total_wins = total_wins || 0
 
-    # Build per-card, per-match presence: {arena_id, match_id} => %{in_opener, drawn, won}
-    presence = build_card_match_presence(mtga_deck_id)
+    # Per-card presence aggregates from SQL (eliminates the prior step that
+    # loaded every mulligan hand's JSON `hand_arena_ids` into Elixir and built
+    # a `{arena_id, match_id} => %{in_opener, drawn, won}` map). The CTE
+    # unions opening-hand cards (via `json_each`) with self-draw cards,
+    # deduplicates per (arena_id, match_id), then sums per arena_id.
+    raw_aggregates = card_match_aggregates(mtga_deck_id)
 
     deck = get_deck(mtga_deck_id)
     deck_cards = deck_card_counts(deck)
 
-    all_arena_ids = presence |> Map.keys() |> Enum.map(&elem(&1, 0)) |> Enum.uniq()
+    all_arena_ids = Enum.map(raw_aggregates, & &1.arena_id)
 
-    # Filter out tokens — MTGA emits draw annotations when tokens are created during play.
-    # Tokens are not deck cards and their performance metrics are meaningless.
+    # Filter out tokens — MTGA emits draw annotations when tokens are created
+    # during play. Tokens are not deck cards and their metrics are meaningless.
     token_ids =
       MtgaCard
       |> where([c], c.arena_id in ^all_arena_ids and c.is_token)
@@ -475,39 +464,20 @@ defmodule Scry2.Decks do
       |> Repo.all()
       |> MapSet.new()
 
-    presence =
-      Map.reject(presence, fn {{arena_id, _}, _} -> MapSet.member?(token_ids, arena_id) end)
-
-    all_arena_ids = Enum.reject(all_arena_ids, &MapSet.member?(token_ids, &1))
+    aggregates = Enum.reject(raw_aggregates, &MapSet.member?(token_ids, &1.arena_id))
+    filtered_arena_ids = Enum.map(aggregates, & &1.arena_id)
 
     # Resolve card names from the Cards table
-    card_names = Scry2.Cards.names_by_arena_ids(all_arena_ids)
+    card_names = Scry2.Cards.names_by_arena_ids(filtered_arena_ids)
 
-    # Aggregate per card
-    presence
-    |> Enum.group_by(fn {{arena_id, _match_id}, _} -> arena_id end)
-    |> Enum.map(fn {arena_id, entries} ->
-      matches = Enum.map(entries, fn {_key, info} -> info end)
+    aggregates
+    |> Enum.map(fn row ->
+      gnd_games = max(total_matches - row.gih_games, 0)
+      gnd_wins = max(total_wins - row.gih_wins, 0)
 
-      oh_matches = Enum.filter(matches, & &1.in_opener)
-      oh_games = length(oh_matches)
-      oh_wins = Enum.count(oh_matches, & &1.won)
-
-      # GD = drawn during game but NOT in opening hand
-      gd_matches = Enum.filter(matches, &(&1.drawn && !&1.in_opener))
-      gd_games = length(gd_matches)
-      gd_wins = Enum.count(gd_matches, & &1.won)
-
-      # GIH = union of opener and drawn (deduplicated by match)
-      gih_games = length(matches)
-      gih_wins = Enum.count(matches, & &1.won)
-
-      gnd_games = max(total_matches - gih_games, 0)
-      gnd_wins = max(total_wins - gih_wins, 0)
-
-      oh_wr = win_rate(oh_wins, oh_games)
-      gih_wr = win_rate(gih_wins, gih_games)
-      gd_wr = win_rate(gd_wins, gd_games)
+      oh_wr = win_rate(row.oh_wins, row.oh_games)
+      gih_wr = win_rate(row.gih_wins, row.gih_games)
+      gd_wr = win_rate(row.gd_wins, row.gd_games)
       gnd_wr = win_rate(gnd_wins, gnd_games)
 
       iwd =
@@ -516,15 +486,15 @@ defmodule Scry2.Decks do
         end
 
       %{
-        card_arena_id: arena_id,
-        card_name: Map.get(card_names, arena_id),
-        copies: Map.get(deck_cards, arena_id, 0),
+        card_arena_id: row.arena_id,
+        card_name: Map.get(card_names, row.arena_id),
+        copies: Map.get(deck_cards, row.arena_id, 0),
         oh_wr: oh_wr,
-        oh_games: oh_games,
+        oh_games: row.oh_games,
         gih_wr: gih_wr,
-        gih_games: gih_games,
+        gih_games: row.gih_games,
         gd_wr: gd_wr,
-        gd_games: gd_games,
+        gd_games: row.gd_games,
         gnd_wr: gnd_wr,
         gnd_games: gnd_games,
         iwd: iwd,
@@ -563,9 +533,13 @@ defmodule Scry2.Decks do
 
   @doc """
   Upserts a deck by `mtga_deck_id`. Idempotent per ADR-016.
+
+  When `:current_main_deck` is present in the attrs, also stamps
+  `composition_hash` (so `find_by_composition/1` is O(1) indexed lookup
+  instead of a full-table Elixir scan).
   """
   def upsert_deck!(attrs) do
-    attrs = Map.new(attrs)
+    attrs = attrs |> Map.new() |> maybe_stamp_composition_hash()
     mtga_deck_id = attrs[:mtga_deck_id]
 
     deck =
@@ -579,6 +553,85 @@ defmodule Scry2.Decks do
     broadcast_update(deck.mtga_deck_id)
     deck
   end
+
+  @doc """
+  Returns the `mtga_deck_id` of the deck whose main-deck composition
+  matches `main_deck`, or nil. Uses the indexed `composition_hash`
+  column to avoid scanning every deck.
+
+  `main_deck` is a list of card maps with `arena_id` and `count` keys
+  (string- or atom-keyed). Returns nil for empty input.
+  """
+  @spec find_mtga_deck_id_by_composition(list()) :: String.t() | nil
+  def find_mtga_deck_id_by_composition([]), do: nil
+
+  def find_mtga_deck_id_by_composition(main_deck) when is_list(main_deck) do
+    case composition_hash(main_deck) do
+      nil ->
+        nil
+
+      hash ->
+        Deck
+        |> where([d], d.composition_hash == ^hash)
+        |> select([d], {d.mtga_deck_id, d.current_main_deck})
+        |> Repo.all()
+        |> Enum.find_value(fn {mtga_deck_id, current_main_deck} ->
+          # Hash collisions are possible (phash2 is 27-bit on 64-bit ERTS).
+          # Verify the actual composition matches before returning.
+          if same_composition?(main_deck, current_main_deck), do: mtga_deck_id
+        end)
+    end
+  end
+
+  @doc """
+  Hash of a main-deck composition. `nil` if the input has no resolvable
+  arena_id/count pairs. Stable across BEAM versions per `:erlang.phash2/1`.
+  """
+  @spec composition_hash(list() | nil) :: integer() | nil
+  def composition_hash(nil), do: nil
+  def composition_hash([]), do: nil
+
+  def composition_hash(cards) when is_list(cards) do
+    pairs =
+      cards
+      |> Enum.map(&card_arena_count_pair/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.sort()
+
+    case pairs do
+      [] -> nil
+      sorted -> :erlang.phash2(sorted)
+    end
+  end
+
+  defp card_arena_count_pair(card) when is_map(card) do
+    arena_id = card["arena_id"] || card[:arena_id]
+    count = card["count"] || card[:count]
+    if arena_id && count, do: {arena_id, count}, else: nil
+  end
+
+  defp card_arena_count_pair(_), do: nil
+
+  defp same_composition?(submitted, %{"cards" => cards}) when is_list(cards) do
+    sort_pairs(submitted) == sort_pairs(cards)
+  end
+
+  defp same_composition?(_, _), do: false
+
+  defp sort_pairs(cards) do
+    cards
+    |> Enum.map(&card_arena_count_pair/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.sort()
+  end
+
+  defp maybe_stamp_composition_hash(%{current_main_deck: main_deck} = attrs)
+       when is_map(main_deck) do
+    cards = main_deck["cards"] || main_deck[:cards] || []
+    Map.put(attrs, :composition_hash, composition_hash(cards))
+  end
+
+  defp maybe_stamp_composition_hash(attrs), do: attrs
 
   @doc """
   Upserts a match result by `(mtga_deck_id, mtga_match_id)`. Idempotent per ADR-016.
@@ -830,12 +883,10 @@ defmodule Scry2.Decks do
   # decks_decks has no player_id — the context is single-player by design.
   defp maybe_filter_by_player(query, _player_id), do: query
 
-  defp maybe_filter_played_from_deck(decks, false), do: decks
+  defp maybe_filter_played_in_sql(query, false), do: query
 
-  defp maybe_filter_played_from_deck(decks, true) do
-    Enum.filter(decks, fn deck ->
-      deck.bo1_wins + deck.bo1_losses + deck.bo3_wins + deck.bo3_losses > 0
-    end)
+  defp maybe_filter_played_in_sql(query, true) do
+    where(query, [d], d.bo1_wins + d.bo1_losses + d.bo3_wins + d.bo3_losses > 0)
   end
 
   # SQL aggregate for bo1 or bo3 base stats — one query, no full-row load.
@@ -951,61 +1002,80 @@ defmodule Scry2.Decks do
   defp win_rate(_, 0), do: nil
   defp win_rate(wins, total), do: Float.round(wins / total * 100, 1)
 
-  # Builds a unified presence map: `{arena_id, match_id} => %{in_opener, drawn, won}`.
-  # Deduplicates cards that appear in both the opening hand and as draw annotations
-  # within the same match, preventing double-counting in GIH WR.
-  defp build_card_match_presence(mtga_deck_id) do
-    # Opening hand cards from kept hands
-    oh_entries =
-      MulliganHand
-      |> where(
-        [m],
-        m.mtga_deck_id == ^mtga_deck_id and
-          m.decision == "kept" and
-          not is_nil(m.match_won)
+  # Per-card presence aggregates for `card_performance/1` — computed in SQL.
+  # Replaces the prior `build_card_match_presence/1` which materialised every
+  # mulligan hand's `hand_arena_ids` JSON in Elixir and built a
+  # `{arena_id, match_id} => %{in_opener, drawn, won}` map.
+  #
+  # The CTE:
+  #   1. Expands each kept hand's `hand_arena_ids["cards"]` via `json_each`.
+  #   2. Unions with self-draw rows from `decks_cards_drawn`.
+  #   3. Deduplicates per `(arena_id, mtga_match_id)` so a card present in
+  #      both the opener and as a later draw counts once in GIH stats.
+  #   4. Aggregates per `arena_id` into oh/gd/gih game and win counts.
+  #
+  # Returns `[%{arena_id, oh_games, oh_wins, gd_games, gd_wins, gih_games, gih_wins}, ...]`.
+  defp card_match_aggregates(mtga_deck_id) do
+    sql = """
+    WITH per_match AS (
+      SELECT arena_id, mtga_match_id,
+             MAX(in_opener) AS in_opener,
+             MAX(drawn)     AS drawn,
+             MAX(won)       AS won
+      FROM (
+        SELECT CAST(je.value AS INTEGER) AS arena_id,
+               mh.mtga_match_id,
+               1 AS in_opener,
+               0 AS drawn,
+               CASE WHEN mh.match_won THEN 1 ELSE 0 END AS won
+        FROM decks_mulligan_hands AS mh,
+             json_each(json_extract(mh.hand_arena_ids, '$.cards')) AS je
+        WHERE mh.mtga_deck_id = ?1
+          AND mh.decision = 'kept'
+          AND mh.match_won IS NOT NULL
+
+        UNION ALL
+
+        SELECT card_arena_id AS arena_id,
+               mtga_match_id,
+               0 AS in_opener,
+               1 AS drawn,
+               CASE WHEN match_won THEN 1 ELSE 0 END AS won
+        FROM decks_cards_drawn
+        WHERE mtga_deck_id = ?1
+          AND match_won IS NOT NULL
+          AND is_self_draw = 1
       )
-      |> Repo.all()
-      |> Enum.flat_map(fn hand ->
-        arena_ids = (hand.hand_arena_ids && hand.hand_arena_ids["cards"]) || []
+      GROUP BY arena_id, mtga_match_id
+    )
+    SELECT arena_id,
+           SUM(in_opener)                                         AS oh_games,
+           SUM(in_opener * won)                                   AS oh_wins,
+           SUM(CASE WHEN drawn = 1 AND in_opener = 0 THEN 1 ELSE 0 END)             AS gd_games,
+           SUM(CASE WHEN drawn = 1 AND in_opener = 0 AND won = 1 THEN 1 ELSE 0 END) AS gd_wins,
+           COUNT(*)                                               AS gih_games,
+           SUM(won)                                               AS gih_wins
+    FROM per_match
+    GROUP BY arena_id
+    """
 
-        arena_ids
-        |> Enum.uniq()
-        |> Enum.map(fn arena_id ->
-          {{arena_id, hand.mtga_match_id}, %{in_opener: true, drawn: false, won: hand.match_won}}
-        end)
-      end)
+    {:ok, %{rows: rows}} = Repo.query(sql, [mtga_deck_id])
 
-    # Mid-game draw entries — self draws only (opponent draws are stored for future analysis)
-    draw_entries =
-      GameDraw
-      |> where(
-        [d],
-        d.mtga_deck_id == ^mtga_deck_id and not is_nil(d.match_won) and d.is_self_draw == true
-      )
-      |> select([d], {d.card_arena_id, d.mtga_match_id, d.match_won})
-      |> Repo.all()
-      |> Enum.uniq_by(fn {arena_id, match_id, _} -> {arena_id, match_id} end)
-      |> Enum.map(fn {arena_id, match_id, won} ->
-        {{arena_id, match_id}, %{in_opener: false, drawn: true, won: won}}
-      end)
-
-    # Merge: if a card appears in both opener and draws for the same match,
-    # combine the flags (in_opener: true, drawn: true)
-    (oh_entries ++ draw_entries)
-    |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
-    |> Map.new(fn {key, infos} ->
-      merged =
-        Enum.reduce(infos, %{in_opener: false, drawn: false, won: false}, fn info, acc ->
-          %{
-            in_opener: acc.in_opener || info.in_opener,
-            drawn: acc.drawn || info.drawn,
-            won: acc.won || info.won
-          }
-        end)
-
-      {key, merged}
+    Enum.map(rows, fn [arena_id, oh_games, oh_wins, gd_games, gd_wins, gih_games, gih_wins] ->
+      %{
+        arena_id: arena_id,
+        oh_games: as_int(oh_games),
+        oh_wins: as_int(oh_wins),
+        gd_games: as_int(gd_games),
+        gd_wins: as_int(gd_wins),
+        gih_games: as_int(gih_games),
+        gih_wins: as_int(gih_wins)
+      }
     end)
   end
+
+  defp as_int(nil), do: 0
+  defp as_int(int) when is_integer(int), do: int
 
   # Extracts `%{arena_id => count}` from a deck's main deck + sideboard.
   defp deck_card_counts(nil), do: %{}

@@ -113,12 +113,30 @@ defmodule Scry2.MtgaLogIngestion do
         acc + chunk_count
       end)
 
-    if count > 0 do
-      Topics.broadcast(Topics.mtga_logs_events(), {:events_inserted, count})
+    # Broadcast outside any caller-held write transaction. Callers that wrap
+    # this in `Repo.transaction/1` (e.g. Watcher.drain_file/1) should call
+    # `broadcast_inserted/1` themselves after the transaction returns to
+    # avoid holding the SQLite write lock during PubSub fan-out.
+    if count > 0 and not in_transaction?() do
+      broadcast_inserted(count)
     end
 
     {count, nil}
   end
+
+  @doc """
+  Broadcasts `{:events_inserted, count}` on `mtga_logs:events`. Callers that
+  invoke `insert_events!/1` inside `Repo.transaction/1` should call this
+  after the transaction commits — `insert_events!/1` skips the broadcast
+  when invoked inside a transaction.
+  """
+  def broadcast_inserted(count) when is_integer(count) and count > 0 do
+    Topics.broadcast(Topics.mtga_logs_events(), {:events_inserted, count})
+  end
+
+  def broadcast_inserted(_), do: :ok
+
+  defp in_transaction?, do: Repo.in_transaction?()
 
   @doc "Returns unprocessed raw events with id > last_raw_event_id, ordered by id."
   def list_unprocessed_after(last_raw_event_id, opts \\ []) do

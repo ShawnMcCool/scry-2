@@ -527,17 +527,23 @@ defmodule Scry2.Events.IngestRawEvents do
   # For SessionStarted, resolve the player via Players.get_or_create!
   # and set player_id on the session (side effect not in pure apply_event).
   defp apply_events_to_state(state, events) do
-    {final_state, collected_events} =
-      Enum.reduce(events, {state, []}, fn event, {acc_state, acc_events} ->
+    # Prepend onto the accumulator and reverse once at the end so reducing
+    # N events stays O(N). The earlier `acc ++ [event] ++ side_effects`
+    # was O(N²) on the ingestion critical path.
+    {final_state, reversed} =
+      Enum.reduce(events, {state, []}, fn event, {acc_state, acc} ->
         {new_state, side_effects} = IngestionState.apply_event(acc_state, event)
 
         # SessionStarted: resolve player_id (DB side effect)
         new_state = maybe_resolve_player(new_state, event)
 
-        {new_state, acc_events ++ [event] ++ side_effects}
+        acc = [event | acc]
+        acc = Enum.reduce(side_effects, acc, fn effect, a -> [effect | a] end)
+
+        {new_state, acc}
       end)
 
-    {final_state, collected_events}
+    {final_state, Enum.reverse(reversed)}
   end
 
   defp maybe_resolve_player(

@@ -107,7 +107,7 @@ defmodule Scry2.Decks.DeckProjection do
       match_created_attrs = find_match_created_attrs(event.mtga_match_id)
 
       mtga_deck_id =
-        resolve_deck_id_by_composition(event.main_deck) ||
+        Decks.find_mtga_deck_id_by_composition(event.main_deck || []) ||
           resolve_deck_id_for_draft(match_created_attrs) ||
           event.mtga_deck_id
 
@@ -381,34 +381,6 @@ defmodule Scry2.Decks.DeckProjection do
   end
 
   defp maybe_add_draft_name(attrs, _), do: attrs
-
-  # Finds the stable MTGA deck UUID for a submitted composition by comparing
-  # the main deck card list against all known decks in decks_decks.
-  # DeckUpdated (which carries the real UUID) always fires before DeckSubmitted
-  # for the same deck, so the row exists by the time this is called.
-  # Only the main deck is compared — sideboard changes between BO3 games.
-  defp resolve_deck_id_by_composition([]), do: nil
-
-  defp resolve_deck_id_by_composition(main_deck) do
-    submitted_sorted =
-      main_deck
-      |> Enum.map(fn card ->
-        {card["arena_id"] || card[:arena_id], card["count"] || card[:count]}
-      end)
-      |> Enum.sort()
-
-    Decks.list_deck_compositions()
-    |> Enum.find_value(fn deck ->
-      known_sorted =
-        ((deck.current_main_deck && deck.current_main_deck["cards"]) || [])
-        |> Enum.map(fn card ->
-          {card["arena_id"] || card[:arena_id], card["count"] || card[:count]}
-        end)
-        |> Enum.sort()
-
-      if known_sorted == submitted_sorted, do: deck.mtga_deck_id
-    end)
-  end
 
   # Queries the Events log for an already-persisted MatchCreated event so that
   # DeckSubmitted can retroactively populate format_type/event_name/player_rank

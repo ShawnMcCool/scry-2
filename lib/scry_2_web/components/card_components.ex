@@ -39,16 +39,14 @@ defmodule Scry2Web.CardComponents do
   attr :class, :string, default: "w-[4.5rem]"
   attr :id, :string, default: nil
   attr :cached, :boolean, default: nil
+  attr :cached_ids, :any, default: nil
   attr :rest, :global
 
   def card_image(assigns) do
     assigns =
       assigns
       |> assign(:src, ImageCache.url_for(assigns.arena_id))
-      |> assign(
-        :cached?,
-        (assigns.cached != nil && assigns.cached) || ImageCache.cached?(assigns.arena_id)
-      )
+      |> assign(:cached?, resolve_cached(assigns))
 
     ~H"""
     <img
@@ -91,15 +89,13 @@ defmodule Scry2Web.CardComponents do
   attr :id, :string, default: nil
   attr :class, :string, default: nil
   attr :cached, :boolean, default: nil
+  attr :cached_ids, :any, default: nil
 
   def card_name(assigns) do
     assigns =
       assigns
       |> assign(:src, ImageCache.url_for(assigns.arena_id))
-      |> assign(
-        :cached?,
-        (assigns.cached != nil && assigns.cached) || ImageCache.cached?(assigns.arena_id)
-      )
+      |> assign(:cached?, resolve_cached(assigns))
 
     ~H"""
     <span
@@ -131,6 +127,7 @@ defmodule Scry2Web.CardComponents do
   attr :arena_ids, :list, required: true
   attr :card_names, :map, default: %{}
   attr :class, :string, default: "w-[4.5rem]"
+  attr :cached_ids, :any, default: nil
 
   def card_hand(assigns) do
     ~H"""
@@ -140,6 +137,7 @@ defmodule Scry2Web.CardComponents do
         arena_id={arena_id}
         name={Map.get(@card_names, arena_id, "Card image")}
         class={@class}
+        cached_ids={@cached_ids}
       />
     </div>
     """
@@ -161,6 +159,7 @@ defmodule Scry2Web.CardComponents do
   attr :kind, :atom, values: [:added, :removed], required: true
   attr :class, :string, default: "w-20"
   attr :id, :string, default: nil
+  attr :cached_ids, :any, default: nil
 
   def card_diff_image(assigns) do
     assigns =
@@ -186,6 +185,7 @@ defmodule Scry2Web.CardComponents do
           name={@name}
           class={@class}
           id={@id || "diff-#{@kind}-#{@arena_id}"}
+          cached_ids={@cached_ids}
         />
       </div>
       <span class={[
@@ -197,4 +197,16 @@ defmodule Scry2Web.CardComponents do
     </div>
     """
   end
+
+  # Resolve `cached?` without a syscall when the caller supplied a MapSet.
+  # Precedence: cached_ids MapSet > explicit cached boolean > File.exists?.
+  # Templates render N cards per page; LiveViews precompute the MapSet once
+  # in mount/handle_params and thread it through, so this stays O(N) memory
+  # lookups instead of O(N) syscalls per render.
+  defp resolve_cached(%{cached_ids: %MapSet{} = ids, arena_id: arena_id}),
+    do: MapSet.member?(ids, arena_id)
+
+  defp resolve_cached(%{cached: cached}) when is_boolean(cached), do: cached
+
+  defp resolve_cached(%{arena_id: arena_id}), do: ImageCache.cached?(arena_id)
 end

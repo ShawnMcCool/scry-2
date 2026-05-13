@@ -16,6 +16,7 @@ defmodule Scry2.Decks.Deck do
     field :bo1_losses, :integer, default: 0
     field :bo3_wins, :integer, default: 0
     field :bo3_losses, :integer, default: 0
+    field :composition_hash, :integer
 
     timestamps(type: :utc_datetime)
   end
@@ -35,7 +36,8 @@ defmodule Scry2.Decks.Deck do
       :bo1_wins,
       :bo1_losses,
       :bo3_wins,
-      :bo3_losses
+      :bo3_losses,
+      :composition_hash
     ])
     |> validate_required([:mtga_deck_id])
     |> unique_constraint(:mtga_deck_id)

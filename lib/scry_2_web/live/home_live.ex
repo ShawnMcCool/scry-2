@@ -21,15 +21,30 @@ defmodule Scry2Web.HomeLive do
       Topics.subscribe(Topics.insights_updates())
     end
 
-    {:ok,
-     socket
-     |> assign(:page_title, "Home")
-     |> assign_tiles()}
+    socket =
+      socket
+      |> assign(:page_title, "Home")
+      |> assign(:tiles, [])
+      |> assign(:tiles_loaded?, false)
+      |> load_tiles_async()
+
+    {:ok, socket}
   end
 
   @impl true
   def handle_info(:insights_recomputed, socket) do
-    {:noreply, assign_tiles(socket)}
+    {:noreply, load_tiles_async(socket)}
+  end
+
+  @impl true
+  def handle_async(:load_tiles, {:ok, tiles}, socket) when is_list(tiles) do
+    {:noreply, assign(socket, tiles: tiles, tiles_loaded?: true)}
+  end
+
+  def handle_async(:load_tiles, {:exit, _reason}, socket) do
+    # Tile composer crashed — keep showing whatever we had. The next
+    # :insights_recomputed broadcast will try again.
+    {:noreply, socket}
   end
 
   @impl true
@@ -47,18 +62,22 @@ defmodule Scry2Web.HomeLive do
         <header class="flex items-baseline justify-between">
           <h1 class="text-2xl font-beleren">Home</h1>
           <div class="text-xs text-base-content/55">
-            {tile_count_label(@tiles)}
+            {tile_count_label(@tiles, @tiles_loaded?)}
           </div>
         </header>
 
         <div
-          :if={@tiles == []}
+          :if={@tiles_loaded? and @tiles == []}
           class="rounded-lg border border-dashed border-base-content/20 p-12 text-center text-base-content/55"
         >
           Nothing to show yet. Play a few matches and the homepage will start filling in.
         </div>
 
-        <div :if={@tiles != []} class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div :if={not @tiles_loaded?} class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <.tile_skeleton :for={_ <- 1..4} />
+        </div>
+
+        <div :if={@tiles_loaded? and @tiles != []} class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <.tile :for={spec <- @tiles} spec={spec} />
         </div>
       </div>
@@ -66,11 +85,29 @@ defmodule Scry2Web.HomeLive do
     """
   end
 
-  defp assign_tiles(socket) do
-    assign(socket, :tiles, Showcase.tiles_for(:home))
+  # Skeleton placeholder matching the tile shape until composers return.
+  defp tile_skeleton(assigns) do
+    ~H"""
+    <div class="rounded-lg bg-base-200/40 border border-base-content/5 min-h-[10rem] animate-pulse" />
+    """
   end
 
-  defp tile_count_label([]), do: "no tiles"
-  defp tile_count_label([_]), do: "1 tile"
-  defp tile_count_label(tiles), do: "#{length(tiles)} tiles"
+  # Compose tiles in a supervised task so mount doesn't block. Uses
+  # LiveView's `start_async/3` so the task pid is tracked by the socket
+  # (proper Ecto sandbox allowance in tests, automatic cleanup on
+  # socket disconnect). On the disconnected (HTTP) mount the render
+  # shows skeleton tiles — LiveView re-mounts on socket connect and the
+  # task fires then.
+  defp load_tiles_async(socket) do
+    if connected?(socket) do
+      start_async(socket, :load_tiles, fn -> Showcase.tiles_for(:home) end)
+    else
+      socket
+    end
+  end
+
+  defp tile_count_label(_, false), do: "loading…"
+  defp tile_count_label([], true), do: "no tiles"
+  defp tile_count_label([_], true), do: "1 tile"
+  defp tile_count_label(tiles, true), do: "#{length(tiles)} tiles"
 end

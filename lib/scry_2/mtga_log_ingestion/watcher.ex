@@ -291,16 +291,24 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
             }
           end)
 
-        Scry2.Repo.transaction(fn ->
-          MtgaLogIngestion.insert_events!(events_attrs)
+        {:ok, inserted_count} =
+          Scry2.Repo.transaction(fn ->
+            {count, _} = MtgaLogIngestion.insert_events!(events_attrs)
 
-          MtgaLogIngestion.put_cursor!(%{
-            file_path: path,
-            byte_offset: new_offset,
-            log_epoch: new_epoch,
-            inode: inode
-          })
-        end)
+            MtgaLogIngestion.put_cursor!(%{
+              file_path: path,
+              byte_offset: new_offset,
+              log_epoch: new_epoch,
+              inode: inode
+            })
+
+            count
+          end)
+
+        # Broadcast after the txn commits so PubSub fan-out doesn't hold
+        # the SQLite write lock. `insert_events!/1` skips the broadcast
+        # when invoked inside a transaction.
+        MtgaLogIngestion.broadcast_inserted(inserted_count)
 
         %{state | offset: new_offset, log_epoch: new_epoch, inode: inode}
 
