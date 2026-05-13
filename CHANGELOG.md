@@ -11,6 +11,23 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Decks page** loads and renders faster. The deck grid now does a single
+  image-cache lookup per render instead of one per card, and filtering by
+  "only played" skips loading deck contents you'd just discard.
+- **Home page** opens instantly with placeholder tiles, then fills in
+  once the daily insights are ready — no more blank screen on first
+  load.
+- **Matches page** loads quicker. The overall stats, format breakdown,
+  rolling win-rate, and recent matches panels now load in parallel
+  instead of one after another.
+- **Live MTGA capture** is smoother during bursts of activity. The
+  watcher releases the database write lock sooner, so the dashboard
+  stays responsive while MTGA is generating a wave of events.
+- **Daily insight refresh** is faster — independent pattern detectors
+  now run in parallel.
+
 ## v0.42.0 — 2026-05-13
 
 ### New
