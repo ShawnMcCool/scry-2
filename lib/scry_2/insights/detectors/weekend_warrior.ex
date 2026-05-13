@@ -23,6 +23,7 @@ defmodule Scry2.Insights.Detectors.WeekendWarrior do
   @behaviour Scry2.Insights.Detector
 
   import Ecto.Query
+  import Scry2.Insights.Detectors.Numeric, only: [to_int: 1]
 
   alias Scry2.Insights.Insight
   alias Scry2.Matches.Match
@@ -94,7 +95,7 @@ defmodule Scry2.Insights.Detectors.WeekendWarrior do
       body_template: "weekend_warrior.body",
       stats: %{
         "primary" => %{"num" => format_pct(primary_pct), "lbl" => label_for(direction)},
-        "secondary" => %{"num" => "n=#{total}", "lbl" => "matches"},
+        "secondary" => %{"num" => "#{total}", "lbl" => "matches"},
         "tertiary" => %{"num" => "uniform 29%", "lbl" => "baseline"}
       },
       measurements: %{
@@ -114,8 +115,4 @@ defmodule Scry2.Insights.Detectors.WeekendWarrior do
   defp label_for(:weeknight), do: "weeknight"
 
   defp format_pct(rate), do: "#{round(rate * 100)}%"
-
-  defp to_int(nil), do: 0
-  defp to_int(int) when is_integer(int), do: int
-  defp to_int(%Decimal{} = d), do: Decimal.to_integer(d)
 end

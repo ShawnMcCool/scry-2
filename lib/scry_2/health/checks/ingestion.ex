@@ -13,6 +13,8 @@ defmodule Scry2.Health.Checks.Ingestion do
 
   alias Scry2.Health.Check
 
+  @category :ingestion
+
   @doc """
   Reports whether `Scry2.MtgaLogIngestion.LocateLogFile.resolve/0` found
   a `Player.log` file. Pass the raw result directly.
@@ -23,22 +25,15 @@ defmodule Scry2.Health.Checks.Ingestion do
   """
   @spec player_log_locatable({:ok, String.t()} | {:error, :not_found}) :: Check.t()
   def player_log_locatable({:ok, path}) do
-    Check.new(
-      id: :player_log_locatable,
-      category: :ingestion,
-      name: "Player.log locatable",
-      status: :ok,
-      summary: "Found at #{path}"
-    )
+    Check.ok(:player_log_locatable, @category, "Player.log locatable", "Found at #{path}")
   end
 
   def player_log_locatable({:error, :not_found}) do
-    Check.new(
-      id: :player_log_locatable,
-      category: :ingestion,
-      name: "Player.log locatable",
-      status: :error,
-      summary: "Player.log not found in any known location",
+    Check.error(
+      :player_log_locatable,
+      @category,
+      "Player.log locatable",
+      "Player.log not found in any known location",
       detail:
         "MTGA may not be installed, or Detailed Logs (Plugin Support) hasn't been enabled yet. " <>
           "Enable it in MTGA Options → View Account, or set the path manually.",
@@ -58,55 +53,45 @@ defmodule Scry2.Health.Checks.Ingestion do
   """
   @spec watcher_running(map()) :: Check.t()
   def watcher_running(%{state: :running} = status) do
-    Check.new(
-      id: :watcher_running,
-      category: :ingestion,
-      name: "Watcher running",
-      status: :ok,
-      summary: "Tailing #{status.path} at offset #{status.offset}"
+    Check.ok(
+      :watcher_running,
+      @category,
+      "Watcher running",
+      "Tailing #{status.path} at offset #{status.offset}"
     )
   end
 
   def watcher_running(%{state: :starting}) do
-    Check.new(
-      id: :watcher_running,
-      category: :ingestion,
-      name: "Watcher running",
-      status: :pending,
-      summary: "Watcher is still starting up"
-    )
+    Check.pending(:watcher_running, @category, "Watcher running", "Watcher is still starting up")
   end
 
   def watcher_running(%{state: :path_not_found}) do
-    Check.new(
-      id: :watcher_running,
-      category: :ingestion,
-      name: "Watcher running",
-      status: :error,
-      summary: "Watcher is idle — no Player.log to tail",
+    Check.error(
+      :watcher_running,
+      @category,
+      "Watcher running",
+      "Watcher is idle — no Player.log to tail",
       detail: "The watcher will pick up automatically once Player.log becomes available.",
       fix: :reload_watcher
     )
   end
 
   def watcher_running(%{state: :path_missing}) do
-    Check.new(
-      id: :watcher_running,
-      category: :ingestion,
-      name: "Watcher running",
-      status: :error,
-      summary: "Previously tailed log file was deleted or renamed",
+    Check.error(
+      :watcher_running,
+      @category,
+      "Watcher running",
+      "Previously tailed log file was deleted or renamed",
       fix: :reload_watcher
     )
   end
 
   def watcher_running(%{state: :not_running}) do
-    Check.new(
-      id: :watcher_running,
-      category: :ingestion,
-      name: "Watcher running",
-      status: :error,
-      summary: "Watcher process is not running",
+    Check.error(
+      :watcher_running,
+      @category,
+      "Watcher running",
+      "Watcher process is not running",
       detail:
         "The watcher GenServer is not alive. Check logs for a crash, or verify " <>
           "start_watcher is true in your config.",
@@ -115,12 +100,11 @@ defmodule Scry2.Health.Checks.Ingestion do
   end
 
   def watcher_running(%{state: state}) do
-    Check.new(
-      id: :watcher_running,
-      category: :ingestion,
-      name: "Watcher running",
-      status: :warning,
-      summary: "Unknown watcher state: #{inspect(state)}"
+    Check.warning(
+      :watcher_running,
+      @category,
+      "Watcher running",
+      "Unknown watcher state: #{inspect(state)}"
     )
   end
 
@@ -149,12 +133,11 @@ defmodule Scry2.Health.Checks.Ingestion do
   @spec structured_events_seen(non_neg_integer(), %{String.t() => non_neg_integer()}, MapSet.t()) ::
           Check.t()
   def structured_events_seen(0, _events_by_type, _known_types) do
-    Check.new(
-      id: :structured_events_seen,
-      category: :ingestion,
-      name: "Detailed Logs enabled",
-      status: :pending,
-      summary: "Waiting for the first log event",
+    Check.pending(
+      :structured_events_seen,
+      @category,
+      "Detailed Logs enabled",
+      "Waiting for the first log event",
       detail:
         "Launch MTGA and open any screen. Once events start flowing, this check " <>
           "will turn green. If it turns red instead, you need to enable " <>
@@ -172,12 +155,11 @@ defmodule Scry2.Health.Checks.Ingestion do
 
     cond do
       recognized_count == 0 and total_raw >= @min_raw_threshold ->
-        Check.new(
-          id: :structured_events_seen,
-          category: :ingestion,
-          name: "Detailed Logs enabled",
-          status: :error,
-          summary: "No structured events after #{total_raw} raw lines",
+        Check.error(
+          :structured_events_seen,
+          @category,
+          "Detailed Logs enabled",
+          "No structured events after #{total_raw} raw lines",
           detail:
             "MTGA is writing to Player.log but nothing in it looks like a structured " <>
               "event. This almost always means Detailed Logs (Plugin Support) is OFF. " <>
@@ -186,34 +168,31 @@ defmodule Scry2.Health.Checks.Ingestion do
         )
 
       recognized_count == 0 ->
-        Check.new(
-          id: :structured_events_seen,
-          category: :ingestion,
-          name: "Detailed Logs enabled",
-          status: :pending,
-          summary: "Only #{total_raw} raw lines so far, no structured events yet",
+        Check.pending(
+          :structured_events_seen,
+          @category,
+          "Detailed Logs enabled",
+          "Only #{total_raw} raw lines so far, no structured events yet",
           detail: "If nothing appears after launching MTGA, enable Detailed Logs."
         )
 
       recognized_count < total_raw / 2 ->
-        Check.new(
-          id: :structured_events_seen,
-          category: :ingestion,
-          name: "Detailed Logs enabled",
-          status: :warning,
-          summary: "Most log lines are not recognized event types",
+        Check.warning(
+          :structured_events_seen,
+          @category,
+          "Detailed Logs enabled",
+          "Most log lines are not recognized event types",
           detail:
             "#{recognized_count} of #{total_raw} lines are known event types. This is " <>
               "unusual — either the log format changed, or an event type is new."
         )
 
       true ->
-        Check.new(
-          id: :structured_events_seen,
-          category: :ingestion,
-          name: "Detailed Logs enabled",
-          status: :ok,
-          summary: "#{recognized_count} structured events seen"
+        Check.ok(
+          :structured_events_seen,
+          @category,
+          "Detailed Logs enabled",
+          "#{recognized_count} structured events seen"
         )
     end
   end

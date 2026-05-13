@@ -79,9 +79,11 @@ defmodule Scry2.TestFactory do
   alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
   alias Scry2.Collection
   alias Scry2.Collection.Snapshot
+  alias Scry2.Economy.EventEntry
   alias Scry2.MatchEconomy.Summary, as: MeSummary
   alias Scry2.Players
   alias Scry2.Players.Player
+  alias Scry2.Ranks.Snapshot, as: RanksSnapshot
 
   # ── build_* (no DB) ─────────────────────────────────────────────────────
 
@@ -1221,6 +1223,56 @@ defmodule Scry2.TestFactory do
     {:ok, row} =
       %Craft{}
       |> Craft.changeset(full)
+      |> Scry2.Repo.insert()
+
+    row
+  end
+
+  @doc """
+  Persists a `Scry2.Ranks.Snapshot` row and returns the loaded record.
+  Defaults fill in a recent occurred_at and an arbitrary season ordinal.
+  """
+  def create_ranks_snapshot(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    defaults = %{
+      season_ordinal: 100,
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    {:ok, row} =
+      %RanksSnapshot{}
+      |> RanksSnapshot.changeset(Map.merge(defaults, attrs))
+      |> Scry2.Repo.insert()
+
+    row
+  end
+
+  @doc """
+  Persists a `Scry2.Economy.EventEntry` row and returns the loaded
+  record. Defaults model a typical premier-draft entry claimed 6 days
+  ago, with the joined_at one day earlier.
+  """
+  def create_event_entry(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    defaults = %{
+      event_name: "Event-#{System.unique_integer([:positive])}",
+      event_type: "premier_draft",
+      entry_currency_type: "gems",
+      entry_fee: 1500,
+      joined_at: DateTime.add(now, -7, :day),
+      final_wins: 3,
+      final_losses: 3,
+      gems_awarded: 800,
+      gold_awarded: 0,
+      claimed_at: DateTime.add(now, -6, :day)
+    }
+
+    {:ok, row} =
+      %EventEntry{}
+      |> EventEntry.changeset(Map.merge(defaults, attrs))
       |> Scry2.Repo.insert()
 
     row

@@ -3,21 +3,11 @@ defmodule Scry2.Insights.Detectors.RankMilestoneTest do
 
   alias Scry2.Insights.Detectors.RankMilestone
   alias Scry2.Insights.Insight
-  alias Scry2.Ranks.Snapshot
-  alias Scry2.Repo
+  alias Scry2.TestFactory
 
   # The detector treats Bronze as the starting floor — only promotions to
   # Silver and above count as milestones.
-  defp insert_snapshot!(attrs) do
-    defaults = %{
-      season_ordinal: 100,
-      occurred_at: DateTime.utc_now(:second)
-    }
-
-    %Snapshot{}
-    |> Snapshot.changeset(Map.merge(defaults, attrs))
-    |> Repo.insert!()
-  end
+  defp insert_snapshot!(attrs), do: TestFactory.create_ranks_snapshot(attrs)
 
   defp days_ago(n) do
     DateTime.utc_now(:second) |> DateTime.add(-n, :day)

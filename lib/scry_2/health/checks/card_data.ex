@@ -21,6 +21,7 @@ defmodule Scry2.Health.Checks.CardData do
 
   alias Scry2.Health.Check
 
+  @category :card_data
   @stale_threshold_days 7
 
   @doc """
@@ -28,12 +29,11 @@ defmodule Scry2.Health.Checks.CardData do
   """
   @spec synthesized_present(non_neg_integer()) :: Check.t()
   def synthesized_present(0) do
-    Check.new(
-      id: :synthesized_present,
-      category: :card_data,
-      name: "Card data synthesised",
-      status: :error,
-      summary: "No cards in the synthesised model",
+    Check.error(
+      :synthesized_present,
+      @category,
+      "Card data synthesised",
+      "No cards in the synthesised model",
       detail:
         "Card names, rarities and types come from synthesising MTGA + Scryfall " <>
           "data. The synthesis runs automatically on first boot — if this check is " <>
@@ -44,12 +44,11 @@ defmodule Scry2.Health.Checks.CardData do
   end
 
   def synthesized_present(count) when is_integer(count) and count > 0 do
-    Check.new(
-      id: :synthesized_present,
-      category: :card_data,
-      name: "Card data synthesised",
-      status: :ok,
-      summary: "#{count} cards in database"
+    Check.ok(
+      :synthesized_present,
+      @category,
+      "Card data synthesised",
+      "#{count} cards in database"
     )
   end
 
@@ -66,12 +65,11 @@ defmodule Scry2.Health.Checks.CardData do
   def synthesized_fresh(updated_at, now \\ DateTime.utc_now())
 
   def synthesized_fresh(nil, _now) do
-    Check.new(
-      id: :synthesized_fresh,
-      category: :card_data,
-      name: "Card data fresh",
-      status: :warning,
-      summary: "Synthesis timestamp unknown",
+    Check.warning(
+      :synthesized_fresh,
+      @category,
+      "Card data fresh",
+      "Synthesis timestamp unknown",
       fix: :enqueue_synthesis
     )
   end
@@ -81,21 +79,19 @@ defmodule Scry2.Health.Checks.CardData do
 
     cond do
       age_days <= @stale_threshold_days ->
-        Check.new(
-          id: :synthesized_fresh,
-          category: :card_data,
-          name: "Card data fresh",
-          status: :ok,
-          summary: "Updated #{age_days} day(s) ago"
+        Check.ok(
+          :synthesized_fresh,
+          @category,
+          "Card data fresh",
+          "Updated #{age_days} day(s) ago"
         )
 
       true ->
-        Check.new(
-          id: :synthesized_fresh,
-          category: :card_data,
-          name: "Card data fresh",
-          status: :warning,
-          summary: "Last updated #{age_days} days ago (older than #{@stale_threshold_days})",
+        Check.warning(
+          :synthesized_fresh,
+          @category,
+          "Card data fresh",
+          "Last updated #{age_days} days ago (older than #{@stale_threshold_days})",
           detail:
             "The daily synthesis cron may not have run. Triggering a manual " <>
               "refresh usually fixes this.",
@@ -109,12 +105,11 @@ defmodule Scry2.Health.Checks.CardData do
   """
   @spec scryfall_present(non_neg_integer()) :: Check.t()
   def scryfall_present(0) do
-    Check.new(
-      id: :scryfall_present,
-      category: :card_data,
-      name: "Scryfall data imported",
-      status: :error,
-      summary: "No Scryfall bulk data in database",
+    Check.error(
+      :scryfall_present,
+      @category,
+      "Scryfall data imported",
+      "No Scryfall bulk data in database",
       detail:
         "Scryfall provides oracle text, image URIs, and coverage of rotated " <>
           "cards no longer in the local MTGA database.",
@@ -123,12 +118,11 @@ defmodule Scry2.Health.Checks.CardData do
   end
 
   def scryfall_present(count) when is_integer(count) and count > 0 do
-    Check.new(
-      id: :scryfall_present,
-      category: :card_data,
-      name: "Scryfall data imported",
-      status: :ok,
-      summary: "#{count} Scryfall cards in database"
+    Check.ok(
+      :scryfall_present,
+      @category,
+      "Scryfall data imported",
+      "#{count} Scryfall cards in database"
     )
   end
 
@@ -143,12 +137,11 @@ defmodule Scry2.Health.Checks.CardData do
   def scryfall_fresh(updated_at, now \\ DateTime.utc_now())
 
   def scryfall_fresh(nil, _now) do
-    Check.new(
-      id: :scryfall_fresh,
-      category: :card_data,
-      name: "Scryfall data fresh",
-      status: :warning,
-      summary: "Import timestamp unknown",
+    Check.warning(
+      :scryfall_fresh,
+      @category,
+      "Scryfall data fresh",
+      "Import timestamp unknown",
       fix: :enqueue_scryfall
     )
   end
@@ -158,21 +151,19 @@ defmodule Scry2.Health.Checks.CardData do
 
     cond do
       age_days <= @stale_threshold_days ->
-        Check.new(
-          id: :scryfall_fresh,
-          category: :card_data,
-          name: "Scryfall data fresh",
-          status: :ok,
-          summary: "Updated #{age_days} day(s) ago"
+        Check.ok(
+          :scryfall_fresh,
+          @category,
+          "Scryfall data fresh",
+          "Updated #{age_days} day(s) ago"
         )
 
       true ->
-        Check.new(
-          id: :scryfall_fresh,
-          category: :card_data,
-          name: "Scryfall data fresh",
-          status: :warning,
-          summary: "Last updated #{age_days} days ago (older than #{@stale_threshold_days})",
+        Check.warning(
+          :scryfall_fresh,
+          @category,
+          "Scryfall data fresh",
+          "Last updated #{age_days} days ago (older than #{@stale_threshold_days})",
           fix: :enqueue_scryfall
         )
     end

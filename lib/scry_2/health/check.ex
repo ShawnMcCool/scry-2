@@ -52,6 +52,9 @@ defmodule Scry2.Health.Check do
   Builds a `%Check{}` with `checked_at` set to the current time.
 
   All fields except `id`, `category`, `name`, and `status` are optional.
+  Prefer the status-specific helpers (`ok/4`, `warning/5`, `error/5`,
+  `pending/4`) below — they make the intent obvious at the call site
+  and document which fields each status expects.
   """
   @spec new(keyword()) :: t()
   def new(fields) do
@@ -59,5 +62,66 @@ defmodule Scry2.Health.Check do
       Keyword.split(fields, [:id, :category, :name, :status, :summary, :detail, :fix])
 
     struct!(__MODULE__, Keyword.put(known, :checked_at, DateTime.utc_now()))
+  end
+
+  @doc "Build a passing check. Optional `:detail` for context."
+  @spec ok(atom(), category(), String.t(), String.t(), keyword()) :: t()
+  def ok(id, category, name, summary, opts \\ []) do
+    new(
+      id: id,
+      category: category,
+      name: name,
+      status: :ok,
+      summary: summary,
+      detail: Keyword.get(opts, :detail)
+    )
+  end
+
+  @doc """
+  Build a warning check. `:detail` and `:fix` are optional; provide
+  them when the warning has a remediation path.
+  """
+  @spec warning(atom(), category(), String.t(), String.t(), keyword()) :: t()
+  def warning(id, category, name, summary, opts \\ []) do
+    new(
+      id: id,
+      category: category,
+      name: name,
+      status: :warning,
+      summary: summary,
+      detail: Keyword.get(opts, :detail),
+      fix: Keyword.get(opts, :fix)
+    )
+  end
+
+  @doc """
+  Build an error check. Errors should usually carry a `:detail`
+  explaining the failure and a `:fix` tag (or `:manual` when human
+  action is required).
+  """
+  @spec error(atom(), category(), String.t(), String.t(), keyword()) :: t()
+  def error(id, category, name, summary, opts \\ []) do
+    new(
+      id: id,
+      category: category,
+      name: name,
+      status: :error,
+      summary: summary,
+      detail: Keyword.get(opts, :detail),
+      fix: Keyword.get(opts, :fix)
+    )
+  end
+
+  @doc "Build a pending check for transient states (still starting, waiting for first event)."
+  @spec pending(atom(), category(), String.t(), String.t(), keyword()) :: t()
+  def pending(id, category, name, summary, opts \\ []) do
+    new(
+      id: id,
+      category: category,
+      name: name,
+      status: :pending,
+      summary: summary,
+      detail: Keyword.get(opts, :detail)
+    )
   end
 end

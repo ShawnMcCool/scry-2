@@ -61,7 +61,7 @@ defmodule Scry2.Insights.Detectors.DraftConversionRate do
       stats: %{
         "primary" => %{"num" => format_avg(avg_wins), "lbl" => "avg wins"},
         "secondary" => %{"num" => Integer.to_string(trophies), "lbl" => "trophies"},
-        "tertiary" => %{"num" => "n=#{n}", "lbl" => "drafts"}
+        "tertiary" => %{"num" => "#{n}", "lbl" => "drafts"}
       },
       measurements: %{
         "avg_wins" => avg_wins,

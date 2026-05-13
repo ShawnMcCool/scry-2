@@ -16,7 +16,6 @@ defmodule Scry2.Decks do
   import Ecto.Query
 
   alias Scry2.Analytics.RollingWindow
-  alias Scry2.Cards.MtgaCard
 
   alias Scry2.Decks.{
     Deck,
@@ -430,8 +429,24 @@ defmodule Scry2.Decks do
   Each entry includes OH WR, GIH WR, GD WR, GND WR, and IWD.
   """
   def card_performance(mtga_deck_id) when is_binary(mtga_deck_id) do
-    # Total completed matches and wins for this deck — one aggregate query
-    %{total: total_matches, wins: total_wins} =
+    {total_matches, total_wins} = deck_match_totals(mtga_deck_id)
+    raw_aggregates = card_match_aggregates(mtga_deck_id)
+    deck = get_deck(mtga_deck_id)
+    deck_cards = deck_card_counts(deck)
+
+    aggregates = exclude_token_rows(raw_aggregates)
+    card_names = Scry2.Cards.names_by_arena_ids(Enum.map(aggregates, & &1.arena_id))
+
+    aggregates
+    |> Enum.map(&build_card_metrics(&1, card_names, deck_cards, total_matches, total_wins))
+    |> Enum.sort_by(& &1.iwd, &((&1 || -999) >= (&2 || -999)))
+    # Exclude unknown arena_ids — cards not in any card table produce nil card_name
+    # and have no meaningful data to display.
+    |> Enum.reject(&is_nil(&1.card_name))
+  end
+
+  defp deck_match_totals(mtga_deck_id) do
+    %{total: total, wins: wins} =
       MatchResult
       |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
       |> select([mr], %{
@@ -440,71 +455,46 @@ defmodule Scry2.Decks do
       })
       |> Repo.one()
 
-    total_matches = total_matches || 0
-    total_wins = total_wins || 0
+    {total || 0, wins || 0}
+  end
 
-    # Per-card presence aggregates from SQL (eliminates the prior step that
-    # loaded every mulligan hand's JSON `hand_arena_ids` into Elixir and built
-    # a `{arena_id, match_id} => %{in_opener, drawn, won}` map). The CTE
-    # unions opening-hand cards (via `json_each`) with self-draw cards,
-    # deduplicates per (arena_id, match_id), then sums per arena_id.
-    raw_aggregates = card_match_aggregates(mtga_deck_id)
+  # Tokens are not deck cards — MTGA emits draw annotations when tokens
+  # are created during play, but their per-card metrics are meaningless.
+  defp exclude_token_rows(aggregates) do
+    arena_ids = Enum.map(aggregates, & &1.arena_id)
+    token_ids = Scry2.Cards.token_arena_ids(arena_ids)
+    Enum.reject(aggregates, &MapSet.member?(token_ids, &1.arena_id))
+  end
 
-    deck = get_deck(mtga_deck_id)
-    deck_cards = deck_card_counts(deck)
+  defp build_card_metrics(row, card_names, deck_cards, total_matches, total_wins) do
+    gnd_games = max(total_matches - row.gih_games, 0)
+    gnd_wins = max(total_wins - row.gih_wins, 0)
 
-    all_arena_ids = Enum.map(raw_aggregates, & &1.arena_id)
+    oh_wr = win_rate(row.oh_wins, row.oh_games)
+    gih_wr = win_rate(row.gih_wins, row.gih_games)
+    gd_wr = win_rate(row.gd_wins, row.gd_games)
+    gnd_wr = win_rate(gnd_wins, gnd_games)
 
-    # Filter out tokens — MTGA emits draw annotations when tokens are created
-    # during play. Tokens are not deck cards and their metrics are meaningless.
-    token_ids =
-      MtgaCard
-      |> where([c], c.arena_id in ^all_arena_ids and c.is_token)
-      |> select([c], c.arena_id)
-      |> Repo.all()
-      |> MapSet.new()
+    iwd =
+      if gih_wr && gnd_wr do
+        Float.round(gih_wr - gnd_wr, 1)
+      end
 
-    aggregates = Enum.reject(raw_aggregates, &MapSet.member?(token_ids, &1.arena_id))
-    filtered_arena_ids = Enum.map(aggregates, & &1.arena_id)
-
-    # Resolve card names from the Cards table
-    card_names = Scry2.Cards.names_by_arena_ids(filtered_arena_ids)
-
-    aggregates
-    |> Enum.map(fn row ->
-      gnd_games = max(total_matches - row.gih_games, 0)
-      gnd_wins = max(total_wins - row.gih_wins, 0)
-
-      oh_wr = win_rate(row.oh_wins, row.oh_games)
-      gih_wr = win_rate(row.gih_wins, row.gih_games)
-      gd_wr = win_rate(row.gd_wins, row.gd_games)
-      gnd_wr = win_rate(gnd_wins, gnd_games)
-
-      iwd =
-        if gih_wr && gnd_wr do
-          Float.round(gih_wr - gnd_wr, 1)
-        end
-
-      %{
-        card_arena_id: row.arena_id,
-        card_name: Map.get(card_names, row.arena_id),
-        copies: Map.get(deck_cards, row.arena_id, 0),
-        oh_wr: oh_wr,
-        oh_games: row.oh_games,
-        gih_wr: gih_wr,
-        gih_games: row.gih_games,
-        gd_wr: gd_wr,
-        gd_games: row.gd_games,
-        gnd_wr: gnd_wr,
-        gnd_games: gnd_games,
-        iwd: iwd,
-        community: nil
-      }
-    end)
-    |> Enum.sort_by(& &1.iwd, &((&1 || -999) >= (&2 || -999)))
-    # Exclude unknown arena_ids — cards not in any card table produce nil card_name
-    # and have no meaningful data to display.
-    |> Enum.reject(&is_nil(&1.card_name))
+    %{
+      card_arena_id: row.arena_id,
+      card_name: Map.get(card_names, row.arena_id),
+      copies: Map.get(deck_cards, row.arena_id, 0),
+      oh_wr: oh_wr,
+      oh_games: row.oh_games,
+      gih_wr: gih_wr,
+      gih_games: row.gih_games,
+      gd_wr: gd_wr,
+      gd_games: row.gd_games,
+      gnd_wr: gnd_wr,
+      gnd_games: gnd_games,
+      iwd: iwd,
+      community: nil
+    }
   end
 
   # ── Writes ────────────────────────────────────────────────────────────────
@@ -999,8 +989,7 @@ defmodule Scry2.Decks do
 
   defp bo3?(_), do: false
 
-  defp win_rate(_, 0), do: nil
-  defp win_rate(wins, total), do: Float.round(wins / total * 100, 1)
+  defp win_rate(wins, total), do: Scry2.Analytics.WinRate.percent(wins, total)
 
   # Per-card presence aggregates for `card_performance/1` — computed in SQL.
   # Replaces the prior `build_card_match_presence/1` which materialised every

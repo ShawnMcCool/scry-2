@@ -89,7 +89,7 @@ defmodule Scry2.Insights.Detectors.DraftConversionRateTest do
       assert %Insight{stats: stats} = DraftConversionRate.detect([])
       assert stats["primary"]["lbl"] == "avg wins"
       assert stats["secondary"]["lbl"] == "trophies"
-      assert stats["tertiary"]["num"] == "n=5"
+      assert stats["tertiary"]["num"] == "5"
       assert stats["tertiary"]["lbl"] == "drafts"
     end
   end

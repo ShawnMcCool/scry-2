@@ -18,8 +18,7 @@ defmodule Scry2Web.HomeLiveTest do
       {:ok, view, _html} = live(conn, ~p"/")
 
       _ = render_async(view)
-      tiles = :sys.get_state(view.pid).socket.assigns.tiles
-      assert Enum.any?(tiles, &(&1.kind == :latest_match))
+      assert has_element?(view, "[data-tile-kind=latest_match]")
     end
 
     test "assigns coach insight tiles in pattern mode", %{conn: conn} do
@@ -29,10 +28,8 @@ defmodule Scry2Web.HomeLiveTest do
       {:ok, view, _html} = live(conn, ~p"/")
 
       _ = render_async(view)
-      tiles = :sys.get_state(view.pid).socket.assigns.tiles
-      kinds = Enum.map(tiles, & &1.kind)
-      assert :coach_insight in kinds
-      assert :latest_match in kinds
+      assert has_element?(view, "[data-tile-kind=coach_insight]")
+      assert has_element?(view, "[data-tile-kind=latest_match]")
     end
   end
 
@@ -43,7 +40,7 @@ defmodule Scry2Web.HomeLiveTest do
       # Initially empty (no data) — drain the initial async load first so
       # the assertion is deterministic regardless of task scheduling.
       _ = render_async(view)
-      assert :sys.get_state(view.pid).socket.assigns.tiles == []
+      refute has_element?(view, "[data-tile-kind]")
 
       # Seed and recompute
       for _ <- 1..30, do: TestFactory.create_match(%{on_play: true, won: true})
@@ -51,8 +48,7 @@ defmodule Scry2Web.HomeLiveTest do
 
       # Drain the async load triggered by the :insights_recomputed broadcast
       _ = render_async(view)
-      tiles = :sys.get_state(view.pid).socket.assigns.tiles
-      assert tiles != []
+      assert has_element?(view, "[data-tile-kind]")
     end
   end
 end

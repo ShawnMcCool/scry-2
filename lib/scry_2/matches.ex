@@ -291,7 +291,7 @@ defmodule Scry2.Matches do
       total: total,
       wins: wins,
       losses: total - wins,
-      win_rate: if(total > 0, do: Float.round(wins / total * 100, 1)),
+      win_rate: Scry2.Analytics.WinRate.percent(wins, total),
       avg_turns: if(result.avg_turns, do: Float.round(result.avg_turns / 1, 1)),
       avg_mulligans: if(result.avg_mulligans, do: Float.round(result.avg_mulligans / 1, 1))
     }
@@ -318,7 +318,7 @@ defmodule Scry2.Matches do
         total: row.total,
         wins: wins,
         losses: row.total - wins,
-        win_rate: Float.round(wins / row.total * 100, 1),
+        win_rate: Scry2.Analytics.WinRate.percent(wins, row.total),
         last_played_at: row.last_played_at
       }
     end)

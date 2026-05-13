@@ -11,7 +11,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.ConnectResp do
   """
 
   alias Scry2.Events.Deck.DeckSubmitted
-  alias Scry2.Events.IdentifyDomainEvents.Helpers
+  alias Scry2.Events.IdentifyDomainEvents.GREProtocol
 
   @doc """
   Builds a DeckSubmitted event from a GREMessageType_ConnectResp message in the batch,
@@ -20,13 +20,13 @@ defmodule Scry2.Events.IdentifyDomainEvents.ConnectResp do
   `player_seat` is resolved once per GRE batch by the caller.
   """
   def build(messages, match_id, occurred_at, player_seat, _match_context) do
-    case Helpers.find_gre_message(messages, "GREMessageType_ConnectResp") do
+    case GREProtocol.find_gre_message(messages, "GREMessageType_ConnectResp") do
       %{"connectResp" => connect_resp} ->
         deck_message = connect_resp["deckMessage"] || %{}
         seat_id = player_seat
 
-        main_deck = Helpers.aggregate_card_list(deck_message["deckCards"] || [])
-        sideboard = Helpers.aggregate_card_list(deck_message["sideboardCards"] || [])
+        main_deck = GREProtocol.aggregate_card_list(deck_message["deckCards"] || [])
+        sideboard = GREProtocol.aggregate_card_list(deck_message["sideboardCards"] || [])
 
         deck_id =
           if match_id, do: "#{match_id}:seat#{seat_id}", else: "pending:seat#{seat_id}"

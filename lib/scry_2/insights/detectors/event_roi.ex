@@ -15,6 +15,7 @@ defmodule Scry2.Insights.Detectors.EventROI do
   @behaviour Scry2.Insights.Detector
 
   import Ecto.Query
+  import Scry2.Insights.Detectors.Numeric, only: [to_int: 1]
 
   alias Scry2.Economy.EventEntry
   alias Scry2.Insights.Insight
@@ -61,10 +62,6 @@ defmodule Scry2.Insights.Detectors.EventROI do
     |> Enum.min_by(& &1.net, fn -> nil end)
   end
 
-  defp to_int(nil), do: 0
-  defp to_int(int) when is_integer(int), do: int
-  defp to_int(%Decimal{} = d), do: Decimal.to_integer(d)
-
   defp build_insight(%{
          event_type: type,
          count: n,
@@ -83,7 +80,7 @@ defmodule Scry2.Insights.Detectors.EventROI do
       stats: %{
         "primary" => %{"num" => "#{net}", "lbl" => "net gems"},
         "secondary" => %{"num" => format_pct(roi), "lbl" => "ROI"},
-        "tertiary" => %{"num" => "n=#{n}", "lbl" => "events"}
+        "tertiary" => %{"num" => "#{n}", "lbl" => "events"}
       },
       measurements: %{
         "event_type" => type,

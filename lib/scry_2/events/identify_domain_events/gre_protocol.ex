@@ -1,4 +1,4 @@
-defmodule Scry2.Events.IdentifyDomainEvents.Helpers do
+defmodule Scry2.Events.IdentifyDomainEvents.GREProtocol do
   @moduledoc """
   Shared utility functions for the IdentifyDomainEvents translator family.
 

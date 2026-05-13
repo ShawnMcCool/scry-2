@@ -111,6 +111,5 @@ defmodule Scry2.Analytics.RollingWindow do
     }
   end
 
-  defp win_rate(_wins, 0), do: nil
-  defp win_rate(wins, total), do: Float.round(wins / total * 100, 1)
+  defp win_rate(wins, total), do: Scry2.Analytics.WinRate.percent(wins, total)
 end

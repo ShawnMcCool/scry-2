@@ -10,6 +10,7 @@ defmodule Scry2.Insights.Detectors.CraftingVelocity do
   @behaviour Scry2.Insights.Detector
 
   import Ecto.Query
+  import Scry2.Insights.Detectors.Numeric, only: [to_int: 1]
 
   alias Scry2.Crafts.Craft
   alias Scry2.Insights.Insight
@@ -71,8 +72,4 @@ defmodule Scry2.Insights.Detectors.CraftingVelocity do
       computed_at: DateTime.utc_now()
     }
   end
-
-  defp to_int(nil), do: 0
-  defp to_int(int) when is_integer(int), do: int
-  defp to_int(%Decimal{} = d), do: Decimal.to_integer(d)
 end

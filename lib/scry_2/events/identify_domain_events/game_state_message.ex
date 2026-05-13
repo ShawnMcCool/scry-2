@@ -29,7 +29,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     ZoneChanged
   }
 
-  alias Scry2.Events.IdentifyDomainEvents.Helpers
+  alias Scry2.Events.IdentifyDomainEvents.GREProtocol
   alias Scry2.Events.Match.{DieRolled, GameCompleted}
   alias Scry2.Events.Permanent.{PermanentStatsChanged, PermanentTapped, PermanentUntapped}
   alias Scry2.Events.Priority.PriorityAssigned
@@ -78,8 +78,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   defp maybe_build_game_completed(messages, match_id, occurred_at, player_seat)
        when is_binary(match_id) do
     Enum.find_value(messages, fn msg ->
-      with true <- Helpers.game_state_message?(msg),
-           gsm when is_map(gsm) <- Helpers.extract_game_state(msg),
+      with true <- GREProtocol.game_state_message?(msg),
+           gsm when is_map(gsm) <- GREProtocol.extract_game_state(msg),
            game_info when is_map(game_info) <- gsm["gameInfo"],
            "MatchState_GameComplete" <- game_info["matchState"] do
         results = game_info["results"] || []
@@ -118,7 +118,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   # `player_seat` is resolved once per GRE batch by the caller.
   defp maybe_build_die_roll_completed(messages, match_id, occurred_at, player_seat, game_number)
        when is_binary(match_id) do
-    case Helpers.find_gre_message(messages, "GREMessageType_DieRollResultsResp") do
+    case GREProtocol.find_gre_message(messages, "GREMessageType_DieRollResultsResp") do
       %{"dieRollResultsResp" => %{"playerDieRolls" => rolls}} ->
         self_roll_entry = Enum.find(rolls, &(&1["systemSeatId"] == player_seat))
         opponent_roll_entry = Enum.find(rolls, &(&1["systemSeatId"] != player_seat))
@@ -195,7 +195,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   defp extract_game_state_for_mulligans(messages) do
     messages
     |> Enum.find_value(fn msg ->
-      if Helpers.game_state_message?(msg), do: Helpers.extract_game_state(msg)
+      if GREProtocol.game_state_message?(msg), do: GREProtocol.extract_game_state(msg)
     end)
   end
 
@@ -258,8 +258,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     # Find the first GameStateMessage that carries a turnInfo map.
     turn_info =
       Enum.find_value(messages, fn msg ->
-        if Helpers.game_state_message?(msg) do
-          gsm = Helpers.extract_game_state(msg)
+        if GREProtocol.game_state_message?(msg) do
+          gsm = GREProtocol.extract_game_state(msg)
           info = gsm["turnInfo"] || %{}
           if map_size(info) > 0, do: info
         end
@@ -310,8 +310,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
 
     messages
     |> Enum.flat_map(fn msg ->
-      if Helpers.game_state_message?(msg) do
-        gsm = Helpers.extract_game_state(msg)
+      if GREProtocol.game_state_message?(msg) do
+        gsm = GREProtocol.extract_game_state(msg)
         turn_info = gsm["turnInfo"] || %{}
         priority_seat = turn_info["priorityPlayer"]
 
@@ -355,8 +355,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
 
     messages
     |> Enum.flat_map(fn msg ->
-      if Helpers.game_state_message?(msg) do
-        gsm = Helpers.extract_game_state(msg)
+      if GREProtocol.game_state_message?(msg) do
+        gsm = GREProtocol.extract_game_state(msg)
         turn_info = gsm["turnInfo"] || %{}
         game_objects = gsm["gameObjects"] || []
         turn_number = turn_info["turnNumber"]
@@ -444,8 +444,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
 
     messages
     |> Enum.flat_map(fn msg ->
-      if Helpers.game_state_message?(msg) do
-        gsm = Helpers.extract_game_state(msg)
+      if GREProtocol.game_state_message?(msg) do
+        gsm = GREProtocol.extract_game_state(msg)
         turn_info = gsm["turnInfo"] || %{}
         annotations = gsm["annotations"] || []
         persistent_annotations = gsm["persistentAnnotations"] || []
@@ -455,7 +455,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
         local_objects = Map.new(game_objects, fn obj -> {obj["instanceId"], obj["grpId"]} end)
 
         # Merge with cached objects for resolution
-        objects = Map.merge(Helpers.cached_objects_to_map(cached_objects), local_objects)
+        objects = Map.merge(GREProtocol.cached_objects_to_map(cached_objects), local_objects)
 
         # Build zone_id → ownerSeatId map for draw attribution
         zone_owners = Map.new(gsm["zones"] || [], &{&1["id"], &1["ownerSeatId"]})
@@ -493,12 +493,12 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          self_seat_id
        ) do
     details = ann["details"] || []
-    category = Helpers.find_detail_string(details, "category")
+    category = GREProtocol.find_detail_string(details, "category")
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
     grp_id = Map.get(objects, instance_id)
 
-    zone_from = Helpers.find_detail_int(details, "zone_src")
-    zone_to = Helpers.find_detail_int(details, "zone_dest")
+    zone_from = GREProtocol.find_detail_int(details, "zone_src")
+    zone_to = GREProtocol.find_detail_int(details, "zone_dest")
 
     common = %{
       mtga_match_id: match_id,
@@ -539,8 +539,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
             ZoneChanged,
             Map.merge(common, %{
               reason: "sacrifice",
-              zone_from: Helpers.zone_name(zone_from),
-              zone_to: Helpers.zone_name(zone_to)
+              zone_from: GREProtocol.zone_name(zone_from),
+              zone_to: GREProtocol.zone_name(zone_to)
             })
           )
 
@@ -552,8 +552,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
             ZoneChanged,
             Map.merge(common, %{
               reason: "discard",
-              zone_from: Helpers.zone_name(zone_from),
-              zone_to: Helpers.zone_name(zone_to)
+              zone_from: GREProtocol.zone_name(zone_from),
+              zone_to: GREProtocol.zone_name(zone_to)
             })
           )
 
@@ -562,8 +562,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
             ZoneChanged,
             Map.merge(common, %{
               reason: "return",
-              zone_from: Helpers.zone_name(zone_from),
-              zone_to: Helpers.zone_name(zone_to)
+              zone_from: GREProtocol.zone_name(zone_from),
+              zone_to: GREProtocol.zone_name(zone_to)
             })
           )
 
@@ -578,8 +578,8 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
             ZoneChanged,
             Map.merge(common, %{
               reason: "put",
-              zone_from: Helpers.zone_name(zone_from),
-              zone_to: Helpers.zone_name(zone_to)
+              zone_from: GREProtocol.zone_name(zone_from),
+              zone_to: GREProtocol.zone_name(zone_to)
             })
           )
 
@@ -601,7 +601,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          _self_seat_id
        ) do
     details = ann["details"] || []
-    damage = Helpers.find_detail_int(details, "damage")
+    damage = GREProtocol.find_detail_int(details, "damage")
     source_id = ann["affectorId"]
     grp_id = Map.get(objects, source_id)
 
@@ -630,7 +630,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          _self_seat_id
        ) do
     details = ann["details"] || []
-    life_change = Helpers.find_detail_int(details, "life")
+    life_change = GREProtocol.find_detail_int(details, "life")
     affected_player = ann["affectedIds"] |> List.wrap() |> List.first()
 
     [
@@ -686,7 +686,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     details = ann["details"] || []
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
     grp_id = Map.get(objects, instance_id)
-    amount = Helpers.find_detail_int(details, "transaction_amount")
+    amount = GREProtocol.find_detail_int(details, "transaction_amount")
 
     [
       %CounterAdded{
@@ -771,7 +771,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     details = ann["details"] || []
     source_instance_id = ann["affectorId"]
     source_arena_id = Map.get(objects, source_instance_id)
-    trigger_type = Helpers.find_detail_string(details, "trigger_type")
+    trigger_type = GREProtocol.find_detail_string(details, "trigger_type")
 
     [
       %TriggerCreated{

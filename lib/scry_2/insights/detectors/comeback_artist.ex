@@ -86,7 +86,7 @@ defmodule Scry2.Insights.Detectors.ComebackArtist do
       stats: %{
         "primary" => %{"num" => format_pct(comeback_wr), "lbl" => "after 0-1"},
         "secondary" => %{"num" => format_pct(up_wr), "lbl" => "after 1-0"},
-        "tertiary" => %{"num" => "n=#{comeback_n}", "lbl" => "from 0-1"}
+        "tertiary" => %{"num" => "#{comeback_n}", "lbl" => "from 0-1"}
       },
       measurements: %{
         "direction" => direction,

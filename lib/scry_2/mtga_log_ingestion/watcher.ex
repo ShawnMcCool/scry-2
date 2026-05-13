@@ -280,14 +280,14 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
         end
 
         events_attrs =
-          Enum.map(events, fn event ->
+          Enum.map(events, fn raw_event ->
             %{
-              event_type: event.type,
-              mtga_timestamp: event.mtga_timestamp,
-              file_offset: event.file_offset,
-              source_file: event.source_file,
+              event_type: raw_event.type,
+              mtga_timestamp: raw_event.mtga_timestamp,
+              file_offset: raw_event.file_offset,
+              source_file: raw_event.source_file,
               log_epoch: new_epoch,
-              raw_json: event.raw_json
+              raw_json: raw_event.raw_json
             }
           end)
 

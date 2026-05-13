@@ -12,6 +12,7 @@ defmodule Scry2.Insights.Detectors.BO1VsBO3Gap do
   @behaviour Scry2.Insights.Detector
 
   import Ecto.Query
+  import Scry2.Insights.Detectors.Numeric, only: [to_int: 1]
 
   alias Scry2.Insights.Insight
   alias Scry2.Matches.Match
@@ -86,7 +87,7 @@ defmodule Scry2.Insights.Detectors.BO1VsBO3Gap do
       stats: %{
         "primary" => %{"num" => format_pct(bo1_wr), "lbl" => "BO1"},
         "secondary" => %{"num" => format_pct(bo3_wr), "lbl" => "BO3"},
-        "tertiary" => %{"num" => "n=#{total}", "lbl" => "matches"}
+        "tertiary" => %{"num" => "#{total}", "lbl" => "matches"}
       },
       measurements: %{
         "bo1_wr" => bo1_wr,
@@ -101,10 +102,6 @@ defmodule Scry2.Insights.Detectors.BO1VsBO3Gap do
       computed_at: DateTime.utc_now()
     }
   end
-
-  defp to_int(nil), do: 0
-  defp to_int(int) when is_integer(int), do: int
-  defp to_int(%Decimal{} = d), do: Decimal.to_integer(d)
 
   defp format_pct(rate), do: "#{round(rate * 100)}%"
 end

@@ -18,7 +18,7 @@ defmodule Scry2Web.ConsoleLive do
   use Scry2Web, :live_view
 
   alias Scry2.Console
-  alias Scry2.Console.{RecentEntries, Filter, DisplayHelpers}
+  alias Scry2.Console.{RecentEntries, Filter, EntryView}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -39,8 +39,8 @@ defmodule Scry2Web.ConsoleLive do
       |> assign(:paused, false)
       |> assign(:buffer_size, snapshot.cap)
       |> assign(:open, false)
-      |> assign(:app_components, DisplayHelpers.app_components())
-      |> assign(:framework_components, DisplayHelpers.framework_components())
+      |> assign(:app_components, EntryView.app_components())
+      |> assign(:framework_components, EntryView.framework_components())
       # Stream limit is pinned at the buffer's max_cap and never reconfigured.
       # Phoenix LiveView forbids stream_configure/3 after a stream has been
       # populated, so a dynamic limit would crash on resize. The buffer itself
@@ -117,7 +117,7 @@ defmodule Scry2Web.ConsoleLive do
   def handle_info({:filter_changed, filter}, socket) do
     current_filter = socket.assigns.filter
 
-    if DisplayHelpers.only_search_changed?(current_filter, filter) do
+    if EntryView.only_search_changed?(current_filter, filter) do
       # Text search is handled by the client-side hook via data-message
       # attributes — no server-side re-stream needed. Just update the
       # assign so cross-tab sync works without the cursor jump that a
@@ -201,7 +201,7 @@ defmodule Scry2Web.ConsoleLive do
   def handle_event("download_buffer", _params, socket) do
     snapshot = Console.snapshot()
     visible = Enum.filter(snapshot.entries, &Filter.matches?(&1, socket.assigns.filter))
-    payload = DisplayHelpers.format_lines(visible)
+    payload = EntryView.format_lines(visible)
 
     timestamp = DateTime.utc_now() |> Calendar.strftime("%Y-%m-%dT%H-%M-%S")
     filename = "scry_2-#{timestamp}.log"
@@ -212,7 +212,7 @@ defmodule Scry2Web.ConsoleLive do
   def handle_event("copy_visible", _params, socket) do
     snapshot = Console.snapshot()
     visible = Enum.filter(snapshot.entries, &Filter.matches?(&1, socket.assigns.filter))
-    payload = DisplayHelpers.format_lines(visible)
+    payload = EntryView.format_lines(visible)
 
     {:noreply, push_event(socket, "console:copy", %{content: payload})}
   end

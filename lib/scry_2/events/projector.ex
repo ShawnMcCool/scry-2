@@ -136,7 +136,7 @@ defmodule Scry2.Events.Projector do
           summary =
             Events.replay_by_types(
               @claimed_slugs,
-              fn event -> safe_project_replay(event, "rebuild") end,
+              fn domain_event -> safe_project_replay(domain_event, "rebuild") end,
               on_batch: fn last_id, processed ->
                 Events.put_watermark!(@projector_name, last_id)
                 if on_progress, do: on_progress.(min(processed, total), total)
@@ -172,7 +172,7 @@ defmodule Scry2.Events.Projector do
           summary =
             Events.replay_by_types(
               @claimed_slugs,
-              fn event -> safe_project_replay(event, "catch-up") end,
+              fn domain_event -> safe_project_replay(domain_event, "catch-up") end,
               cursor: cursor,
               on_batch: fn last_id, processed ->
                 Events.put_watermark!(@projector_name, last_id)
@@ -245,7 +245,7 @@ defmodule Scry2.Events.Projector do
           summary =
             Events.replay_by_types(
               @claimed_slugs,
-              fn event -> safe_project_replay(event, "full_rebuild") end,
+              fn domain_event -> safe_project_replay(domain_event, "full_rebuild") end,
               on_batch: fn last_id, _ -> Events.put_watermark!(@projector_name, last_id) end
             )
 

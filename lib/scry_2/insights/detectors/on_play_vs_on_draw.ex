@@ -10,6 +10,7 @@ defmodule Scry2.Insights.Detectors.OnPlayVsOnDraw do
   @behaviour Scry2.Insights.Detector
 
   import Ecto.Query
+  import Scry2.Insights.Detectors.Numeric, only: [to_int: 1]
 
   alias Scry2.Insights.Insight
   alias Scry2.Matches.Match
@@ -50,10 +51,6 @@ defmodule Scry2.Insights.Detectors.OnPlayVsOnDraw do
     end)
   end
 
-  defp to_int(nil), do: 0
-  defp to_int(int) when is_integer(int), do: int
-  defp to_int(%Decimal{} = d), do: Decimal.to_integer(d)
-
   defp build_insight(play_n, play_wins, draw_n, draw_wins, total_n) do
     play_wr = if play_n == 0, do: 0.0, else: play_wins / play_n
     draw_wr = if draw_n == 0, do: 0.0, else: draw_wins / draw_n
@@ -68,7 +65,7 @@ defmodule Scry2.Insights.Detectors.OnPlayVsOnDraw do
       stats: %{
         "primary" => %{"num" => format_pct(play_wr), "lbl" => "play"},
         "secondary" => %{"num" => format_pct(draw_wr), "lbl" => "draw"},
-        "tertiary" => %{"num" => "n=#{total_n}", "lbl" => "matches"}
+        "tertiary" => %{"num" => "#{total_n}", "lbl" => "matches"}
       },
       measurements: %{
         "on_play_wr" => play_wr,

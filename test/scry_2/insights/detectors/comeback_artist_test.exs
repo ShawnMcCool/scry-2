@@ -111,7 +111,7 @@ defmodule Scry2.Insights.Detectors.ComebackArtistTest do
       assert %Insight{stats: stats} = ComebackArtist.detect([])
       assert stats["primary"]["lbl"] == "after 0-1"
       assert stats["secondary"]["lbl"] == "after 1-0"
-      assert stats["tertiary"]["num"] == "n=30"
+      assert stats["tertiary"]["num"] == "30"
       assert stats["tertiary"]["lbl"] == "from 0-1"
     end
   end

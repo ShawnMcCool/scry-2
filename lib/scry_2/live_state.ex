@@ -107,7 +107,7 @@ defmodule Scry2.LiveState do
 
     case existing |> Snapshot.changeset(full_attrs) |> Repo.insert_or_update() do
       {:ok, snapshot} ->
-        Phoenix.PubSub.broadcast(Scry2.PubSub, Topics.live_match_final(), {:final, snapshot})
+        Topics.broadcast(Topics.live_match_final(), {:final, snapshot})
         {:ok, snapshot}
 
       {:error, _} = err ->
@@ -128,7 +128,7 @@ defmodule Scry2.LiveState do
   """
   @spec broadcast_tick(map()) :: :ok
   def broadcast_tick(payload) when is_map(payload) do
-    Phoenix.PubSub.broadcast(Scry2.PubSub, Topics.live_match_updates(), {:tick, payload})
+    Topics.broadcast(Topics.live_match_updates(), {:tick, payload})
   end
 
   # ── Chain 2 (board state) facade ───────────────────────────────────
@@ -186,12 +186,7 @@ defmodule Scry2.LiveState do
         end)
         |> case do
           {:ok, board} ->
-            Phoenix.PubSub.broadcast(
-              Scry2.PubSub,
-              Topics.live_match_board_final(),
-              {:final_board, board}
-            )
-
+            Topics.broadcast(Topics.live_match_board_final(), {:final_board, board})
             {:ok, board}
 
           {:error, changeset} ->

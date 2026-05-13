@@ -9,7 +9,7 @@ defmodule Scry2.Console do
   persistence). Broadcasts to `Scry2.Topics.console_logs/0`.
   """
 
-  alias Scry2.Console.{RecentEntries, Filter, DisplayHelpers}
+  alias Scry2.Console.{RecentEntries, Filter, EntryView}
   alias Scry2.Topics
 
   # ── reads ──────────────────────────────────────────────────────────────
@@ -17,7 +17,7 @@ defmodule Scry2.Console do
   defdelegate recent_entries(), to: RecentEntries, as: :recent
   defdelegate recent_entries(n), to: RecentEntries, as: :recent
   defdelegate get_filter(), to: RecentEntries
-  defdelegate known_components(), to: DisplayHelpers
+  defdelegate known_components(), to: EntryView
 
   # ── writes ─────────────────────────────────────────────────────────────
   defdelegate clear(), to: RecentEntries

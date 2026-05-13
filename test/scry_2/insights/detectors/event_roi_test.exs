@@ -1,33 +1,11 @@
 defmodule Scry2.Insights.Detectors.EventROITest do
   use Scry2.DataCase, async: true
 
-  alias Scry2.Economy.EventEntry
   alias Scry2.Insights.Detectors.EventROI
   alias Scry2.Insights.Insight
-  alias Scry2.Repo
+  alias Scry2.TestFactory
 
-  defp insert_event_entry!(overrides) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
-
-    defaults = %{
-      event_name: "Event-#{System.unique_integer([:positive])}",
-      event_type: "premier_draft",
-      entry_currency_type: "gems",
-      entry_fee: 1500,
-      joined_at: DateTime.add(now, -7, :day),
-      final_wins: 3,
-      final_losses: 3,
-      gems_awarded: 800,
-      gold_awarded: 0,
-      claimed_at: DateTime.add(now, -6, :day)
-    }
-
-    attrs = Map.merge(defaults, overrides)
-
-    %EventEntry{}
-    |> EventEntry.changeset(attrs)
-    |> Repo.insert!()
-  end
+  defp insert_event_entry!(overrides), do: TestFactory.create_event_entry(overrides)
 
   describe "tier/0" do
     test "is tier 1" do
@@ -134,7 +112,7 @@ defmodule Scry2.Insights.Detectors.EventROITest do
       assert insight.sample_size == 4
 
       assert insight.stats["primary"]["num"] == "-3200"
-      assert insight.stats["tertiary"]["num"] == "n=4"
+      assert insight.stats["tertiary"]["num"] == "4"
     end
   end
 end

@@ -61,7 +61,7 @@ defmodule Scry2.Insights.Detectors.OnPlayVsOnDrawTest do
       stats = insight.stats
       assert stats["primary"]["num"] == "60%"
       assert stats["secondary"]["num"] == "40%"
-      assert stats["tertiary"]["num"] == "n=35"
+      assert stats["tertiary"]["num"] == "35"
     end
   end
 end

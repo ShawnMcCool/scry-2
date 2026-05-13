@@ -1,10 +1,8 @@
 defmodule Scry2.Insights.Detectors.CraftingVelocityTest do
   use Scry2.DataCase, async: true
 
-  alias Scry2.Crafts.Craft
   alias Scry2.Insights.Detectors.CraftingVelocity
   alias Scry2.Insights.Insight
-  alias Scry2.Repo
   alias Scry2.TestFactory
 
   defp insert_craft!(rarity, quantity, days_ago \\ 1) do
@@ -12,8 +10,7 @@ defmodule Scry2.Insights.Detectors.CraftingVelocityTest do
     occurred = DateTime.add(now, -days_ago, :day)
     snapshot = TestFactory.create_collection_snapshot(%{snapshot_ts: occurred})
 
-    %Craft{}
-    |> Craft.changeset(%{
+    TestFactory.create_craft(%{
       arena_id: System.unique_integer([:positive]),
       rarity: rarity,
       quantity: quantity,
@@ -21,7 +18,6 @@ defmodule Scry2.Insights.Detectors.CraftingVelocityTest do
       occurred_at_upper: occurred,
       to_snapshot_id: snapshot.id
     })
-    |> Repo.insert!()
   end
 
   describe "tier/0" do

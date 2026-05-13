@@ -79,7 +79,7 @@ defmodule Scry2.Insights.Detectors.MulliganOutcome do
       stats: %{
         "primary" => %{"num" => format_pct(kept_wr), "lbl" => "kept"},
         "secondary" => %{"num" => format_pct(mull_wr), "lbl" => "mulled"},
-        "tertiary" => %{"num" => "n=#{total_n}", "lbl" => "matches"}
+        "tertiary" => %{"num" => "#{total_n}", "lbl" => "matches"}
       },
       measurements: %{
         "kept_wr" => kept_wr,

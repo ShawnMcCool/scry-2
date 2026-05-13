@@ -527,6 +527,21 @@ defmodule Scry2.Cards do
   end
 
   @doc """
+  Returns the subset of `arena_ids` that correspond to token cards in
+  `cards_mtga_cards`. Tokens are not deck cards — MTGA emits draw
+  annotations for them during play, but they have no meaningful per-card
+  metrics. Consumers (deck analytics) use this to filter token rows out.
+  """
+  @spec token_arena_ids([integer()]) :: MapSet.t(integer())
+  def token_arena_ids(arena_ids) when is_list(arena_ids) do
+    MtgaCard
+    |> where([c], c.arena_id in ^arena_ids and c.is_token)
+    |> select([c], c.arena_id)
+    |> Repo.all()
+    |> MapSet.new()
+  end
+
+  @doc """
   Returns a map of `arena_id => card_name` for the given arena_ids.
   Resolves from both `cards_cards` (synthesised) and `cards_mtga_cards`.
   """

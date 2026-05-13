@@ -7,7 +7,7 @@ defmodule Scry2Web.ConsoleComponents do
   """
   use Scry2Web, :html
 
-  alias Scry2.Console.DisplayHelpers
+  alias Scry2.Console.EntryView
 
   @doc """
   Header row with component chips, level filter, and search input.
@@ -32,14 +32,14 @@ defmodule Scry2Web.ConsoleComponents do
           type="button"
           class={[
             "badge badge-sm console-chip",
-            DisplayHelpers.component_badge_class(component),
-            DisplayHelpers.chip_state_class(@filter, component)
+            EntryView.component_badge_class(component),
+            EntryView.chip_state_class(@filter, component)
           ]}
           phx-click="toggle_component"
           phx-value-component={component}
           title={"click to toggle #{component}"}
         >
-          {DisplayHelpers.component_label(component)}
+          {EntryView.component_label(component)}
         </button>
 
         <span class="console-chip-divider" aria-hidden="true"></span>
@@ -50,14 +50,14 @@ defmodule Scry2Web.ConsoleComponents do
           type="button"
           class={[
             "badge badge-sm console-chip",
-            DisplayHelpers.component_badge_class(component),
-            DisplayHelpers.chip_state_class(@filter, component)
+            EntryView.component_badge_class(component),
+            EntryView.chip_state_class(@filter, component)
           ]}
           phx-click="toggle_component"
           phx-value-component={component}
           title={"click to toggle #{component}"}
         >
-          {DisplayHelpers.component_label(component)}
+          {EntryView.component_label(component)}
         </button>
       </div>
 
@@ -69,7 +69,7 @@ defmodule Scry2Web.ConsoleComponents do
         <button
           :for={level <- [:debug, :info, :warning, :error]}
           type="button"
-          class={["join-item btn btn-xs", DisplayHelpers.level_button_class(@filter, level)]}
+          class={["join-item btn btn-xs", EntryView.level_button_class(@filter, level)]}
           phx-click="set_level"
           phx-value-level={level}
         >
@@ -107,17 +107,17 @@ defmodule Scry2Web.ConsoleComponents do
       <div
         :for={{dom_id, entry} <- @streams.entries}
         id={dom_id}
-        class={["console-entry", DisplayHelpers.level_color(entry.level)]}
+        class={["console-entry", EntryView.level_color(entry.level)]}
         data-level={entry.level}
         data-component={entry.component}
-        data-message={DisplayHelpers.entry_search_text(entry)}
+        data-message={EntryView.entry_search_text(entry)}
       >
-        <span class="console-timestamp">{DisplayHelpers.format_timestamp(entry.timestamp)}</span>
+        <span class="console-timestamp">{EntryView.format_timestamp(entry.timestamp)}</span>
         <span class={[
           "badge badge-xs console-component-badge",
-          DisplayHelpers.component_badge_class(entry.component)
+          EntryView.component_badge_class(entry.component)
         ]}>
-          {DisplayHelpers.component_label(entry.component)}
+          {EntryView.component_label(entry.component)}
         </span>
         <span class="console-message">{entry.message}</span>
       </div>
@@ -146,7 +146,7 @@ defmodule Scry2Web.ConsoleComponents do
     ~H"""
     <footer class="console-footer">
       <button type="button" class="btn btn-xs" phx-click="toggle_pause">
-        {DisplayHelpers.pause_button_label(@paused)}
+        {EntryView.pause_button_label(@paused)}
       </button>
       <button type="button" class="btn btn-xs" phx-click="clear_buffer">clear</button>
       <button type="button" class="btn btn-xs" phx-click="copy_visible">copy</button>

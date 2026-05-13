@@ -93,7 +93,7 @@ defmodule Scry2.Insights.Detectors.P1P1RarityCorrelation do
       stats: %{
         "primary" => %{"num" => format_pct(rare_wr), "lbl" => "rare P1P1"},
         "secondary" => %{"num" => format_pct(other_wr), "lbl" => "other P1P1"},
-        "tertiary" => %{"num" => "n=#{total}", "lbl" => "drafts"}
+        "tertiary" => %{"num" => "#{total}", "lbl" => "drafts"}
       },
       measurements: %{
         "rare_wr" => rare_wr,

@@ -11,6 +11,7 @@ defmodule Scry2.Insights.Detectors.FormatBaseline do
   @behaviour Scry2.Insights.Detector
 
   import Ecto.Query
+  import Scry2.Insights.Detectors.Numeric, only: [to_int: 1]
 
   alias Scry2.Insights.Insight
   alias Scry2.Matches.Match
@@ -58,7 +59,7 @@ defmodule Scry2.Insights.Detectors.FormatBaseline do
       body_template: "format_baseline.body",
       stats: %{
         "primary" => %{"num" => format_pct(best.wr), "lbl" => human(best.format)},
-        "secondary" => %{"num" => "n=#{best.n}", "lbl" => "matches"},
+        "secondary" => %{"num" => "#{best.n}", "lbl" => "matches"},
         "tertiary" => %{"num" => "of #{length(rows)}", "lbl" => "formats"}
       },
       measurements: %{
@@ -79,10 +80,6 @@ defmodule Scry2.Insights.Detectors.FormatBaseline do
   defp human("Constructed"), do: "BO1 Constructed"
   defp human("Limited"), do: "Limited"
   defp human(other), do: other
-
-  defp to_int(nil), do: 0
-  defp to_int(int) when is_integer(int), do: int
-  defp to_int(%Decimal{} = d), do: Decimal.to_integer(d)
 
   defp format_pct(rate), do: "#{round(rate * 100)}%"
 end

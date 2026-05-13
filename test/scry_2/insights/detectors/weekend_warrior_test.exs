@@ -103,7 +103,7 @@ defmodule Scry2.Insights.Detectors.WeekendWarriorTest do
 
       assert %Insight{stats: stats} = WeekendWarrior.detect([])
       assert stats["primary"]["lbl"] == "weekend"
-      assert stats["secondary"]["num"] == "n=55"
+      assert stats["secondary"]["num"] == "55"
       assert stats["secondary"]["lbl"] == "matches"
     end
   end

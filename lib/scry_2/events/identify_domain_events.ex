@@ -109,7 +109,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     ClientToGre,
     ConnectResp,
     GameStateMessage,
-    Helpers,
+    GREProtocol,
     MatchRoom
   }
 
@@ -289,7 +289,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
          messages when is_list(messages) <-
            get_in(payload, ["greToClientEvent", "greToClientMessages"]) do
-      match_id = Helpers.extract_match_id(messages)
+      match_id = GREProtocol.extract_match_id(messages)
       context_match_id = match_id || match_context[:current_match_id]
 
       # Resolve the player's seat once for the entire GRE batch.
@@ -297,7 +297,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       # Messages addressed to a single seat (ConnectResp, GameStateMessage)
       # identify the player's seat; broadcast messages (DieRollResultsResp)
       # are addressed to all seats. See "MTGA protocol pitfalls" in @moduledoc.
-      player_seat = Helpers.resolve_player_seat(messages)
+      player_seat = GREProtocol.resolve_player_seat(messages)
 
       # GreToClientEvent is a container that wraps multiple GRE message types.
       # We decode the outer envelope once and pass the inner `messages` list to

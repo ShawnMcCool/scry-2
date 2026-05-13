@@ -14,6 +14,7 @@ defmodule Scry2.Health.Checks.Processing do
 
   alias Scry2.Health.Check
 
+  @category :processing
   @warn_error_count 10
   @error_error_count 100
 
@@ -26,31 +27,18 @@ defmodule Scry2.Health.Checks.Processing do
   """
   @spec low_error_count(non_neg_integer()) :: Check.t()
   def low_error_count(0) do
-    Check.new(
-      id: :low_error_count,
-      category: :processing,
-      name: "No processing errors",
-      status: :ok,
-      summary: "No errors recorded"
-    )
+    Check.ok(:low_error_count, @category, "No processing errors", "No errors recorded")
   end
 
   def low_error_count(count) when is_integer(count) and count > 0 do
-    status =
-      cond do
-        count >= @error_error_count -> :error
-        count >= @warn_error_count -> :warning
-        true -> :warning
-      end
+    summary = "#{count} raw events failed processing"
+    detail = "See Operations → Processing errors for the full list."
 
-    Check.new(
-      id: :low_error_count,
-      category: :processing,
-      name: "No processing errors",
-      status: status,
-      summary: "#{count} raw events failed processing",
-      detail: "See Operations → Processing errors for the full list."
-    )
+    if count >= @error_error_count do
+      Check.error(:low_error_count, @category, "No processing errors", summary, detail: detail)
+    else
+      Check.warning(:low_error_count, @category, "No processing errors", summary, detail: detail)
+    end
   end
 
   @doc """
@@ -66,12 +54,11 @@ defmodule Scry2.Health.Checks.Processing do
   """
   @spec projectors_caught_up([map()]) :: Check.t()
   def projectors_caught_up([]) do
-    Check.new(
-      id: :projectors_caught_up,
-      category: :processing,
-      name: "Projectors caught up",
-      status: :pending,
-      summary: "No projectors registered"
+    Check.pending(
+      :projectors_caught_up,
+      @category,
+      "Projectors caught up",
+      "No projectors registered"
     )
   end
 
@@ -80,12 +67,11 @@ defmodule Scry2.Health.Checks.Processing do
 
     case lagging do
       [] ->
-        Check.new(
-          id: :projectors_caught_up,
-          category: :processing,
-          name: "Projectors caught up",
-          status: :ok,
-          summary: "#{length(projectors)} projectors up to date"
+        Check.ok(
+          :projectors_caught_up,
+          @category,
+          "Projectors caught up",
+          "#{length(projectors)} projectors up to date"
         )
 
       lagging ->
@@ -96,12 +82,11 @@ defmodule Scry2.Health.Checks.Processing do
           |> Enum.map(fn p -> max(p.max_event_id - p.watermark, 0) end)
           |> Enum.sum()
 
-        Check.new(
-          id: :projectors_caught_up,
-          category: :processing,
-          name: "Projectors caught up",
-          status: :warning,
-          summary: "#{length(lagging)} projectors behind (#{total_lag} events lag)",
+        Check.warning(
+          :projectors_caught_up,
+          @category,
+          "Projectors caught up",
+          "#{length(lagging)} projectors behind (#{total_lag} events lag)",
           detail: "Lagging projectors: #{names}"
         )
     end
@@ -127,30 +112,39 @@ defmodule Scry2.Health.Checks.Processing do
 
     case unrecognized do
       [] ->
-        Check.new(
-          id: :no_unrecognized_backlog,
-          category: :processing,
-          name: "All event types recognized",
-          status: :ok,
-          summary: "Every persisted event type has a handler"
+        Check.ok(
+          :no_unrecognized_backlog,
+          @category,
+          "All event types recognized",
+          "Every persisted event type has a handler"
         )
 
       unknown ->
         count = unknown |> Enum.map(fn {_type, count} -> count end) |> Enum.sum()
         distinct = length(unknown)
+        summary = "#{distinct} unrecognized event type(s), #{count} events"
 
-        status = if count >= @warn_error_count, do: :warning, else: :ok
+        detail =
+          "See Operations → Unrecognized event types. New MTGA events show up " <>
+            "here first and usually need a handler in IdentifyDomainEvents."
 
-        Check.new(
-          id: :no_unrecognized_backlog,
-          category: :processing,
-          name: "All event types recognized",
-          status: status,
-          summary: "#{distinct} unrecognized event type(s), #{count} events",
-          detail:
-            "See Operations → Unrecognized event types. New MTGA events show up " <>
-              "here first and usually need a handler in IdentifyDomainEvents."
-        )
+        if count >= @warn_error_count do
+          Check.warning(
+            :no_unrecognized_backlog,
+            @category,
+            "All event types recognized",
+            summary,
+            detail: detail
+          )
+        else
+          Check.ok(
+            :no_unrecognized_backlog,
+            @category,
+            "All event types recognized",
+            summary,
+            detail: detail
+          )
+        end
     end
   end
 end

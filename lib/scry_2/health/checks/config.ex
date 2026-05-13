@@ -12,6 +12,8 @@ defmodule Scry2.Health.Checks.Config do
 
   alias Scry2.Health.Check
 
+  @category :config
+
   @doc """
   Reports whether the database file is writable.
 
@@ -21,13 +23,7 @@ defmodule Scry2.Health.Checks.Config do
   """
   @spec database_writable(String.t() | nil) :: Check.t()
   def database_writable(nil) do
-    Check.new(
-      id: :database_writable,
-      category: :config,
-      name: "Database writable",
-      status: :error,
-      summary: "No database path configured"
-    )
+    Check.error(:database_writable, @category, "Database writable", "No database path configured")
   end
 
   def database_writable(path) when is_binary(path) do
@@ -37,21 +33,14 @@ defmodule Scry2.Health.Checks.Config do
          true <- db_access in [:read_write, :write],
          {:ok, %File.Stat{access: dir_access}} <- File.stat(dir),
          true <- dir_access in [:read_write, :write] do
-      Check.new(
-        id: :database_writable,
-        category: :config,
-        name: "Database writable",
-        status: :ok,
-        summary: path
-      )
+      Check.ok(:database_writable, @category, "Database writable", path)
     else
       _ ->
-        Check.new(
-          id: :database_writable,
-          category: :config,
-          name: "Database writable",
-          status: :error,
-          summary: "Database file or directory is not writable",
+        Check.error(
+          :database_writable,
+          @category,
+          "Database writable",
+          "Database file or directory is not writable",
           detail: "Checked path: #{path}"
         )
     end
@@ -74,12 +63,11 @@ defmodule Scry2.Health.Checks.Config do
 
     case missing do
       [] ->
-        Check.new(
-          id: :data_dirs_exist,
-          category: :config,
-          name: "Data directories ready",
-          status: :ok,
-          summary: "#{length(results)} directories present and writable"
+        Check.ok(
+          :data_dirs_exist,
+          @category,
+          "Data directories ready",
+          "#{length(results)} directories present and writable"
         )
 
       missing ->
@@ -88,12 +76,11 @@ defmodule Scry2.Health.Checks.Config do
             "#{name}: #{path || "(unset)"} — #{status}"
           end)
 
-        Check.new(
-          id: :data_dirs_exist,
-          category: :config,
-          name: "Data directories ready",
-          status: :error,
-          summary: "#{length(missing)} data directories not ready",
+        Check.error(
+          :data_dirs_exist,
+          @category,
+          "Data directories ready",
+          "#{length(missing)} data directories not ready",
           detail: detail
         )
     end

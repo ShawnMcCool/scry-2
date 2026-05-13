@@ -26,6 +26,7 @@ defmodule Scry2Web.Tile do
     ~H"""
     <.link
       navigate={@target}
+      data-tile-kind={@spec.kind}
       class={[
         "tile group relative flex flex-col gap-3 rounded-lg border border-base-content/10",
         "bg-base-200/50 p-5 min-h-[200px] no-underline",
@@ -77,6 +78,7 @@ defmodule Scry2Web.Tile do
     ~H"""
     <.link
       navigate={@target}
+      data-tile-kind={@spec.kind}
       class={[
         "tile group relative flex flex-col gap-2 rounded-lg border border-base-content/10",
         "bg-base-200/50 p-5 min-h-[240px] no-underline",

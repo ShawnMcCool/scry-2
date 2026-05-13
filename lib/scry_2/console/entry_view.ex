@@ -1,4 +1,4 @@
-defmodule Scry2.Console.DisplayHelpers do
+defmodule Scry2.Console.EntryView do
   @moduledoc """
   Pure helpers for rendering `Scry2.Console.Entry` records in LiveViews.
   No Phoenix, no LiveView, no DB dependencies. Testable with `async: true`.
