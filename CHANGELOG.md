@@ -11,6 +11,46 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Homepage redesign.** The dashboard at `/` is now a 4-tile exhibit
+  showing patterns the app noticed in your play — your strongest
+  format, decks running hot, mulligan tax, and more. Every measurement
+  shows its sample size so you know how much to trust it.
+- **Insights page.** Browse every active pattern at `/insights`, or
+  click any homepage tile to open its explainer at `/insights/:id`
+  (measurements, confidence, when it was computed).
+- **Thirteen pattern detectors** run daily on your play data:
+  - **On play vs on draw** — your win rate split by who goes first
+  - **Mulligan tax** — how much mulligans cost you
+  - **BO1 vs BO3 split** — the gap between the two formats
+  - **Best format** — your strongest queue
+  - **Deck on a heater** — when a deck is winning well above your baseline
+  - **Color combo** — when a mana combo performs far from your baseline
+  - **Draft signal** — whether your first-pick rarity tracks draft wins
+  - **Rank milestone** — when you crossed into Silver/Gold/Platinum/Diamond/Mythic
+  - **Draft conversion** — average wins per draft and trophy count over your last 10 runs
+  - **Play schedule** — whether you're a weekend warrior or a weeknight grinder
+  - **BO3 resilience** — how often you come back from losing game 1
+  - **This week's crafting** — wildcards you've spent in the last 7 days
+  - **This week's economy** — your gem/event balance over the last 30 days
+
+### Improved
+
+- **Detail pages redesigned.** Match, deck, draft, ranks, economy, and
+  player pages now share the homepage's visual language — small
+  uppercase kickers above each section, Beleren titles, sample-size
+  cues throughout.
+- **System health moved.** The previous home page (server health,
+  updates card) now lives at **Settings → System** in the gear menu.
+
+### Fixed
+
+- **Player and Matches pages no longer crash on real data.** A
+  pre-existing bug in the cumulative-win-rate query crashed when
+  matches had no start timestamp; the matches detail page had a
+  related crash sorting opponent history. Both fixed.
+
 ## v0.41.3 — 2026-05-09
 
 ### Improved
