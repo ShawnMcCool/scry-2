@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.42.0 — 2026-05-13
+
 ### New
 
 - **Homepage redesign.** The dashboard at `/` is now a 4-tile exhibit
