@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.43.0 — 2026-05-13
+
 ### Improved
 
 - **Decks page** loads and renders faster. The deck grid now does a single
