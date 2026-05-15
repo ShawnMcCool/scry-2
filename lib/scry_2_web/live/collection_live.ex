@@ -10,7 +10,6 @@ defmodule Scry2Web.CollectionLive do
       cards        ← Cards.list_by_arena_ids(arena_ids)
       rosters      ← Cards.SetRoster.all()
       holdings     ← Holding.from_snapshot(snapshot, cards)
-      composition  ← Composition.from_holdings(holdings)
       completions  ← Completion.from_holdings(holdings, rosters)
       craft_plan   ← CraftPlan.from_holdings(holdings, snapshot)
       diffs        ← Collection.list_diffs(limit: 10)
@@ -33,7 +32,6 @@ defmodule Scry2Web.CollectionLive do
   use Scry2Web, :live_view
 
   import Scry2Web.Collection.AcquisitionHistory, only: [acquisition_history: 1]
-  import Scry2Web.Collection.Composition, only: [composition: 1]
   import Scry2Web.Collection.Completion, only: [completion: 1]
   import Scry2Web.Collection.CraftPlan, only: [craft_plan: 1]
   import Scry2Web.Collection.DisabledBanner, only: [disabled_banner: 1]
@@ -47,7 +45,6 @@ defmodule Scry2Web.CollectionLive do
   alias Scry2.Cards.ImageCache
   alias Scry2.Cards.SetRoster
   alias Scry2.Collection
-  alias Scry2.Collection.Composition
   alias Scry2.Collection.Completion
   alias Scry2.Collection.CraftPlan
   alias Scry2.Collection.Holding
@@ -204,7 +201,6 @@ defmodule Scry2Web.CollectionLive do
     |> assign(:cards_by_arena_id, cards)
     |> assign(:set_rosters, rosters)
     |> assign(:holdings, holdings)
-    |> assign(:composition, Composition.from_holdings(holdings))
     |> assign(:completions, Completion.from_holdings(holdings, rosters))
     |> assign(:craft_plan, build_craft_plan(holdings, snapshot))
     |> assign(:latest_diff, Collection.latest_diff())
@@ -388,9 +384,8 @@ defmodule Scry2Web.CollectionLive do
           <%= if @snapshot do %>
             <.holding_summary holdings={@holdings} />
             <.wildcard_summary snapshot={@snapshot} />
+            <.completion rows={@completions} active_set={@active_set} limit={6} />
             <.recent_acquisitions diff={@latest_diff} cards={@diff_cards} />
-            <.composition value={@composition} />
-            <.completion rows={@completions} active_set={@active_set} />
             <.holding_browser
               holdings={@browser_holdings}
               total_count={@browser_total}

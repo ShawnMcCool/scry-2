@@ -49,7 +49,8 @@ defmodule Scry2Web.Collection.WildcardSummary do
 
   defp format_vault(nil), do: "—"
 
-  defp format_vault(progress) when is_float(progress) or is_integer(progress) do
-    "#{Float.round(progress * 100, 1)}%"
-  end
+  # MTGA writes vault_progress as a percentage value already (e.g. 67.6),
+  # not a 0..1 ratio. The economy page formats it the same way.
+  defp format_vault(progress) when is_float(progress), do: "#{Float.round(progress, 1)}%"
+  defp format_vault(progress) when is_integer(progress), do: "#{progress}%"
 end

@@ -1,14 +1,17 @@
 defmodule Scry2Web.Collection.Completion do
   @moduledoc """
   Renders the per-set completion grid — one tile per set with rarity-banded
-  progress bars. Clicking a tile patches the URL with `?set=CODE` so the
-  Holding browser scopes to that set.
+  progress bars. Clicking a tile navigates to `/collection/sets/:code` for
+  the per-set playset-completeness drill-in.
 
-  Pure renderer over a `[Scry2.Collection.Completion.t()]`. Host LiveView
-  must implement `phx-click="select_set"` to handle the patch.
+  Pure renderer over a `[Scry2.Collection.Completion.t()]`.
   """
 
   use Phoenix.Component
+
+  use Phoenix.VerifiedRoutes,
+    endpoint: Scry2Web.Endpoint,
+    router: Scry2Web.Router
 
   import Scry2Web.CoreComponents, only: [set_label: 1]
 
@@ -21,6 +24,7 @@ defmodule Scry2Web.Collection.Completion do
 
   attr :rows, :list, required: true
   attr :active_set, :any, default: nil
+  attr :limit, :integer, default: nil, doc: "Render only the first N rows; nil = all."
 
   def completion(%{rows: []} = assigns) do
     ~H"""
@@ -34,7 +38,14 @@ defmodule Scry2Web.Collection.Completion do
   end
 
   def completion(assigns) do
-    assigns = assign(assigns, rarity_order: @rarity_order)
+    visible = if assigns.limit, do: Enum.take(assigns.rows, assigns.limit), else: assigns.rows
+    hidden = length(assigns.rows) - length(visible)
+
+    assigns =
+      assigns
+      |> assign(:rarity_order, @rarity_order)
+      |> assign(:visible, visible)
+      |> assign(:hidden, hidden)
 
     ~H"""
     <div class="card bg-base-200 border border-base-300" data-role="completion">
@@ -42,11 +53,9 @@ defmodule Scry2Web.Collection.Completion do
         <h2 class="card-title">Set completion</h2>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          <button
-            :for={row <- @rows}
-            type="button"
-            phx-click="select_set"
-            phx-value-set={row.set.code}
+          <.link
+            :for={row <- @visible}
+            navigate={~p"/collection/sets/#{row.set.code}"}
             class={[
               "card card-compact bg-base-100 border text-left hover:border-primary",
               if(row.set.code == @active_set,
@@ -78,8 +87,16 @@ defmodule Scry2Web.Collection.Completion do
                 {percent(CompletionStruct.completion_ratio(row))}%
               </div>
             </div>
-          </button>
+          </.link>
         </div>
+
+        <p
+          :if={@hidden > 0}
+          class="text-xs text-base-content/60"
+          data-role="completion-more"
+        >
+          + {@hidden} older {if @hidden == 1, do: "set", else: "sets"} not shown
+        </p>
       </div>
     </div>
     """

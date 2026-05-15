@@ -526,6 +526,43 @@ defmodule Scry2.Cards do
     Map.merge(from_mtga, from_cards)
   end
 
+  # Rarities counted toward set completion. Mirrors `Scry2.Cards.SetRoster`
+  # so per-set tile totals and per-set detail card lists agree by definition.
+  @booster_rarities ~w(common uncommon rare mythic)
+
+  @doc """
+  Returns the booster-legal cards for one set as a list of `%Card{}`.
+
+  Mirrors `Scry2.Cards.SetRoster.compute/0`'s filter so the set-detail
+  view's missing/partial/complete buckets always tally to the same
+  per-rarity totals the overview tiles report:
+
+    * Rarity must be one of `common | uncommon | rare | mythic` (basics
+      and tokens excluded by definition).
+    * Either `is_booster = true`, OR the set has zero rows tagged
+      `is_booster = true` at all (Scryfall lag fallback — same shape as
+      the case fixed in ADR-038).
+  """
+  @spec list_booster_cards_by_set(integer()) :: [Card.t()]
+  def list_booster_cards_by_set(set_id) when is_integer(set_id) do
+    has_booster_signal? =
+      Card
+      |> where([c], c.set_id == ^set_id and c.is_booster == true)
+      |> Repo.exists?()
+
+    base =
+      Card
+      |> where([c], c.set_id == ^set_id)
+      |> where([c], c.rarity in @booster_rarities)
+
+    base
+    |> maybe_require_booster(has_booster_signal?)
+    |> Repo.all()
+  end
+
+  defp maybe_require_booster(query, true), do: where(query, [c], c.is_booster == true)
+  defp maybe_require_booster(query, false), do: query
+
   @doc """
   Returns the subset of `arena_ids` that correspond to token cards in
   `cards_mtga_cards`. Tokens are not deck cards — MTGA emits draw

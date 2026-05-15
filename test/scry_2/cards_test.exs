@@ -491,4 +491,146 @@ defmodule Scry2.CardsTest do
       assert result == %{}
     end
   end
+
+  describe "list_booster_cards_by_set/1" do
+    test "returns booster-legal cards for the set" do
+      set = TestFactory.create_set(%{code: "BLB", name: "Bloomburrow"})
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_001,
+          set_id: set.id,
+          rarity: "common",
+          is_booster: true
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_002,
+          set_id: set.id,
+          rarity: "rare",
+          is_booster: true
+        })
+
+      result = Cards.list_booster_cards_by_set(set.id)
+
+      arena_ids = result |> Enum.map(& &1.arena_id) |> Enum.sort()
+      assert arena_ids == [95_001, 95_002]
+      assert Enum.all?(result, &match?(%Cards.Card{}, &1))
+    end
+
+    test "excludes non-booster cards (Alchemy duplicates, basics, tokens)" do
+      set = TestFactory.create_set(%{code: "ALC2", name: "Alchemy 2"})
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_101,
+          set_id: set.id,
+          rarity: "rare",
+          is_booster: true
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_102,
+          set_id: set.id,
+          rarity: "rare",
+          is_booster: false
+        })
+
+      arena_ids =
+        set.id |> Cards.list_booster_cards_by_set() |> Enum.map(& &1.arena_id)
+
+      assert arena_ids == [95_101]
+    end
+
+    test "excludes basics and tokens regardless of booster signal" do
+      set = TestFactory.create_set(%{code: "BSC", name: "Basics"})
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_201,
+          set_id: set.id,
+          rarity: "common",
+          is_booster: true
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_202,
+          set_id: set.id,
+          rarity: "basic",
+          is_booster: true
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_203,
+          set_id: set.id,
+          rarity: "token",
+          is_booster: true
+        })
+
+      arena_ids =
+        set.id |> Cards.list_booster_cards_by_set() |> Enum.map(& &1.arena_id)
+
+      assert arena_ids == [95_201]
+    end
+
+    test "excludes cards from other sets" do
+      target = TestFactory.create_set(%{code: "TGT", name: "Target"})
+      other = TestFactory.create_set(%{code: "OTH", name: "Other"})
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_301,
+          set_id: target.id,
+          rarity: "rare",
+          is_booster: true
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_302,
+          set_id: other.id,
+          rarity: "rare",
+          is_booster: true
+        })
+
+      arena_ids =
+        target.id |> Cards.list_booster_cards_by_set() |> Enum.map(& &1.arena_id)
+
+      assert arena_ids == [95_301]
+    end
+
+    test "lag fallback: includes non-booster cards when set has zero booster signal" do
+      # Mirrors SetRoster.compute/0's lag fallback so totals match the tile counts.
+      lagged = TestFactory.create_set(%{code: "SOS2", name: "Secrets Lag"})
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_401,
+          set_id: lagged.id,
+          rarity: "common",
+          is_booster: false
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 95_402,
+          set_id: lagged.id,
+          rarity: "mythic",
+          is_booster: false
+        })
+
+      arena_ids =
+        lagged.id |> Cards.list_booster_cards_by_set() |> Enum.map(& &1.arena_id) |> Enum.sort()
+
+      assert arena_ids == [95_401, 95_402]
+    end
+
+    test "returns empty list for unknown set_id" do
+      assert Cards.list_booster_cards_by_set(-1) == []
+    end
+  end
 end
