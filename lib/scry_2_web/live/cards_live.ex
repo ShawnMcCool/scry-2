@@ -12,6 +12,7 @@ defmodule Scry2Web.CardsLive do
 
   use Scry2Web, :live_view
 
+  alias Phoenix.LiveView.JS
   alias Scry2.{Cards, Console, Topics}
   alias Scry2.Cards.ImageCache
   alias Scry2.Workers.{PeriodicallyImportScryfallCards, PeriodicallySynthesizeCards}
@@ -200,6 +201,7 @@ defmodule Scry2Web.CardsLive do
             placeholder="Search cards..."
             value={@search}
             phx-debounce="150"
+            phx-mounted={JS.focus()}
             class="input input-bordered w-full pr-8"
           />
           <button
