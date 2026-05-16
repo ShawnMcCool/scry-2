@@ -1106,7 +1106,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   # ── EventSetDeckV2 → DeckSelected ──────────────────────────────────
 
   describe "translate/2 — EventSetDeckV2 → DeckSelected" do
-    test "produces DeckSelected with full deck list from request" do
+    test "request is ignored — only the response carries CourseId" do
       record = %EventRecord{
         id: 1,
         event_type: "EventSetDeckV2",
@@ -1119,30 +1119,48 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
             "request" =>
               Jason.encode!(%{
                 "EventName" => "QuickDraft_FDN_20260323",
-                "CourseId" => "ffb29b6d-6982-426a-8c76-cc81274b8a11",
-                "Summary" => %{
-                  "DeckId" => "4fdde14e-deck-uuid",
-                  "Name" => "Draft Deck"
-                },
-                "Deck" => %{
-                  "MainDeck" => [
-                    %{"cardId" => 93811, "quantity" => 3},
-                    %{"cardId" => 93939, "quantity" => 1}
-                  ],
-                  "Sideboard" => [
-                    %{"cardId" => 93959, "quantity" => 1}
-                  ]
-                }
+                "Summary" => %{"DeckId" => "deck-uuid", "Name" => "Draft Deck"},
+                "Deck" => %{"MainDeck" => [], "Sideboard" => []}
               })
           }),
         processed: false
       }
 
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+
+    test "response produces DeckSelected with CourseId, deck contents, and event_name" do
+      record = %EventRecord{
+        id: 2,
+        event_type: "EventSetDeckV2",
+        mtga_timestamp: ~U[2026-04-06 18:58:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "CourseId" => "ffb29b6d-6982-426a-8c76-cc81274b8a11",
+            "InternalEventName" => "PickTwoDraft_SOS_20260421",
+            "CurrentModule" => "CreateMatch",
+            "CourseDeckSummary" => %{
+              "DeckId" => "4fdde14e-deck-uuid",
+              "Name" => "SoS Pick Two"
+            },
+            "CourseDeck" => %{
+              "MainDeck" => [
+                %{"cardId" => 93811, "quantity" => 3},
+                %{"cardId" => 93939, "quantity" => 1}
+              ],
+              "Sideboard" => [%{"cardId" => 93959, "quantity" => 1}]
+            }
+          }),
+        processed: false
+      }
+
       assert {[%DeckSelected{} = event], []} = IdentifyDomainEvents.translate(record, nil)
-      assert event.event_name == "QuickDraft_FDN_20260323"
+      assert event.event_name == "PickTwoDraft_SOS_20260421"
       assert event.mtga_draft_id == "ffb29b6d-6982-426a-8c76-cc81274b8a11"
       assert event.deck_id == "4fdde14e-deck-uuid"
-      assert event.deck_name == "Draft Deck"
+      assert event.deck_name == "SoS Pick Two"
       assert length(event.main_deck) == 2
       assert hd(event.main_deck) == %{arena_id: 93811, count: 3}
       assert event.sideboard == [%{arena_id: 93959, count: 1}]
@@ -1781,23 +1799,24 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
   end
 
   describe "translate/2 — EventSetDeckV3 request" do
-    test "produces a %DeckSelected{} with event_name, deck_id, and card lists" do
+    test "is ignored — the response carries the CourseId we need" do
       record = record_from_fixture("event_set_deck_v3_request.log")
+      assert {[], []} = IdentifyDomainEvents.translate(record, @self_user_id)
+    end
+  end
+
+  describe "translate/2 — EventSetDeckV3 response" do
+    test "produces a %DeckSelected{} with mtga_draft_id (CourseId), event_name, deck_id, and cards" do
+      record = record_from_fixture("event_set_deck_v3_response.log")
 
       assert {[%DeckSelected{} = event], []} =
                IdentifyDomainEvents.translate(record, @self_user_id)
 
       assert event.event_name == "Traditional_Ladder"
+      assert event.mtga_draft_id == "8d965b59-a80d-440c-9992-29b99e192011"
       assert event.deck_id == "27b5d2a9-2ce6-440e-81cd-c809e90e5f14"
       assert event.deck_name == "North Wind Omni"
       assert length(event.main_deck) > 0
-    end
-  end
-
-  describe "translate/2 — EventSetDeckV3 response" do
-    test "produces no events (request already captured the deck selection)" do
-      record = record_from_fixture("event_set_deck_v3_response.log")
-      assert {[], []} = IdentifyDomainEvents.translate(record, @self_user_id)
     end
   end
 

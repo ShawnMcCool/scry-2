@@ -784,9 +784,14 @@ defmodule Scry2.Events.IdentifyDomainEvents do
 
   # ── Deck management ──────────────────────────────────────────────────
 
-  # EventSetDeckV2/V3 request carries the full deck list for an event.
-  # V3 is a protocol upgrade of V2; the request payload structure is identical.
-  # Responses carry a course confirmation payload and are skipped (decode_request_field fails).
+  # EventSetDeckV2/V3 fires when the player submits a deck to enter an
+  # event (Premier/Pick Two/Quick Draft, Constructed, etc.). The
+  # **response** is the authoritative payload — it carries `CourseId`
+  # (which `DraftProjection` joins on to stamp `deck_submitted_at` on
+  # the corresponding draft row) alongside the deck contents under
+  # `CourseDeck`. The request carries the deck cards but no CourseId,
+  # so it's ignored here. V3 is a protocol upgrade of V2; payload
+  # structure is identical between them.
   def translate(
         %EventRecord{event_type: type} = record,
         _self_user_id,
@@ -796,17 +801,19 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
-         {:ok, request} <- decode_request_field(payload) do
-      summary = request["Summary"] || %{}
-      deck = request["Deck"] || %{}
+         false <- Map.has_key?(payload, "request"),
+         event_name when is_binary(event_name) <-
+           payload["InternalEventName"] || payload["EventName"] do
+      summary = payload["CourseDeckSummary"] || %{}
+      deck = payload["CourseDeck"] || %{}
 
       main_deck = build_card_list(deck["MainDeck"] || [])
       sideboard = build_card_list(deck["Sideboard"] || [])
 
       {[
          %DeckSelected{
-           event_name: request["EventName"],
-           mtga_draft_id: request["CourseId"],
+           event_name: event_name,
+           mtga_draft_id: payload["CourseId"],
            deck_id: summary["DeckId"],
            deck_name: summary["Name"],
            main_deck: main_deck,
