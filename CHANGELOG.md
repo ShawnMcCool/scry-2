@@ -11,6 +11,22 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The navigation moved to a collapsible left rail.** Cards
+  lives at the top; your match, deck, draft, profile, economy,
+  and collection pages are grouped below it. Click the toggle
+  button to collapse the rail to a narrow icon strip when you
+  want more screen space for the page content — your preference
+  is remembered.
+- **The per-set Collection page now rolls up alternate art
+  printings.** Owning 2 regular + 2 alternate art of "Emeritus
+  of Truce" now counts as a complete playset of 4 instead of
+  showing as two separate partial cards. The Missing / Partial /
+  Complete counts, the per-rarity playset totals, and the gap
+  sections all count by card name, not by printing — so the
+  numbers reflect what you can actually build with.
+
 ## v0.44.0 — 2026-05-16
 
 ### New
