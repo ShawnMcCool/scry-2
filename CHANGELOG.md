@@ -11,6 +11,30 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Collection → set drill-in.** Click any set tile on the **Collection**
+  page to open a focused per-set view that shows three counts at a
+  glance — cards you don't own at all, cards you have a partial playset
+  of, and cards you've completed at four copies — plus a per-rarity
+  breakdown and the actual cards you still need to chase. Each card
+  shows a 4-pip indicator for how many copies you currently own.
+
+### Improved
+
+- The **Collection** overview is cleaner: only your six newest sets are
+  shown up front (with a "+N older sets not shown" hint), the general
+  composition chart is gone, and recent acquisitions now sit directly
+  below the set tiles.
+- The **Cards** page auto-focuses the search field on load, so you can
+  start typing immediately.
+
+### Fixed
+
+- The **Vault** percentage on the **Collection** page now displays
+  correctly. Previously it was double-multiplied and could show values
+  over 6000%.
+
 ## v0.43.0 — 2026-05-13
 
 ### Improved
