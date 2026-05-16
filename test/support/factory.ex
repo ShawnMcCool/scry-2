@@ -546,6 +546,8 @@ defmodule Scry2.TestFactory do
     defaults = %{
       player_id: nil,
       event_name: "QuickDraft_FDN",
+      mtga_draft_id: nil,
+      deck_id: nil,
       deck_name: "Test Deck",
       main_deck: [],
       sideboard: [],

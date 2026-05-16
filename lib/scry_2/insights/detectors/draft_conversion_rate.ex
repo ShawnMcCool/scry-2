@@ -13,11 +13,8 @@ defmodule Scry2.Insights.Detectors.DraftConversionRate do
 
   @behaviour Scry2.Insights.Detector
 
-  import Ecto.Query
-
-  alias Scry2.Drafts.Draft
+  alias Scry2.Drafts
   alias Scry2.Insights.Insight
-  alias Scry2.Repo
 
   @window_size 10
   @min_drafts 5
@@ -28,16 +25,16 @@ defmodule Scry2.Insights.Detectors.DraftConversionRate do
 
   @impl true
   def detect(_opts) do
+    # Wins/losses are computed at read time by Drafts.list_drafts via
+    # JOIN on matches_matches over [deck_submitted_at, next_deck_submitted_at).
+    # Filter to runs where the deck was actually submitted (has a window)
+    # and at least one match landed in it.
     drafts =
-      Draft
-      |> where(
-        [d],
-        not is_nil(d.completed_at) and not is_nil(d.wins) and not is_nil(d.losses)
-      )
-      |> order_by([d], desc: d.completed_at)
-      |> limit(^@window_size)
-      |> select([d], %{wins: d.wins, losses: d.losses})
-      |> Repo.all()
+      Drafts.list_drafts(limit: @window_size)
+      |> Enum.filter(fn d ->
+        not is_nil(d.completed_at) and is_integer(d.wins) and is_integer(d.losses) and
+          d.wins + d.losses > 0
+      end)
 
     if length(drafts) < @min_drafts do
       nil

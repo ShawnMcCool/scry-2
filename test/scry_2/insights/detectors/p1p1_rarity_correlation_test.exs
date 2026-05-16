@@ -5,15 +5,24 @@ defmodule Scry2.Insights.Detectors.P1P1RarityCorrelationTest do
   alias Scry2.Insights.Insight
   alias Scry2.TestFactory
 
+  # Seeds a completed draft with a P1P1 of the given rarity plus N
+  # winning and M losing matches. Wins/losses are derived at read time
+  # from `matches_matches` over the draft's `deck_submitted_at` window,
+  # so we plant real match rows.
   defp seed_draft_with_p1p1(rarity, wins, losses) do
     arena_id = System.unique_integer([:positive])
     TestFactory.create_card(%{arena_id: arena_id, rarity: rarity})
 
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    event_name = "QuickDraft_FDN_#{System.unique_integer([:positive])}"
+
     draft =
       TestFactory.create_draft(%{
-        wins: wins,
-        losses: losses,
-        completed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        mtga_draft_id: event_name,
+        event_name: event_name,
+        format: "quick_draft",
+        deck_submitted_at: now,
+        completed_at: now
       })
 
     TestFactory.create_pick(%{
@@ -22,6 +31,24 @@ defmodule Scry2.Insights.Detectors.P1P1RarityCorrelationTest do
       pick_number: 1,
       picked_arena_id: arena_id
     })
+
+    for n <- 1..wins//1 do
+      TestFactory.create_match(%{
+        event_name: event_name,
+        format: "quick_draft",
+        started_at: DateTime.add(now, n * 60, :second),
+        won: true
+      })
+    end
+
+    for n <- 1..losses//1 do
+      TestFactory.create_match(%{
+        event_name: event_name,
+        format: "quick_draft",
+        started_at: DateTime.add(now, (wins + n) * 60, :second),
+        won: false
+      })
+    end
 
     draft
   end

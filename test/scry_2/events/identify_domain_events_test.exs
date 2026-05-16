@@ -1119,6 +1119,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
             "request" =>
               Jason.encode!(%{
                 "EventName" => "QuickDraft_FDN_20260323",
+                "CourseId" => "ffb29b6d-6982-426a-8c76-cc81274b8a11",
                 "Summary" => %{
                   "DeckId" => "4fdde14e-deck-uuid",
                   "Name" => "Draft Deck"
@@ -1139,6 +1140,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
 
       assert {[%DeckSelected{} = event], []} = IdentifyDomainEvents.translate(record, nil)
       assert event.event_name == "QuickDraft_FDN_20260323"
+      assert event.mtga_draft_id == "ffb29b6d-6982-426a-8c76-cc81274b8a11"
       assert event.deck_id == "4fdde14e-deck-uuid"
       assert event.deck_name == "Draft Deck"
       assert length(event.main_deck) == 2

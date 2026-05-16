@@ -15,24 +15,54 @@ defmodule Scry2Web.DraftsLiveTest do
   describe "list view (/drafts)" do
     test "shows stat cards", %{conn: conn} do
       player_id = setup_player(conn)
+      now = DateTime.utc_now(:second)
+
+      # Trophy: 7-0 quick draft. Wins/losses come from matches in the
+      # draft's [deck_submitted_at, ...) window.
+      trophy_event = "QuickDraft_FDN_20260101"
 
       Factory.create_draft(%{
         player_id: player_id,
-        wins: 7,
-        losses: 0,
-        completed_at: DateTime.utc_now(:second),
+        mtga_draft_id: trophy_event,
+        event_name: trophy_event,
         format: "quick_draft",
-        set_code: "FDN"
+        set_code: "FDN",
+        deck_submitted_at: now,
+        completed_at: now
       })
+
+      for n <- 1..7 do
+        Factory.create_match(%{
+          player_id: player_id,
+          event_name: trophy_event,
+          format: "quick_draft",
+          started_at: DateTime.add(now, n * 60, :second),
+          won: true
+        })
+      end
+
+      # 3-3 premier draft
+      premier_event = "PremierDraft_FDN_20260101"
 
       Factory.create_draft(%{
         player_id: player_id,
-        wins: 3,
-        losses: 3,
-        completed_at: DateTime.utc_now(:second),
+        mtga_draft_id: "course-premier-1",
+        event_name: premier_event,
         format: "premier_draft",
-        set_code: "FDN"
+        set_code: "FDN",
+        deck_submitted_at: now,
+        completed_at: now
       })
+
+      for n <- 1..6 do
+        Factory.create_match(%{
+          player_id: player_id,
+          event_name: premier_event,
+          format: "premier_draft",
+          started_at: DateTime.add(now, (10 + n) * 60, :second),
+          won: rem(n, 2) == 0
+        })
+      end
 
       {:ok, view, _html} = live(conn, ~p"/drafts")
 

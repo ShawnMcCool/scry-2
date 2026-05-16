@@ -15,30 +15,51 @@ defmodule Scry2.Insights.Detectors.P1P1RarityCorrelation do
   import Ecto.Query
 
   alias Scry2.Cards.Card
-  alias Scry2.Drafts.{Draft, Pick}
-  alias Scry2.Insights.Insight
+  alias Scry2.Drafts
+  alias Scry2.Drafts.Pick
   alias Scry2.Repo
 
   @min_per_bucket 5
   @min_gap 0.08
+
+  alias Scry2.Insights.Insight
 
   @impl true
   def tier, do: 1
 
   @impl true
   def detect(_opts) do
+    drafts =
+      Drafts.list_drafts(limit: 1000)
+      |> Enum.filter(fn d ->
+        not is_nil(d.completed_at) and is_integer(d.wins) and is_integer(d.losses)
+      end)
+
+    rarity_by_draft_id = p1p1_rarity_by_draft(Enum.map(drafts, & &1.id))
+
     rows =
-      from(d in Draft,
-        join: p in Pick,
-        on: p.draft_id == d.id and p.pack_number == 1 and p.pick_number == 1,
-        join: c in Card,
-        on: c.arena_id == p.picked_arena_id,
-        where: not is_nil(d.completed_at) and not is_nil(d.wins) and not is_nil(d.losses),
-        select: {c.rarity, d.wins, d.losses}
-      )
-      |> Repo.all()
+      drafts
+      |> Enum.flat_map(fn d ->
+        case Map.get(rarity_by_draft_id, d.id) do
+          nil -> []
+          rarity -> [{rarity, d.wins, d.losses}]
+        end
+      end)
 
     aggregate_and_build(rows)
+  end
+
+  defp p1p1_rarity_by_draft([]), do: %{}
+
+  defp p1p1_rarity_by_draft(draft_ids) do
+    from(p in Pick,
+      join: c in Card,
+      on: c.arena_id == p.picked_arena_id,
+      where: p.draft_id in ^draft_ids and p.pack_number == 1 and p.pick_number == 1,
+      select: {p.draft_id, c.rarity}
+    )
+    |> Repo.all()
+    |> Map.new()
   end
 
   defp aggregate_and_build(rows) do

@@ -806,6 +806,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
       {[
          %DeckSelected{
            event_name: request["EventName"],
+           mtga_draft_id: request["CourseId"],
            deck_id: summary["DeckId"],
            deck_name: summary["Name"],
            main_deck: main_deck,

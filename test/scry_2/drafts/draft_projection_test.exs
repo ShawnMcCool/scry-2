@@ -312,211 +312,68 @@ defmodule Scry2.Drafts.DraftProjectionTest do
     end
   end
 
-  describe "wins/losses from matches:updates" do
-    test "updates draft wins and losses when a match for its event_name is broadcast" do
+  describe "DeckSelected" do
+    test "stamps deck_submitted_at and mtga_deck_id on the existing draft row" do
       player = create_player()
-      event_name = "QuickDraft_FDN_#{System.unique_integer([:positive])}"
-
-      draft_started_event =
-        build_draft_started(%{
-          player_id: player.id,
-          mtga_draft_id: event_name,
-          event_name: event_name,
-          set_code: "FDN"
-        })
-
-      project_events(DraftProjection, draft_started_event)
-
-      match1 =
-        create_match(%{player_id: player.id, event_name: event_name, won: true})
-
-      match2 =
-        create_match(%{player_id: player.id, event_name: event_name, won: true})
-
-      _match3 =
-        create_match(%{player_id: player.id, event_name: event_name, won: false})
-
-      # Simulate receiving a match_updated broadcast
-      DraftProjection.handle_extra_info_for_test({:match_updated, match1.id}, %{})
-
-      updated = Drafts.get_by_mtga_id(event_name, player.id)
-      assert updated.wins == 2
-      assert updated.losses == 1
-
-      _ = match2
-    end
-  end
-
-  describe "post_rebuild/0 batch reconciliation" do
-    test "reconciles wins and losses on every draft from the matches table" do
-      player = create_player()
-      a = "QuickDraft_FDN_#{System.unique_integer([:positive])}"
-      b = "PremierDraft_SOS_#{System.unique_integer([:positive])}"
+      course_id = "course-#{System.unique_integer([:positive])}"
 
       project_events(DraftProjection, [
         build_draft_started(%{
           player_id: player.id,
-          mtga_draft_id: a,
-          event_name: a,
-          set_code: "FDN"
+          mtga_draft_id: course_id,
+          event_name: "PremierDraft_SOS_20260421",
+          set_code: "SOS",
+          occurred_at: ~U[2026-05-15 17:28:00Z]
         }),
-        build_draft_started(%{
+        build_deck_selected(%{
           player_id: player.id,
-          mtga_draft_id: b,
-          event_name: b,
-          set_code: "SOS"
+          mtga_draft_id: course_id,
+          event_name: "PremierDraft_SOS_20260421",
+          deck_id: "d0d88d8d-c8ec-4664-94cf-686a6817d574",
+          deck_name: "Draft Deck",
+          occurred_at: ~U[2026-05-15 17:42:28Z]
         })
       ])
 
-      # Three wins + two losses for draft A
-      Enum.each(1..3, fn _ ->
-        create_match(%{player_id: player.id, event_name: a, won: true})
-      end)
-
-      Enum.each(1..2, fn _ ->
-        create_match(%{player_id: player.id, event_name: a, won: false})
-      end)
-
-      # One win + four losses for draft B
-      create_match(%{player_id: player.id, event_name: b, won: true})
-
-      Enum.each(1..4, fn _ ->
-        create_match(%{player_id: player.id, event_name: b, won: false})
-      end)
-
-      # `project_events` calls rebuild! which already invokes post_rebuild —
-      # at that point no matches exist, so both drafts settle at 0–0.
-      assert %{wins: 0, losses: 0} = Drafts.get_by_mtga_id(a, player.id)
-      assert %{wins: 0, losses: 0} = Drafts.get_by_mtga_id(b, player.id)
-
-      # Re-running post_rebuild after matches exist must pick them up.
-      assert :ok = DraftProjection.post_rebuild()
-
-      assert %{wins: 3, losses: 2} = Drafts.get_by_mtga_id(a, player.id)
-      assert %{wins: 1, losses: 4} = Drafts.get_by_mtga_id(b, player.id)
+      draft = Drafts.get_by_mtga_id(course_id, player.id)
+      assert draft.deck_submitted_at == ~U[2026-05-15 17:42:28Z]
+      assert draft.mtga_deck_id == "d0d88d8d-c8ec-4664-94cf-686a6817d574"
     end
 
-    test "drafts whose event_name has no matches reconcile to 0–0, not nil" do
+    test "ignores DeckSelected without an mtga_draft_id (non-draft submissions)" do
       player = create_player()
-      orphan = "QuickDraft_FDN_#{System.unique_integer([:positive])}"
+
+      # Constructed deck selection (no CourseId) — must not crash, must not
+      # invent a draft row.
+      project_events(
+        DraftProjection,
+        build_deck_selected(%{
+          player_id: player.id,
+          mtga_draft_id: nil,
+          event_name: "Play_Ranked",
+          deck_id: "some-deck-id",
+          occurred_at: ~U[2026-05-15 17:42:28Z]
+        })
+      )
+
+      assert Drafts.count() == 0
+    end
+
+    test "logs a warning when DeckSelected arrives for an unknown course_id" do
+      player = create_player()
 
       project_events(
         DraftProjection,
-        build_draft_started(%{
+        build_deck_selected(%{
           player_id: player.id,
-          mtga_draft_id: orphan,
-          event_name: orphan,
-          set_code: "FDN"
+          mtga_draft_id: "unknown-course",
+          event_name: "PremierDraft_SOS_20260421",
+          deck_id: "deck-id",
+          occurred_at: ~U[2026-05-15 17:42:28Z]
         })
       )
 
-      assert :ok = DraftProjection.post_rebuild()
-
-      assert %{wins: 0, losses: 0} = Drafts.get_by_mtga_id(orphan, player.id)
-    end
-
-    test "multiple drafts sharing an event_name each get only their own time-window matches" do
-      player = create_player()
-      shared = "PremierDraft_SOS_20260421"
-
-      # Two human-draft instances on different days, both with the
-      # same MTGA event_name (the way Premier / Pick Two report it).
-      first_draft_id = "draft-uuid-first-#{System.unique_integer([:positive])}"
-      second_draft_id = "draft-uuid-second-#{System.unique_integer([:positive])}"
-
-      project_events(DraftProjection, [
-        build_draft_started(%{
-          player_id: player.id,
-          mtga_draft_id: first_draft_id,
-          event_name: shared,
-          set_code: "SOS",
-          occurred_at: ~U[2026-04-25 12:00:00Z]
-        }),
-        build_draft_started(%{
-          player_id: player.id,
-          mtga_draft_id: second_draft_id,
-          event_name: shared,
-          set_code: "SOS",
-          occurred_at: ~U[2026-04-26 12:00:00Z]
-        })
-      ])
-
-      # First-draft window: [04-25 12:00, 04-26 12:00). Two wins, one loss.
-      Enum.each(
-        [
-          {true, ~U[2026-04-25 13:00:00Z]},
-          {true, ~U[2026-04-25 14:00:00Z]},
-          {false, ~U[2026-04-25 15:00:00Z]}
-        ],
-        fn {won, started_at} ->
-          create_match(%{
-            player_id: player.id,
-            event_name: shared,
-            won: won,
-            started_at: started_at
-          })
-        end
-      )
-
-      # Second-draft window: [04-26 12:00, ∞). One win, three losses.
-      Enum.each(
-        [
-          {true, ~U[2026-04-26 13:00:00Z]},
-          {false, ~U[2026-04-26 14:00:00Z]},
-          {false, ~U[2026-04-26 15:00:00Z]},
-          {false, ~U[2026-04-26 16:00:00Z]}
-        ],
-        fn {won, started_at} ->
-          create_match(%{
-            player_id: player.id,
-            event_name: shared,
-            won: won,
-            started_at: started_at
-          })
-        end
-      )
-
-      assert :ok = DraftProjection.post_rebuild()
-
-      assert %{wins: 2, losses: 1} = Drafts.get_by_mtga_id(first_draft_id, player.id)
-      assert %{wins: 1, losses: 3} = Drafts.get_by_mtga_id(second_draft_id, player.id)
-    end
-
-    test "matches before any draft of the event_name are not counted" do
-      player = create_player()
-      shared = "PickTwoDraft_SOS_20260421"
-      draft_id = "draft-uuid-#{System.unique_integer([:positive])}"
-
-      project_events(
-        DraftProjection,
-        build_draft_started(%{
-          player_id: player.id,
-          mtga_draft_id: draft_id,
-          event_name: shared,
-          set_code: "SOS",
-          occurred_at: ~U[2026-04-26 12:00:00Z]
-        })
-      )
-
-      # A stray match before the draft started — should be ignored.
-      create_match(%{
-        player_id: player.id,
-        event_name: shared,
-        won: true,
-        started_at: ~U[2026-04-26 09:00:00Z]
-      })
-
-      # And one match after, which should count.
-      create_match(%{
-        player_id: player.id,
-        event_name: shared,
-        won: true,
-        started_at: ~U[2026-04-26 13:00:00Z]
-      })
-
-      assert :ok = DraftProjection.post_rebuild()
-
-      assert %{wins: 1, losses: 0} = Drafts.get_by_mtga_id(draft_id, player.id)
+      assert Drafts.get_by_mtga_id("unknown-course", player.id) == nil
     end
   end
 end

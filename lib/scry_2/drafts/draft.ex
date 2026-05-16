@@ -10,9 +10,15 @@ defmodule Scry2.Drafts.Draft do
     field :set_code, :string
     field :started_at, :utc_datetime
     field :completed_at, :utc_datetime
-    field :wins, :integer
-    field :losses, :integer
+    field :deck_submitted_at, :utc_datetime
+    field :mtga_deck_id, :string
     field :card_pool_arena_ids, :map
+
+    # Virtual — populated by Scry2.Drafts read queries via JOIN+window over
+    # matches_matches in [deck_submitted_at, next_deck_submitted_at). Never
+    # persisted; nil when the query that loaded the draft didn't compute them.
+    field :wins, :integer, virtual: true, default: nil
+    field :losses, :integer, virtual: true, default: nil
 
     has_many :picks, Scry2.Drafts.Pick
 
@@ -29,8 +35,8 @@ defmodule Scry2.Drafts.Draft do
       :set_code,
       :started_at,
       :completed_at,
-      :wins,
-      :losses,
+      :deck_submitted_at,
+      :mtga_deck_id,
       :card_pool_arena_ids
     ])
     |> validate_required([:mtga_draft_id])

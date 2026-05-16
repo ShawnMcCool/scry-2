@@ -13,174 +13,34 @@ defmodule Scry2.Drafts.DraftProjection do
   | **Called from** | Broadcast from `Scry2.Events.append!/2` |
   | **Calls** | `Scry2.Events.get!/1` → `Scry2.Drafts.upsert_draft!/1` / `upsert_pick!/1` |
 
-  Also subscribes to `matches:updates` to keep draft wins/losses in sync
-  whenever a match for the same event_name is recorded or updated.
+  Wins/losses are not stored on draft rows. They are computed at read
+  time by `Scry2.Drafts` queries that join `matches_matches` over a
+  per-draft time window `[deck_submitted_at, next_deck_submitted_at)`.
+  `deck_submitted_at` is stamped when a `DeckSelected` event arrives
+  for the draft's `CourseId` (carried as `mtga_draft_id`).
+
+  This replaces the previous design that denormalized wins/losses on
+  draft rows and reconciled them from a `matches:updates` PubSub
+  subscription. Cross-projection reactive reconciliation was racey
+  during parallel rebuild (`replay_projections!`) — DraftProjection
+  could finish first and run against an empty `matches_matches`.
+  Read-time aggregation removes the denormalization entirely.
   """
 
-  # projection_tables listed in FK-safe delete order (children first)
   use Scry2.Events.Projector,
     claimed_slugs:
-      ~w(draft_started draft_pick_made draft_completed human_draft_pack_offered human_draft_pick_made),
+      ~w(draft_started draft_pick_made draft_completed deck_selected human_draft_pack_offered human_draft_pick_made),
     projection_tables: [Scry2.Drafts.Pick, Scry2.Drafts.Draft]
 
   alias Scry2.Drafts
+  alias Scry2.Events.Deck.DeckSelected
   alias Scry2.Events.Draft.{DraftCompleted, DraftPickMade, DraftStarted}
   alias Scry2.Events.Draft.{HumanDraftPackOffered, HumanDraftPickMade}
-  alias Scry2.Matches
-  alias Scry2.Repo
-  alias Scry2.Topics
 
   if Mix.env() == :test do
     @doc "Test-only helper — calls project/1 directly, bypassing GenServer."
     def project_for_test(event), do: project(event)
-
-    @doc "Test-only helper — calls handle_extra_info/2 directly."
-    def handle_extra_info_for_test(msg, state), do: handle_extra_info(msg, state)
   end
-
-  def after_init(_opts) do
-    Topics.subscribe(Topics.matches_updates())
-  end
-
-  @doc """
-  Reconciles every draft's `wins` / `losses` from `matches_matches`
-  using a per-draft time window so multiple drafts that share the
-  same MTGA `event_name` (`PremierDraft_SOS_20260421`,
-  `PickTwoDraft_SOS_20260421`, etc.) don't collide.
-
-  The window for a draft is `[draft.started_at, next_draft.started_at)`
-  where `next_draft` is the next draft of the same `event_name` and
-  `player_id` ordered by `started_at`. Quick Draft is unaffected by
-  this — its `mtga_draft_id` is the event-name string, so each Quick
-  Draft already has a unique event_name and its window naturally
-  collapses onto its own matches.
-
-  Single SQL with a CTE — runs in milliseconds even on full history.
-  Used both at the end of a rebuild (no broadcast cascade fires
-  thanks to `Scry2.Events.SilentMode`) and on every live
-  `:match_updated` (see `handle_extra_info/2`) — the query is cheap
-  enough that doing the full reconciliation for one match-update is
-  simpler and more correct than trying to surgically update one
-  draft.
-  """
-  def post_rebuild do
-    Repo.query!("""
-    WITH windows AS (
-      SELECT
-        d.id AS draft_id,
-        d.event_name,
-        d.player_id,
-        d.started_at,
-        LEAD(d.started_at) OVER (
-          PARTITION BY d.event_name, d.player_id
-          ORDER BY d.started_at
-        ) AS next_started_at
-      FROM drafts_drafts d
-    ),
-    counts AS (
-      SELECT
-        w.draft_id,
-        COALESCE(SUM(CASE WHEN m.won = 1 THEN 1 ELSE 0 END), 0) AS wins,
-        COALESCE(SUM(CASE WHEN m.won = 0 THEN 1 ELSE 0 END), 0) AS losses
-      FROM windows w
-      LEFT JOIN matches_matches m
-        ON m.event_name = w.event_name
-       AND m.player_id  = w.player_id
-       AND m.started_at >= w.started_at
-       AND (w.next_started_at IS NULL OR m.started_at < w.next_started_at)
-      GROUP BY w.draft_id
-    )
-    UPDATE drafts_drafts
-    SET
-      wins   = COALESCE((SELECT wins   FROM counts WHERE counts.draft_id = drafts_drafts.id), 0),
-      losses = COALESCE((SELECT losses FROM counts WHERE counts.draft_id = drafts_drafts.id), 0),
-      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-    """)
-
-    :ok
-  end
-
-  def handle_extra_info({:match_updated, match_id}, state) do
-    case Matches.get_match(match_id) do
-      nil ->
-        {:noreply, state}
-
-      match ->
-        # The full reconciliation in `post_rebuild/0` is correct everywhere
-        # but pays an O(drafts × matches) cost on every match update — and
-        # `Matches.upsert_match!` fires once per game completion plus once
-        # per deck submission. Reconcile only the draft whose time window
-        # this match falls into. Falls back to a full reconcile if the
-        # match lacks the data needed to identify a single draft window
-        # (event_name, player_id, started_at).
-        reconcile_for_match(match)
-        {:noreply, state}
-    end
-  end
-
-  def handle_extra_info(_msg, state), do: {:noreply, state}
-
-  defp reconcile_for_match(%{
-         event_name: event_name,
-         player_id: player_id,
-         started_at: started_at
-       })
-       when is_binary(event_name) and is_integer(player_id) and not is_nil(started_at) do
-    Repo.query!(
-      """
-      WITH windows AS (
-        SELECT
-          d.id AS draft_id,
-          d.event_name,
-          d.player_id,
-          d.started_at,
-          LEAD(d.started_at) OVER (
-            PARTITION BY d.event_name, d.player_id
-            ORDER BY d.started_at
-          ) AS next_started_at
-        FROM drafts_drafts d
-        WHERE d.event_name = ? AND d.player_id = ?
-      ),
-      affected AS (
-        SELECT w.draft_id, w.event_name, w.player_id, w.started_at, w.next_started_at
-        FROM windows w
-        WHERE w.started_at <= ?
-          AND (w.next_started_at IS NULL OR w.next_started_at > ?)
-      ),
-      counts AS (
-        SELECT
-          a.draft_id,
-          COALESCE(SUM(CASE WHEN m.won = 1 THEN 1 ELSE 0 END), 0) AS wins,
-          COALESCE(SUM(CASE WHEN m.won = 0 THEN 1 ELSE 0 END), 0) AS losses
-        FROM affected a
-        LEFT JOIN matches_matches m
-          ON m.event_name = a.event_name
-         AND m.player_id  = a.player_id
-         AND m.started_at >= a.started_at
-         AND (a.next_started_at IS NULL OR m.started_at < a.next_started_at)
-        GROUP BY a.draft_id
-      )
-      UPDATE drafts_drafts
-      SET
-        wins   = COALESCE((SELECT wins   FROM counts WHERE counts.draft_id = drafts_drafts.id), 0),
-        losses = COALESCE((SELECT losses FROM counts WHERE counts.draft_id = drafts_drafts.id), 0),
-        updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
-      WHERE drafts_drafts.id IN (SELECT draft_id FROM affected)
-      """,
-      [event_name, player_id, encode_dt(started_at), encode_dt(started_at)]
-    )
-
-    :ok
-  end
-
-  defp reconcile_for_match(_), do: post_rebuild()
-
-  # SQLite stores `:utc_datetime` columns as ISO8601 text; passing a
-  # `%DateTime{}` struct directly via `Repo.query!` skips the Ecto type
-  # coercion that an Ecto.Query would apply, leaving the bound value
-  # incomparable to the stored text. Encode explicitly to match.
-  defp encode_dt(%DateTime{} = dt), do: DateTime.to_iso8601(dt)
-  defp encode_dt(other), do: other
 
   defp project(%DraftStarted{} = event) do
     attrs = %{
@@ -248,6 +108,40 @@ defmodule Scry2.Drafts.DraftProjection do
       Log.warning(
         :ingester,
         "DraftCompleted for unknown draft #{event.mtga_draft_id} — skipping"
+      )
+    end
+
+    :ok
+  end
+
+  # DeckSelected fires when the player submits a deck after drafting. Its
+  # `mtga_draft_id` (CourseId from `EventSetDeckV3.request.CourseId`)
+  # identifies the draft the deck was submitted from. Stamping
+  # `deck_submitted_at` and `mtga_deck_id` on the draft gives read-time
+  # aggregation a precise lower bound for "matches played with this deck".
+  #
+  # Non-draft deck submissions (Constructed, Traditional, etc.) carry no
+  # CourseId — those are ignored here.
+  defp project(%DeckSelected{mtga_draft_id: course_id} = event)
+       when is_binary(course_id) do
+    draft = Drafts.get_by_mtga_id(course_id, event.player_id)
+
+    if draft do
+      Drafts.upsert_draft!(%{
+        mtga_draft_id: course_id,
+        player_id: event.player_id,
+        deck_submitted_at: event.occurred_at,
+        mtga_deck_id: event.deck_id
+      })
+
+      Log.info(
+        :ingester,
+        "projected DeckSelected draft=#{course_id} deck=#{event.deck_id}"
+      )
+    else
+      Log.warning(
+        :ingester,
+        "DeckSelected for unknown draft #{course_id} — skipping"
       )
     end
 

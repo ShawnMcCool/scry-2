@@ -15,6 +15,7 @@ defmodule Scry2.Events.Deck.DeckSelected do
 
   - `player_id` — MTGA player identifier
   - `event_name` — internal MTGA event identifier (e.g. `"Play_Ranked"`)
+  - `mtga_draft_id` — CourseId for the draft course this deck was submitted from, or nil for non-draft submissions
   - `deck_id` — MTGA deck identifier (may be nil for sealed pools)
   - `deck_name` — player-assigned deck name
   - `main_deck` — list of `%{arena_id, count}` entries for the main deck
@@ -33,6 +34,7 @@ defmodule Scry2.Events.Deck.DeckSelected do
   defstruct [
     :player_id,
     :event_name,
+    :mtga_draft_id,
     :deck_id,
     :deck_name,
     :main_deck,
@@ -45,6 +47,7 @@ defmodule Scry2.Events.Deck.DeckSelected do
   @type t :: %__MODULE__{
           player_id: String.t() | nil,
           event_name: String.t(),
+          mtga_draft_id: String.t() | nil,
           deck_id: String.t() | nil,
           deck_name: String.t() | nil,
           main_deck: [card_entry()],
@@ -56,6 +59,7 @@ defmodule Scry2.Events.Deck.DeckSelected do
     %__MODULE__{
       player_id: payload["player_id"],
       event_name: payload["event_name"],
+      mtga_draft_id: payload["mtga_draft_id"],
       deck_id: payload["deck_id"],
       deck_name: payload["deck_name"],
       main_deck: payload["main_deck"] || [],

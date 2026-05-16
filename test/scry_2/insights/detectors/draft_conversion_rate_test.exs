@@ -5,17 +5,49 @@ defmodule Scry2.Insights.Detectors.DraftConversionRateTest do
   alias Scry2.Insights.Insight
   alias Scry2.TestFactory
 
+  # Creates a completed draft and seeds matching wins/losses as match rows
+  # inside the draft's [deck_submitted_at, ...) window. Wins/losses are
+  # virtual fields populated by `Drafts.list_drafts` joining matches at
+  # read time, so the only way to make a draft "have a record" is to
+  # actually plant matches. `player_id` left nil — the detector
+  # aggregates across all drafts; the JOIN matches on event_name +
+  # (nil player_id on both sides).
   defp create_completed_draft!(wins, losses, days_ago \\ 1) do
     now = DateTime.utc_now(:second)
     completed = DateTime.add(now, -days_ago, :day)
     started = DateTime.add(completed, -2, :hour)
 
-    TestFactory.create_draft(%{
-      started_at: started,
-      completed_at: completed,
-      wins: wins,
-      losses: losses
-    })
+    event_name = "QuickDraft_FDN_#{System.unique_integer([:positive])}"
+
+    draft =
+      TestFactory.create_draft(%{
+        mtga_draft_id: event_name,
+        event_name: event_name,
+        format: "quick_draft",
+        started_at: started,
+        deck_submitted_at: completed,
+        completed_at: completed
+      })
+
+    for n <- 1..wins//1 do
+      TestFactory.create_match(%{
+        event_name: event_name,
+        format: "quick_draft",
+        started_at: DateTime.add(completed, n * 60, :second),
+        won: true
+      })
+    end
+
+    for n <- 1..losses//1 do
+      TestFactory.create_match(%{
+        event_name: event_name,
+        format: "quick_draft",
+        started_at: DateTime.add(completed, (wins + n) * 60, :second),
+        won: false
+      })
+    end
+
+    draft
   end
 
   describe "tier/0" do

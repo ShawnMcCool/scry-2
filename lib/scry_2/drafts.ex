@@ -38,7 +38,7 @@ defmodule Scry2.Drafts do
     format = Keyword.get(opts, :format)
     set_code = Keyword.get(opts, :set_code)
 
-    Draft
+    drafts_with_record_query()
     |> maybe_filter_by_player(player_id)
     |> maybe_filter_by_format(format)
     |> maybe_filter_by_set(set_code)
@@ -54,59 +54,52 @@ defmodule Scry2.Drafts do
   `:trophies` (count of 7-win drafts), `:by_format` (list of
   `%{format: string, total: int, win_rate: float}`).
 
-  Only complete drafts (completed_at not nil) contribute to rates and averages.
+  Wins and losses are computed at read time from `matches_matches` joined
+  over each draft's `[deck_submitted_at, next_deck_submitted_at)` window
+  (partitioned by `player_id` + `event_name`). Drafts without a
+  `deck_submitted_at` contribute zero matches to the totals.
   """
   def draft_stats(opts \\ []) do
     player_id = Keyword.get(opts, :player_id)
 
-    base =
-      Draft
+    drafts =
+      drafts_with_record_query()
       |> maybe_filter_by_player(player_id)
+      |> Repo.all()
 
-    total = Repo.aggregate(base, :count)
+    total = length(drafts)
+    record_drafts = Enum.reject(drafts, fn d -> is_nil(d.wins) and is_nil(d.losses) end)
 
-    complete_base = where(base, [d], not is_nil(d.completed_at))
-
-    agg =
-      complete_base
-      |> select([d], %{
-        total_wins: sum(d.wins),
-        total_losses: sum(d.losses),
-        trophies: fragment("COUNT(CASE WHEN ? = 7 THEN 1 END)", d.wins)
-      })
-      |> Repo.one()
-
-    total_wins = agg.total_wins || 0
-    total_losses = agg.total_losses || 0
-    trophies = agg.trophies || 0
+    total_wins = Enum.sum(Enum.map(record_drafts, &(&1.wins || 0)))
+    total_losses = Enum.sum(Enum.map(record_drafts, &(&1.losses || 0)))
+    trophies = Enum.count(record_drafts, &((&1.wins || 0) >= 7))
 
     win_rate =
       if total_wins + total_losses > 0,
         do: total_wins / (total_wins + total_losses),
         else: nil
 
-    complete_count = Repo.aggregate(complete_base, :count)
-
     avg_wins =
-      if complete_count > 0,
-        do: total_wins / complete_count,
+      if Enum.any?(record_drafts),
+        do: total_wins / length(record_drafts),
         else: nil
 
     by_format =
-      complete_base
-      |> group_by([d], d.format)
-      |> select([d], %{
-        format: d.format,
-        total: count(d.id),
-        total_wins: sum(d.wins),
-        total_losses: sum(d.losses)
-      })
-      |> Repo.all()
-      |> Enum.map(fn row ->
-        w = row.total_wins || 0
-        l = row.total_losses || 0
+      drafts
+      |> Enum.group_by(& &1.format)
+      |> Enum.map(fn {format, format_drafts} ->
+        played = Enum.reject(format_drafts, fn d -> is_nil(d.wins) and is_nil(d.losses) end)
+        w = Enum.sum(Enum.map(played, &(&1.wins || 0)))
+        l = Enum.sum(Enum.map(played, &(&1.losses || 0)))
         rate = if w + l > 0, do: w / (w + l), else: nil
-        Map.merge(row, %{win_rate: rate})
+
+        %{
+          format: format,
+          total: length(format_drafts),
+          total_wins: w,
+          total_losses: l,
+          win_rate: rate
+        }
       end)
       |> Enum.sort_by(& &1.total, :desc)
 
@@ -119,14 +112,72 @@ defmodule Scry2.Drafts do
     }
   end
 
-  @doc "Returns the draft with its picks preloaded, ordered by pack/pick."
+  # Returns drafts with virtual `:wins` / `:losses` populated by joining
+  # `matches_matches` over each draft's
+  # `[deck_submitted_at, next_deck_submitted_at)` window, partitioned by
+  # `(player_id, event_name)`. Drafts where `deck_submitted_at` is nil
+  # get nil wins/losses — there's no window to attribute matches to.
+  defp drafts_with_record_query do
+    windows_q =
+      from d in Draft,
+        where: not is_nil(d.deck_submitted_at),
+        select: %{
+          id: d.id,
+          player_id: d.player_id,
+          event_name: d.event_name,
+          deck_submitted_at: d.deck_submitted_at,
+          next_deck_submitted_at:
+            fragment(
+              "LEAD(?) OVER (PARTITION BY ?, ? ORDER BY ?)",
+              d.deck_submitted_at,
+              d.player_id,
+              d.event_name,
+              d.deck_submitted_at
+            )
+        }
+
+    # `IS` instead of `=` for player_id so nil-player drafts (test fixtures)
+    # also match nil-player matches. SQLite treats NULL IS NULL as TRUE,
+    # which is what we want — production always has a real player_id, so
+    # this collapses to ordinary equality.
+    from d in Draft,
+      left_join: w in subquery(windows_q),
+      on: w.id == d.id,
+      left_join: m in "matches_matches",
+      on:
+        m.event_name == w.event_name and
+          fragment("? IS ?", m.player_id, w.player_id) and
+          m.started_at >= w.deck_submitted_at and
+          (is_nil(w.next_deck_submitted_at) or m.started_at < w.next_deck_submitted_at),
+      group_by: d.id,
+      select_merge: %{
+        wins:
+          fragment(
+            "CASE WHEN ? IS NULL THEN NULL ELSE CAST(SUM(CASE WHEN ? = 1 THEN 1 ELSE 0 END) AS INTEGER) END",
+            d.deck_submitted_at,
+            m.won
+          ),
+        losses:
+          fragment(
+            "CASE WHEN ? IS NULL THEN NULL ELSE CAST(SUM(CASE WHEN ? = 0 THEN 1 ELSE 0 END) AS INTEGER) END",
+            d.deck_submitted_at,
+            m.won
+          )
+      }
+  end
+
+  @doc "Returns the draft with its picks preloaded, ordered by pack/pick. Wins/losses are computed at read time."
   def get_draft_with_picks(id) do
     picks_query =
       from p in Pick, order_by: [asc: p.pack_number, asc: p.pick_number]
 
-    Draft
-    |> Repo.get(id)
-    |> Repo.preload(picks: picks_query)
+    drafts_with_record_query()
+    |> where([d], d.id == ^id)
+    |> Repo.one()
+    |> case do
+      nil -> nil
+      draft -> Repo.preload(draft, picks: picks_query)
+    end
   end
 
   @doc "Returns the draft with the given MTGA id and optional player_id, or nil."
