@@ -11,6 +11,16 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Your collection now refreshes automatically every 15 minutes**
+  while MTGA is running. Previously the refresh only fired when
+  you completed a match or made a draft pick, so if you opened
+  packs from the store without playing, your **Collection** page
+  could show outdated counts. Now the snapshot stays current
+  regardless of in-game activity. You can still click **Refresh
+  now** for an immediate update.
+
 ## v0.45.0 — 2026-05-16
 
 ### Improved
