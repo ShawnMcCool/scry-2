@@ -35,7 +35,8 @@ defmodule Scry2Web.Router do
         # hook tries to load data that doesn't exist yet.
         {Scry2Web.SetupGate, :default},
         {Scry2Web.PlayerScope, :default},
-        {Scry2Web.NavUpdateScope, :default}
+        {Scry2Web.NavUpdateScope, :default},
+        {Scry2Web.SidebarScope, :default}
       ] do
       live "/", HomeLive, :index
       live "/system", HealthLive, :index

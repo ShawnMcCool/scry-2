@@ -61,15 +61,13 @@ defmodule Scry2Web.Collection.SetDetail.GapList do
     """
   end
 
-  # Returns [{rarity, [{card, count}, ...]}, ...] in rarity order, with
-  # the count being how many copies the player owns (0 for missing,
-  # 1-3 for partial). Cards at full playset are not included.
+  # Returns [{rarity, [{card, count}, ...]}, ...] in rarity order. Counts
+  # are summed across all printings of the same name (`SetCompletion` rolls
+  # them up); the `card` here is the canonical printing chosen there.
+  # Cards at full playset are not included.
   defp build_sections(%SetCompletion{buckets: buckets}) do
-    missing_with_count = Enum.map(buckets.missing, &{&1, 0})
-    partial_with_count = Enum.map(buckets.partial, &{&1.card, &1.count})
-
     grouped =
-      (missing_with_count ++ partial_with_count)
+      (buckets.missing ++ buckets.partial)
       |> Enum.group_by(fn {card, _count} -> card.rarity || "unknown" end)
 
     Enum.map(@rarity_order, fn rarity ->

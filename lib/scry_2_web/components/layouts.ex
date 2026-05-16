@@ -6,6 +6,7 @@ defmodule Scry2Web.Layouts do
   use Scry2Web, :html
 
   alias Scry2Web.NavHelpers
+  alias Scry2Web.SidebarNav
 
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
@@ -41,6 +42,10 @@ defmodule Scry2Web.Layouts do
     default: %{summary: %{status: :no_data, checking: false}},
     doc: "set by Scry2Web.NavUpdateScope on_mount; powers the gear update badge"
 
+  attr :sidebar_collapsed, :boolean,
+    default: false,
+    doc: "set by Scry2Web.SidebarScope on_mount; powers the rail toggle"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -53,18 +58,6 @@ defmodule Scry2Web.Layouts do
         >
           <.icon name="hero-eye" class="size-6 text-primary" /> Scry&nbsp;2
         </.link>
-        <div class="w-px h-5 bg-base-300 shrink-0"></div>
-
-        <nav class="hidden lg:flex gap-1 min-w-0">
-          <.nav_link
-            :for={item <- NavHelpers.items()}
-            path={item.path}
-            label={item.label}
-            current_path={@current_path}
-          />
-        </nav>
-
-        <.nav_overflow_dropdown current_path={@current_path} />
       </div>
 
       <div class="ml-auto flex-shrink-0 flex items-center gap-3">
@@ -77,35 +70,107 @@ defmodule Scry2Web.Layouts do
       </div>
     </header>
 
-    <main class="px-4 py-8 sm:px-6 lg:px-8">
-      <div class="mx-auto space-y-6" style="max-width: min(90vw, 1400px)">
-        {render_slot(@inner_block)}
-      </div>
-    </main>
+    <div class="flex min-h-[calc(100vh-4rem)]">
+      <.sidebar collapsed={@sidebar_collapsed} current_path={@current_path} />
+
+      <main class="flex-1 min-w-0 px-4 py-8 sm:px-6 lg:px-8">
+        <div class="mx-auto space-y-6" style="max-width: min(90vw, 1400px)">
+          {render_slot(@inner_block)}
+        </div>
+      </main>
+    </div>
 
     <.flash_group flash={@flash} />
     """
   end
 
-  attr :path, :string, required: true
-  attr :label, :string, required: true
+  attr :collapsed, :boolean, required: true
   attr :current_path, :string, required: true
 
-  defp nav_link(assigns) do
-    assigns = assign(assigns, :active, String.starts_with?(assigns.current_path, assigns.path))
+  defp sidebar(assigns) do
+    ~H"""
+    <aside
+      class={[
+        "shrink-0 border-r border-base-300 bg-base-200 py-3 flex flex-col gap-1 overflow-y-auto",
+        if(@collapsed, do: "w-14 px-1", else: "w-56 px-2")
+      ]}
+      data-role="sidebar"
+      data-collapsed={to_string(@collapsed)}
+    >
+      <.sidebar_toggle collapsed={@collapsed} />
+
+      <%= for {section, index} <- Enum.with_index(SidebarNav.sections()) do %>
+        <hr
+          :if={index > 0}
+          class="border-base-300 my-1"
+          aria-hidden="true"
+        />
+        <p
+          :if={section.label && not @collapsed}
+          class="text-[10px] uppercase tracking-wider text-base-content/50 px-2 pt-1"
+        >
+          {section.label}
+        </p>
+        <.sidebar_item
+          :for={item <- section.items}
+          item={item}
+          collapsed={@collapsed}
+          current_path={@current_path}
+        />
+      <% end %>
+    </aside>
+    """
+  end
+
+  attr :collapsed, :boolean, required: true
+
+  defp sidebar_toggle(assigns) do
+    ~H"""
+    <button
+      type="button"
+      phx-click="toggle_sidebar"
+      class={[
+        "flex items-center text-base-content/50 hover:text-base-content",
+        "h-7 rounded-md hover:bg-base-300/60 transition-colors",
+        if(@collapsed, do: "justify-center", else: "justify-end px-2")
+      ]}
+      title={if(@collapsed, do: "Expand sidebar", else: "Collapse sidebar")}
+      aria-label={if(@collapsed, do: "Expand sidebar", else: "Collapse sidebar")}
+      data-role="sidebar-toggle"
+    >
+      <.icon
+        name={if(@collapsed, do: "hero-chevron-double-right", else: "hero-chevron-double-left")}
+        class="size-3.5"
+      />
+    </button>
+    """
+  end
+
+  attr :item, :map, required: true
+  attr :collapsed, :boolean, required: true
+  attr :current_path, :string, required: true
+
+  defp sidebar_item(assigns) do
+    assigns =
+      assign(assigns, :active, SidebarNav.active?(assigns.current_path, assigns.item.path))
 
     ~H"""
     <.link
-      navigate={@path}
+      navigate={@item.path}
       class={[
-        "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+        "flex items-center rounded-md text-sm font-medium transition-colors",
+        if(@collapsed, do: "justify-center px-1 py-2", else: "gap-2.5 px-2 py-1.5"),
         if(@active,
           do: "bg-primary/10 text-primary",
-          else: "text-base-content/60 hover:text-base-content"
+          else: "text-base-content/70 hover:text-base-content hover:bg-base-300/60"
         )
       ]}
+      title={if(@collapsed, do: @item.label, else: nil)}
+      data-role="sidebar-item"
+      data-path={@item.path}
     >
-      {@label}
+      <.icon name={@item.icon} class="size-4 shrink-0" />
+      <span :if={not @collapsed} class="truncate">{@item.label}</span>
     </.link>
     """
   end
@@ -280,38 +345,6 @@ defmodule Scry2Web.Layouts do
       <.icon name={@icon} class="size-4" />
       <span>{@label}</span>
     </.link>
-    """
-  end
-
-  attr :current_path, :string, required: true
-
-  defp nav_overflow_dropdown(assigns) do
-    ~H"""
-    <details
-      id="nav-overflow-dropdown"
-      class="dropdown lg:hidden"
-      phx-click-away={close_dropdown("nav-overflow-dropdown")}
-    >
-      <summary class="btn btn-ghost btn-sm btn-square border border-base-300">
-        <.icon name="hero-bars-3" class="size-4 text-base-content/70" />
-      </summary>
-      <div class="dropdown-content z-50 mt-2 w-56 rounded-lg border border-base-300 bg-base-200 shadow-xl p-2">
-        <.link
-          :for={item <- NavHelpers.items()}
-          navigate={item.path}
-          phx-click={close_dropdown("nav-overflow-dropdown")}
-          class={[
-            "block px-3 py-1.5 rounded-md text-sm",
-            if(NavHelpers.active?(@current_path, item.path),
-              do: "bg-primary/10 text-primary font-medium",
-              else: "text-base-content/70 hover:bg-base-300"
-            )
-          ]}
-        >
-          {item.label}
-        </.link>
-      </div>
-    </details>
     """
   end
 

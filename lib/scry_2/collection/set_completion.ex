@@ -7,15 +7,32 @@ defmodule Scry2.Collection.SetCompletion do
   in that set (obtained via `Scry2.Cards.list_booster_cards_by_set/1`),
   and a list of `%Scry2.Collection.Holding{}`.
 
+  ## Rolling up duplicate printings
+
+  MTGA tracks each art printing (regular, alternate, borderless, showcase,
+  etc.) under its own `arena_id`. For playset-completeness the player
+  thinks of all printings together — owning 3 regular + 1 alternate of a
+  card is a complete playset of 4. This module groups cards by `name`
+  before bucketing:
+
+    * Sums `count` across every `arena_id` that shares the name.
+    * Picks the **canonical display card** (lowest numeric collector
+      number) — typically the original / non-promo printing.
+
   Holdings whose `card.set_id` does not match the given set are silently
-  ignored — callers may pass the full collection holdings list without
-  pre-filtering.
+  ignored, so callers may pass the full collection holdings list.
 
-  Buckets:
+  ## Bucket shape
 
-    * `:missing`  — card has no holding (or holding count = 0)
-    * `:partial`  — holding has 1, 2, or 3 copies
-    * `:complete` — holding has 4 or more copies (a full playset)
+  Every bucket holds `{canonical_card, summed_count}` tuples — uniform
+  across all three buckets so consumers don't have to handle two shapes:
+
+    * `:missing`  — summed_count = 0 (no holding for any printing)
+    * `:partial`  — summed_count in 1..3
+    * `:complete` — summed_count >= 4 (a full playset)
+
+  `:by_rarity` counts canonical cards (so one "Emeritus of Truce" with
+  two printings counts as a single mythic, not two).
   """
 
   alias Scry2.Cards.{Card, Set}
@@ -24,10 +41,12 @@ defmodule Scry2.Collection.SetCompletion do
   @enforce_keys [:set, :buckets, :by_rarity]
   defstruct [:set, :buckets, :by_rarity]
 
+  @type rolled :: {Card.t(), non_neg_integer()}
+
   @type bucket :: %{
-          missing: [Card.t()],
-          partial: [Holding.t()],
-          complete: [Holding.t()]
+          missing: [rolled()],
+          partial: [rolled()],
+          complete: [rolled()]
         }
 
   @type rarity_bucket :: %{
@@ -48,15 +67,17 @@ defmodule Scry2.Collection.SetCompletion do
   @spec from(Set.t(), [Card.t()], [Holding.t()]) :: t()
   def from(%Set{id: set_id} = set, set_cards, holdings)
       when is_list(set_cards) and is_list(holdings) do
-    holdings_by_arena_id =
+    counts_by_arena_id =
       holdings
       |> Enum.filter(&(&1.card.set_id == set_id))
-      |> Map.new(&{&1.arena_id, &1})
+      |> Map.new(&{&1.arena_id, &1.count})
+
+    rolled = roll_up_by_name(set_cards, counts_by_arena_id)
 
     %__MODULE__{
       set: set,
-      buckets: build_buckets(set_cards, holdings_by_arena_id),
-      by_rarity: build_by_rarity(set_cards, holdings_by_arena_id)
+      buckets: build_buckets(rolled),
+      by_rarity: build_by_rarity(rolled)
     }
   end
 
@@ -76,18 +97,30 @@ defmodule Scry2.Collection.SetCompletion do
     %{missing: missing, partial: partial, complete: complete, total: missing + partial + complete}
   end
 
-  defp build_buckets(set_cards, holdings_by_arena_id) do
+  # Returns [{canonical_card, summed_count}, ...] in stable input order
+  # by canonical card's collector number.
+  defp roll_up_by_name(cards, counts_by_arena_id) do
+    cards
+    |> Enum.group_by(& &1.name)
+    |> Enum.map(fn {_name, printings} ->
+      canonical = Enum.min_by(printings, &collector_sort_key(&1.collector_number))
+
+      total =
+        Enum.reduce(printings, 0, fn printing, acc ->
+          acc + Map.get(counts_by_arena_id, printing.arena_id, 0)
+        end)
+
+      {canonical, total}
+    end)
+  end
+
+  defp build_buckets(rolled) do
     {missing, partial, complete} =
-      Enum.reduce(set_cards, {[], [], []}, fn card, {missing, partial, complete} ->
-        case bucket_key(card, holdings_by_arena_id) do
-          :missing ->
-            {[card | missing], partial, complete}
-
-          :partial ->
-            {missing, [Map.fetch!(holdings_by_arena_id, card.arena_id) | partial], complete}
-
-          :complete ->
-            {missing, partial, [Map.fetch!(holdings_by_arena_id, card.arena_id) | complete]}
+      Enum.reduce(rolled, {[], [], []}, fn {card, count} = entry, {missing, partial, complete} ->
+        cond do
+          count >= @playset -> {missing, partial, [entry | complete]}
+          count >= 1 -> {missing, [entry | partial], complete}
+          true -> {[{card, 0} | missing], partial, complete}
         end
       end)
 
@@ -98,10 +131,10 @@ defmodule Scry2.Collection.SetCompletion do
     }
   end
 
-  defp build_by_rarity(set_cards, holdings_by_arena_id) do
-    Enum.reduce(set_cards, %{}, fn card, acc ->
+  defp build_by_rarity(rolled) do
+    Enum.reduce(rolled, %{}, fn {card, count}, acc ->
       rarity = card.rarity || "unknown"
-      key = bucket_key(card, holdings_by_arena_id)
+      key = bucket_key(count)
 
       acc
       |> Map.put_new(rarity, empty_rarity_bucket())
@@ -110,14 +143,23 @@ defmodule Scry2.Collection.SetCompletion do
     end)
   end
 
-  defp bucket_key(card, holdings_by_arena_id) do
-    case Map.get(holdings_by_arena_id, card.arena_id) do
-      nil -> :missing
-      %Holding{count: count} when count >= @playset -> :complete
-      %Holding{count: count} when count >= 1 -> :partial
-      _ -> :missing
-    end
-  end
+  defp bucket_key(count) when count >= @playset, do: :complete
+  defp bucket_key(count) when count >= 1, do: :partial
+  defp bucket_key(_count), do: :missing
 
   defp empty_rarity_bucket, do: %{missing: 0, partial: 0, complete: 0, total: 0}
+
+  # Collector numbers can include suffixes ("5a", "★12") on promos. Sort
+  # by leading integer so the lowest plain number wins as the canonical
+  # printing; numeric-with-suffix beats non-numeric.
+  defp collector_sort_key(nil), do: {1, 0, ""}
+  defp collector_sort_key(""), do: {1, 0, ""}
+  defp collector_sort_key(n) when is_integer(n), do: {0, n, ""}
+
+  defp collector_sort_key(n) when is_binary(n) do
+    case Integer.parse(n) do
+      {num, rest} -> {0, num, rest}
+      :error -> {1, 0, n}
+    end
+  end
 end

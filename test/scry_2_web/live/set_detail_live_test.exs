@@ -29,10 +29,13 @@ defmodule Scry2Web.SetDetailLiveTest do
             {30_005, "uncommon"},
             {30_006, "common"}
           ] do
+        # Unique name per arena_id so SetCompletion's name-based rollup
+        # treats every fixture card as a distinct entry.
         Factory.create_card(%{
           arena_id: arena_id,
           set_id: set.id,
           rarity: rarity,
+          name: "Test Card #{arena_id}",
           is_booster: true
         })
       end

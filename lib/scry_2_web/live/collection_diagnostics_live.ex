@@ -74,6 +74,7 @@ defmodule Scry2Web.CollectionDiagnosticsLive do
     <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
+      sidebar_collapsed={@sidebar_collapsed}
       players={@players}
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}

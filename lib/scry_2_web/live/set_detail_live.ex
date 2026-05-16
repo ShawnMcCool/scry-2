@@ -192,8 +192,8 @@ defmodule Scry2Web.SetDetailLive do
   defp rendered_arena_ids(nil), do: []
 
   defp rendered_arena_ids(%SetCompletion{buckets: buckets}) do
-    Enum.map(buckets.missing, & &1.arena_id) ++
-      Enum.map(buckets.partial, & &1.card.arena_id)
+    (buckets.missing ++ buckets.partial)
+    |> Enum.map(fn {card, _count} -> card.arena_id end)
   end
 
   defp maybe_cache_images(socket, []), do: socket
@@ -244,6 +244,7 @@ defmodule Scry2Web.SetDetailLive do
     <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
+      sidebar_collapsed={@sidebar_collapsed}
       players={@players}
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}

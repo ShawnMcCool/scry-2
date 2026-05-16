@@ -4,8 +4,17 @@ defmodule Scry2.Collection.SetCompletionTest do
   alias Scry2.Collection.{Holding, SetCompletion}
   alias Scry2.TestFactory
 
-  defp card(arena_id, rarity, set_id) do
-    TestFactory.build_card(%{arena_id: arena_id, rarity: rarity, set_id: set_id})
+  defp card(arena_id, rarity, set_id, opts \\ []) do
+    name = Keyword.get(opts, :name, "Card #{arena_id}")
+    collector_number = Keyword.get(opts, :collector_number, "#{arena_id}")
+
+    TestFactory.build_card(%{
+      arena_id: arena_id,
+      rarity: rarity,
+      set_id: set_id,
+      name: name,
+      collector_number: collector_number
+    })
   end
 
   defp holding(card, count) do
@@ -28,24 +37,61 @@ defmodule Scry2.Collection.SetCompletionTest do
       c1 = card(70_005, "common", set.id)
 
       holdings = [
-        # complete playset of m1
         holding(m1, 4),
-        # partial: 2 of r1
         holding(r1, 2),
-        # complete: 5 of u1 (over playset still counts as complete)
         holding(u1, 5)
-        # r2 and c1 have no holding → missing
       ]
 
       result = SetCompletion.from(set, [m1, r1, r2, u1, c1], holdings)
 
-      missing_ids = Enum.map(result.buckets.missing, & &1.arena_id) |> Enum.sort()
-      partial_ids = Enum.map(result.buckets.partial, & &1.arena_id) |> Enum.sort()
-      complete_ids = Enum.map(result.buckets.complete, & &1.arena_id) |> Enum.sort()
+      missing_ids = result.buckets.missing |> Enum.map(fn {c, _} -> c.arena_id end) |> Enum.sort()
+      partial_ids = result.buckets.partial |> Enum.map(fn {c, _} -> c.arena_id end) |> Enum.sort()
+
+      complete_ids =
+        result.buckets.complete |> Enum.map(fn {c, _} -> c.arena_id end) |> Enum.sort()
 
       assert missing_ids == [70_003, 70_005]
       assert partial_ids == [70_002]
       assert complete_ids == [70_001, 70_004]
+    end
+
+    test "rolls up alternate printings sharing the same name" do
+      # Same card name, two printings (regular + alt-art). Same rarity.
+      set = TestFactory.build_set(%{id: 1, code: "SOS"})
+
+      regular = card(70_100, "mythic", set.id, name: "Emeritus of Truce", collector_number: "5")
+      alt_art = card(70_101, "mythic", set.id, name: "Emeritus of Truce", collector_number: "300")
+
+      # Player owns 2 of regular + 2 of alt — total 4 = complete playset.
+      holdings = [holding(regular, 2), holding(alt_art, 2)]
+
+      result = SetCompletion.from(set, [regular, alt_art], holdings)
+
+      # Only one entry across all buckets — the name rolled up.
+      total = SetCompletion.totals(result)
+      assert total.total == 1
+      assert total.complete == 1
+      assert total.partial == 0
+      assert total.missing == 0
+
+      # Canonical printing is the regular one (lowest collector_number).
+      [{canonical, count}] = result.buckets.complete
+      assert canonical.arena_id == 70_100
+      assert count == 4
+    end
+
+    test "rollup uses lowest numeric collector_number as canonical printing" do
+      set = TestFactory.build_set(%{id: 1, code: "SOS"})
+
+      a = card(70_201, "rare", set.id, name: "Same Card", collector_number: "152")
+      b = card(70_202, "rare", set.id, name: "Same Card", collector_number: "9")
+      c = card(70_203, "rare", set.id, name: "Same Card", collector_number: "411")
+
+      result = SetCompletion.from(set, [a, b, c], [])
+
+      [{canonical, _}] = result.buckets.missing
+      assert canonical.collector_number == "9"
+      assert canonical.arena_id == 70_202
     end
 
     test "treats count of 0 as missing (not partial)" do
@@ -56,7 +102,8 @@ defmodule Scry2.Collection.SetCompletionTest do
 
       result = SetCompletion.from(set, [c1], holdings)
 
-      assert Enum.map(result.buckets.missing, & &1.arena_id) == [80_001]
+      assert [{c, 0}] = result.buckets.missing
+      assert c.arena_id == 80_001
       assert result.buckets.partial == []
       assert result.buckets.complete == []
     end
@@ -91,6 +138,17 @@ defmodule Scry2.Collection.SetCompletionTest do
       assert rows["common"] == %{missing: 1, partial: 0, complete: 1, total: 2}
     end
 
+    test "by_rarity counts each card name once across printings" do
+      set = TestFactory.build_set(%{id: 1, code: "SOS"})
+
+      regular = card(82_001, "mythic", set.id, name: "Dupe", collector_number: "1")
+      alt_art = card(82_002, "mythic", set.id, name: "Dupe", collector_number: "200")
+
+      result = SetCompletion.from(set, [regular, alt_art], [])
+
+      assert result.by_rarity["mythic"] == %{missing: 1, partial: 0, complete: 0, total: 1}
+    end
+
     test "ignores holdings whose card belongs to a different set" do
       target = TestFactory.build_set(%{id: 1, code: "TGT"})
       other = TestFactory.build_set(%{id: 2, code: "OTH"})
@@ -98,16 +156,13 @@ defmodule Scry2.Collection.SetCompletionTest do
       target_card = card(82_001, "common", target.id)
       stray_card = card(82_002, "common", other.id)
 
-      holdings = [
-        holding(target_card, 4),
-        holding(stray_card, 2)
-      ]
+      holdings = [holding(target_card, 4), holding(stray_card, 2)]
 
       result = SetCompletion.from(target, [target_card], holdings)
 
-      assert result.buckets.complete |> Enum.map(& &1.arena_id) == [82_001]
+      assert [{c, 4}] = result.buckets.complete
+      assert c.arena_id == 82_001
       assert result.buckets.partial == []
-      refute Enum.any?(result.buckets.missing, &(&1.arena_id == 82_002))
     end
 
     test "with empty holdings, every card is missing" do
@@ -117,7 +172,8 @@ defmodule Scry2.Collection.SetCompletionTest do
 
       result = SetCompletion.from(set, [c1, r1], [])
 
-      assert Enum.map(result.buckets.missing, & &1.arena_id) |> Enum.sort() == [83_001, 83_002]
+      missing_ids = result.buckets.missing |> Enum.map(fn {c, _} -> c.arena_id end) |> Enum.sort()
+      assert missing_ids == [83_001, 83_002]
       assert result.buckets.partial == []
       assert result.buckets.complete == []
       assert result.by_rarity["common"] == %{missing: 1, partial: 0, complete: 0, total: 1}
@@ -138,22 +194,8 @@ defmodule Scry2.Collection.SetCompletionTest do
 
     test "preserves the set struct on the result" do
       set = TestFactory.build_set(%{id: 7, code: "PRE", name: "Preserve"})
-
       result = SetCompletion.from(set, [], [])
-
       assert result.set == set
-    end
-
-    test "missing cards retain their full %Card{} so the gap list can render them" do
-      set = TestFactory.build_set(%{id: 1, code: "FULL"})
-      c1 = card(84_001, "common", set.id)
-
-      result = SetCompletion.from(set, [c1], [])
-
-      [missing] = result.buckets.missing
-      assert missing.arena_id == 84_001
-      assert missing.name == c1.name
-      assert missing.rarity == "common"
     end
   end
 
