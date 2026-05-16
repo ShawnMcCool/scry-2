@@ -11,6 +11,20 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Every page now shows a "catching up" banner when the event
+  pipeline is still absorbing work in the background.** Just after a
+  self-update — or after you trigger **Operations → Reingest** — Scry2
+  spends a minute or two replaying your MTGA event log into its
+  internal projections. Previously the dashboard came back up looking
+  ready while it was still finalising things, so the Drafts page (or
+  any other page driven by those projections) could briefly show
+  partial numbers. A soft banner at the top of the page now indicates
+  when the pipeline is more than ~50 events behind, with a live count
+  that updates every few seconds and disappears once everything is
+  caught up.
+
 ## v0.46.3 — 2026-05-16
 
 ### Fixed
