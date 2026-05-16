@@ -11,6 +11,17 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Follow-up to v0.46.1.** The previous patch added the read-time
+  draft-record computation but missed where MTGA actually emits the
+  identifier that ties a submitted deck to its draft — so after
+  updating to v0.46.1 and running a reingest, Premier and Pick Two
+  drafts could still show `0–0`. Scry2 now reads that identifier
+  from the right MTGA payload, so a reingest from **Operations →
+  Reingest** stamps every draft with its deck-submission time and
+  the per-format records appear correctly.
+
 ## v0.46.1 — 2026-05-16
 
 ### Fixed
