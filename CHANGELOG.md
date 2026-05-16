@@ -11,6 +11,17 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Premier Draft and Pick Two Draft records now display correctly
+  on the Drafts page.** Previously every Premier or Pick Two run
+  showed `0–0`, even after you'd played multiple matches with the
+  drafted deck, and the **By Format** breakdown showed `—` for
+  those formats. Quick Draft was largely unaffected. The fix
+  rebuilds how match results are attached to a draft so the
+  per-format win rates, average wins, and trophy counts reflect
+  your actual play history across all three draft formats.
+
 ## v0.46.0 — 2026-05-16
 
 ### Improved
