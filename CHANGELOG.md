@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.46.7 — 2026-05-16
+
 ### Fixed
 
 - **The Collection page now counts playsets the way MTGA does — by
