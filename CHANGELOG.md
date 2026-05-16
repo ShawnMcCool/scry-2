@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.45.0 — 2026-05-16
+
 ### Improved
 
 - **The navigation moved to a collapsible left rail.** Cards
