@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.44.0 — 2026-05-16
+
 ### New
 
 - **Collection → set drill-in.** Click any set tile on the **Collection**
