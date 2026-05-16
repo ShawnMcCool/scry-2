@@ -11,6 +11,15 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The gear icon in the top-right corner now opens the System page
+  directly** instead of a four-item dropdown. Once on **System**,
+  the subnav across the top is the way to reach **Operations** and
+  **Settings**. The **System** tab in that subnav was also still
+  pointing at the homepage from when the health screen lived at
+  `/` — it now points to and highlights on `/system`.
+
 ## v0.46.7 — 2026-05-16
 
 ### Fixed
