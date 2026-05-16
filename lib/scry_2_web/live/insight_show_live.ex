@@ -17,18 +17,28 @@ defmodule Scry2Web.InsightShowLive do
   alias Scry2Web.Layouts
 
   @impl true
-  def mount(%{"id" => id}, _session, socket) do
+  def mount(_params, _session, socket) do
+    {:ok,
+     socket
+     |> assign(:page_title, "Insight")
+     |> assign(:insight, nil)
+     |> assign(:title, nil)
+     |> assign(:body, nil)
+     |> assign(:stats, [])}
+  end
+
+  @impl true
+  def handle_params(%{"id" => id}, _uri, socket) do
     case Insights.get(id) do
       nil ->
-        {:ok,
+        {:noreply,
          socket
          |> put_flash(:error, "Insight not found.")
          |> push_navigate(to: ~p"/insights")}
 
       %Insight{} = insight ->
-        {:ok,
+        {:noreply,
          socket
-         |> assign(:page_title, "Insight")
          |> assign(:insight, insight)
          |> assign(:title, Templates.render_title(insight))
          |> assign(:body, Templates.render_body(insight))

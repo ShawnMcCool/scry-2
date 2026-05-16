@@ -32,15 +32,13 @@ defmodule Scry2Web.MatchesLive do
       Topics.subscribe(Topics.live_match_board_final())
     end
 
-    # `recent_match_economies` doesn't depend on any filter param —
-    # compute once on mount instead of re-running on every chip click.
     {:ok,
      assign(socket,
        reload_timer: nil,
        show_all_formats: false,
        live_match_tick: nil,
        live_match_commander_names: %{},
-       recent_match_economies: MatchEconomy.recent_summaries(limit: 10)
+       recent_match_economies: []
      )}
   end
 
@@ -240,6 +238,12 @@ defmodule Scry2Web.MatchesLive do
 
     total_pages = max(1, ceil(stats.total / @per_page))
 
+    # recent_match_economies is filter-independent; cache it across
+    # chip clicks so we don't re-query on every push_patch.
+    recent_match_economies =
+      socket.assigns[:recent_match_economies] ||
+        MatchEconomy.recent_summaries(limit: 10)
+
     assign(socket,
       match: nil,
       winrate_period: winrate_period,
@@ -248,6 +252,7 @@ defmodule Scry2Web.MatchesLive do
       cumulative_series: cumulative_series,
       category_counts: category_counts,
       format_counts: format_counts,
+      recent_match_economies: recent_match_economies,
       page: page,
       total_pages: total_pages,
       filter_params: %{

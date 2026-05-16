@@ -64,21 +64,47 @@ defmodule Scry2Web.CollectionLive do
 
     socket =
       socket
-      |> assign(:reader_enabled, Collection.reader_enabled?())
+      |> assign(:reader_enabled, false)
       |> assign(:refreshing, false)
       |> assign(:last_error, nil)
-      |> assign(:build_change_status, Collection.build_change_status())
+      |> assign(:build_change_status, :unknown)
       |> assign(:search, "")
       |> assign(:filter_rarities, MapSet.new())
       |> assign(:active_set, nil)
       |> assign(:active_set_record, nil)
-      |> load_snapshot_state()
+      |> assign(:snapshot, nil)
+      |> assign(:cards_by_arena_id, %{})
+      |> assign(:set_rosters, %{})
+      |> assign(:holdings, [])
+      |> assign(:completions, [])
+      |> assign(:craft_plan, empty_craft_plan())
+      |> assign(:latest_diff, nil)
+      |> assign(:diff_cards, %{})
+      |> assign(:recent_diffs, [])
+      |> assign(:cached_arena_ids, MapSet.new())
+      |> assign(:browser_holdings, [])
+      |> assign(:browser_total, 0)
+      |> assign(:loaded, false)
 
     {:ok, socket}
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
+    # Defer the snapshot/cards/rosters fan-out from mount to handle_params
+    # so the dead render returns quickly; load once per page open and
+    # reuse the cache across push_patch chip clicks.
+    socket =
+      if socket.assigns.loaded do
+        socket
+      else
+        socket
+        |> assign(:reader_enabled, Collection.reader_enabled?())
+        |> assign(:build_change_status, Collection.build_change_status())
+        |> load_snapshot_state()
+        |> assign(:loaded, true)
+      end
+
     socket =
       socket
       |> assign(:search, CardsHelpers.decode_search(params))
@@ -87,6 +113,14 @@ defmodule Scry2Web.CollectionLive do
       |> apply_browser_filters()
 
     {:noreply, socket}
+  end
+
+  defp empty_craft_plan do
+    %CraftPlan{
+      incomplete_playsets: [],
+      wildcards_owned: %{"common" => 0, "uncommon" => 0, "rare" => 0, "mythic" => 0},
+      wildcards_needed_by_rarity: %{}
+    }
   end
 
   @impl true

@@ -37,9 +37,38 @@ defmodule Scry2Web.HealthLive do
       maybe_auto_check_updates()
     end
 
+    # `current_version` is compile-time and `last_known_release` reads
+    # from :persistent_term — both cheap. The blocking probes
+    # (`current_status` GenServer.call, `last_check_at` Settings.get,
+    # `cache_fresh?` :persistent_term ttl check) are deferred to the
+    # live mount so the dead HTTP render returns immediately.
     current_version = SelfUpdate.current_version()
+
+    socket =
+      socket
+      |> assign(:page_title, "System")
+      |> assign(:report, nil)
+      |> assign(:reload_timer, nil)
+      |> assign(:updates_current_version, current_version)
+      |> assign(:updates_last_check_at, nil)
+      |> assign(
+        :updates_summary,
+        UpdatesHelpers.summarize(:none, current_version, nil, nil, false)
+      )
+      |> assign(:apply_phase, nil)
+      |> assign(:apply_error, nil)
+      |> assign(:apply_failed_at, nil)
+      |> assign(:apply_progress, nil)
+
+    socket =
+      if connected?(socket), do: assign_updates_card(socket, current_version), else: socket
+
+    {:ok, socket}
+  end
+
+  defp assign_updates_card(socket, current_version) do
     current_status = SelfUpdate.current_status()
-    checking? = connected?(socket) and not SelfUpdate.cache_fresh?()
+    checking? = not SelfUpdate.cache_fresh?()
 
     updates_summary =
       UpdatesHelpers.summarize(
@@ -50,20 +79,11 @@ defmodule Scry2Web.HealthLive do
         checking?
       )
 
-    apply_phase = apply_phase_from_status(current_status.phase)
-
-    {:ok,
-     socket
-     |> assign(:page_title, "System")
-     |> assign(:report, nil)
-     |> assign(:reload_timer, nil)
-     |> assign(:updates_current_version, current_version)
-     |> assign(:updates_last_check_at, SelfUpdate.last_check_at())
-     |> assign(:updates_summary, updates_summary)
-     |> assign(:apply_phase, apply_phase)
-     |> assign(:apply_error, current_status.error)
-     |> assign(:apply_failed_at, nil)
-     |> assign(:apply_progress, nil)}
+    socket
+    |> assign(:updates_last_check_at, SelfUpdate.last_check_at())
+    |> assign(:updates_summary, updates_summary)
+    |> assign(:apply_phase, apply_phase_from_status(current_status.phase))
+    |> assign(:apply_error, current_status.error)
   end
 
   # The Updater reports :idle when nothing is happening. We treat :idle

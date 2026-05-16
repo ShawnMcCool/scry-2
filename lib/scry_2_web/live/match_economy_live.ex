@@ -22,7 +22,15 @@ defmodule Scry2Web.MatchEconomyLive do
      |> assign(:until, nil)
      |> assign(:page, 1)
      |> assign(:per_page, @per_page)
-     |> load_data()}
+     |> assign(:summaries, [])
+     |> assign(:total, 0)
+     |> assign(:total_pages, 1)
+     |> assign(:timeline, [])}
+  end
+
+  @impl true
+  def handle_params(_params, _uri, socket) do
+    {:noreply, load_data(socket)}
   end
 
   @impl true

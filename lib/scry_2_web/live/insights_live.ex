@@ -26,7 +26,12 @@ defmodule Scry2Web.InsightsLive do
     {:ok,
      socket
      |> assign(:page_title, "Insights")
-     |> assign_tiles()}
+     |> assign(:tiles, [])}
+  end
+
+  @impl true
+  def handle_params(_params, _uri, socket) do
+    {:noreply, assign_tiles(socket)}
   end
 
   @impl true

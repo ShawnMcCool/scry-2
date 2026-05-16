@@ -39,12 +39,23 @@ defmodule Scry2Web.CardsLive do
      |> assign(:result_total, 0)
      |> assign(:cached_arena_ids, MapSet.new())
      |> assign(:import_log, [])
-     |> assign(:data_stats, Cards.data_source_stats())
-     |> assign(:import_status, load_import_status())}
+     |> assign(:data_stats, empty_data_stats())
+     |> assign(:import_status, empty_import_status())}
   end
 
   @impl true
   def handle_params(params, _uri, socket) do
+    # Cache the panel data across push_patch — only run the heavier
+    # aggregates on the initial navigation, not on every chip click.
+    socket =
+      if socket.assigns.data_stats == empty_data_stats() do
+        socket
+        |> assign(:data_stats, Cards.data_source_stats())
+        |> assign(:import_status, load_import_status())
+      else
+        socket
+      end
+
     {:noreply,
      socket
      |> assign(:search, Helpers.decode_search(params))
@@ -683,6 +694,32 @@ defmodule Scry2Web.CardsLive do
       scryfall_updated_at: timestamps.scryfall_updated_at,
       synthesis_running: oban_running?(PeriodicallySynthesizeCards),
       scryfall_running: oban_running?(PeriodicallyImportScryfallCards)
+    }
+  end
+
+  # Placeholders rendered on the dead mount before handle_params loads
+  # the real values. Empty rows display as "0 cards · 0 B" — the panel
+  # is laid out from the first paint.
+  defp empty_data_stats do
+    %{
+      mtga_client_count: 0,
+      mtga_client_bytes: 0,
+      scryfall_count: 0,
+      scryfall_bytes: 0,
+      synthesized_count: 0,
+      synthesized_bytes: 0,
+      image_count: 0,
+      image_bytes: 0,
+      db_bytes: 0
+    }
+  end
+
+  defp empty_import_status do
+    %{
+      synthesized_updated_at: nil,
+      scryfall_updated_at: nil,
+      synthesis_running: false,
+      scryfall_running: false
     }
   end
 

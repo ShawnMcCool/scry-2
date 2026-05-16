@@ -29,11 +29,16 @@ defmodule Scry2Web.OperationsLive do
      |> assign(:pending_rebuilds, nil)
      |> assign(:reload_timer, nil)
      |> assign(:report_modal, nil)
-     |> assign_service()
+     |> assign(:service_name, nil)
+     |> assign(:service_state, :unknown)
+     |> assign(:service_capabilities, %{})
      |> assign(:service_error, nil)}
   end
 
   defp assign_service(socket) do
+    # `Service.state/0` shells out to `systemctl is-active` on Linux,
+    # so keep it off the dead mount — only run after the live socket
+    # is connected (or on push_patch into the page).
     socket
     |> assign(:service_name, Service.name())
     |> assign(:service_state, Service.state())
@@ -42,7 +47,7 @@ defmodule Scry2Web.OperationsLive do
 
   @impl true
   def handle_params(_params, _uri, socket) do
-    {:noreply, load_status(socket)}
+    {:noreply, socket |> assign_service() |> load_status()}
   end
 
   defp load_status(socket) do
