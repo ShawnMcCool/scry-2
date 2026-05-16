@@ -244,6 +244,7 @@ defmodule Scry2Web.SetDetailLive do
     <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
+      catch_up_status={@catch_up_status}
       sidebar_collapsed={@sidebar_collapsed}
       players={@players}
       active_player_id={@active_player_id}

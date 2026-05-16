@@ -46,6 +46,10 @@ defmodule Scry2Web.Layouts do
     default: false,
     doc: "set by Scry2Web.SidebarScope on_mount; powers the rail toggle"
 
+  attr :catch_up_status, :map,
+    default: %{caught_up: true, lag: 0, projectors_behind: []},
+    doc: "set by Scry2Web.CatchUpScope on_mount; surfaces post-update absorption progress"
+
   slot :inner_block, required: true
 
   def app(assigns) do
@@ -70,6 +74,8 @@ defmodule Scry2Web.Layouts do
       </div>
     </header>
 
+    <.catch_up_banner status={@catch_up_status} />
+
     <div class="flex min-h-[calc(100vh-4rem)]">
       <.sidebar collapsed={@sidebar_collapsed} current_path={@current_path} />
 
@@ -83,6 +89,39 @@ defmodule Scry2Web.Layouts do
     <.flash_group flash={@flash} />
     """
   end
+
+  attr :status, :map, required: true
+
+  defp catch_up_banner(assigns) do
+    ~H"""
+    <div
+      :if={not @status.caught_up}
+      class="bg-info/10 border-b border-info/20 px-4 sm:px-6 lg:px-8 py-2"
+      role="status"
+      aria-live="polite"
+    >
+      <div
+        class="flex items-center gap-3 text-sm text-base-content/80"
+        style="max-width: min(90vw, 1400px); margin: 0 auto;"
+      >
+        <span class="loading loading-spinner loading-xs text-info" aria-hidden="true"></span>
+        <span>
+          Catching up on event log —
+          <span class="tabular-nums font-medium">{format_lag(@status.lag)}</span>
+          events behind across {length(@status.projectors_behind)} {projector_word(
+            @status.projectors_behind
+          )}. Some pages may show partial data for a minute.
+        </span>
+      </div>
+    </div>
+    """
+  end
+
+  defp format_lag(lag) when lag >= 1_000, do: "#{Float.round(lag / 1_000, 1)}k"
+  defp format_lag(lag), do: Integer.to_string(lag)
+
+  defp projector_word([_]), do: "projector"
+  defp projector_word(_), do: "projectors"
 
   attr :collapsed, :boolean, required: true
   attr :current_path, :string, required: true
