@@ -128,15 +128,39 @@ defmodule Scry2.Cards.Synthesize.MergeFields do
   end
 
   @doc """
-  Tiebreaker between two Scryfall printings — prefers the booster (standard
-  pack-art) printing over alt-art / showcase / promo treatments. Used when
-  multiple Scryfall rows collide on the same join key (arena_id or
-  `(set, number)`).
+  Tiebreaker between two Scryfall printings that collide on the same
+  `(set, number)` join key. Picks the row most likely to be the canonical
+  Oracle printing for synthesis into `cards_cards`.
+
+  Precedence:
+
+  1. **Drop flavor-name treatments.** Scryfall's bulk data publishes
+     parody / Universes-Beyond / "anime art" overlays as separate rows at
+     the same `(set, number)` with the flavor name in `name` wrapped in
+     literal double-quotes (e.g. `~s("The Very Hungry Archaic")` for the
+     Wildgrowth Archaic SOS overlay). These rows aren't separate printings
+     — they're cosmetic variants of the canonical row — and their `name`
+     field is unsuitable for `cards_cards.name`. The canonical row always
+     wins against a quoted-name row.
+  2. **Prefer the booster (standard pack-art) printing** over showcase /
+     promo treatments when both rows pass the flavor-name check.
+  3. **First wins** when nothing distinguishes them.
   """
-  @spec prefer_booster(ScryfallCard.t(), ScryfallCard.t()) :: ScryfallCard.t()
-  def prefer_booster(%ScryfallCard{booster: true} = a, _b), do: a
-  def prefer_booster(_a, %ScryfallCard{booster: true} = b), do: b
-  def prefer_booster(a, _b), do: a
+  @spec prefer_canonical_printing(ScryfallCard.t(), ScryfallCard.t()) :: ScryfallCard.t()
+  def prefer_canonical_printing(a, b) do
+    cond do
+      flavor_named?(a) and not flavor_named?(b) -> b
+      flavor_named?(b) and not flavor_named?(a) -> a
+      a.booster == true -> a
+      b.booster == true -> b
+      true -> a
+    end
+  end
+
+  defp flavor_named?(%ScryfallCard{name: name}) when is_binary(name),
+    do: String.starts_with?(name, "\"")
+
+  defp flavor_named?(_), do: false
 
   defp mtga_type_name("1"), do: "Artifact"
   defp mtga_type_name("2"), do: "Creature"

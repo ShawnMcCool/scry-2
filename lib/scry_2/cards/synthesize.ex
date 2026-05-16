@@ -99,7 +99,7 @@ defmodule Scry2.Cards.Synthesize do
       %ScryfallCard{set_code: code, collector_number: num} = card, acc
       when is_binary(code) and code != "" and is_binary(num) and num != "" ->
         key = {String.upcase(code), num}
-        Map.update(acc, key, card, &MergeFields.prefer_booster(&1, card))
+        Map.update(acc, key, card, &MergeFields.prefer_canonical_printing(&1, card))
 
       _, acc ->
         acc

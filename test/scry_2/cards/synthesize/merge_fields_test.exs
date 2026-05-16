@@ -258,20 +258,63 @@ defmodule Scry2.Cards.Synthesize.MergeFieldsTest do
     end
   end
 
-  describe "prefer_booster/2" do
+  describe "prefer_canonical_printing/2" do
     test "prefers the booster=true row" do
       a = TestFactory.build_scryfall_card(scryfall_id: "a", booster: false)
       b = TestFactory.build_scryfall_card(scryfall_id: "b", booster: true)
 
-      assert MergeFields.prefer_booster(a, b).scryfall_id == "b"
-      assert MergeFields.prefer_booster(b, a).scryfall_id == "b"
+      assert MergeFields.prefer_canonical_printing(a, b).scryfall_id == "b"
+      assert MergeFields.prefer_canonical_printing(b, a).scryfall_id == "b"
     end
 
     test "keeps the first when neither is booster=true" do
       a = TestFactory.build_scryfall_card(scryfall_id: "a", booster: false)
       b = TestFactory.build_scryfall_card(scryfall_id: "b", booster: false)
 
-      assert MergeFields.prefer_booster(a, b).scryfall_id == "a"
+      assert MergeFields.prefer_canonical_printing(a, b).scryfall_id == "a"
+    end
+
+    test "deprioritises a Scryfall flavor-name row (literal quotes in name) against the canonical row" do
+      # Scryfall's bulk data publishes flavor-name treatments (Universes Beyond,
+      # parody overlays, etc.) as separate rows at the same (set, number) with
+      # the flavor name in `name` wrapped in literal double-quotes. Without
+      # this deprioritisation, the flavor row can win the (set, number)
+      # tiebreaker and overwrite the canonical Oracle name in cards_cards.
+      canonical =
+        TestFactory.build_scryfall_card(
+          scryfall_id: "real",
+          name: "Wildgrowth Archaic",
+          booster: false
+        )
+
+      flavor =
+        TestFactory.build_scryfall_card(
+          scryfall_id: "flavor",
+          name: ~s("The Very Hungry Archaic"),
+          booster: false
+        )
+
+      assert MergeFields.prefer_canonical_printing(canonical, flavor).scryfall_id == "real"
+      assert MergeFields.prefer_canonical_printing(flavor, canonical).scryfall_id == "real"
+    end
+
+    test "canonical+booster beats flavor+booster" do
+      canonical =
+        TestFactory.build_scryfall_card(
+          scryfall_id: "real",
+          name: "Wildgrowth Archaic",
+          booster: true
+        )
+
+      flavor =
+        TestFactory.build_scryfall_card(
+          scryfall_id: "flavor",
+          name: ~s("The Very Hungry Archaic"),
+          booster: true
+        )
+
+      assert MergeFields.prefer_canonical_printing(canonical, flavor).scryfall_id == "real"
+      assert MergeFields.prefer_canonical_printing(flavor, canonical).scryfall_id == "real"
     end
   end
 end
