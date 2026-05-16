@@ -11,6 +11,21 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cards with a Scryfall flavor-name treatment now display their
+  real Oracle name on the Collection page.** Some Magic printings
+  carry a cosmetic "flavor name" overlay — for example, the SOS
+  printing of *Wildgrowth Archaic* also exists as a parody-art row
+  named `"The Very Hungry Archaic"` in Scryfall's bulk data. The
+  card synthesis step was picking the flavor-name row over the
+  canonical one in a tie, so the regular printing showed up under
+  the parody name (and your owned copies looked like they belonged
+  to a card you didn't have). Synthesis now skips flavor-name rows
+  whenever a canonical row exists at the same set + collector
+  number. After the update the affected cards will resolve to the
+  correct name on the next card refresh.
+
 ## v0.46.2 — 2026-05-16
 
 ### Fixed
