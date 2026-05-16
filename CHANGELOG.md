@@ -11,6 +11,22 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Collection page now counts playsets the way MTGA does — by
+  card name across reprints, not by set.** Previously, owning 4
+  copies of Essence Scatter from Foundations could still show
+  **Secrets of Strixhaven** with a missing Essence Scatter in the
+  per-set gap analysis, the **Incomplete playsets** card on
+  **Collection**, and the per-set tile owned-count — even though
+  MTGA itself shows the playset as complete and any further copies
+  become vault progress. The same card name now collapses to one
+  entry everywhere it's reprinted: a card you own four of anywhere
+  shows complete on every set's view, and a card you have a partial
+  total of (e.g. 1 SOS + 2 DMU) appears once as a 3/4 playset, not
+  twice across two sets. Alternate-art printings within a single set
+  collapse the same way.
+
 ## v0.46.6 — 2026-05-16
 
 ### Fixed
