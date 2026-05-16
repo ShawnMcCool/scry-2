@@ -453,10 +453,19 @@ defmodule Scry2.Cards do
   Used by `ImageCache` to avoid redundant Scryfall API calls.
   """
   def get_image_url_for_arena_id(arena_id) when is_integer(arena_id) do
+    # Two Scryfall rows can share the same (set, collector_number) when
+    # a printing has a "flavor name" treatment overlay — Scryfall stores
+    # the parody / Universes-Beyond name in `name` wrapped in literal
+    # double quotes (e.g. `"The Very Hungry Archaic"` for the Wildgrowth
+    # Archaic SOS overlay). Rank quoted-name rows as `1` and canonical
+    # rows as `0`, then ORDER BY rank so `limit: 1` always picks the
+    # canonical row when one exists. Mirrors
+    # `MergeFields.prefer_canonical_printing/2`.
     direct =
       Repo.one(
         from sc in "cards_scryfall_cards",
           where: sc.arena_id == ^arena_id,
+          order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
           select: fragment("json_extract(?, '$.normal')", sc.image_uris),
           limit: 1
       )
@@ -469,6 +478,7 @@ defmodule Scry2.Cards do
             sc.set_code == mc.expansion_code and
               sc.collector_number == mc.collector_number,
           where: mc.arena_id == ^arena_id,
+          order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
           select: fragment("json_extract(?, '$.normal')", sc.image_uris),
           limit: 1
       ) ||
@@ -479,6 +489,7 @@ defmodule Scry2.Cards do
           where:
             cc.arena_id == ^arena_id and
               not is_nil(fragment("json_extract(?, '$.normal')", sc.image_uris)),
+          order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
           select: fragment("json_extract(?, '$.normal')", sc.image_uris),
           limit: 1
       )

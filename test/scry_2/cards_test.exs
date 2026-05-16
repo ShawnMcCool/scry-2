@@ -133,6 +133,95 @@ defmodule Scry2.CardsTest do
     end
   end
 
+  describe "get_image_url_for_arena_id/1" do
+    test "direct arena_id match returns that row's image" do
+      TestFactory.create_scryfall_card(%{
+        arena_id: 700_001,
+        name: "Image Direct",
+        image_uris: %{"normal" => "https://example.com/direct.jpg"}
+      })
+
+      assert Cards.get_image_url_for_arena_id(700_001) == "https://example.com/direct.jpg"
+    end
+
+    test "mtga→scryfall join picks the canonical printing over a flavor-name row at the same (set, number)" do
+      # MTGA has one arena_id pointing at SOS/168. Scryfall has two rows
+      # at SOS/168: the canonical "Wildgrowth Archaic" and a stale flavor-
+      # name parody overlay (quoted name) left over from a previous bulk
+      # snapshot. The image lookup must prefer the canonical row.
+      TestFactory.create_mtga_card(%{
+        arena_id: 700_002,
+        name: "Wildgrowth Archaic",
+        expansion_code: "SOS",
+        collector_number: "168"
+      })
+
+      TestFactory.create_scryfall_card(%{
+        name: ~s("The Very Hungry Archaic"),
+        set_code: "SOS",
+        collector_number: "168",
+        image_uris: %{"normal" => "https://example.com/parody.jpg"}
+      })
+
+      TestFactory.create_scryfall_card(%{
+        name: "Wildgrowth Archaic",
+        set_code: "SOS",
+        collector_number: "168",
+        image_uris: %{"normal" => "https://example.com/canonical.jpg"}
+      })
+
+      assert Cards.get_image_url_for_arena_id(700_002) == "https://example.com/canonical.jpg"
+    end
+
+    test "falls back to the flavor-name row only when nothing canonical exists" do
+      # If Scryfall ever publishes a card that exists *only* as a flavor-
+      # name treatment, we'd rather show that than nothing. The tiebreaker
+      # demotes flavor-named rows, but does not exclude them outright.
+      TestFactory.create_mtga_card(%{
+        arena_id: 700_003,
+        name: "Lonely Flavor",
+        expansion_code: "TST",
+        collector_number: "9"
+      })
+
+      TestFactory.create_scryfall_card(%{
+        name: ~s("Lonely Flavor Parody"),
+        set_code: "TST",
+        collector_number: "9",
+        image_uris: %{"normal" => "https://example.com/lonely-parody.jpg"}
+      })
+
+      assert Cards.get_image_url_for_arena_id(700_003) == "https://example.com/lonely-parody.jpg"
+    end
+
+    test "name-join fallback prefers the canonical printing over a flavor-named row" do
+      # If MTGA has no expansion+collector match for the arena_id, the
+      # third query joins cards_cards → cards_scryfall_cards by name.
+      # When two Scryfall rows share the same `name` (rare but it happens
+      # for parody overlays that re-use the canonical card's display
+      # name), the canonical row should still win.
+      mtga = TestFactory.create_mtga_card(%{arena_id: 700_004, name: "Name Join Card"})
+
+      Cards.synthesize_card!(%{
+        arena_id: 700_004,
+        name: mtga.name,
+        rarity: "common"
+      })
+
+      TestFactory.create_scryfall_card(%{
+        name: ~s("Name Join Card"),
+        image_uris: %{"normal" => "https://example.com/name-parody.jpg"}
+      })
+
+      TestFactory.create_scryfall_card(%{
+        name: "Name Join Card",
+        image_uris: %{"normal" => "https://example.com/name-canonical.jpg"}
+      })
+
+      assert Cards.get_image_url_for_arena_id(700_004) == "https://example.com/name-canonical.jpg"
+    end
+  end
+
   describe "refresh timestamps" do
     test "import_timestamps/0 returns nil for all sources when never stamped" do
       Scry2.Settings.delete("cards_synthesized_last_refresh_at")
