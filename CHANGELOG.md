@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.46.4 — 2026-05-16
+
 ### Improved
 
 - **Every page now shows a "catching up" banner when the event
