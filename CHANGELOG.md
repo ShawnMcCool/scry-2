@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.46.8 — 2026-05-16
+
 ### Improved
 
 - **The gear icon in the top-right corner now opens the System page
