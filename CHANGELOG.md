@@ -11,6 +11,16 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Pages now respond faster on first load.** The **Insights**,
+  **Cards**, **Collection**, **System**, **Matches**, **Match Economy**,
+  **Operations**, and individual insight pages were running database
+  queries during the initial HTTP render, which made them feel slow to
+  appear. Scry2 now defers that work until the page connects over
+  WebSocket, so the first paint comes back immediately and the data
+  fills in as it's ready.
+
 ## v0.46.4 — 2026-05-16
 
 ### Improved
