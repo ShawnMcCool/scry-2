@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.46.2 — 2026-05-16
+
 ### Fixed
 
 - **Follow-up to v0.46.1.** The previous patch added the read-time
