@@ -15,7 +15,15 @@ config :scry_2, Scry2.Repo,
   pool: Ecto.Adapters.SQL.Sandbox,
   journal_mode: :wal,
   busy_timeout: 15_000,
-  default_transaction_mode: :immediate
+  default_transaction_mode: :immediate,
+  # With `pool_size: 1` and `max_cases: 24` async tests, every checkout
+  # queues against a single connection. The default `queue_target` of
+  # 50 ms is too tight for slow CI runners and produces flaky
+  # `:queue_timeout` cascades. 5 s gives the queue room to drain on
+  # constrained hardware; locally the queue is empty almost always so
+  # this costs nothing in practice.
+  queue_target: 5_000,
+  queue_interval: 60_000
 
 # Don't start the MTGA log watcher or card importers during tests.
 # Tests that need these exercise them directly via the module API.
