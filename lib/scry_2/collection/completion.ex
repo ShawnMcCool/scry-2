@@ -7,8 +7,15 @@ defmodule Scry2.Collection.Completion do
   map produces one `Completion`, even when nothing from it is owned —
   so the UI can show "I own 0 of 30 cards from FDN" without special-casing.
 
-  Holdings whose `card.set_id` does not appear in the roster map are
-  ignored (e.g. cards from a set that has not been imported yet).
+  ## Counts are by card name, not by arena_id
+
+  MTGA caps playsets by oracle name across reprints, so the user
+  perspective on "do I own this card" is by name, not by printing.
+  A user with a copy of Essence Scatter from any set sees that card
+  as owned in every set that reprints it. This module mirrors that:
+  the set roster's `names_by_rarity` is intersected with the names
+  in the user's holdings, regardless of which set each holding came
+  from.
   """
 
   alias Scry2.Cards.{Set, SetRoster}
@@ -28,33 +35,13 @@ defmodule Scry2.Collection.Completion do
 
   @spec from_holdings([Holding.t()], %{integer() => SetRoster.t()}) :: [t()]
   def from_holdings(holdings, rosters) when is_list(holdings) and is_map(rosters) do
-    owned_by_set =
-      Enum.reduce(holdings, %{}, fn holding, acc ->
-        set_id = holding.card.set_id
-
-        cond do
-          is_nil(set_id) ->
-            acc
-
-          not Map.has_key?(rosters, set_id) ->
-            acc
-
-          true ->
-            rarity = holding.card.rarity || "unknown"
-
-            Map.update(
-              acc,
-              set_id,
-              %{rarity => 1},
-              &Map.update(&1, rarity, 1, fn n -> n + 1 end)
-            )
-        end
-      end)
+    owned_names =
+      holdings
+      |> Enum.map(& &1.card.name)
+      |> MapSet.new()
 
     rosters
-    |> Enum.map(fn {set_id, roster} ->
-      build_completion(roster, Map.get(owned_by_set, set_id, %{}))
-    end)
+    |> Enum.map(fn {_set_id, roster} -> build_completion(roster, owned_names) end)
     |> Enum.sort_by(&sort_key(&1.set), :desc)
   end
 
@@ -66,22 +53,18 @@ defmodule Scry2.Collection.Completion do
     owned / total
   end
 
-  defp build_completion(%SetRoster{set: set, totals: totals}, owned_by_rarity) do
+  defp build_completion(%SetRoster{} = roster, owned_names) do
+    %SetRoster{set: set, totals: totals, names_by_rarity: names_by_rarity} = roster
+
     by_rarity =
-      totals
-      |> Map.keys()
-      |> MapSet.new()
-      |> MapSet.union(MapSet.new(Map.keys(owned_by_rarity)))
-      |> Enum.reduce(%{}, fn rarity, acc ->
-        Map.put(acc, rarity, %{
-          owned: Map.get(owned_by_rarity, rarity, 0),
-          total: Map.get(totals, rarity, 0)
-        })
+      Enum.reduce(names_by_rarity, %{}, fn {rarity, names_in_set}, acc ->
+        owned_count = MapSet.size(MapSet.intersection(names_in_set, owned_names))
+        Map.put(acc, rarity, %{owned: owned_count, total: Map.get(totals, rarity, 0)})
       end)
 
     %__MODULE__{
       set: set,
-      owned_unique: Enum.reduce(owned_by_rarity, 0, fn {_, n}, acc -> acc + n end),
+      owned_unique: Enum.reduce(by_rarity, 0, fn {_, %{owned: n}}, acc -> acc + n end),
       total_unique: Enum.reduce(totals, 0, fn {_, n}, acc -> acc + n end),
       by_rarity: by_rarity
     }

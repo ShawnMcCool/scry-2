@@ -149,12 +149,12 @@ defmodule Scry2.Collection.SetCompletionTest do
       assert result.by_rarity["mythic"] == %{missing: 1, partial: 0, complete: 0, total: 1}
     end
 
-    test "ignores holdings whose card belongs to a different set" do
+    test "ignores holdings of unrelated card names from other sets" do
       target = TestFactory.build_set(%{id: 1, code: "TGT"})
       other = TestFactory.build_set(%{id: 2, code: "OTH"})
 
-      target_card = card(82_001, "common", target.id)
-      stray_card = card(82_002, "common", other.id)
+      target_card = card(82_001, "common", target.id, name: "Target Card")
+      stray_card = card(82_002, "common", other.id, name: "Unrelated Card")
 
       holdings = [holding(target_card, 4), holding(stray_card, 2)]
 
@@ -163,6 +163,65 @@ defmodule Scry2.Collection.SetCompletionTest do
       assert [{c, 4}] = result.buckets.complete
       assert c.arena_id == 82_001
       assert result.buckets.partial == []
+    end
+
+    test "counts holdings of the same card name from other sets toward the playset" do
+      # MTGA caps playsets by oracle name across reprints, not per
+      # printing — if you own 4 copies of Essence Scatter across any
+      # combination of sets, MTGA shows you complete for every set that
+      # reprints it, and further copies become vault progress. The
+      # per-set gap analysis must match that reality.
+      sos = TestFactory.build_set(%{id: 10, code: "SOS"})
+      dmu = TestFactory.build_set(%{id: 11, code: "DMU"})
+
+      sos_scatter = card(70_500, "common", sos.id, name: "Essence Scatter")
+      dmu_scatter = card(70_600, "common", dmu.id, name: "Essence Scatter")
+
+      # Player owns 4 from DMU and 0 from SOS — MTGA shows SOS as
+      # complete; so should we.
+      holdings = [holding(dmu_scatter, 4)]
+
+      result = SetCompletion.from(sos, [sos_scatter], holdings)
+
+      assert [{c, 4}] = result.buckets.complete
+      assert c.arena_id == 70_500
+      assert result.buckets.missing == []
+      assert result.buckets.partial == []
+    end
+
+    test "caps the rolled-up name count at a playset of 4" do
+      # 2 SOS + 4 DMU = 6 by name, but a playset is 4. Excess copies
+      # are vault progress in MTGA, not collection count.
+      sos = TestFactory.build_set(%{id: 10, code: "SOS"})
+      dmu = TestFactory.build_set(%{id: 11, code: "DMU"})
+
+      sos_scatter = card(70_500, "common", sos.id, name: "Essence Scatter")
+      dmu_scatter = card(70_600, "common", dmu.id, name: "Essence Scatter")
+
+      holdings = [holding(sos_scatter, 2), holding(dmu_scatter, 4)]
+
+      result = SetCompletion.from(sos, [sos_scatter], holdings)
+
+      assert [{_, 4}] = result.buckets.complete
+      assert result.buckets.partial == []
+    end
+
+    test "partial counts also pull from other-set printings" do
+      # 1 SOS + 2 DMU = 3 by name, still partial. We need one more
+      # copy of any printing to complete the playset.
+      sos = TestFactory.build_set(%{id: 10, code: "SOS"})
+      dmu = TestFactory.build_set(%{id: 11, code: "DMU"})
+
+      sos_scatter = card(70_500, "common", sos.id, name: "Essence Scatter")
+      dmu_scatter = card(70_600, "common", dmu.id, name: "Essence Scatter")
+
+      holdings = [holding(sos_scatter, 1), holding(dmu_scatter, 2)]
+
+      result = SetCompletion.from(sos, [sos_scatter], holdings)
+
+      assert [{_, 3}] = result.buckets.partial
+      assert result.buckets.complete == []
+      assert result.buckets.missing == []
     end
 
     test "with empty holdings, every card is missing" do

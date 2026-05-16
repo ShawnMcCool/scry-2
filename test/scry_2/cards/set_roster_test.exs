@@ -6,7 +6,7 @@ defmodule Scry2.Cards.SetRosterTest do
   alias Scry2.TestFactory
 
   describe "compute/0" do
-    test "groups cards by set and rarity, counting unique arena_ids" do
+    test "groups cards by set and rarity, counting unique card names" do
       lci =
         TestFactory.create_set(%{code: "LCI", name: "Lost Caverns", released_at: ~D[2024-11-01]})
 
@@ -15,6 +15,7 @@ defmodule Scry2.Cards.SetRosterTest do
       _ =
         TestFactory.create_card(%{
           arena_id: 91_001,
+          name: "LCI Common A",
           set_id: lci.id,
           rarity: "common",
           is_booster: true
@@ -23,6 +24,7 @@ defmodule Scry2.Cards.SetRosterTest do
       _ =
         TestFactory.create_card(%{
           arena_id: 91_002,
+          name: "LCI Common B",
           set_id: lci.id,
           rarity: "common",
           is_booster: true
@@ -31,6 +33,7 @@ defmodule Scry2.Cards.SetRosterTest do
       _ =
         TestFactory.create_card(%{
           arena_id: 91_003,
+          name: "LCI Rare A",
           set_id: lci.id,
           rarity: "rare",
           is_booster: true
@@ -39,6 +42,7 @@ defmodule Scry2.Cards.SetRosterTest do
       _ =
         TestFactory.create_card(%{
           arena_id: 91_010,
+          name: "MID Mythic A",
           set_id: mid.id,
           rarity: "mythic",
           is_booster: true
@@ -49,8 +53,40 @@ defmodule Scry2.Cards.SetRosterTest do
       assert %SetRoster{set: %Cards.Set{code: "LCI"}, totals: lci_totals} = rosters[lci.id]
       assert lci_totals == %{"common" => 2, "rare" => 1}
 
+      assert rosters[lci.id].names_by_rarity["common"] ==
+               MapSet.new(["LCI Common A", "LCI Common B"])
+
+      assert rosters[lci.id].names_by_rarity["rare"] == MapSet.new(["LCI Rare A"])
+
       assert %SetRoster{set: %Cards.Set{code: "MID"}, totals: mid_totals} = rosters[mid.id]
       assert mid_totals == %{"mythic" => 1}
+      assert rosters[mid.id].names_by_rarity["mythic"] == MapSet.new(["MID Mythic A"])
+    end
+
+    test "collapses alternate-art printings of the same name into one entry" do
+      sos = TestFactory.create_set(%{code: "SOS", name: "Secrets of Strixhaven"})
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 91_100,
+          name: "Wildgrowth Archaic",
+          collector_number: "168",
+          set_id: sos.id,
+          rarity: "rare",
+          is_booster: true
+        })
+
+      _ =
+        TestFactory.create_card(%{
+          arena_id: 91_101,
+          name: "Wildgrowth Archaic",
+          collector_number: "297",
+          set_id: sos.id,
+          rarity: "rare",
+          is_booster: true
+        })
+
+      assert SetRoster.compute()[sos.id].totals == %{"rare" => 1}
     end
 
     test "excludes non-booster cards (Alchemy duplicates, basics, tokens)" do

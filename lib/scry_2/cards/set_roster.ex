@@ -25,14 +25,15 @@ defmodule Scry2.Cards.SetRoster do
 
   import Ecto.Query
 
-  @enforce_keys [:set, :totals]
-  defstruct [:set, :totals]
+  @enforce_keys [:set, :totals, :names_by_rarity]
+  defstruct [:set, :totals, :names_by_rarity]
 
   @type rarity :: String.t()
 
   @type t :: %__MODULE__{
           set: Set.t(),
-          totals: %{rarity() => non_neg_integer()}
+          totals: %{rarity() => non_neg_integer()},
+          names_by_rarity: %{rarity() => MapSet.t(String.t())}
         }
 
   @cache_key {__MODULE__, :v1}
@@ -72,7 +73,10 @@ defmodule Scry2.Cards.SetRoster do
 
     sets_in_scryfall_lag = sets_with_no_booster_signal()
 
-    totals_by_set =
+    # Select card *names* per (set, rarity) and roll them into MapSets
+    # so alternate-art printings collapse — `totals` then counts unique
+    # cards the player can build, not unique arena_ids.
+    names_by_set =
       Card
       |> where([c], not is_nil(c.set_id))
       |> where([c], c.rarity in @booster_rarities)
@@ -80,18 +84,23 @@ defmodule Scry2.Cards.SetRoster do
         [c],
         c.is_booster == true or c.set_id in ^MapSet.to_list(sets_in_scryfall_lag)
       )
-      |> group_by([c], [c.set_id, c.rarity])
-      |> select([c], {c.set_id, c.rarity, count(c.arena_id)})
+      |> select([c], {c.set_id, c.rarity, c.name})
       |> Repo.all()
-      |> Enum.reduce(%{}, fn {set_id, rarity, count}, acc ->
-        Map.update(acc, set_id, %{rarity => count}, &Map.put(&1, rarity, count))
+      |> Enum.reduce(%{}, fn {set_id, rarity, name}, acc ->
+        Map.update(
+          acc,
+          set_id,
+          %{rarity => MapSet.new([name])},
+          &Map.update(&1, rarity, MapSet.new([name]), fn names -> MapSet.put(names, name) end)
+        )
       end)
 
-    for {set_id, totals} <- totals_by_set,
+    for {set_id, names_by_rarity} <- names_by_set,
         set = Map.get(sets_by_id, set_id),
         not is_nil(set),
         into: %{} do
-      {set_id, %__MODULE__{set: set, totals: totals}}
+      totals = Map.new(names_by_rarity, fn {r, names} -> {r, MapSet.size(names)} end)
+      {set_id, %__MODULE__{set: set, totals: totals, names_by_rarity: names_by_rarity}}
     end
   end
 

@@ -5,10 +5,11 @@ defmodule Scry2.Collection.CompletionTest do
   alias Scry2.Collection.{Completion, Holding}
   alias Scry2.TestFactory
 
-  defp holding(arena_id, count, set_id, rarity) do
+  defp holding(arena_id, count, set_id, rarity, name \\ nil) do
     card =
       TestFactory.build_card(%{
         arena_id: arena_id,
+        name: name || "Card #{arena_id}",
         rarity: rarity,
         set_id: set_id
       })
@@ -21,10 +22,21 @@ defmodule Scry2.Collection.CompletionTest do
     }
   end
 
+  # Builds a SetRoster with synthetic card names for each rarity slot.
+  # `totals` keeps the expected per-rarity card count; names are
+  # generated `<code>-<rarity>-<idx>` so tests can pair owned names by
+  # passing the same convention via `holding/5`.
   defp roster(set_id, code, totals) do
+    names_by_rarity =
+      Map.new(totals, fn {rarity, n} ->
+        names = for i <- 1..n, do: "#{code}-#{rarity}-#{i}"
+        {rarity, MapSet.new(names)}
+      end)
+
     %SetRoster{
       set: TestFactory.build_set(%{id: set_id, code: code}),
-      totals: totals
+      totals: totals,
+      names_by_rarity: names_by_rarity
     }
   end
 
@@ -34,10 +46,10 @@ defmodule Scry2.Collection.CompletionTest do
       mid_id = 2
 
       holdings = [
-        holding(70_001, 4, lci_id, "common"),
-        holding(70_002, 1, lci_id, "common"),
-        holding(70_003, 1, lci_id, "rare"),
-        holding(70_010, 1, mid_id, "mythic")
+        holding(70_001, 4, lci_id, "common", "LCI-common-1"),
+        holding(70_002, 1, lci_id, "common", "LCI-common-2"),
+        holding(70_003, 1, lci_id, "rare", "LCI-rare-1"),
+        holding(70_010, 1, mid_id, "mythic", "MID-mythic-1")
       ]
 
       rosters = %{
@@ -59,6 +71,37 @@ defmodule Scry2.Collection.CompletionTest do
 
       assert mid.owned_unique == 1
       assert mid.by_rarity["mythic"] == %{owned: 1, total: 1}
+    end
+
+    test "counts a card name as owned in every set whose roster contains it" do
+      # The same Essence Scatter is in two sets' rosters. The player
+      # only owns it from DMU, but MTGA shows them owning it in SOS
+      # too — and so should we.
+      sos_id = 10
+      dmu_id = 11
+
+      sos_roster = %SetRoster{
+        set: TestFactory.build_set(%{id: sos_id, code: "SOS"}),
+        totals: %{"common" => 1},
+        names_by_rarity: %{"common" => MapSet.new(["Essence Scatter"])}
+      }
+
+      dmu_roster = %SetRoster{
+        set: TestFactory.build_set(%{id: dmu_id, code: "DMU"}),
+        totals: %{"common" => 1},
+        names_by_rarity: %{"common" => MapSet.new(["Essence Scatter"])}
+      }
+
+      holdings = [holding(70_600, 4, dmu_id, "common", "Essence Scatter")]
+
+      result =
+        Completion.from_holdings(holdings, %{sos_id => sos_roster, dmu_id => dmu_roster})
+        |> Map.new(&{&1.set.code, &1})
+
+      assert result["SOS"].owned_unique == 1
+      assert result["SOS"].by_rarity["common"] == %{owned: 1, total: 1}
+      assert result["DMU"].owned_unique == 1
+      assert result["DMU"].by_rarity["common"] == %{owned: 1, total: 1}
     end
 
     test "includes sets from the roster even when nothing is owned" do

@@ -10,17 +10,19 @@ defmodule Scry2.Collection.SetCompletion do
   ## Rolling up duplicate printings
 
   MTGA tracks each art printing (regular, alternate, borderless, showcase,
-  etc.) under its own `arena_id`. For playset-completeness the player
-  thinks of all printings together — owning 3 regular + 1 alternate of a
-  card is a complete playset of 4. This module groups cards by `name`
-  before bucketing:
+  etc.) under its own `arena_id` — but it caps **playsets by oracle
+  name**, not by printing. If a player owns 4 copies of Essence Scatter
+  across any combination of sets, MTGA shows a complete playset for
+  every set that reprints it, and further copies become vault progress.
 
-    * Sums `count` across every `arena_id` that shares the name.
-    * Picks the **canonical display card** (lowest numeric collector
-      number) — typically the original / non-promo printing.
+  This module mirrors that reality by summing copies across every
+  printing of a name that the player owns, then capping at a playset of
+  4. The canonical display card is the lowest-numbered printing in the
+  set being viewed.
 
-  Holdings whose `card.set_id` does not match the given set are silently
-  ignored, so callers may pass the full collection holdings list.
+  Callers pass the full collection holdings list; cross-set printings of
+  the same card name *do* count toward the playset, but holdings of
+  unrelated card names from other sets are ignored.
 
   ## Bucket shape
 
@@ -65,14 +67,14 @@ defmodule Scry2.Collection.SetCompletion do
   @playset 4
 
   @spec from(Set.t(), [Card.t()], [Holding.t()]) :: t()
-  def from(%Set{id: set_id} = set, set_cards, holdings)
+  def from(%Set{} = set, set_cards, holdings)
       when is_list(set_cards) and is_list(holdings) do
-    counts_by_arena_id =
-      holdings
-      |> Enum.filter(&(&1.card.set_id == set_id))
-      |> Map.new(&{&1.arena_id, &1.count})
+    counts_by_name =
+      Enum.reduce(holdings, %{}, fn h, acc ->
+        Map.update(acc, h.card.name, h.count, &(&1 + h.count))
+      end)
 
-    rolled = roll_up_by_name(set_cards, counts_by_arena_id)
+    rolled = roll_up_by_name(set_cards, counts_by_name)
 
     %__MODULE__{
       set: set,
@@ -97,19 +99,17 @@ defmodule Scry2.Collection.SetCompletion do
     %{missing: missing, partial: partial, complete: complete, total: missing + partial + complete}
   end
 
-  # Returns [{canonical_card, summed_count}, ...] in stable input order
-  # by canonical card's collector number.
-  defp roll_up_by_name(cards, counts_by_arena_id) do
+  # Returns [{canonical_card, capped_count}, ...] in stable input order
+  # by canonical card's collector number. The count comes from the
+  # name-rollup of the entire collection (not just this set), capped at
+  # a playset of 4 because MTGA does not distinguish printings when
+  # filling the playset cap.
+  defp roll_up_by_name(cards, counts_by_name) do
     cards
     |> Enum.group_by(& &1.name)
-    |> Enum.map(fn {_name, printings} ->
+    |> Enum.map(fn {name, printings} ->
       canonical = Enum.min_by(printings, &collector_sort_key(&1.collector_number))
-
-      total =
-        Enum.reduce(printings, 0, fn printing, acc ->
-          acc + Map.get(counts_by_arena_id, printing.arena_id, 0)
-        end)
-
+      total = min(Map.get(counts_by_name, name, 0), @playset)
       {canonical, total}
     end)
   end
