@@ -46,7 +46,16 @@ config :scry_2, Oban,
        {"0 6 * * *", Scry2.Workers.PeriodicallyComputeInsights},
        # Hourly at :17 — check GitHub Releases for a new Scry2 version.
        # Offset from the :00 slots above so the cron firings don't pile up.
-       {"17 * * * *", Scry2.SelfUpdate.CheckerJob, args: %{"trigger" => "cron"}}
+       {"17 * * * *", Scry2.SelfUpdate.CheckerJob, args: %{"trigger" => "cron"}},
+       # Every 15 minutes — refresh the collection from MTGA memory.
+       # The activity trigger (`Scry2.Collection.ActivityTrigger`) only
+       # fires on domain log events; pack opens, vault recycles, and other
+       # store/collection-screen activity may not produce log events at
+       # all. The cron closes the gap so the snapshot stays current
+       # whenever MTGA is running, regardless of in-game activity.
+       # `RefreshJob` has a 30-second Oban unique window (no pile-up) and
+       # discards cleanly when MTGA isn't found (no retry storm).
+       {"*/15 * * * *", Scry2.Collection.RefreshJob, args: %{"trigger" => "cron"}}
      ]}
   ]
 
