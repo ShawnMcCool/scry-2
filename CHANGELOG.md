@@ -11,6 +11,19 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Cards with a Scryfall flavor-name treatment now use the canonical
+  art on the per-set Collection page.** Some printings have two
+  Scryfall rows at the same set/collector number — a regular row plus
+  a parody / anime / Universes Beyond "flavor name" overlay (e.g.
+  *The Very Hungry Archaic* over *Wildgrowth Archaic* in SOS). The
+  image lookup wasn't ordering its results, so SQLite could pick the
+  overlay's anime-style art for the card tile. Scry2 now consistently
+  prefers the canonical printing, the same way card-name selection has
+  worked since v0.46.3. No reimport needed — the change takes effect
+  on the next page load.
+
 ## v0.46.5 — 2026-05-16
 
 ### Improved
