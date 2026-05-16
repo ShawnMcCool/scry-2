@@ -1,7 +1,7 @@
 defmodule Scry2Web.SettingsTabs do
   @moduledoc """
   Shared tab header rendered at the top of each page in the Settings
-  group — System (`/`), Operations (`/operations`), and Settings
+  group — System (`/system`), Operations (`/operations`), and Settings
   (`/settings`). Highlights the active tab based on the current URL
   path and navigates between siblings via `push_navigate`.
   """
@@ -16,7 +16,7 @@ defmodule Scry2Web.SettingsTabs do
     <div role="tablist" class="tabs tabs-bordered">
       <.link
         role="tab"
-        navigate={~p"/"}
+        navigate={~p"/system"}
         class={["tab", tab_class(@current_path, :system)]}
       >
         System
@@ -40,7 +40,9 @@ defmodule Scry2Web.SettingsTabs do
   end
 
   defp tab_class(current_path, :system) do
-    if current_path in ["/", "", nil], do: "tab-active", else: ""
+    if current_path && String.starts_with?(current_path, "/system"),
+      do: "tab-active",
+      else: ""
   end
 
   defp tab_class(current_path, :operations) do

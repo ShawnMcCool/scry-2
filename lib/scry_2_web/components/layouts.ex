@@ -233,10 +233,7 @@ defmodule Scry2Web.Layouts do
       class="dropdown dropdown-end"
       phx-click-away={close_dropdown("profile-dropdown")}
     >
-      <summary
-        class="btn btn-ghost btn-sm gap-2 border border-base-300 px-3"
-        phx-click={close_dropdown("gear-dropdown")}
-      >
+      <summary class="btn btn-ghost btn-sm gap-2 border border-base-300 px-3">
         <div class="w-5 h-5 rounded-full bg-gradient-to-br from-primary to-primary/70 flex items-center justify-center">
           <span class="text-[10px] font-bold text-primary-content">{@avatar_letter}</span>
         </div>
@@ -289,100 +286,21 @@ defmodule Scry2Web.Layouts do
       )
 
     ~H"""
-    <details
-      id="gear-dropdown"
-      class="dropdown dropdown-end"
-      phx-click-away={close_dropdown("gear-dropdown")}
-    >
-      <summary
-        class={[
-          "btn btn-ghost btn-sm gap-1.5 border border-base-300 px-2",
-          @active && "text-primary"
-        ]}
-        phx-click={close_dropdown("profile-dropdown")}
-      >
-        <.icon name="hero-cog-6-tooth" class="size-4 text-base-content/60" />
-        <span
-          :if={@indicator.kind == :badge}
-          class="badge badge-xs badge-soft badge-info"
-        >
-          {@indicator.label}
-        </span>
-      </summary>
-      <div class="dropdown-content z-50 mt-2 w-56 rounded-lg border border-base-300 bg-base-200 shadow-xl p-2">
-        <.gear_menu_item
-          path={~p"/system"}
-          label="System"
-          icon="hero-heart"
-          current_path={@current_path}
-        />
-        <.gear_menu_item
-          path={~p"/operations"}
-          label="Operations"
-          icon="hero-wrench-screwdriver"
-          current_path={@current_path}
-        />
-        <.link
-          navigate={~p"/settings"}
-          phx-click={close_dropdown("gear-dropdown")}
-          class={[
-            "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm",
-            if(NavHelpers.active?(@current_path, "/settings"),
-              do: "bg-primary/10 text-primary font-medium",
-              else: "text-base-content/70 hover:bg-base-300"
-            )
-          ]}
-        >
-          <.icon name="hero-cog-6-tooth" class="size-4" />
-          <span>Settings</span>
-          <span
-            :if={@indicator.kind == :badge}
-            class="badge badge-xs badge-soft badge-info ml-auto"
-          >
-            {@indicator.label}
-          </span>
-        </.link>
-        <.gear_menu_item
-          path={~p"/console"}
-          label="Console"
-          icon="hero-command-line"
-          current_path={@current_path}
-        />
-      </div>
-    </details>
-    """
-  end
-
-  attr :path, :string, required: true
-  attr :label, :string, required: true
-  attr :icon, :string, required: true
-  attr :current_path, :string, required: true
-  attr :exact?, :boolean, default: false
-
-  defp gear_menu_item(assigns) do
-    active =
-      if assigns.exact? do
-        assigns.current_path == assigns.path
-      else
-        NavHelpers.active?(assigns.current_path, assigns.path)
-      end
-
-    assigns = assign(assigns, :active, active)
-
-    ~H"""
     <.link
-      navigate={@path}
-      phx-click={close_dropdown("gear-dropdown")}
+      navigate={~p"/system"}
       class={[
-        "flex items-center gap-2 px-3 py-1.5 rounded-md text-sm",
-        if(@active,
-          do: "bg-primary/10 text-primary font-medium",
-          else: "text-base-content/70 hover:bg-base-300"
-        )
+        "btn btn-ghost btn-sm gap-1.5 border border-base-300 px-2",
+        @active && "text-primary"
       ]}
+      aria-label="System"
     >
-      <.icon name={@icon} class="size-4" />
-      <span>{@label}</span>
+      <.icon name="hero-cog-6-tooth" class="size-4 text-base-content/60" />
+      <span
+        :if={@indicator.kind == :badge}
+        class="badge badge-xs badge-soft badge-info"
+      >
+        {@indicator.label}
+      </span>
     </.link>
     """
   end
