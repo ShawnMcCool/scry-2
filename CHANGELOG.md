@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.46.6 — 2026-05-16
+
 ### Fixed
 
 - **Cards with a Scryfall flavor-name treatment now use the canonical
