@@ -17,6 +17,7 @@ defmodule Scry2Web.DecksLive do
   alias Scry2.Cards
   alias Scry2.Cards.ImageCache
   alias Scry2.Decks
+  alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.Topics
   alias Scry2Web.DecksAnalysisHelpers
   alias Scry2Web.DecksHelpers
@@ -29,7 +30,9 @@ defmodule Scry2Web.DecksLive do
      assign(socket,
        decks: [],
        deck: nil,
-       deck_filter: :played,
+       status_filter: :active,
+       starred_only: false,
+       export_text: "",
        performance: nil,
        versions: [],
        version_matches: %{},
@@ -74,9 +77,23 @@ defmodule Scry2Web.DecksLive do
 
   def handle_params(params, _uri, socket) do
     player_id = socket.assigns[:active_player_id]
-    deck_filter = parse_deck_filter(params["filter"])
-    decks = Decks.list_decks_with_stats(player_id, only_played: deck_filter == :played)
-    {:noreply, assign(socket, decks: decks, deck: nil, deck_filter: deck_filter)}
+    status_filter = parse_status_filter(params["status"])
+    starred_only = params["starred"] == "1"
+
+    decks =
+      Decks.list_decks_with_stats(player_id,
+        only_played: false,
+        status: status_filter,
+        starred_only: starred_only
+      )
+
+    {:noreply,
+     assign(socket,
+       decks: decks,
+       deck: nil,
+       status_filter: status_filter,
+       starred_only: starred_only
+     )}
   end
 
   @impl true
@@ -102,6 +119,34 @@ defmodule Scry2Web.DecksLive do
     end
   end
 
+  def handle_event("toggle_star", %{"deck-id" => deck_id}, socket) do
+    Decks.toggle_starred!(deck_id)
+    {:noreply, socket}
+  end
+
+  def handle_event("toggle_archived", %{"deck-id" => deck_id}, socket) do
+    Decks.toggle_archived!(deck_id)
+    {:noreply, socket}
+  end
+
+  def handle_event("copied", _params, socket) do
+    {:noreply,
+     put_flash(
+       socket,
+       :info,
+       "Copied to clipboard — switch to MTGA → click Import in the Deck Builder."
+     )}
+  end
+
+  def handle_event("copy_failed", _params, socket) do
+    {:noreply,
+     put_flash(
+       socket,
+       :error,
+       "Couldn't access the clipboard. Use the View text section to copy manually."
+     )}
+  end
+
   @impl true
   def handle_info({:deck_updated, _}, socket) do
     {:noreply, schedule_reload(socket)}
@@ -113,8 +158,13 @@ defmodule Scry2Web.DecksLive do
     socket =
       case socket.assigns.deck do
         nil ->
-          deck_filter = socket.assigns.deck_filter
-          decks = Decks.list_decks_with_stats(player_id, only_played: deck_filter == :played)
+          decks =
+            Decks.list_decks_with_stats(player_id,
+              only_played: false,
+              status: socket.assigns.status_filter,
+              starred_only: socket.assigns.starred_only
+            )
+
           assign(socket, decks: decks, reload_timer: nil)
 
         deck ->
@@ -154,25 +204,60 @@ defmodule Scry2Web.DecksLive do
         </div>
         <div class="flex items-center gap-1">
           <.link
-            patch={~p"/decks?filter=played"}
-            class={["btn btn-sm", if(@deck_filter == :played, do: "btn-primary", else: "btn-ghost")]}
+            patch={status_url(:active, @starred_only)}
+            class={[
+              "btn btn-sm",
+              if(@status_filter == :active, do: "btn-primary", else: "btn-ghost")
+            ]}
           >
-            Played Decks
+            Active
           </.link>
           <.link
-            patch={~p"/decks?filter=all"}
-            class={["btn btn-sm", if(@deck_filter == :all, do: "btn-primary", else: "btn-ghost")]}
+            patch={status_url(:archived, @starred_only)}
+            class={[
+              "btn btn-sm",
+              if(@status_filter == :archived, do: "btn-primary", else: "btn-ghost")
+            ]}
           >
-            All Decks
+            Archived
+          </.link>
+          <.link
+            patch={status_url(:all, @starred_only)}
+            class={[
+              "btn btn-sm",
+              if(@status_filter == :all, do: "btn-primary", else: "btn-ghost")
+            ]}
+          >
+            All
+          </.link>
+          <span class="mx-1 text-base-content/20">|</span>
+          <.link
+            patch={status_url(@status_filter, not @starred_only)}
+            class={[
+              "btn btn-sm",
+              if(@starred_only, do: "btn-primary", else: "btn-ghost")
+            ]}
+            aria-label="Toggle starred-only filter"
+          >
+            <.icon name={if(@starred_only, do: "hero-star-solid", else: "hero-star")} class="size-4" />
+            Starred
           </.link>
         </div>
       </div>
 
-      <.empty_state :if={@decks == [] and @deck_filter == :played}>
-        No constructed decks recorded yet. Play a match to start tracking deck performance.
+      <.empty_state :if={@decks == [] and @status_filter == :active and not @starred_only}>
+        No active decks. Create or edit a deck in MTGA — it will appear here as soon as Scry2 sees the next DeckUpdated event.
       </.empty_state>
 
-      <.empty_state :if={@decks == [] and @deck_filter == :all}>
+      <.empty_state :if={@decks == [] and @status_filter == :archived}>
+        No archived decks yet. Decks move here automatically when you delete them in MTGA.
+      </.empty_state>
+
+      <.empty_state :if={@decks == [] and @starred_only}>
+        No starred decks. Star a deck from its detail page to mark it as a favourite.
+      </.empty_state>
+
+      <.empty_state :if={@decks == [] and @status_filter == :all and not @starred_only}>
         No decks found. Decks appear here after MTGA emits a DeckUpdated event.
       </.empty_state>
 
@@ -180,6 +265,7 @@ defmodule Scry2Web.DecksLive do
         <table class="table table-zebra w-full">
           <thead>
             <tr class="text-xs text-base-content/60 uppercase">
+              <th class="w-10"></th>
               <th>Deck</th>
               <th>Format</th>
               <th class="text-center">BO1</th>
@@ -193,9 +279,33 @@ defmodule Scry2Web.DecksLive do
               class="cursor-pointer hover:bg-base-content/5 transition-colors"
               phx-click={JS.navigate(~p"/decks/#{entry.deck.mtga_deck_id}")}
             >
+              <td class="w-10" onclick="event.stopPropagation()">
+                <button
+                  type="button"
+                  class="btn btn-ghost btn-xs"
+                  aria-label={if(entry.deck.starred, do: "Unstar deck", else: "Star deck")}
+                  phx-click="toggle_star"
+                  phx-value-deck-id={entry.deck.mtga_deck_id}
+                >
+                  <.icon
+                    name={if(entry.deck.starred, do: "hero-star-solid", else: "hero-star")}
+                    class={[
+                      "size-4",
+                      if(entry.deck.starred, do: "text-warning", else: "text-base-content/40")
+                    ]}
+                  />
+                </button>
+              </td>
               <td>
                 <div class="flex items-center gap-2">
                   <span class="font-medium">{entry.deck.current_name || "Unnamed Deck"}</span>
+                  <span
+                    :if={entry.deck.archived}
+                    class="badge badge-sm badge-ghost text-base-content/60"
+                    title="This deck has been deleted from MTGA but is preserved here for re-import."
+                  >
+                    Archived
+                  </span>
                   <span :if={entry.deck.format} class="flex gap-0.5">
                     <.mana_pips
                       :if={entry.deck.current_main_deck}
@@ -244,7 +354,18 @@ defmodule Scry2Web.DecksLive do
             <.icon name="hero-arrow-long-left" class="size-3" /> all decks
           </.link>
           <.kind_label class="mb-1">deck</.kind_label>
-          <h1 class="text-2xl font-beleren leading-tight">{@deck.current_name || "Unnamed Deck"}</h1>
+          <div class="flex items-center gap-2">
+            <h1 class="text-2xl font-beleren leading-tight">
+              {@deck.current_name || "Unnamed Deck"}
+            </h1>
+            <span
+              :if={@deck.archived}
+              class="badge badge-sm badge-ghost text-base-content/60"
+              title="This deck has been deleted from MTGA but is preserved here for re-import."
+            >
+              Archived
+            </span>
+          </div>
           <div class="flex items-center gap-3 mt-2 text-sm text-base-content/60">
             <.mana_pips
               :if={DecksHelpers.deck_colors(@deck) != ""}
@@ -254,7 +375,46 @@ defmodule Scry2Web.DecksLive do
             <span :if={@deck.format} class="text-xs text-base-content/55">{@deck.format}</span>
           </div>
         </div>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            phx-click="toggle_star"
+            phx-value-deck-id={@deck.mtga_deck_id}
+            aria-label={if(@deck.starred, do: "Unstar deck", else: "Star deck")}
+          >
+            <.icon
+              name={if(@deck.starred, do: "hero-star-solid", else: "hero-star")}
+              class={["size-4", if(@deck.starred, do: "text-warning", else: "")]}
+            />
+            {if(@deck.starred, do: "Starred", else: "Star")}
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            phx-click="toggle_archived"
+            phx-value-deck-id={@deck.mtga_deck_id}
+            aria-label={if(@deck.archived, do: "Unarchive deck", else: "Archive deck")}
+          >
+            <.icon
+              name={if(@deck.archived, do: "hero-archive-box-solid", else: "hero-archive-box")}
+              class="size-4"
+            />
+            {if(@deck.archived, do: "Unarchive", else: "Archive")}
+          </button>
+          <.export_button export_text={@export_text} disabled={@export_text == ""} />
+        </div>
       </div>
+
+      <details :if={@export_text != ""} class="mb-4 group">
+        <summary class="cursor-pointer text-xs text-base-content/55 inline-flex items-center gap-1 list-none">
+          <.icon
+            name="hero-chevron-right"
+            class="size-3 transition-transform group-open:rotate-90"
+          /> View MTGA import text
+        </summary>
+        <pre class="mt-2 p-3 bg-base-200 rounded text-xs font-mono whitespace-pre-wrap break-all"><%= @export_text %></pre>
+      </details>
 
       <%!-- Tabs --%>
       <div role="tablist" class="tabs tabs-border mb-6">
@@ -318,6 +478,25 @@ defmodule Scry2Web.DecksLive do
   end
 
   # ── Private components ───────────────────────────────────────────────
+
+  attr :export_text, :string, required: true
+  attr :disabled, :boolean, default: false
+
+  defp export_button(assigns) do
+    ~H"""
+    <button
+      type="button"
+      class="btn btn-primary btn-sm"
+      phx-hook="ClipboardCopy"
+      id="copy-to-mtga-button"
+      data-copy-text={@export_text}
+      disabled={@disabled}
+      title="Copy this deck in MTGA's import format. Switch to MTGA and click Import in the Deck Builder."
+    >
+      <.icon name="hero-clipboard-document" class="size-4" /> Copy to MTGA
+    </button>
+    """
+  end
 
   attr :stats, :map, required: true
 
@@ -1507,6 +1686,15 @@ defmodule Scry2Web.DecksLive do
 
     arena_ids = DecksAnalysisHelpers.arena_ids_for_page(deck, versions, card_performance)
     cards_by_arena_id = Cards.list_by_arena_ids(arena_ids)
+    export_arena_ids = DecksAnalysisHelpers.arena_ids_for_export(deck)
+
+    export_cards =
+      case Enum.reject(export_arena_ids, &Map.has_key?(cards_by_arena_id, &1)) do
+        [] -> cards_by_arena_id
+        missing -> Map.merge(cards_by_arena_id, Cards.list_by_arena_ids(missing))
+      end
+
+    export_text = MtgaClipboardFormat.format(deck, export_cards)
 
     if connected?(socket) do
       ImageCache.ensure_cached(arena_ids)
@@ -1537,7 +1725,8 @@ defmodule Scry2Web.DecksLive do
       active_tab: tab,
       mulligan_analytics: mulligan_analytics,
       mulligan_heatmap: mulligan_heatmap,
-      card_performance: card_performance
+      card_performance: card_performance,
+      export_text: export_text
     )
   end
 
@@ -1564,6 +1753,15 @@ defmodule Scry2Web.DecksLive do
     end
   end
 
-  defp parse_deck_filter("all"), do: :all
-  defp parse_deck_filter(_), do: :played
+  defp parse_status_filter("archived"), do: :archived
+  defp parse_status_filter("all"), do: :all
+  defp parse_status_filter(_), do: :active
+
+  defp status_url(status, starred_only) do
+    params =
+      [{:status, status}]
+      |> then(fn p -> if starred_only, do: [{:starred, "1"} | p], else: p end)
+
+    "/decks?" <> URI.encode_query(params)
+  end
 end

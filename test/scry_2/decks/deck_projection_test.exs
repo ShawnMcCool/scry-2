@@ -124,4 +124,37 @@ defmodule Scry2.Decks.DeckProjectionTest do
       assert game["num_mulligans"] == 0
     end
   end
+
+  describe "deck_deleted projection" do
+    test "sets archived=true on the matching deck" do
+      player = create_player()
+      deck_id = "deck-to-delete-#{System.unique_integer([:positive])}"
+
+      events = [
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          deck_name: "Goldfish Brew",
+          format: "Standard",
+          main_deck: [%{arena_id: 91_234, count: 4}],
+          sideboard: []
+        }),
+        build_deck_deleted(%{mtga_deck_id: deck_id})
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: deck_id)
+      assert deck.archived == true
+      assert deck.current_name == "Goldfish Brew"
+    end
+
+    test "is a no-op when the deck row does not exist (replay safety)" do
+      events = [build_deck_deleted(%{mtga_deck_id: "unknown-deck"})]
+
+      project_events(DeckProjection, events)
+
+      refute Repo.get_by(Deck, mtga_deck_id: "unknown-deck")
+    end
+  end
 end

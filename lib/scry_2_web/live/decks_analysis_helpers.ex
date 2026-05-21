@@ -39,6 +39,16 @@ defmodule Scry2Web.DecksAnalysisHelpers do
   defp card_arena_id(_), do: nil
 
   @doc """
+  Arena ids for the current main deck + sideboard only — what we need to
+  format an MTGA clipboard export. Returns a deduplicated list of integers.
+  """
+  def arena_ids_for_export(deck) do
+    (extract_card_ids(deck.current_main_deck) ++ extract_card_ids(deck.current_sideboard))
+    |> Enum.uniq()
+    |> Enum.filter(&is_integer/1)
+  end
+
+  @doc """
   Returns the CSS class for a win rate value in the heatmap.
   Green for > 55%, yellow for 45-55%, red for < 45%.
   """

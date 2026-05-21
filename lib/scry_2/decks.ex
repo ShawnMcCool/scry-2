@@ -43,6 +43,11 @@ defmodule Scry2.Decks do
   Options:
     * `:only_played` — when `true` (default), only returns decks with at least
       one completed match. When `false`, returns all decks including unplayed ones.
+    * `:status` — `:active` (only `archived=false`), `:archived` (only
+      `archived=true`), or `:all` (default). Used by the deck-collection
+      view to separate active decks from those deleted in MTGA.
+    * `:starred_only` — when `true`, returns only decks with `starred=true`.
+      Default `false`.
 
   Played decks sort by `last_played_at` descending; unplayed decks follow,
   sorted by `last_updated_at` descending.
@@ -53,10 +58,14 @@ defmodule Scry2.Decks do
   @spec list_decks_with_stats(integer() | nil, keyword()) :: [DeckSummary.t()]
   def list_decks_with_stats(player_id \\ nil, opts \\ []) do
     only_played = Keyword.get(opts, :only_played, true)
+    status = Keyword.get(opts, :status, :all)
+    starred_only = Keyword.get(opts, :starred_only, false)
 
     Deck
     |> maybe_filter_by_player(player_id)
     |> maybe_filter_played_in_sql(only_played)
+    |> filter_by_status(status)
+    |> maybe_filter_starred(starred_only)
     |> order_by([d], desc_nulls_last: d.last_played_at, desc: d.last_updated_at)
     |> Repo.all()
     |> Enum.map(fn deck ->
@@ -545,6 +554,46 @@ defmodule Scry2.Decks do
   end
 
   @doc """
+  Updates the curation flags (`:starred`, `:archived`) on a deck. Used by
+  both the LiveView toggles and by `DeckProjection` when auto-archiving on
+  MTGA deletion. Broadcasts `decks:updates` on success.
+  """
+  @spec update_deck_flags!(Deck.t(), map()) :: Deck.t()
+  def update_deck_flags!(%Deck{} = deck, attrs) do
+    updated =
+      deck
+      |> Deck.flags_changeset(attrs)
+      |> Repo.update!()
+
+    broadcast_update(updated.mtga_deck_id)
+    updated
+  end
+
+  @doc """
+  Flips the `starred` flag on the deck with the given `mtga_deck_id`.
+  Returns the updated deck, or `nil` if no deck exists for that id.
+  """
+  @spec toggle_starred!(String.t()) :: Deck.t() | nil
+  def toggle_starred!(mtga_deck_id) when is_binary(mtga_deck_id) do
+    case get_deck(mtga_deck_id) do
+      nil -> nil
+      deck -> update_deck_flags!(deck, %{starred: !deck.starred})
+    end
+  end
+
+  @doc """
+  Flips the `archived` flag on the deck with the given `mtga_deck_id`.
+  Returns the updated deck, or `nil` if no deck exists for that id.
+  """
+  @spec toggle_archived!(String.t()) :: Deck.t() | nil
+  def toggle_archived!(mtga_deck_id) when is_binary(mtga_deck_id) do
+    case get_deck(mtga_deck_id) do
+      nil -> nil
+      deck -> update_deck_flags!(deck, %{archived: !deck.archived})
+    end
+  end
+
+  @doc """
   Returns the `mtga_deck_id` of the deck whose main-deck composition
   matches `main_deck`, or nil. Uses the indexed `composition_hash`
   column to avoid scanning every deck.
@@ -878,6 +927,13 @@ defmodule Scry2.Decks do
   defp maybe_filter_played_in_sql(query, true) do
     where(query, [d], d.bo1_wins + d.bo1_losses + d.bo3_wins + d.bo3_losses > 0)
   end
+
+  defp filter_by_status(query, :all), do: query
+  defp filter_by_status(query, :active), do: where(query, [d], d.archived == false)
+  defp filter_by_status(query, :archived), do: where(query, [d], d.archived == true)
+
+  defp maybe_filter_starred(query, false), do: query
+  defp maybe_filter_starred(query, true), do: where(query, [d], d.starred == true)
 
   # SQL aggregate for bo1 or bo3 base stats — one query, no full-row load.
   # on_play = nil is treated as on_draw (matches Enum.reject behaviour).

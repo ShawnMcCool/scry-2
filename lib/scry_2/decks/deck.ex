@@ -2,6 +2,8 @@ defmodule Scry2.Decks.Deck do
   use Ecto.Schema
   import Ecto.Changeset
 
+  @type t :: %__MODULE__{}
+
   schema "decks_decks" do
     field :mtga_deck_id, :string
     field :current_name, :string
@@ -17,6 +19,8 @@ defmodule Scry2.Decks.Deck do
     field :bo3_wins, :integer, default: 0
     field :bo3_losses, :integer, default: 0
     field :composition_hash, :integer
+    field :starred, :boolean, default: false
+    field :archived, :boolean, default: false
 
     timestamps(type: :utc_datetime)
   end
@@ -37,9 +41,16 @@ defmodule Scry2.Decks.Deck do
       :bo1_losses,
       :bo3_wins,
       :bo3_losses,
-      :composition_hash
+      :composition_hash,
+      :starred,
+      :archived
     ])
     |> validate_required([:mtga_deck_id])
     |> unique_constraint(:mtga_deck_id)
+  end
+
+  def flags_changeset(deck, attrs) do
+    deck
+    |> cast(attrs, [:starred, :archived])
   end
 end

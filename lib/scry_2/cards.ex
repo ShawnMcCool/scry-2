@@ -510,6 +510,7 @@ defmodule Scry2.Cards do
     from_cards =
       Card
       |> where([c], c.arena_id in ^arena_ids)
+      |> preload(:set)
       |> Repo.all()
       |> Map.new(&{&1.arena_id, &1})
 

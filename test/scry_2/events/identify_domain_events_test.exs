@@ -1,7 +1,7 @@
 defmodule Scry2.Events.IdentifyDomainEventsTest do
   use ExUnit.Case, async: true
 
-  alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
+  alias Scry2.Events.Deck.{DeckDeleted, DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
 
   alias Scry2.Events.Draft.{
     DraftCompleted,
@@ -1795,6 +1795,17 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "produces no events (slim response carries no card list)" do
       record = record_from_fixture("deck_upsert_deck_v3_response.log")
       assert {[], []} = IdentifyDomainEvents.translate(record, @self_user_id)
+    end
+  end
+
+  describe "translate/2 — DeckDeleteDeck request" do
+    test "produces a %DeckDeleted{} with mtga_deck_id from the embedded request payload" do
+      record = record_from_fixture("deck_delete_deck.log")
+
+      assert {[%DeckDeleted{} = event], []} =
+               IdentifyDomainEvents.translate(record, @self_user_id)
+
+      assert event.mtga_deck_id == "43cb272d-46b7-4ef0-b649-5428ca85653b"
     end
   end
 

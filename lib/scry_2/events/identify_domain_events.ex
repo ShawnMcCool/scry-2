@@ -102,7 +102,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   team IDs are internally consistent.
   """
 
-  alias Scry2.Events.Deck.{DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
+  alias Scry2.Events.Deck.{DeckDeleted, DeckInventory, DeckSelected, DeckSubmitted, DeckUpdated}
   alias Scry2.Events.EventName
 
   alias Scry2.Events.IdentifyDomainEvents.{
@@ -175,6 +175,7 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          "DeckGetDeckSummariesV2",
                          "DeckUpsertDeckV2",
                          "DeckUpsertDeckV3",
+                         "DeckDeleteDeck",
                          # Progress tracking
                          "QuestGetQuests",
                          "PeriodicRewardsGetStatus",
@@ -207,8 +208,6 @@ defmodule Scry2.Events.IdentifyDomainEvents do
                          # without the UnityCrossThreadLogger prefix by a different
                          # code path; the payload is a duplicate of the real event.
                          "STATE",
-                         # Deck deletion confirmation — no analytics value
-                         "DeckDeleteDeck",
                          # Format catalogue — static reference data, not player activity
                          "GetFormats",
                          # Startup reconnection probe — always empty in normal sessions;
@@ -859,6 +858,32 @@ defmodule Scry2.Events.IdentifyDomainEvents do
            action_type: request["ActionType"],
            main_deck: main_deck,
            sideboard: sideboard,
+           occurred_at: occurred_at
+         }
+       ], []}
+    else
+      _ -> {[], []}
+    end
+  end
+
+  # DeckDeleteDeck request carries the deck id of a deck just removed from
+  # the player's collection. There is no useful response — the request itself
+  # is the deletion signal. Used to auto-archive the deck in Scry2 so it
+  # remains exportable (clipboard re-import) without cluttering the active
+  # decks view.
+  def translate(
+        %EventRecord{event_type: "DeckDeleteDeck"} = record,
+        _self_user_id,
+        _match_context
+      ) do
+    occurred_at = record.mtga_timestamp || record.inserted_at
+
+    with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
+         {:ok, request} <- decode_request_field(payload),
+         deck_id when is_binary(deck_id) <- request["DeckId"] do
+      {[
+         %DeckDeleted{
+           mtga_deck_id: deck_id,
            occurred_at: occurred_at
          }
        ], []}

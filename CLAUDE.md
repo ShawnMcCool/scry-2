@@ -315,7 +315,7 @@ Each context owns its tables and communicates only via PubSub events. No context
 | **Matches** | `matches_` | matches, games, deck submissions (projection) | Subscribes `domain:events` via `Matches.Match`; broadcasts `matches:updates` |
 | **Drafts** | `drafts_` | drafts, draft picks (projection) | Subscribes `domain:events` via `Drafts.Draft`; broadcasts `drafts:updates` |
 | **Cards** | `cards_` | cards (synthesised), sets, MTGA + Scryfall mirrors | Broadcasts `cards:updates` |
-| **Decks** | `decks_` | decks, deck versions, game submissions, match results, mulligan hands, cards drawn (projection) | Subscribes `domain:events` via `Decks.DeckProjection`; broadcasts `decks:updates` |
+| **Decks** | `decks_` | decks (with `starred` / `archived` flags + MTGA clipboard-format export for deck-collection re-import), deck versions, game submissions, match results, mulligan hands, cards drawn (projection) | Subscribes `domain:events` via `Decks.DeckProjection`; broadcasts `decks:updates` |
 | **Economy** | `economy_` | event entries, inventory snapshots, transactions (projection) | Subscribes `domain:events` via `Economy.EconomyProjection`; broadcasts `economy:updates` |
 | **Ranks** | `ranks_` | rank snapshots (projection) | Subscribes `domain:events` via `Ranks.RankProjection`; broadcasts `ranks:updates` |
 | **Players** | — | players (discovered from domain events) | Called directly from `IngestRawEvents`; broadcasts `players:updates` |

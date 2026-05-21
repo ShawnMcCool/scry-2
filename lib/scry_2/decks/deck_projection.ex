@@ -15,6 +15,8 @@ defmodule Scry2.Decks.DeckProjection do
 
     * `"deck_updated"` → upsert `decks_decks` with current name, composition, format;
       create version row in `decks_deck_versions` with pre-computed diffs
+    * `"deck_deleted"` → flip `archived = true` on the matching `decks_decks` row
+      (no-op if the deck row doesn't exist — replay safety)
     * `"deck_submitted"` → upsert `decks_game_submissions`; update `first_seen_at` /
       `last_played_at` on `decks_decks`; seed `decks_match_results` row
     * `"match_created"` → enrich `decks_match_results` with format_type, event_name,
@@ -36,7 +38,7 @@ defmodule Scry2.Decks.DeckProjection do
   # projection_tables listed in FK-safe delete order (children first)
   use Scry2.Events.Projector,
     claimed_slugs:
-      ~w(deck_updated deck_submitted match_created match_completed game_completed mulligan_offered card_drawn),
+      ~w(deck_updated deck_deleted deck_submitted match_created match_completed game_completed mulligan_offered card_drawn),
     projection_tables: [
       Scry2.Decks.GameDraw,
       Scry2.Decks.MulliganHand,
@@ -50,7 +52,7 @@ defmodule Scry2.Decks.DeckProjection do
 
   alias Scry2.Decks
   alias Scry2.Decks.MatchResult
-  alias Scry2.Events.Deck.{DeckSubmitted, DeckUpdated}
+  alias Scry2.Events.Deck.{DeckDeleted, DeckSubmitted, DeckUpdated}
   alias Scry2.Events.EnrichEvents
   alias Scry2.Events.EventName
   alias Scry2.Events.Gameplay.{CardDrawn, MulliganOffered}
@@ -59,6 +61,21 @@ defmodule Scry2.Decks.DeckProjection do
   alias Scry2.Repo
 
   # ── Projection handlers ─────────────────────────────────────────────
+
+  defp project(%DeckDeleted{mtga_deck_id: deck_id}) when is_binary(deck_id) do
+    case Decks.get_deck(deck_id) do
+      nil ->
+        :ok
+
+      deck ->
+        Decks.update_deck_flags!(deck, %{archived: true})
+        Log.info(:ingester, "archived deck on MTGA delete: deck_id=#{deck_id}")
+    end
+
+    :ok
+  end
+
+  defp project(%DeckDeleted{}), do: :ok
 
   defp project(%DeckUpdated{} = event) do
     if event.deck_id do

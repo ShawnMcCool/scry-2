@@ -737,6 +737,7 @@ defmodule Scry2.Events do
     "card_exiled" => Scry2.Events.Gameplay.CardExiled,
     "combat_damage_dealt" => Scry2.Events.Gameplay.CombatDamageDealt,
     "counter_added" => Scry2.Events.Gameplay.CounterAdded,
+    "deck_deleted" => Scry2.Events.Deck.DeckDeleted,
     "deck_inventory" => Scry2.Events.Deck.DeckInventory,
     "deck_selected" => Scry2.Events.Deck.DeckSelected,
     "deck_submitted" => Scry2.Events.Deck.DeckSubmitted,

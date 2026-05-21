@@ -19,7 +19,7 @@ defmodule Scry2.TestFactory do
   alias Scry2.Drafts.{Draft, Pick}
   alias Scry2.Events
   alias Scry2.Events.EventRecord, as: DomainEventRecord
-  alias Scry2.Events.Deck.{DeckSelected, DeckSubmitted, DeckUpdated}
+  alias Scry2.Events.Deck.{DeckDeleted, DeckSelected, DeckSubmitted, DeckUpdated}
 
   alias Scry2.Events.Draft.{
     DraftCompleted,
@@ -348,6 +348,15 @@ defmodule Scry2.TestFactory do
     }
 
     struct(DeckUpdated, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  def build_deck_deleted(attrs \\ %{}) do
+    defaults = %{
+      mtga_deck_id: "test-deck-" <> random_suffix(),
+      occurred_at: DateTime.utc_now(:second)
+    }
+
+    struct(DeckDeleted, Map.merge(defaults, Map.new(attrs)))
   end
 
   def build_mulligan_offered(attrs \\ %{}) do

@@ -624,4 +624,118 @@ defmodule Scry2.DecksTest do
       assert updated.opponent_rank_mythic_percentile == 88
     end
   end
+
+  describe "update_deck_flags!/2" do
+    test "updates starred and archived and broadcasts" do
+      Topics.subscribe(Topics.decks_updates())
+      deck = TestFactory.create_deck(%{mtga_deck_id: "d-flags"})
+
+      updated = Decks.update_deck_flags!(deck, %{starred: true, archived: true})
+
+      assert %Deck{starred: true, archived: true, mtga_deck_id: "d-flags"} = updated
+      assert_receive {:deck_updated, "d-flags"}
+    end
+
+    test "leaves other fields untouched" do
+      deck = TestFactory.create_deck(%{mtga_deck_id: "d-flags-2", current_name: "Keep Me"})
+
+      updated = Decks.update_deck_flags!(deck, %{starred: true})
+
+      assert updated.current_name == "Keep Me"
+      assert updated.starred == true
+      assert updated.archived == false
+    end
+  end
+
+  describe "toggle_starred!/1" do
+    test "flips the starred flag" do
+      deck = TestFactory.create_deck(%{mtga_deck_id: "d-star"})
+      assert deck.starred == false
+
+      starred = Decks.toggle_starred!(deck.mtga_deck_id)
+      assert starred.starred == true
+
+      unstarred = Decks.toggle_starred!(deck.mtga_deck_id)
+      assert unstarred.starred == false
+    end
+
+    test "returns nil when the deck does not exist" do
+      assert Decks.toggle_starred!("missing-deck") == nil
+    end
+  end
+
+  describe "toggle_archived!/1" do
+    test "flips the archived flag" do
+      deck = TestFactory.create_deck(%{mtga_deck_id: "d-arch"})
+      assert deck.archived == false
+
+      archived = Decks.toggle_archived!(deck.mtga_deck_id)
+      assert archived.archived == true
+
+      unarchived = Decks.toggle_archived!(deck.mtga_deck_id)
+      assert unarchived.archived == false
+    end
+
+    test "returns nil when the deck does not exist" do
+      assert Decks.toggle_archived!("missing-deck") == nil
+    end
+  end
+
+  describe "list_decks_with_stats/2 — status and starred_only filters" do
+    test "status: :active excludes archived decks" do
+      active = TestFactory.create_deck(%{mtga_deck_id: "d-active"})
+      archived = TestFactory.create_deck(%{mtga_deck_id: "d-archived"})
+      TestFactory.create_deck_match_result(%{deck: active, won: true})
+      TestFactory.create_deck_match_result(%{deck: archived, won: true})
+      Decks.update_deck_flags!(archived, %{archived: true})
+
+      result = Decks.list_decks_with_stats(nil, status: :active)
+      deck_ids = Enum.map(result, & &1.deck.mtga_deck_id)
+
+      assert "d-active" in deck_ids
+      refute "d-archived" in deck_ids
+    end
+
+    test "status: :archived returns only archived decks" do
+      active = TestFactory.create_deck(%{mtga_deck_id: "d-active-2"})
+      archived = TestFactory.create_deck(%{mtga_deck_id: "d-archived-2"})
+      TestFactory.create_deck_match_result(%{deck: active, won: true})
+      TestFactory.create_deck_match_result(%{deck: archived, won: true})
+      Decks.update_deck_flags!(archived, %{archived: true})
+
+      result = Decks.list_decks_with_stats(nil, status: :archived)
+      deck_ids = Enum.map(result, & &1.deck.mtga_deck_id)
+
+      refute "d-active-2" in deck_ids
+      assert "d-archived-2" in deck_ids
+    end
+
+    test "status: :all returns both active and archived" do
+      active = TestFactory.create_deck(%{mtga_deck_id: "d-active-3"})
+      archived = TestFactory.create_deck(%{mtga_deck_id: "d-archived-3"})
+      TestFactory.create_deck_match_result(%{deck: active, won: true})
+      TestFactory.create_deck_match_result(%{deck: archived, won: true})
+      Decks.update_deck_flags!(archived, %{archived: true})
+
+      result = Decks.list_decks_with_stats(nil, status: :all)
+      deck_ids = Enum.map(result, & &1.deck.mtga_deck_id)
+
+      assert "d-active-3" in deck_ids
+      assert "d-archived-3" in deck_ids
+    end
+
+    test "starred_only: true returns only starred decks" do
+      starred = TestFactory.create_deck(%{mtga_deck_id: "d-star-1"})
+      plain = TestFactory.create_deck(%{mtga_deck_id: "d-plain-1"})
+      TestFactory.create_deck_match_result(%{deck: starred, won: true})
+      TestFactory.create_deck_match_result(%{deck: plain, won: true})
+      Decks.update_deck_flags!(starred, %{starred: true})
+
+      result = Decks.list_decks_with_stats(nil, starred_only: true)
+      deck_ids = Enum.map(result, & &1.deck.mtga_deck_id)
+
+      assert "d-star-1" in deck_ids
+      refute "d-plain-1" in deck_ids
+    end
+  end
 end
