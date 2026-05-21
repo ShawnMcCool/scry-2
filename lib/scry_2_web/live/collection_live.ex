@@ -45,10 +45,13 @@ defmodule Scry2Web.CollectionLive do
   alias Scry2.Cards.ImageCache
   alias Scry2.Cards.SetRoster
   alias Scry2.Collection
+  alias Scry2.Collection.BuildChange
   alias Scry2.Collection.Completion
   alias Scry2.Collection.CraftPlan
   alias Scry2.Collection.Holding
+  alias Scry2.Collection.ReaderHealth
   alias Scry2.Collection.Snapshot
+  alias Scry2Web.Collection.BuildChangeBanner
   alias Scry2.Topics
   alias Scry2Web.CardsHelpers
 
@@ -68,6 +71,10 @@ defmodule Scry2Web.CollectionLive do
       |> assign(:refreshing, false)
       |> assign(:last_error, nil)
       |> assign(:build_change_status, :unknown)
+      |> assign(:verify_state, :idle)
+      |> assign(:verify_detail, nil)
+      |> assign(:verify_attempt_hint, nil)
+      |> assign(:reader_health, initial_reader_health())
       |> assign(:search, "")
       |> assign(:filter_rarities, MapSet.new())
       |> assign(:active_set, nil)
@@ -102,6 +109,8 @@ defmodule Scry2Web.CollectionLive do
         |> assign(:reader_enabled, Collection.reader_enabled?())
         |> assign(:build_change_status, Collection.build_change_status())
         |> load_snapshot_state()
+        |> recompute_reader_health()
+        |> recompute_verify_state()
         |> assign(:loaded, true)
       end
 
@@ -164,7 +173,37 @@ defmodule Scry2Web.CollectionLive do
 
   def handle_event("acknowledge_build_change", _params, socket) do
     _ = Collection.acknowledge_current_build!()
-    {:noreply, assign(socket, :build_change_status, Collection.build_change_status())}
+
+    {:noreply,
+     socket
+     |> assign(:build_change_status, Collection.build_change_status())
+     |> reset_verify_state()}
+  end
+
+  def handle_event("verify_build_change", _params, socket) do
+    case Collection.refresh(trigger: "verify_build_change") do
+      {:ok, _job} ->
+        Process.send_after(self(), :verify_timeout, 30_000)
+
+        socket =
+          socket
+          |> assign(:verify_state, :running)
+          |> assign(:verify_detail, nil)
+          |> assign(:verify_attempt_hint, current_hint(socket.assigns.build_change_status))
+          # Inline-Oban (tests) ran the job synchronously above — reload snapshot
+          # state now and classify so the test can observe the post-verify state
+          # without round-tripping through PubSub.
+          |> load_snapshot_state()
+          |> recompute_reader_health()
+
+        {:noreply, classify_verify_result(socket)}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:verify_state, :failed)
+         |> assign(:verify_detail, BuildChangeBanner.translate_error(reason))}
+    end
   end
 
   def handle_event("search", %{"search" => term}, socket) do
@@ -191,14 +230,17 @@ defmodule Scry2Web.CollectionLive do
 
   @impl true
   def handle_info({:snapshot_saved, _snapshot}, socket) do
-    {:noreply,
-     socket
-     |> assign(:refreshing, false)
-     |> assign(:last_error, nil)
-     |> assign(:build_change_status, Collection.build_change_status())
-     |> load_snapshot_state()
-     |> apply_browser_filters()
-     |> put_flash(:info, "Collection refreshed.")}
+    socket =
+      socket
+      |> assign(:refreshing, false)
+      |> assign(:last_error, nil)
+      |> assign(:build_change_status, Collection.build_change_status())
+      |> load_snapshot_state()
+      |> apply_browser_filters()
+      |> recompute_reader_health()
+      |> classify_verify_result()
+
+    {:noreply, put_flash(socket, :info, "Collection refreshed.")}
   end
 
   def handle_info({:diff_saved, _diff}, socket) do
@@ -210,7 +252,29 @@ defmodule Scry2Web.CollectionLive do
   end
 
   def handle_info({:refresh_failed, reason}, socket) do
-    {:noreply, assign(socket, refreshing: false, last_error: friendly_error(reason))}
+    socket =
+      socket
+      |> assign(refreshing: false, last_error: friendly_error(reason))
+      |> recompute_reader_health()
+      |> maybe_classify_verify_failure(reason)
+
+    {:noreply, socket}
+  end
+
+  def handle_info(:verify_timeout, socket) do
+    case socket.assigns.verify_state do
+      :running ->
+        {:noreply,
+         socket
+         |> assign(:verify_state, :failed)
+         |> assign(
+           :verify_detail,
+           "Verification took longer than expected — check Diagnostics for details"
+         )}
+
+      _ ->
+        {:noreply, socket}
+    end
   end
 
   def handle_info({:cards_refreshed, _}, socket) do
@@ -393,6 +457,99 @@ defmodule Scry2Web.CollectionLive do
 
   defp friendly_error(other), do: "Reader failed: #{inspect(other)}"
 
+  # ── Reader-health + build-change verification helpers ─────────────────
+
+  defp initial_reader_health do
+    ReaderHealth.compute(snapshot: nil, reader_enabled: false)
+  end
+
+  defp recompute_reader_health(socket) do
+    health =
+      ReaderHealth.compute(
+        snapshot: socket.assigns[:snapshot],
+        reader_enabled: socket.assigns[:reader_enabled]
+      )
+
+    assign(socket, :reader_health, health)
+  end
+
+  defp recompute_verify_state(socket) do
+    case BuildChange.verification_state(
+           socket.assigns[:snapshot],
+           socket.assigns[:build_change_status]
+         ) do
+      :already_verified ->
+        socket
+        |> assign(:verify_state, :ok)
+        |> assign(:verify_detail, nil)
+
+      :unverified ->
+        socket
+    end
+  end
+
+  defp reset_verify_state(socket) do
+    socket
+    |> assign(:verify_state, :idle)
+    |> assign(:verify_detail, nil)
+    |> assign(:verify_attempt_hint, nil)
+  end
+
+  defp current_hint({:changed, _prev, current}), do: current
+  defp current_hint(_), do: nil
+
+  # Classify the post-refresh state when a verify attempt is in flight.
+  # Inspects the latest snapshot's reader_confidence + mtga_build_hint and
+  # promotes :running → :ok | :fallback. Failures arrive via :refresh_failed.
+  defp classify_verify_result(socket) do
+    case socket.assigns[:verify_state] do
+      :running -> classify_running_verify(socket)
+      _ -> socket
+    end
+  end
+
+  defp classify_running_verify(socket) do
+    snapshot = socket.assigns[:snapshot]
+    attempt_hint = socket.assigns[:verify_attempt_hint]
+
+    cond do
+      is_nil(snapshot) ->
+        socket
+
+      snapshot.reader_confidence == "walker" and
+          (is_nil(attempt_hint) or snapshot.mtga_build_hint == attempt_hint) ->
+        socket
+        |> assign(:verify_state, :ok)
+        |> assign(:verify_detail, nil)
+
+      snapshot.reader_confidence == "fallback_scan" ->
+        socket
+        |> assign(:verify_state, :fallback)
+        |> assign(:verify_detail, nil)
+
+      true ->
+        socket
+    end
+  end
+
+  defp maybe_classify_verify_failure(socket, reason) do
+    case socket.assigns[:verify_state] do
+      :running ->
+        state =
+          case reason do
+            :mtga_not_running -> :mtga_not_running
+            _ -> :failed
+          end
+
+        socket
+        |> assign(:verify_state, state)
+        |> assign(:verify_detail, BuildChangeBanner.translate_error(reason))
+
+      _ ->
+        socket
+    end
+  end
+
   # ── Render ---------------------------------------------------------------
 
   @impl true
@@ -415,6 +572,9 @@ defmodule Scry2Web.CollectionLive do
             refreshing={@refreshing}
             last_error={@last_error}
             build_change_status={@build_change_status}
+            health={@reader_health}
+            verify_state={@verify_state}
+            verify_detail={@verify_detail}
           />
 
           <%= if @snapshot do %>

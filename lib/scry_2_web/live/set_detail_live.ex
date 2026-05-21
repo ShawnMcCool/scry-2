@@ -38,6 +38,7 @@ defmodule Scry2Web.SetDetailLive do
   alias Scry2.Cards.SetRoster
   alias Scry2.Collection
   alias Scry2.Collection.Holding
+  alias Scry2.Collection.ReaderHealth
   alias Scry2.Collection.SetCompletion
   alias Scry2.Collection.Snapshot
   alias Scry2.Topics
@@ -56,6 +57,7 @@ defmodule Scry2Web.SetDetailLive do
       |> assign(:refreshing, false)
       |> assign(:last_error, nil)
       |> assign(:build_change_status, Collection.build_change_status())
+      |> assign(:reader_health, ReaderHealth.compute(snapshot: nil, reader_enabled: false))
       |> assign(:active_code, nil)
       |> assign(:set, nil)
       |> assign(:sets, [])
@@ -169,6 +171,13 @@ defmodule Scry2Web.SetDetailLive do
         |> assign(:sets, sets)
         |> assign(:set, set)
         |> assign(:snapshot, snapshot)
+        |> assign(
+          :reader_health,
+          ReaderHealth.compute(
+            snapshot: snapshot,
+            reader_enabled: socket.assigns[:reader_enabled]
+          )
+        )
         |> assign(:completion, completion)
         |> assign(:cached_arena_ids, cached)
         |> maybe_cache_images(rendered)
@@ -288,6 +297,7 @@ defmodule Scry2Web.SetDetailLive do
               refreshing={@refreshing}
               last_error={@last_error}
               build_change_status={@build_change_status}
+              health={@reader_health}
             />
 
             <%= if is_nil(@snapshot) do %>

@@ -45,4 +45,32 @@ defmodule Scry2.Collection.BuildChange do
   def detect(acknowledged, current)
       when is_binary(acknowledged) and is_binary(current),
       do: {:changed, acknowledged, current}
+
+  @doc """
+  Decide whether a `{:changed, _, current}` banner can be treated as
+  already verified by the most recent snapshot.
+
+  A snapshot implicitly verifies a build change when it was produced
+  by the full walker (`reader_confidence == "walker"`) AND its
+  `mtga_build_hint` matches the `current` value from the change status.
+  Fallback-scan snapshots never implicitly verify, since the whole
+  point of the banner is to prompt the user to confirm the full walker
+  still works against the new MTGA build.
+
+  Returns `:already_verified` or `:unverified`.
+  """
+  @spec verification_state(Scry2.Collection.Snapshot.t() | nil, t()) ::
+          :already_verified | :unverified
+  def verification_state(
+        %Scry2.Collection.Snapshot{
+          reader_confidence: "walker",
+          mtga_build_hint: build_hint
+        },
+        {:changed, _prev, build_hint}
+      )
+      when is_binary(build_hint) do
+    :already_verified
+  end
+
+  def verification_state(_snapshot, _status), do: :unverified
 end

@@ -77,4 +77,115 @@ defmodule Scry2Web.CollectionLiveTest do
 
     assert has_element?(view, "[data-role='collection-error']")
   end
+
+  describe "reader-health pill" do
+    test "renders an OK pill when the latest snapshot is a fresh walker read", %{conn: conn} do
+      Collection.enable_reader!()
+
+      Factory.create_collection_snapshot(
+        entries: [{30_001, 1}],
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-CURRENT",
+        snapshot_ts: DateTime.utc_now()
+      )
+
+      {:ok, view, _html} = live(conn, ~p"/collection")
+
+      assert has_element?(view, "[data-role='reader-health-pill'][data-tone='ok']")
+    end
+
+    test "renders a warn pill when the latest snapshot used the fallback scanner",
+         %{conn: conn} do
+      Collection.enable_reader!()
+
+      Factory.create_collection_snapshot(
+        entries: [{30_001, 1}],
+        reader_confidence: "fallback_scan",
+        snapshot_ts: DateTime.utc_now()
+      )
+
+      {:ok, view, _html} = live(conn, ~p"/collection")
+
+      assert has_element?(view, "[data-role='reader-health-pill'][data-tone='warn']")
+    end
+  end
+
+  describe "build-change banner verify flow" do
+    setup do
+      Collection.enable_reader!()
+      Settings.put!("collection.acknowledged_build_hint", "BUILD-OLD")
+
+      Factory.create_collection_snapshot(
+        entries: [{30_001, 1}],
+        reader_confidence: "walker",
+        mtga_build_hint: "BUILD-NEW",
+        snapshot_ts: DateTime.utc_now()
+      )
+
+      :ok
+    end
+
+    test "build-change banner is rendered with a Run verification button when not auto-verified",
+         %{conn: conn} do
+      # Override the setup snapshot with a fallback-scan one so the banner
+      # stays in :idle (auto-verification only kicks in for walker confidence).
+      Settings.put!("collection.acknowledged_build_hint", "BUILD-OLDER-STILL")
+
+      Factory.create_collection_snapshot(
+        entries: [{30_001, 1}],
+        reader_confidence: "fallback_scan",
+        mtga_build_hint: "BUILD-NEW",
+        snapshot_ts: DateTime.utc_now()
+      )
+
+      {:ok, view, _html} = live(conn, ~p"/collection")
+
+      assert has_element?(view, "[data-role='build-change-banner']")
+      assert has_element?(view, "button", "Run verification")
+    end
+
+    test "implicit verification: walker-confidence snapshot on the new build pre-resolves to OK",
+         %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/collection")
+
+      assert has_element?(view, "[data-role='build-change-banner'][data-verify-state='ok']")
+      assert has_element?(view, "button", "Acknowledge")
+    end
+
+    test "verify_build_change handler enqueues a refresh and shows the running state",
+         %{conn: conn} do
+      Settings.put!("collection.acknowledged_build_hint", "BUILD-OLDER")
+
+      Factory.create_collection_snapshot(
+        entries: [{30_001, 1}],
+        reader_confidence: "fallback_scan",
+        mtga_build_hint: "BUILD-NEW",
+        snapshot_ts: DateTime.utc_now()
+      )
+
+      {:ok, view, _html} = live(conn, ~p"/collection")
+
+      assert has_element?(view, "[data-role='build-change-banner'][data-verify-state='idle']")
+
+      view |> element("button", "Run verification") |> render_click()
+
+      # After click, either running (async-Oban) or already classified (inline-Oban
+      # ran the job synchronously). Inline-Oban in tests will land a fallback snapshot,
+      # which the LiveView classifies as :fallback.
+      assert has_element?(
+               view,
+               "[data-role='build-change-banner'][data-verify-state='running'], [data-role='build-change-banner'][data-verify-state='fallback']"
+             )
+    end
+
+    test "acknowledging clears the banner", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/collection")
+
+      assert has_element?(view, "[data-role='build-change-banner']")
+
+      view |> element("button", "Acknowledge") |> render_click()
+
+      refute has_element?(view, "[data-role='build-change-banner']")
+    end
+  end
 end

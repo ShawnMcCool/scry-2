@@ -920,3 +920,16 @@ completely different locator strategy.
   module status.
 - `mtga-duress/experiments/spikes/spike{5,6,7,10}/FINDING.md` — prior
   research.
+- `lib/scry_2_web/components/collection/build_change_banner.ex` — the
+  user-facing "MTGA was updated" banner. Its `translate_error/1` is
+  the canonical mapping from walker failure atoms
+  (`:root_domain_not_found`, `{:class_not_found, name}`, etc.) to
+  short player-language strings. When you add a new failure mode in
+  the Rust walker, add a clause to that table — otherwise the user
+  sees the generic "see Diagnostics" fallback.
+- `lib/scry_2/collection/reader_health.ex` — pure verdict helper that
+  maps the latest snapshot (`reader_confidence`, `snapshot_ts`) to a
+  five-state pill (`:walker_recent | :walker_stale | :fallback_in_use
+  | :no_snapshot | :reader_disabled`). Surfaces always-on memory-reader
+  health on `/collection`. If you add a new `reader_confidence` value
+  in the walker, extend `classify/3` to handle it.
