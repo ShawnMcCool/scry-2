@@ -11,6 +11,32 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **The Collection page now shows a small "Reader OK" pill** next to
+  the **Refresh now** button. It tells you at a glance whether Scry2
+  is currently reading your collection from MTGA's memory — and how
+  long ago the last read happened. Green means the full reader is
+  working; yellow warns when Scry2 is running on a slower fallback
+  path or hasn't read recently; grey means the reader is off or no
+  reads have happened yet.
+- **The "MTGA was updated" notice now has a built-in Run verification
+  button** so you don't have to manually refresh and eyeball your
+  collection numbers after an MTGA update. Click it and Scry2 will
+  attempt a fresh read, then tell you in plain language whether the
+  memory reader still works — green and dismissible if everything is
+  fine, yellow if it's running on a slower fallback, or red with a
+  short explanation if Scry2 can't read this MTGA build and needs to
+  be updated.
+
+### Improved
+
+- After an MTGA update, if Scry2 has already successfully read your
+  collection from the new MTGA build, the **"MTGA was updated" banner**
+  opens already verified — you just click **Acknowledge — verified**
+  to dismiss it, instead of being asked to run a check you've
+  effectively already passed.
+
 ## v0.47.0 — 2026-05-21
 
 ### New
