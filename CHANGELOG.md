@@ -11,6 +11,31 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Deck collection — save and re-import your decks.** The **Decks** page
+  is now a full archive of every deck you've created in MTGA. Open any
+  deck's detail page and click **Copy to MTGA** to grab the import text
+  for your clipboard, then paste it into MTGA's Deck Builder Import
+  dialog. Use this to free up your in-game deck slots without losing
+  any decks — Scry2 keeps them safe and you can resurrect any one with
+  a single click.
+- **Decks you delete in MTGA are now automatically archived in Scry2**
+  instead of disappearing. They're hidden from the default Decks view
+  but kept here for re-import. Switch the filter at the top of the
+  **Decks** page from **Active** to **Archived** to browse them.
+- **Star your favourite decks.** Click the star icon on any deck row
+  (or use the Star button on its detail page) to mark it as a
+  favourite. The **Starred** filter at the top of the **Decks** page
+  surfaces only the decks you've starred.
+
+### Improved
+
+- The **Decks** page now lists every deck you've created in MTGA, not
+  just the ones you've played. Combined with the new Active / Archived /
+  All filter, this gives you a complete view of your deck library —
+  ideal for deciding what to clean up in MTGA.
+
 ## v0.46.8 — 2026-05-16
 
 ### Improved
