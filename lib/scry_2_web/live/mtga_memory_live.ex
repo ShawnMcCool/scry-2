@@ -22,6 +22,7 @@ defmodule Scry2Web.MtgaMemoryLive do
 
   alias Scry2.MtgaMemory
   alias Scry2.MtgaMemory.Nif
+  alias Scry2.MtgaMemory.SelfTest
   alias Scry2Web.MtgaMemoryHelpers, as: H
   alias Scry2Web.SettingsTabs
 
@@ -34,6 +35,7 @@ defmodule Scry2Web.MtgaMemoryLive do
      |> assign(:page_title, "Memory diagnostics")
      |> assign(:process_info, nil)
      |> assign(:process_error, nil)
+     |> assign(:self_test, nil)
      |> assign(:walker_runs, [])
      |> assign(:cache_snapshot, [])
      |> assign(:class_search_needle, "")
@@ -57,6 +59,18 @@ defmodule Scry2Web.MtgaMemoryLive do
 
   def handle_event("run_walker", _params, socket) do
     {:noreply, run_walker(socket)}
+  end
+
+  def handle_event("run_self_test", _params, socket) do
+    {:noreply, assign(socket, :self_test, SelfTest.run())}
+  end
+
+  def handle_event("copied", _params, socket) do
+    {:noreply, put_flash(socket, :info, "Report copied to clipboard.")}
+  end
+
+  def handle_event("copy_failed", _params, socket) do
+    {:noreply, put_flash(socket, :error, "Couldn't copy — select the report text manually.")}
   end
 
   def handle_event("clear_walker_runs", _params, socket) do
@@ -274,6 +288,8 @@ defmodule Scry2Web.MtgaMemoryLive do
       <div class="space-y-6 max-w-5xl">
         <.process_card process_info={@process_info} process_error={@process_error} />
 
+        <.self_test_card report={@self_test} />
+
         <.walker_card runs={@walker_runs} process_info={@process_info} />
 
         <.cache_card snapshot={@cache_snapshot} />
@@ -343,6 +359,98 @@ defmodule Scry2Web.MtgaMemoryLive do
         <% end %>
       </div>
     </section>
+    """
+  end
+
+  attr :report, :any, required: true
+
+  defp self_test_card(assigns) do
+    ~H"""
+    <section class="card bg-base-200" data-role="self-test-card">
+      <div class="card-body">
+        <div class="flex items-baseline justify-between">
+          <h2 class="card-title text-base">Reader self-test</h2>
+          <button type="button" phx-click="run_self_test" class="btn btn-primary btn-sm">
+            Run reader self-test
+          </button>
+        </div>
+
+        <p class="text-xs text-base-content/60">
+          Runs every reader walk once and reports which work and which are
+          broken. Use this after an MTGA update to see exactly what shifted.
+        </p>
+
+        <%= if @report do %>
+          <div
+            class={["alert mt-2", H.self_test_alert_class(@report.diagnosis.status)]}
+            data-role="self-test-diagnosis"
+            data-status={@report.diagnosis.status}
+          >
+            <div>
+              <h3 class="font-semibold">{@report.diagnosis.headline}</h3>
+              <p class="text-sm">{@report.diagnosis.detail}</p>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-3 mt-2 text-xs text-base-content/60">
+            <span>build: <code>{@report.build_hint || "unknown"}</code></span>
+            <span>reader: <code>{@report.reader_version || "unknown"}</code></span>
+            <button
+              type="button"
+              id="copy-self-test-report"
+              phx-hook="ClipboardCopy"
+              data-copy-text={SelfTest.to_text(@report)}
+              class="btn btn-ghost btn-xs"
+            >
+              <.icon name="hero-clipboard-document" class="size-3" /> Copy report
+            </button>
+          </div>
+
+          <div :if={@report.walks != []} class="mt-3 space-y-1">
+            <.self_test_walk_row :for={walk <- @report.walks} walk={walk} />
+          </div>
+        <% else %>
+          <p class="text-sm text-base-content/60 italic">
+            No self-test yet. Click <strong>Run reader self-test</strong>.
+          </p>
+        <% end %>
+      </div>
+    </section>
+    """
+  end
+
+  attr :walk, :map, required: true
+
+  defp self_test_walk_row(%{walk: %{outcome: :ok}} = assigns) do
+    ~H"""
+    <div class="flex items-center gap-2 text-sm" data-role="self-test-walk" data-outcome="ok">
+      <span class="badge badge-soft badge-success badge-sm">ok</span>
+      <code>{@walk.walk}</code>
+    </div>
+    """
+  end
+
+  defp self_test_walk_row(%{walk: %{outcome: :empty}} = assigns) do
+    ~H"""
+    <div
+      class="flex items-center gap-2 text-sm text-base-content/50"
+      data-role="self-test-walk"
+      data-outcome="empty"
+    >
+      <span class="badge badge-soft badge-sm">empty</span>
+      <code>{@walk.walk}</code>
+      <span class="text-xs">nothing to read right now</span>
+    </div>
+    """
+  end
+
+  defp self_test_walk_row(%{walk: %{outcome: :error}} = assigns) do
+    ~H"""
+    <div class="flex items-center gap-2 text-sm" data-role="self-test-walk" data-outcome="error">
+      <span class="badge badge-soft badge-error badge-sm">broken</span>
+      <code>{@walk.walk}</code>
+      <span class="text-xs text-base-content/70">— {@walk.reason_text}</span>
+    </div>
     """
   end
 

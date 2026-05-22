@@ -75,7 +75,10 @@ defmodule Scry2Web.Collection.BuildChangeBanner do
     >
       Acknowledge anyway
     </button>
-    <.link navigate={~p"/collection/diagnostics"} class="btn btn-ghost btn-sm whitespace-nowrap">
+    <.link
+      navigate={~p"/operations/mtga-memory"}
+      class="btn btn-ghost btn-sm whitespace-nowrap"
+    >
       Open diagnostics
     </.link>
     """
@@ -90,7 +93,10 @@ defmodule Scry2Web.Collection.BuildChangeBanner do
     >
       Try again
     </button>
-    <.link navigate={~p"/collection/diagnostics"} class="btn btn-ghost btn-sm whitespace-nowrap">
+    <.link
+      navigate={~p"/operations/mtga-memory"}
+      class="btn btn-ghost btn-sm whitespace-nowrap"
+    >
       Open diagnostics
     </.link>
     <button
@@ -198,34 +204,9 @@ defmodule Scry2Web.Collection.BuildChangeBanner do
   @doc """
   Translate a memory-reader failure atom (or tagged tuple) into a
   short, player-language phrase suitable for inline display in the
-  banner body. Returns the original string when given a string.
-
-  Falls back to a generic "see Diagnostics" message for unknown shapes.
+  banner body. Delegates to `Scry2.MtgaMemory.WalkError.translate/1` —
+  the single mapping point shared with the reader self-test.
   """
   @spec translate_error(term()) :: String.t()
-  def translate_error(:mono_dll_not_found),
-    do: "Couldn't find MTGA's runtime module — the game may not have finished loading yet"
-
-  def translate_error(:mono_dll_read_failed),
-    do: "MTGA's runtime module wouldn't open for reading"
-
-  def translate_error(:root_domain_not_found),
-    do: "Couldn't enter MTGA's runtime — likely an offsets change"
-
-  def translate_error(:chain_failed),
-    do: "Couldn't trace the pointer chain — likely an offsets change"
-
-  def translate_error({:assembly_not_found, name}) when is_binary(name),
-    do: "Couldn't find MTGA's #{name} module"
-
-  def translate_error({:class_not_found, name}) when is_binary(name),
-    do: "MTGA's #{name} data layout has changed"
-
-  def translate_error({:class_read_failed, name}) when is_binary(name),
-    do: "MTGA's #{name} data couldn't be read — likely an offsets change"
-
-  def translate_error(reason) when is_binary(reason), do: reason
-
-  def translate_error(_),
-    do: "Memory reader hit an unexpected error — see Diagnostics for details"
+  defdelegate translate_error(reason), to: Scry2.MtgaMemory.WalkError, as: :translate
 end

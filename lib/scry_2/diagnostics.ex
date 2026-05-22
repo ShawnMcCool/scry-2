@@ -12,6 +12,7 @@ defmodule Scry2.Diagnostics do
 
   alias Scry2.Console
   alias Scry2.Console.EntryView
+  alias Scry2.MtgaMemory.SelfTest
 
   @doc """
   Prints the most recent `n` log entries to stdout (default 20) and returns
@@ -31,5 +32,19 @@ defmodule Scry2.Diagnostics do
     |> Enum.each(fn entry -> IO.puts(EntryView.format_line(entry)) end)
 
     entries
+  end
+
+  @doc """
+  Runs the memory-reader self-test against the live MTGA process, prints
+  the report to stdout, and returns the `%SelfTest.Report{}`.
+
+  Use this after an MTGA update to see which reader walks still work and
+  which broke. The printed block is copy-pasteable into a bug report.
+  """
+  @spec reader_self_test() :: SelfTest.Report.t()
+  def reader_self_test do
+    report = SelfTest.run()
+    IO.puts(SelfTest.to_text(report))
+    report
   end
 end

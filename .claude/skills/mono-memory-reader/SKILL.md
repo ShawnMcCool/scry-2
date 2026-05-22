@@ -920,13 +920,28 @@ completely different locator strategy.
   module status.
 - `mtga-duress/experiments/spikes/spike{5,6,7,10}/FINDING.md` — prior
   research.
-- `lib/scry_2_web/components/collection/build_change_banner.ex` — the
-  user-facing "MTGA was updated" banner. Its `translate_error/1` is
-  the canonical mapping from walker failure atoms
-  (`:root_domain_not_found`, `{:class_not_found, name}`, etc.) to
-  short player-language strings. When you add a new failure mode in
-  the Rust walker, add a clause to that table — otherwise the user
-  sees the generic "see Diagnostics" fallback.
+- `lib/scry_2/mtga_memory/walk_error.ex` — **the canonical mapping**
+  from walker failure atoms (`:root_domain_not_found`,
+  `{:class_not_found, name}`, etc.) to short player-language strings,
+  plus `shared_chain?/1` (true for failures in the shared discovery
+  base every walk traverses). When you add a new failure mode in the
+  Rust walker, add a `translate/1` clause here — and a `shared_chain?/1`
+  clause if it lives in the shared base. Both the build-change banner
+  (`build_change_banner.ex`, which delegates via `translate_error/1`)
+  and the reader self-test depend on this single point.
+- `lib/scry_2/mtga_memory/self_test.ex` — **after an MTGA update, run
+  the reader self-test to see which walks broke.** Runs all 8 walks
+  (collection, match_info, match_board, mastery, events, account,
+  cosmetics, environment), classifies each `:ok | :empty | :error`, and
+  `diagnose/2` derives an overall verdict (`:healthy | :runtime_not_ready
+  | :deep_break | :partial | :mtga_not_running`). `:empty` (a walk that
+  returned `{:ok, nil}`) is NOT a failure — don't treat it as one.
+  `diagnose/2`'s deep-break inference relies on `WalkError.shared_chain?/1`:
+  when every walk fails with a shared-chain error the whole reader is
+  down vs. one data layout having shifted. Surfaced on
+  `/operations/mtga-memory`, from the build-change banner's failure
+  state, and via `Scry2.Diagnostics.reader_self_test/0` in a remote
+  shell. `to_text/1` produces a copyable bug-report block.
 - `lib/scry_2/collection/reader_health.ex` — pure verdict helper that
   maps the latest snapshot (`reader_confidence`, `snapshot_ts`) to a
   five-state pill (`:walker_recent | :walker_stale | :fallback_in_use

@@ -321,7 +321,7 @@ Each context owns its tables and communicates only via PubSub events. No context
 | **Players** | — | players (discovered from domain events) | Called directly from `IngestRawEvents`; broadcasts `players:updates` |
 | **Settings** | `settings_` | runtime config entries | Broadcasts `settings:updates` |
 | **Console** | — | in-memory log ring buffer (dev observability) | Broadcasts `console:logs` |
-| **Collection** | `collection_` | memory-read collection snapshots (ADR 034) — public API TBD Phase 6. Includes `ReaderHealth` verdict helper (pure) for the always-visible reader-health pill and `BuildChange.verification_state/2` for one-click post-MTGA-update verification | Broadcasts `collection:snapshots` (TBD) |
+| **Collection** | `collection_` | memory-read collection snapshots (ADR 034) — public API TBD Phase 6. Includes `ReaderHealth` verdict helper (pure) for the always-visible reader-health pill and `BuildChange.verification_state/2` for one-click post-MTGA-update verification. `Scry2.MtgaMemory.SelfTest` runs every reader walk and reports which work/break (surfaced on `/operations/mtga-memory` + `Scry2.Diagnostics.reader_self_test/0`); `Scry2.MtgaMemory.WalkError` is the shared walk-failure→player-language translation point | Broadcasts `collection:snapshots` (TBD) |
 | **Crafts** | `crafts` | wildcard craft attribution (ADR-037), one row per detected wildcard spend derived from snapshot pairs | Subscribes `collection:diffs` via `Crafts.IngestCollectionDiffs`; broadcasts `crafts:updates` |
 | **MatchEconomy** | `match_economy_` | per-match economy delta + log reconciliation projection (ADR-036) | Driven by `MatchEconomy.Trigger` (subscribes to match completion); broadcasts `match_economy:updates` |
 

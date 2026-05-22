@@ -59,6 +59,13 @@ defmodule Scry2Web.MtgaMemoryHelpers do
   def band_class(:watch), do: "badge badge-soft badge-info"
   def band_class(:ok), do: "badge badge-soft badge-success"
 
+  @doc "Soft DaisyUI alert class for a reader self-test diagnosis status."
+  @spec self_test_alert_class(atom()) :: String.t()
+  def self_test_alert_class(:healthy), do: "alert-success"
+  def self_test_alert_class(:deep_break), do: "alert-error"
+  def self_test_alert_class(:partial), do: "alert-warning"
+  def self_test_alert_class(_), do: "alert-info"
+
   @doc """
   Render the {result, _stats} tuple a stats NIF returns into a short
   status string. We render the *shape* of the result (ok-nil vs
