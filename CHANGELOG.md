@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.47.5 — 2026-05-30
+
 ### Improved
 
 - **The navigation sidebar has been refreshed.** It now runs the full
