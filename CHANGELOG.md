@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.47.2 — 2026-05-30
+
 ### Improved
 
 - **The MTGA memory reader now reports exactly which parts are working.**
