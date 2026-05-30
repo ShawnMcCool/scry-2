@@ -25,6 +25,18 @@ use scry2_collection_reader::walker::{
     vtable,
 };
 
+/// Class-name substrings that plausibly name a saved-deck collection holder.
+const DECK_CLASS_HINTS: &[&str] = &[
+    "DeckManager",
+    "DeckListManager",
+    "DeckCollection",
+    "DeckService",
+    "DeckRepository",
+    "DeckStore",
+    "DeckList",
+    "Deck", // broad net: print ALL classes containing "Deck" so nothing is missed
+];
+
 const MTGA_COMM: &str = "MTGA.exe";
 const READ_NAME_MAX: usize = 256;
 const MAX_FIELDS_PER_CLASS: usize = 64;
@@ -87,9 +99,110 @@ fn main() -> ExitCode {
     println!("[spike] enumerated {} Mono images", images.len());
 
     // Task 2: candidate discovery here
+    scan_deck_candidates(&offsets, &images, read_mem);
+    drill_papa_pointer_fields(&offsets, &images, domain_addr, read_mem);
     // Task 3: residency walk here
 
     ExitCode::SUCCESS
+}
+
+// ─────────────────────────── task-2 functions ─────────────────────────────────────
+
+fn scan_deck_candidates<F>(offsets: &MonoOffsets, images: &[u64], read_mem: F)
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    println!("\n=== candidate deck-collection classes (name contains a deck hint) ===");
+    let mut seen = 0usize;
+    for &image_addr in images {
+        let Some(classes) = class_lookup::list_all_classes(offsets, image_addr, read_mem) else {
+            continue;
+        };
+        for (name, class_addr) in classes {
+            if DECK_CLASS_HINTS.iter().any(|hint| name.contains(hint)) {
+                seen += 1;
+                println!("\n-- {name} @ {class_addr:#x}");
+                if let Some(class_bytes) = read_mem(class_addr, 240) {
+                    dump_class_own_fields(offsets, &class_bytes, &read_mem);
+                }
+            }
+        }
+    }
+    println!("\n[spike] {seen} deck-named class(es) found");
+}
+
+fn drill_papa_pointer_fields<F>(
+    offsets: &MonoOffsets,
+    images: &[u64],
+    domain_addr: u64,
+    read_mem: F,
+) where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    println!("\n=== PAPA instance pointer fields (hunting for a deck anchor) ===");
+
+    let papa_addr = match find_class_in_any(offsets, images, "PAPA", &read_mem) {
+        Some(a) => a,
+        None => {
+            println!("[spike] PAPA class not found in any image — skipping PAPA drill");
+            return;
+        }
+    };
+    println!("[spike] PAPA class @ {papa_addr:#x}");
+
+    let papa_bytes = match read_mem(papa_addr, CLASS_DEF_BLOB_LEN) {
+        Some(b) => b,
+        None => {
+            println!("[spike] could not read PAPA class def bytes");
+            return;
+        }
+    };
+
+    let instance_field_info =
+        match field::find_field_by_name(offsets, &papa_bytes, "_instance", read_mem) {
+            Some(f) if f.is_static => f,
+            _ => {
+                println!("[spike] PAPA._instance not resolved as static — skipping PAPA drill");
+                return;
+            }
+        };
+
+    let storage = match vtable::static_storage_base(offsets, papa_addr, domain_addr, read_mem) {
+        Some(s) => s,
+        None => {
+            println!("[spike] could not locate PAPA static storage — skipping PAPA drill");
+            return;
+        }
+    };
+
+    let papa_singleton_addr = match read_mem(storage + instance_field_info.offset as u64, 8)
+        .and_then(|b| read_u64(&b))
+    {
+        Some(p) if p != 0 => p,
+        _ => {
+            println!("[spike] PAPA._instance is NULL — log in to MTGA and retry");
+            return;
+        }
+    };
+    println!("[spike] PAPA._instance singleton @ {papa_singleton_addr:#x}");
+
+    let runtime_class = match read_object_class(papa_singleton_addr, &read_mem) {
+        Some(c) => c,
+        None => {
+            println!("[spike] could not read PAPA singleton runtime class via vtable");
+            return;
+        }
+    };
+    let runtime_class_bytes = match read_mem(runtime_class, CLASS_DEF_BLOB_LEN) {
+        Some(b) => b,
+        None => {
+            println!("[spike] could not read PAPA singleton runtime class bytes");
+            return;
+        }
+    };
+
+    println!("[spike] drilling PAPA instance pointer fields:");
+    drill_pointer_fields(offsets, papa_singleton_addr, &runtime_class_bytes, &read_mem);
 }
 
 // ─────────────────────────── helpers (copied verbatim from papa_managers_spike) ───
@@ -149,7 +262,6 @@ fn auto_discover_pid() -> Result<i32, String> {
     }
 }
 
-#[allow(dead_code)]
 fn find_class_in_any<F>(
     offsets: &MonoOffsets,
     images: &[u64],
@@ -171,7 +283,6 @@ where
     None
 }
 
-#[allow(dead_code)]
 fn drill_pointer_fields<F>(
     offsets: &MonoOffsets,
     obj_addr: u64,
@@ -286,7 +397,6 @@ where
     Some(klass)
 }
 
-#[allow(dead_code)]
 fn read_class_name<F>(class_bytes: &[u8], read_mem: &F) -> Option<String>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
@@ -307,7 +417,6 @@ where
     read_c_string(name_ptr, READ_NAME_MAX, read_mem)
 }
 
-#[allow(dead_code)]
 fn dump_class_own_fields<F>(offsets: &MonoOffsets, class_bytes: &[u8], read_mem: &F)
 where
     F: Fn(u64, usize) -> Option<Vec<u8>>,
