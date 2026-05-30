@@ -373,6 +373,7 @@ defmodule Scry2Web.DecksLive do
               class="text-[0.65rem]"
             />
             <span :if={@deck.format} class="text-xs text-base-content/55">{@deck.format}</span>
+            <span class="text-xs text-base-content/55">{DecksHelpers.deck_result_line(@deck)}</span>
           </div>
         </div>
         <div class="flex items-center gap-2">
