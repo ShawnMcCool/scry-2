@@ -200,6 +200,20 @@ defmodule Scry2.Decks.DeckProjection do
           end
         end
 
+        # Draft/limited decks have no DeckUpdated source, so their card list
+        # lives only in submissions. Stamp the latest submission as the deck's
+        # final build (and leftover drafted pool via sideboard) so the card
+        # list and clipboard export work. Constructed decks keep their
+        # builder-canonical current_main_deck from DeckUpdated.
+        if String.starts_with?(mtga_deck_id, "draft:") do
+          Decks.stamp_draft_final_build!(
+            mtga_deck_id,
+            event.main_deck || [],
+            event.sideboard || [],
+            event.occurred_at
+          )
+        end
+
         # Seed match result row. MatchCreated fires before DeckSubmitted in the
         # MTGA event stream, so retroactively apply any already-persisted
         # MatchCreated data to avoid leaving format_type nil.

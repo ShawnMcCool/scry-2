@@ -238,6 +238,157 @@ defmodule Scry2.Decks.DeckProjectionTest do
     end
   end
 
+  describe "draft deck final-build stamping" do
+    test "stamps current_main_deck from the submission for a draft deck" do
+      player = create_player()
+      match_id = "test-match-#{System.unique_integer([:positive])}"
+
+      events = [
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          event_name: "QuickDraft_SOS_20260430",
+          format_type: "Limited"
+        }),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          mtga_deck_id: "ignored-synthetic",
+          main_deck: [%{"arena_id" => 93_811, "count" => 3}],
+          sideboard: [%{"arena_id" => 93_999, "count" => 1}],
+          occurred_at: ~U[2026-04-30 12:00:00Z]
+        })
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: "draft:QuickDraft_SOS_20260430")
+      assert deck.current_main_deck == %{"cards" => [%{"arena_id" => 93_811, "count" => 3}]}
+      assert deck.current_sideboard == %{"cards" => [%{"arena_id" => 93_999, "count" => 1}]}
+    end
+
+    test "latest submission across matches becomes the final build" do
+      player = create_player()
+      m1 = "test-match-#{System.unique_integer([:positive])}"
+      m2 = "test-match-#{System.unique_integer([:positive])}"
+
+      base_match = fn id ->
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: id,
+          event_name: "QuickDraft_SOS_20260430",
+          format_type: "Limited"
+        })
+      end
+
+      events = [
+        base_match.(m1),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: m1,
+          main_deck: [%{"arena_id" => 1, "count" => 1}],
+          occurred_at: ~U[2026-04-30 12:00:00Z]
+        }),
+        base_match.(m2),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: m2,
+          main_deck: [%{"arena_id" => 2, "count" => 1}],
+          occurred_at: ~U[2026-04-30 13:00:00Z]
+        })
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: "draft:QuickDraft_SOS_20260430")
+      assert deck.current_main_deck == %{"cards" => [%{"arena_id" => 2, "count" => 1}]}
+    end
+
+    test "ignores a late-arriving earlier-timestamped submission (replay order-independent)" do
+      player = create_player()
+      m1 = "test-match-#{System.unique_integer([:positive])}"
+      m2 = "test-match-#{System.unique_integer([:positive])}"
+      m3 = "test-match-#{System.unique_integer([:positive])}"
+
+      base_match = fn id ->
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: id,
+          event_name: "QuickDraft_SOS_20260430",
+          format_type: "Limited"
+        })
+      end
+
+      # m1 at 12:00, m2 at 14:00 (latest), m3 at 11:00 (arrives last but is earliest)
+      # After projection the deck must reflect arena_id 20 (the 14:00 build),
+      # NOT arena_id 30 (the 11:00 build that arrived late).
+      events = [
+        base_match.(m1),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: m1,
+          main_deck: [%{"arena_id" => 10, "count" => 1}],
+          occurred_at: ~U[2026-04-30 12:00:00Z]
+        }),
+        base_match.(m2),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: m2,
+          main_deck: [%{"arena_id" => 20, "count" => 1}],
+          occurred_at: ~U[2026-04-30 14:00:00Z]
+        }),
+        base_match.(m3),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: m3,
+          main_deck: [%{"arena_id" => 30, "count" => 1}],
+          occurred_at: ~U[2026-04-30 11:00:00Z]
+        })
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: "draft:QuickDraft_SOS_20260430")
+      assert deck.current_main_deck == %{"cards" => [%{"arena_id" => 20, "count" => 1}]}
+    end
+
+    test "does NOT overwrite a constructed deck's builder card list" do
+      player = create_player()
+      deck_id = "test-deck-#{System.unique_integer([:positive])}"
+      match_id = "test-match-#{System.unique_integer([:positive])}"
+
+      events = [
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          format: "Standard",
+          main_deck: [%{arena_id: 91_234, count: 4}],
+          sideboard: []
+        }),
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          event_name: "Ladder",
+          format_type: "Constructed"
+        }),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          mtga_deck_id: deck_id,
+          main_deck: [
+            %{"arena_id" => 91_234, "count" => 4},
+            %{"arena_id" => 99_999, "count" => 1}
+          ]
+        })
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: deck_id)
+      assert deck.current_main_deck == %{"cards" => [%{"arena_id" => 91_234, "count" => 4}]}
+    end
+  end
+
   describe "deck_deleted projection" do
     test "sets archived=true on the matching deck" do
       player = create_player()
