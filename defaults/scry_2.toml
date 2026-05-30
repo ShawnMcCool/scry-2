@@ -35,6 +35,19 @@ path = "~/.local/share/scry_2/scry_2.db"
 # debounce/flush interval, not a polling loop.
 poll_interval_ms = 500
 
+# Raw-event retention window, in days (ADR-039). Raw MTGA events are kept
+# verbatim in `mtga_logs_events` so the domain event log can be rebuilt if
+# the translator changes. They are a bounded, regenerable hedge — projections
+# never read them. This dial sets how far back raw is kept.
+#
+# Default (unset / nil): keep raw events FOREVER. Nothing is pruned.
+#
+# IMPORTANT: as of v0.47.x the prune itself is not yet wired up — setting this
+# does not delete anything. The destructive rebuild operations (reingest,
+# retranslate) refuse to run if pruning ever leaves the domain log with events
+# that surviving raw can't reproduce, so history can never be lost silently.
+# raw_event_retention_days = 90
+
 # Note: there is no `self_user_id` config key. The pipeline auto-detects
 # your MTGA Wizards user id from the first `AuthenticateResponse` event
 # in Player.log and persists it in the `ingestion_state` table for all

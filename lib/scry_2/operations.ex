@@ -172,6 +172,14 @@ defmodule Scry2.Operations do
   defp reingest_with_progress do
     alias Scry2.Events.IngestRawEvents
 
+    # ADR-039 seatbelt: refuse to wipe the domain log if surviving raw can no
+    # longer rebuild it. Raising here is caught by start_reingest!/0's rescue,
+    # which broadcasts {:operation_failed, :reingest, reason} to the UI.
+    case Scry2.Events.RawRetention.coverage_verdict(Events.raw_coverage_gap()) do
+      :ok -> :ok
+      {:gap, count} -> raise Scry2.Events.RawRetention.coverage_error_message(count)
+    end
+
     # Reset domain events and ingestion state.
     Scry2.Repo.delete_all(Scry2.Events.IngestionState.Snapshot)
     Scry2.Repo.delete_all(Events.EventRecord)

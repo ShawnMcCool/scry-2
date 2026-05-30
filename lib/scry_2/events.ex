@@ -552,6 +552,41 @@ defmodule Scry2.Events do
   end
 
   @doc """
+  Counts domain events whose source raw event no longer exists.
+
+  A "coverage gap" — every domain event with a non-nil `mtga_source_id`
+  should still have its raw row in `mtga_logs_events`. Returns the number
+  of domain events that don't. Zero means surviving raw can fully rebuild
+  the domain log; anything else means a wipe-and-rebuild would lose history
+  (ADR-039). Synthetic events (nil `mtga_source_id`) never count as gaps.
+  """
+  @spec raw_coverage_gap() :: non_neg_integer()
+  def raw_coverage_gap do
+    from(domain in EventRecord,
+      left_join: raw in Scry2.MtgaLogIngestion.EventRecord,
+      on: raw.id == domain.mtga_source_id,
+      where: not is_nil(domain.mtga_source_id) and is_nil(raw.id),
+      select: count(domain.id)
+    )
+    |> Repo.one()
+  end
+
+  # The ADR-039 seatbelt: before any operation deletes the domain event log
+  # to rebuild it from raw, verify surviving raw still covers it. Refuse
+  # (raise) on a gap unless force: true — so a future raw-retention prune can
+  # never silently destroy domain events it cannot reproduce.
+  defp ensure_raw_coverage!(opts) do
+    if Keyword.get(opts, :force, false) do
+      :ok
+    else
+      case Scry2.Events.RawRetention.coverage_verdict(raw_coverage_gap()) do
+        :ok -> :ok
+        {:gap, count} -> raise Scry2.Events.RawRetention.coverage_error_message(count)
+      end
+    end
+  end
+
+  @doc """
   Full reingest — clears all derived data and rebuilds from raw MTGA events.
 
   1. Deletes all projections (matches, drafts, deck submissions, etc.)
@@ -563,12 +598,17 @@ defmodule Scry2.Events do
   to be regenerated from scratch. Safe to call at any time — raw MTGA
   events are never deleted.
 
+  Refuses to run if surviving raw no longer covers the domain log
+  (ADR-039), since the rebuild would lose the uncovered events. Pass
+  `force: true` to override.
+
   Safe to call before `IngestRawEvents` has started — uses the direct
   retranslation path that runs in the caller's process.
   """
-  @spec reingest!() :: :ok
-  def reingest! do
+  @spec reingest!(keyword()) :: :ok
+  def reingest!(opts \\ []) do
     require Scry2.Log, as: Log
+    ensure_raw_coverage!(opts)
     Log.info(:ingester, "reingest: starting full reingest from raw events")
 
     # 0. Reset ingestion state snapshot
@@ -655,9 +695,12 @@ defmodule Scry2.Events do
 
   Use when the `Scry2.Events.IdentifyDomainEvents` has changed and historical
   domain events need to be regenerated.
+
+  Refuses to run on a raw coverage gap (ADR-039) unless `force: true`.
   """
-  @spec retranslate_from_raw!() :: :ok
-  def retranslate_from_raw! do
+  @spec retranslate_from_raw!(keyword()) :: :ok
+  def retranslate_from_raw!(opts \\ []) do
+    ensure_raw_coverage!(opts)
     Repo.delete_all(EventRecord)
 
     Scry2.MtgaLogIngestion.EventRecord
@@ -684,10 +727,13 @@ defmodule Scry2.Events do
 
   Use `reset_raw!()` for the exceptional case where raw event data itself
   is corrupt and needs to be re-ingested from Player.log.
+
+  Refuses to run on a raw coverage gap (ADR-039) unless `force: true`.
   """
-  @spec reset_all!() :: :ok
-  def reset_all! do
+  @spec reset_all!(keyword()) :: :ok
+  def reset_all!(opts \\ []) do
     require Scry2.Log, as: Log
+    ensure_raw_coverage!(opts)
     Log.info(:ingester, "reset_all: clearing domain events and all projections")
 
     # Clear domain events
@@ -718,7 +764,8 @@ defmodule Scry2.Events do
   """
   @spec reset_raw!() :: :ok
   def reset_raw! do
-    reset_all!()
+    # Intentionally destroys raw too, so the coverage guard is moot — bypass it.
+    reset_all!(force: true)
     Repo.delete_all(Scry2.MtgaLogIngestion.EventRecord)
     Repo.delete_all(Scry2.MtgaLogIngestion.Cursor)
 

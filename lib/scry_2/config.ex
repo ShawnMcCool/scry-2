@@ -26,6 +26,7 @@ defmodule Scry2.Config do
           | :image_cache_dir
           | :start_watcher
           | :start_importer
+          | :raw_event_retention_days
 
   @doc """
   Loads configuration from TOML and stores it in `:persistent_term`.
@@ -111,7 +112,10 @@ defmodule Scry2.Config do
       image_cache_dir: Path.join(data_dir, "cache/images"),
       start_watcher: Application.get_env(:scry_2, :start_watcher, true),
       start_importer: Application.get_env(:scry_2, :start_importer, true),
-      mtga_data_dir: nil
+      mtga_data_dir: nil,
+      # ADR-039: raw-event retention window in days. nil = keep forever.
+      # The dial exists but nothing prunes yet — see Scry2.Events.RawRetention.
+      raw_event_retention_days: nil
     }
 
     if Application.get_env(:scry_2, :skip_user_config, false) do
@@ -182,7 +186,10 @@ defmodule Scry2.Config do
         value_or_default(get_in(toml, ["workers", "start_importer"]), defaults.start_importer),
       mtga_data_dir:
         expand(get_in(toml, ["mtga_logs", "data_dir"])) ||
-          defaults.mtga_data_dir
+          defaults.mtga_data_dir,
+      raw_event_retention_days:
+        get_in(toml, ["mtga_logs", "raw_event_retention_days"]) ||
+          defaults.raw_event_retention_days
     }
   end
 
