@@ -8,7 +8,7 @@ defmodule Scry2.Cards.Synthesize.MergeFields do
   | Field             | Source                                                  |
   |-------------------|---------------------------------------------------------|
   | `arena_id`        | MTGA → Scryfall                                         |
-  | `name`            | Scryfall front-name → MTGA name                         |
+  | `name`            | Scryfall front-name → MTGA name (UI markup stripped)    |
   | `collector_number`| MTGA → Scryfall                                         |
   | `rarity`          | Scryfall string → MTGA enum decoded (token/basic/...)   |
   | `color_identity`  | Scryfall (computed) → "" (empty) when MTGA-only         |
@@ -64,6 +64,33 @@ defmodule Scry2.Cards.Synthesize.MergeFields do
   @spec front_name(String.t()) :: String.t()
   def front_name(name) when is_binary(name) do
     name |> String.split(" // ") |> hd()
+  end
+
+  @doc """
+  Strips MTGA's rich-text UI markup from a card name and normalises
+  whitespace.
+
+  The MTGA client's localisation strings embed presentation markup that
+  is meaningless outside the game client:
+
+    * `<nobr>…</nobr>` — non-breaking wrappers around hyphenated words
+      (e.g. `<nobr>Cold-Water</nobr> Snapper`).
+    * `<sprite="…" name="arena_a">` — the leading Alchemy-rebalance "A"
+      icon (e.g. `<sprite=…>Baba Lysaga, Night Witch`).
+
+  Scryfall-paired cards never reach this path (their clean name wins in
+  `resolve_name/2`); only MTGA-only cards carry the markup. Removing every
+  `<…>` tag and collapsing the resulting whitespace yields the plain card
+  name. `nil` passes through.
+  """
+  @spec strip_mtga_markup(String.t() | nil) :: String.t() | nil
+  def strip_mtga_markup(nil), do: nil
+
+  def strip_mtga_markup(name) when is_binary(name) do
+    name
+    |> String.replace(~r/<[^>]*>/, "")
+    |> String.replace(~r/\s+/, " ")
+    |> String.trim()
   end
 
   @doc """
@@ -181,7 +208,9 @@ defmodule Scry2.Cards.Synthesize.MergeFields do
     front_name(name)
   end
 
-  defp resolve_name(%MtgaCard{name: name}, _), do: name
+  # MTGA loc strings carry UI markup (<nobr>, <sprite>) — strip it so the
+  # stored name is the plain card name.
+  defp resolve_name(%MtgaCard{name: name}, _), do: strip_mtga_markup(name)
   defp resolve_name(_, _), do: nil
 
   defp resolve_collector_number(%MtgaCard{collector_number: num}, _)

@@ -188,4 +188,33 @@ defmodule Scry2Web.CollectionLiveTest do
       refute has_element?(view, "[data-role='build-change-banner']")
     end
   end
+
+  describe "rendered_arena_ids/2" do
+    alias Scry2.Collection.{CraftPlan, Holding}
+    alias Scry2Web.CollectionLive
+
+    defp holding(arena_id) do
+      %Holding{arena_id: arena_id, count: 1, card: nil, copies_to_playset: 3}
+    end
+
+    defp craft_plan(playset_arena_ids) do
+      %CraftPlan{
+        incomplete_playsets:
+          Enum.map(playset_arena_ids, &%{holding: holding(&1), copies_needed: 4}),
+        wildcards_owned: %{},
+        wildcards_needed_by_rarity: %{}
+      }
+    end
+
+    test "unions visible browser holdings with craft-plan cards, de-duped" do
+      browser = [holding(1), holding(2)]
+
+      assert browser |> CollectionLive.rendered_arena_ids(craft_plan([2, 3])) |> Enum.sort() ==
+               [1, 2, 3]
+    end
+
+    test "handles an empty craft plan" do
+      assert CollectionLive.rendered_arena_ids([holding(7)], craft_plan([])) == [7]
+    end
+  end
 end

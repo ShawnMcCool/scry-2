@@ -24,6 +24,34 @@ defmodule Scry2.Cards.Synthesize.MergeFieldsTest do
     end
   end
 
+  describe "strip_mtga_markup/1" do
+    test "removes <nobr> wrappers and keeps the inner text" do
+      assert MergeFields.strip_mtga_markup("<nobr>Sergeant-at</nobr>-Arms") == "Sergeant-at-Arms"
+
+      assert MergeFields.strip_mtga_markup("<nobr>Cold-Water</nobr> Snapper") ==
+               "Cold-Water Snapper"
+    end
+
+    test "removes leading <sprite> icon tags" do
+      assert MergeFields.strip_mtga_markup(
+               ~s(<sprite="SpriteSheet_MiscIcons" name="arena_a">Baba Lysaga, Night Witch)
+             ) == "Baba Lysaga, Night Witch"
+    end
+
+    test "collapses whitespace left behind by adjacent tags" do
+      assert MergeFields.strip_mtga_markup("<nobr>Yuan-Ti</nobr> <nobr>Fang-Blade</nobr>") ==
+               "Yuan-Ti Fang-Blade"
+    end
+
+    test "passes clean names through unchanged" do
+      assert MergeFields.strip_mtga_markup("Aang's Iceberg") == "Aang's Iceberg"
+    end
+
+    test "tolerates nil" do
+      assert MergeFields.strip_mtga_markup(nil) == nil
+    end
+  end
+
   describe "derive_type_booleans/1 (Scryfall-style type_line)" do
     test "Creature is set for creature type lines" do
       flags = MergeFields.derive_type_booleans("Creature — Goblin")
@@ -173,6 +201,16 @@ defmodule Scry2.Cards.Synthesize.MergeFieldsTest do
       assert attrs.rarity == "rare"
       # color identity unknown without Scryfall — empty
       assert attrs.color_identity == ""
+    end
+
+    test "strips MTGA UI markup from the name (no Scryfall pair to override it)" do
+      mtga =
+        TestFactory.build_mtga_card(
+          arena_id: 67_168,
+          name: "<nobr>Sergeant-at</nobr>-Arms"
+        )
+
+      assert MergeFields.build(mtga, nil).name == "Sergeant-at-Arms"
     end
 
     test "tokens never get is_booster=true (Pairing skips tokens, default-true must not flip them on)" do
