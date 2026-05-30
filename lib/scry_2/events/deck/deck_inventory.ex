@@ -13,7 +13,10 @@ defmodule Scry2.Events.Deck.DeckInventory do
   ## Fields
 
   - `player_id` — MTGA player identifier (may be nil if not yet resolved)
-  - `decks` — list of deck summaries, each with `deck_id`, `name`, and `format`
+  - `decks` — list of deck summaries, each with `deck_id`, `name`, and `format`.
+    Live (in-memory) entries are atom-keyed; entries rehydrated from the stored
+    payload via `from_payload/1` (replay/backfill) are string-keyed. Consumers
+    must tolerate both (see `Scry2.Decks.upsert_inventory_deck!/1`).
 
   ## Diff key
 
