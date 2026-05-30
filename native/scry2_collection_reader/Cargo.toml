@@ -29,6 +29,11 @@ name = "papa-managers-spike"
 path = "src/bin/papa_managers_spike.rs"
 required-features = []
 
+[[bin]]
+name = "saved-deck-collection-spike"
+path = "src/bin/saved_deck_collection_spike.rs"
+required-features = []
+
 [dependencies]
 # Pinned to 0.37.3 to match the Hex `:rustler` mix dep version. Cargo
 # resolving to 0.37.4 against an Elixir-side 0.37.3 produces a NIF whose
