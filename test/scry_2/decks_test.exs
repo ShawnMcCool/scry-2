@@ -720,6 +720,69 @@ defmodule Scry2.DecksTest do
     end
   end
 
+  describe "backfill_draft_builds!/0" do
+    test "stamps the latest submission onto existing draft decks, leaves others untouched" do
+      draft =
+        TestFactory.create_deck(%{
+          mtga_deck_id: "draft:QuickDraft_SOS_20260430",
+          current_main_deck: %{}
+        })
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "real-deck-1",
+        current_main_deck: %{"cards" => [%{"arena_id" => 5, "count" => 4}]}
+      })
+
+      Scry2.Decks.upsert_game_submission!(%{
+        mtga_deck_id: draft.mtga_deck_id,
+        mtga_match_id: "m1",
+        game_number: 1,
+        main_deck: %{"cards" => [%{"arena_id" => 10, "count" => 2}]},
+        sideboard: %{"cards" => []},
+        submitted_at: ~U[2026-04-30 12:00:00Z]
+      })
+
+      Scry2.Decks.upsert_game_submission!(%{
+        mtga_deck_id: draft.mtga_deck_id,
+        mtga_match_id: "m2",
+        game_number: 1,
+        main_deck: %{"cards" => [%{"arena_id" => 11, "count" => 3}]},
+        sideboard: %{"cards" => []},
+        submitted_at: ~U[2026-04-30 13:00:00Z]
+      })
+
+      assert Scry2.Decks.backfill_draft_builds!() == 1
+
+      assert Scry2.Decks.get_deck("draft:QuickDraft_SOS_20260430").current_main_deck ==
+               %{"cards" => [%{"arena_id" => 11, "count" => 3}]}
+
+      assert Scry2.Decks.get_deck("real-deck-1").current_main_deck ==
+               %{"cards" => [%{"arena_id" => 5, "count" => 4}]}
+    end
+
+    test "is idempotent" do
+      draft =
+        TestFactory.create_deck(%{
+          mtga_deck_id: "draft:QuickDraft_SOS_20260430",
+          current_main_deck: %{}
+        })
+
+      Scry2.Decks.upsert_game_submission!(%{
+        mtga_deck_id: draft.mtga_deck_id,
+        mtga_match_id: "m1",
+        game_number: 1,
+        main_deck: %{"cards" => [%{"arena_id" => 10, "count" => 2}]},
+        sideboard: %{"cards" => []},
+        submitted_at: ~U[2026-04-30 12:00:00Z]
+      })
+
+      Scry2.Decks.backfill_draft_builds!()
+      first = Scry2.Decks.get_deck(draft.mtga_deck_id).current_main_deck
+      Scry2.Decks.backfill_draft_builds!()
+      assert Scry2.Decks.get_deck(draft.mtga_deck_id).current_main_deck == first
+    end
+  end
+
   describe "update_deck_flags!/2" do
     test "updates starred and archived and broadcasts" do
       Topics.subscribe(Topics.decks_updates())

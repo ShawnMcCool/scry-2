@@ -596,6 +596,47 @@ defmodule Scry2.Decks do
   end
 
   @doc """
+  One-time, idempotent backfill: stamps every draft deck's final build onto its
+  deck row from the latest game submission. Safe to run repeatedly — touches only
+  `current_main_deck` / `current_sideboard` / `last_updated_at` via
+  `stamp_draft_final_build!/4`, never `starred`, `archived`, or any other table.
+
+  Use this instead of `Scry2.Events.replay_projections!/0`, which would
+  `delete_all` `decks_decks` and destroy user-set `starred` flags.
+
+  Returns the number of draft decks that had a submission to process (note: a deck
+  whose build is already current is counted but results in a no-op write).
+  """
+  @spec backfill_draft_builds!() :: non_neg_integer()
+  def backfill_draft_builds! do
+    draft_deck_ids =
+      Deck
+      |> where([deck], like(deck.mtga_deck_id, "draft:%"))
+      |> select([deck], deck.mtga_deck_id)
+      |> Repo.all()
+
+    Enum.reduce(draft_deck_ids, 0, fn mtga_deck_id, count ->
+      latest =
+        GameSubmission
+        |> where([submission], submission.mtga_deck_id == ^mtga_deck_id)
+        |> order_by([submission], desc: submission.submitted_at)
+        |> limit(1)
+        |> Repo.one()
+
+      case latest do
+        nil ->
+          count
+
+        submission ->
+          main_deck = (submission.main_deck && submission.main_deck["cards"]) || []
+          sideboard = (submission.sideboard && submission.sideboard["cards"]) || []
+          stamp_draft_final_build!(mtga_deck_id, main_deck, sideboard, submission.submitted_at)
+          count + 1
+      end
+    end)
+  end
+
+  @doc """
   Updates the curation flags (`:starred`, `:archived`) on a deck. Used by
   both the LiveView toggles and by `DeckProjection` when auto-archiving on
   MTGA deletion. Broadcasts `decks:updates` on success.
