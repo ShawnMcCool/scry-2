@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.48.0 — 2026-05-30
+
 ### New
 
 - **Your full MTGA deck collection now appears on the Decks page.** Until now,

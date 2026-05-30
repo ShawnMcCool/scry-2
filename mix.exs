@@ -4,7 +4,7 @@ defmodule Scry2.MixProject do
   def project do
     [
       app: :scry_2,
-      version: "0.47.7",
+      version: "0.48.0",
       elixir: "~> 1.18",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
