@@ -11,6 +11,13 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The Settings menu has moved to the bottom of the sidebar.** The gear
+  that used to sit in the top-right corner is now pinned at the bottom of
+  the left navigation — and that's where the "update available" badge
+  shows up when a new version is ready to install.
+
 ## v0.47.5 — 2026-05-30
 
 ### Improved
