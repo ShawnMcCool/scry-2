@@ -11,6 +11,19 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Card art now loads on the Collection page.** Most cards in **My cards**
+  showed a blank placeholder instead of their artwork — the page wasn't
+  fetching the images. It now downloads art for the cards you're viewing
+  as you browse, filter, and search.
+- **Card names no longer show stray formatting tags.** Some cards —
+  including snow-covered basics, Alchemy rebalanced cards, and many
+  hyphenated names like "Sergeant-at-Arms" — displayed with leftover
+  markup such as `<nobr>` around the name. Names now appear clean
+  everywhere they're shown: the Collection grid, the card browser,
+  search, and deck exports.
+
 ## v0.47.6 — 2026-05-30
 
 ### Improved
