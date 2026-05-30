@@ -11,6 +11,14 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The navigation sidebar has been refreshed.** It now runs the full
+  height of the window with the Scry 2 logo at the top, and the page
+  header sits neatly beside it. When you collapse the sidebar down to
+  icons, hovering any icon shows a clean label tooltip so you always know
+  what each one is.
+
 ## v0.47.4 — 2026-05-30
 
 ### New
