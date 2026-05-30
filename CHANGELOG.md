@@ -11,6 +11,23 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Your draft and sealed decks are now fully preserved.** Each one shows
+  its complete card list and a quick result line — like "Finished 3-4" or
+  "Trophy run — 7-2" — summarising how the run went, and you can copy it
+  back into MTGA straight from the deck page. That means you can safely
+  delete a draft deck in Arena to free up a slot, knowing Scry2 still has
+  it and you can re-import it whenever you want.
+
+### Fixed
+
+- **Fixed draft and sealed decks showing no cards.** Their cards were
+  always saved, but the deck view wasn't displaying them — now it does.
+  Your existing draft decks are filled in automatically the first time you
+  open Scry2 after this update, and copying a draft deck into MTGA (which
+  used to come out blank) now works.
+
 ## v0.47.3 — 2026-05-30
 
 ### Fixed
