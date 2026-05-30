@@ -619,7 +619,7 @@ defmodule Scry2.Decks do
       latest =
         GameSubmission
         |> where([submission], submission.mtga_deck_id == ^mtga_deck_id)
-        |> order_by([submission], desc: submission.submitted_at)
+        |> order_by([submission], desc: submission.submitted_at, desc: submission.id)
         |> limit(1)
         |> Repo.one()
 
