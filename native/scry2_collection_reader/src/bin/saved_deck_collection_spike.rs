@@ -17,10 +17,10 @@ use std::fs;
 use std::process::ExitCode;
 
 use scry2_collection_reader::platform::{list_maps, read_bytes};
-#[allow(unused_imports)]
 use scry2_collection_reader::walker::{
     class_lookup, domain, field, image_lookup, instance_field, list_t,
     mono::{self, MonoOffsets, MONO_CLASS_FIELD_SIZE},
+    object,
     run::{read_mono_image, CLASS_DEF_BLOB_LEN},
     vtable,
 };
@@ -40,9 +40,6 @@ const DECK_CLASS_HINTS: &[&str] = &[
 const MTGA_COMM: &str = "MTGA.exe";
 const READ_NAME_MAX: usize = 256;
 const MAX_FIELDS_PER_CLASS: usize = 64;
-#[allow(dead_code)]
-const CLASS_PARENT_OFFSET: usize = 0x30;
-#[allow(dead_code)]
 const MAX_STRING_CHARS: usize = 128;
 
 fn main() -> ExitCode {
@@ -101,9 +98,91 @@ fn main() -> ExitCode {
     // Task 2: candidate discovery here
     scan_deck_candidates(&offsets, &images, read_mem);
     drill_papa_pointer_fields(&offsets, &images, domain_addr, read_mem);
+
     // Task 3: residency walk here
+    // The owning anchor + list field are discovered from Task 2 output; pass them
+    // at runtime so re-runs don't require recompiling.
+    match (env::var("DECK_OWNER_ADDR"), env::var("DECK_LIST_FIELD")) {
+        (Ok(owner_hex), Ok(field_name)) => {
+            let trimmed = owner_hex.trim().trim_start_matches("0x");
+            match u64::from_str_radix(trimmed, 16) {
+                Ok(owner_addr) => report_deck_residency(&offsets, owner_addr, &field_name, read_mem),
+                Err(_) => eprintln!("[spike] DECK_OWNER_ADDR must be hex, e.g. 0x7f1234abcd00"),
+            }
+        }
+        _ => {
+            println!("\n[spike] set DECK_OWNER_ADDR=0x.. and DECK_LIST_FIELD=<name> to run the residency walk");
+        }
+    }
 
     ExitCode::SUCCESS
+}
+
+// ─────────────────────────── task-3 functions ─────────────────────────────────────
+
+/// Given the address of the object that owns the saved-deck list and the name
+/// of the field holding that `List<Deck>`, walk every Deck and report whether
+/// its MainDeck is populated (the residency verdict driver).
+fn report_deck_residency<F>(offsets: &MonoOffsets, owner_addr: u64, list_field_name: &str, read_mem: F)
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    println!("\n=== saved-deck residency report ===");
+    println!("[spike] owner = {owner_addr:#x}, list field = {list_field_name:?}");
+
+    let Some(owner_class) = object::read_runtime_class_bytes(owner_addr, &read_mem) else {
+        println!("[spike] could not read owner runtime class");
+        return;
+    };
+    let Some(list_addr) =
+        object::read_instance_pointer_in_chain(offsets, &owner_class, owner_addr, list_field_name, &read_mem)
+    else {
+        println!("[spike] field {list_field_name:?} not found on owner (or null)");
+        return;
+    };
+    if list_addr == 0 {
+        println!("[spike] {list_field_name} is null — collection not resident");
+        return;
+    }
+
+    let Some(list_class) = object::read_runtime_class_bytes(list_addr, &read_mem) else {
+        println!("[spike] could not read list runtime class");
+        return;
+    };
+    let size = list_t::read_size(offsets, &list_class, list_addr, &read_mem).unwrap_or(0);
+    let deck_ptrs = list_t::read_pointer_list(offsets, &list_class, list_addr, &read_mem);
+    println!("[spike] deck collection _size = {size}, pointers read = {}", deck_ptrs.len());
+
+    let mut resident = 0usize;
+    for (index, &deck_addr) in deck_ptrs.iter().enumerate() {
+        if deck_addr == 0 {
+            continue;
+        }
+        let Some(deck_class) = object::read_runtime_class_bytes(deck_addr, &read_mem) else {
+            println!("  [{index}] <unreadable deck object @ {deck_addr:#x}>");
+            continue;
+        };
+        let name = instance_field::read_instance_string(offsets, &deck_class, deck_addr, "Name", MAX_STRING_CHARS, &read_mem)
+            .or_else(|| instance_field::read_instance_string(offsets, &deck_class, deck_addr, "name", MAX_STRING_CHARS, &read_mem))
+            .unwrap_or_else(|| "<no name>".to_string());
+
+        let main_deck_size = object::read_instance_pointer_in_chain(offsets, &deck_class, deck_addr, "MainDeck", &read_mem)
+            .filter(|&ptr| ptr != 0)
+            .and_then(|main_deck_addr| {
+                let main_deck_class = object::read_runtime_class_bytes(main_deck_addr, &read_mem)?;
+                list_t::read_size(offsets, &main_deck_class, main_deck_addr, &read_mem)
+            });
+
+        match main_deck_size {
+            Some(card_count) if card_count > 0 => {
+                resident += 1;
+                println!("  [{index}] {name:?}  MainDeck _size = {card_count}  (RESIDENT)");
+            }
+            Some(0) => println!("  [{index}] {name:?}  MainDeck _size = 0  (empty)"),
+            _ => println!("  [{index}] {name:?}  MainDeck = null  (NOT resident)"),
+        }
+    }
+    println!("[spike] residency: {resident}/{} decks have a populated MainDeck", deck_ptrs.len());
 }
 
 // ─────────────────────────── task-2 functions ─────────────────────────────────────
