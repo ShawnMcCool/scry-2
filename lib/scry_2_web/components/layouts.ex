@@ -55,7 +55,11 @@ defmodule Scry2Web.Layouts do
   def app(assigns) do
     ~H"""
     <div class="flex h-screen overflow-hidden">
-      <.sidebar collapsed={@sidebar_collapsed} current_path={@current_path} />
+      <.sidebar
+        collapsed={@sidebar_collapsed}
+        current_path={@current_path}
+        nav_update={@nav_update}
+      />
 
       <div class="flex flex-col flex-1 min-w-0">
         <header class="navbar flex-nowrap shrink-0 px-4 sm:px-6 lg:px-8 border-b border-base-300">
@@ -65,7 +69,6 @@ defmodule Scry2Web.Layouts do
               active_player_id={@active_player_id}
               current_path={@current_path}
             />
-            <.gear_dropdown current_path={@current_path} nav_update={@nav_update} />
           </div>
         </header>
 
@@ -118,6 +121,7 @@ defmodule Scry2Web.Layouts do
 
   attr :collapsed, :boolean, required: true
   attr :current_path, :string, required: true
+  attr :nav_update, :map, required: true
 
   defp sidebar(assigns) do
     ~H"""
@@ -172,7 +176,60 @@ defmodule Scry2Web.Layouts do
           current_path={@current_path}
         />
       <% end %>
+
+      <hr class="border-base-300 mt-auto mb-1" aria-hidden="true" />
+      <.sidebar_settings
+        collapsed={@collapsed}
+        current_path={@current_path}
+        nav_update={@nav_update}
+      />
     </aside>
+    """
+  end
+
+  attr :collapsed, :boolean, required: true
+  attr :current_path, :string, required: true
+  attr :nav_update, :map, required: true
+
+  defp sidebar_settings(assigns) do
+    assigns =
+      assign(assigns,
+        active: settings_group?(assigns.current_path),
+        indicator: NavHelpers.gear_indicator(assigns.nav_update)
+      )
+
+    ~H"""
+    <.link
+      id="rail-settings"
+      navigate={~p"/system"}
+      phx-hook="RailTip"
+      data-tip={if(@collapsed, do: "Settings", else: nil)}
+      class={[
+        "relative flex items-center rounded-md text-sm font-medium transition-colors",
+        if(@collapsed, do: "justify-center px-1 py-2", else: "gap-2.5 px-2 py-1.5"),
+        if(@active,
+          do: "bg-primary/10 text-primary",
+          else: "text-base-content/70 hover:text-base-content hover:bg-base-300/60"
+        )
+      ]}
+      data-role="sidebar-settings"
+      aria-label="Settings"
+    >
+      <.icon name="hero-cog-6-tooth" class="size-4 shrink-0" />
+      <span :if={not @collapsed} class="truncate">Settings</span>
+      <span
+        :if={not @collapsed and @indicator.kind == :badge}
+        class="ml-auto badge badge-xs badge-soft badge-info"
+      >
+        {@indicator.label}
+      </span>
+      <span
+        :if={@collapsed and @indicator.kind == :badge}
+        class="absolute top-1 right-1.5 size-2 rounded-full bg-info"
+        aria-hidden="true"
+      >
+      </span>
+    </.link>
     """
   end
 
@@ -298,38 +355,6 @@ defmodule Scry2Web.Layouts do
         </div>
       </div>
     </details>
-    """
-  end
-
-  attr :current_path, :string, required: true
-  attr :nav_update, :map, required: true
-
-  defp gear_dropdown(assigns) do
-    indicator = NavHelpers.gear_indicator(assigns.nav_update)
-
-    assigns =
-      assign(assigns,
-        active: settings_group?(assigns.current_path),
-        indicator: indicator
-      )
-
-    ~H"""
-    <.link
-      navigate={~p"/system"}
-      class={[
-        "btn btn-ghost btn-sm gap-1.5 border border-base-300 px-2",
-        @active && "text-primary"
-      ]}
-      aria-label="System"
-    >
-      <.icon name="hero-cog-6-tooth" class="size-4 text-base-content/60" />
-      <span
-        :if={@indicator.kind == :badge}
-        class="badge badge-xs badge-soft badge-info"
-      >
-        {@indicator.label}
-      </span>
-    </.link>
     """
   end
 
