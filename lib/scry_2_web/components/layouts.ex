@@ -54,36 +54,29 @@ defmodule Scry2Web.Layouts do
 
   def app(assigns) do
     ~H"""
-    <header class="navbar flex-nowrap px-4 sm:px-6 lg:px-8 border-b border-base-300">
-      <div class="flex-1 min-w-0 flex items-center gap-5">
-        <.link
-          navigate={~p"/"}
-          class="flex items-center gap-2 text-lg font-semibold font-beleren shrink-0"
-        >
-          <.icon name="hero-eye" class="size-6 text-primary" /> Scry&nbsp;2
-        </.link>
-      </div>
-
-      <div class="ml-auto flex-shrink-0 flex items-center gap-3">
-        <.profile_dropdown
-          players={@players}
-          active_player_id={@active_player_id}
-          current_path={@current_path}
-        />
-        <.gear_dropdown current_path={@current_path} nav_update={@nav_update} />
-      </div>
-    </header>
-
-    <.catch_up_banner status={@catch_up_status} />
-
-    <div class="flex min-h-[calc(100vh-4rem)]">
+    <div class="flex h-screen overflow-hidden">
       <.sidebar collapsed={@sidebar_collapsed} current_path={@current_path} />
 
-      <main class="flex-1 min-w-0 px-4 py-8 sm:px-6 lg:px-8">
-        <div class="mx-auto space-y-6" style="max-width: min(90vw, 1400px)">
-          {render_slot(@inner_block)}
-        </div>
-      </main>
+      <div class="flex flex-col flex-1 min-w-0">
+        <header class="navbar flex-nowrap shrink-0 px-4 sm:px-6 lg:px-8 border-b border-base-300">
+          <div class="ml-auto flex-shrink-0 flex items-center gap-3">
+            <.profile_dropdown
+              players={@players}
+              active_player_id={@active_player_id}
+              current_path={@current_path}
+            />
+            <.gear_dropdown current_path={@current_path} nav_update={@nav_update} />
+          </div>
+        </header>
+
+        <.catch_up_banner status={@catch_up_status} />
+
+        <main class="flex-1 min-w-0 overflow-y-auto px-4 py-8 sm:px-6 lg:px-8">
+          <div class="mx-auto space-y-6" style="max-width: min(90vw, 1400px)">
+            {render_slot(@inner_block)}
+          </div>
+        </main>
+      </div>
     </div>
 
     <.flash_group flash={@flash} />
@@ -136,7 +129,29 @@ defmodule Scry2Web.Layouts do
       data-role="sidebar"
       data-collapsed={to_string(@collapsed)}
     >
-      <.sidebar_toggle collapsed={@collapsed} />
+      <div class={[
+        "flex items-center",
+        if(@collapsed, do: "flex-col gap-1", else: "justify-between px-1")
+      ]}>
+        <.link
+          id="rail-brand"
+          navigate={~p"/"}
+          phx-hook="RailTip"
+          data-tip={if(@collapsed, do: "Scry 2", else: nil)}
+          class="flex items-center gap-2 text-base-content hover:text-primary transition-colors"
+        >
+          <.icon name="hero-eye" class="size-6 text-primary shrink-0" />
+          <span
+            :if={not @collapsed}
+            class="text-lg font-semibold font-beleren leading-none whitespace-nowrap"
+          >
+            Scry&nbsp;2
+          </span>
+        </.link>
+        <.sidebar_toggle collapsed={@collapsed} />
+      </div>
+
+      <hr class="border-base-300 my-1" aria-hidden="true" />
 
       <%= for {section, index} <- Enum.with_index(SidebarNav.sections()) do %>
         <hr
@@ -166,12 +181,14 @@ defmodule Scry2Web.Layouts do
   defp sidebar_toggle(assigns) do
     ~H"""
     <button
+      id="rail-toggle"
       type="button"
       phx-click="toggle_sidebar"
+      phx-hook="RailTip"
       class={[
         "flex items-center text-base-content/50 hover:text-base-content",
         "h-7 rounded-md hover:bg-base-300/60 transition-colors",
-        if(@collapsed, do: "justify-center tooltip tooltip-right", else: "justify-end px-2")
+        if(@collapsed, do: "justify-center", else: "justify-end px-2")
       ]}
       data-tip={if(@collapsed, do: "Expand sidebar", else: nil)}
       aria-label={if(@collapsed, do: "Expand sidebar", else: "Collapse sidebar")}
@@ -191,17 +208,18 @@ defmodule Scry2Web.Layouts do
 
   defp sidebar_item(assigns) do
     assigns =
-      assign(assigns, :active, SidebarNav.active?(assigns.current_path, assigns.item.path))
+      assigns
+      |> assign(:active, SidebarNav.active?(assigns.current_path, assigns.item.path))
+      |> assign(:dom_id, "rail-item-" <> rail_slug(assigns.item.path))
 
     ~H"""
     <.link
+      id={@dom_id}
       navigate={@item.path}
+      phx-hook="RailTip"
       class={[
         "flex items-center rounded-md text-sm font-medium transition-colors",
-        if(@collapsed,
-          do: "justify-center px-1 py-2 tooltip tooltip-right",
-          else: "gap-2.5 px-2 py-1.5"
-        ),
+        if(@collapsed, do: "justify-center px-1 py-2", else: "gap-2.5 px-2 py-1.5"),
         if(@active,
           do: "bg-primary/10 text-primary",
           else: "text-base-content/70 hover:text-base-content hover:bg-base-300/60"
@@ -215,6 +233,13 @@ defmodule Scry2Web.Layouts do
       <span :if={not @collapsed} class="truncate">{@item.label}</span>
     </.link>
     """
+  end
+
+  # DOM-id-safe slug for a nav path: "/match-economy" -> "match-economy".
+  defp rail_slug(path) do
+    path
+    |> String.trim_leading("/")
+    |> String.replace("/", "-")
   end
 
   attr :players, :list, required: true

@@ -31,6 +31,7 @@ import {DeckView} from "./hooks/deck_view"
 import {RangePreference, storedRangePreference} from "./hooks/range_preference"
 import {OperationsDownload} from "./hooks/operations_download"
 import {ClipboardCopy} from "./hooks/clipboard_copy"
+import {RailTip} from "./hooks/rail_tip"
 import topbar from "../vendor/topbar"
 
 const csrfToken = document.querySelector("meta[name='csrf-token']").getAttribute("content")
@@ -39,7 +40,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
     _csrf_token: csrfToken,
     range_preference: storedRangePreference(),
   }),
-  hooks: {...colocatedHooks, Console, CardHover, Chart, SideboardSplay, DeckView, RangePreference, OperationsDownload, ClipboardCopy},
+  hooks: {...colocatedHooks, Console, CardHover, Chart, SideboardSplay, DeckView, RangePreference, OperationsDownload, ClipboardCopy, RailTip},
 })
 
 // Global backtick hotkey to toggle the sticky console drawer. Registered in
