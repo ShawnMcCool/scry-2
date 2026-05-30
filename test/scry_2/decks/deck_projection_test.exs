@@ -389,6 +389,66 @@ defmodule Scry2.Decks.DeckProjectionTest do
     end
   end
 
+  describe "deck_inventory projection" do
+    test "inserts a stub deck row for each deck in the snapshot" do
+      events = [
+        build_deck_inventory(
+          decks: [
+            %{deck_id: "inv-aaa", name: "Forest's Might", format: "Explorer"},
+            %{deck_id: "inv-bbb", name: "Dragon's Fire", format: "Historic"}
+          ]
+        )
+      ]
+
+      project_events(DeckProjection, events)
+
+      a = Scry2.Decks.get_deck("inv-aaa")
+      b = Scry2.Decks.get_deck("inv-bbb")
+      assert a.current_name == "Forest's Might"
+      assert a.format == "Explorer"
+      assert a.current_main_deck == %{}
+      assert b.current_name == "Dragon's Fire"
+      assert b.format == "Historic"
+    end
+
+    test "a later inventory snapshot does not clobber a deck's card list or format" do
+      # DeckUpdated (edit) establishes cards + format on deck "inv-ccc";
+      # a subsequent inventory snapshot carries a new name and nil format.
+      events = [
+        build_deck_updated(%{
+          deck_id: "inv-ccc",
+          deck_name: "Edited Deck",
+          format: "Historic",
+          main_deck: [%{arena_id: 91_234, count: 4}]
+        }),
+        build_deck_inventory(decks: [%{deck_id: "inv-ccc", name: "Renamed In MTGA", format: nil}])
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Scry2.Decks.get_deck("inv-ccc")
+      assert deck.current_name == "Renamed In MTGA"
+      assert deck.format == "Historic"
+      assert deck.current_main_deck == %{"cards" => [%{"arena_id" => 91_234, "count" => 4}]}
+    end
+
+    test "is idempotent — replaying the same snapshot yields identical state" do
+      events = [
+        build_deck_inventory(decks: [%{deck_id: "inv-ddd", name: "Deck", format: "Standard"}])
+      ]
+
+      project_events(DeckProjection, events)
+      first = Scry2.Decks.get_deck("inv-ddd")
+
+      project_events(DeckProjection, events)
+      second = Scry2.Decks.get_deck("inv-ddd")
+
+      assert first.current_name == second.current_name
+      assert first.format == second.format
+      assert Repo.aggregate(Scry2.Decks.Deck, :count) == 1
+    end
+  end
+
   describe "deck_deleted projection" do
     test "sets archived=true on the matching deck" do
       player = create_player()
