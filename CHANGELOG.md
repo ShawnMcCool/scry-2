@@ -11,6 +11,21 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Your full MTGA deck collection now appears on the Decks page.** Until now,
+  only decks you'd played or edited while Scry2 was running showed up — now every
+  deck you own is listed. Decks you haven't touched yet show their name and
+  format, and fill in with their full card list and match record the first time
+  you play or edit them. Your collection is imported automatically right after
+  this update installs, and a deck stays in Scry2 even if you later delete it in
+  MTGA to free up a slot.
+
+### Improved
+
+- **Deck renames and format changes you make in MTGA now carry over** to the
+  Decks page.
+
 ## v0.47.7 — 2026-05-30
 
 ### Fixed
