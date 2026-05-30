@@ -150,6 +150,50 @@ defmodule Scry2.Decks.DeckProjectionTest do
       deck = Repo.get_by(Deck, mtga_deck_id: deck_id)
       assert deck.format == "Limited"
     end
+
+    test "a later DeckUpdated with no format does not clobber an inferred Limited format" do
+      player = create_player()
+      deck_id = "test-deck-#{System.unique_integer([:positive])}"
+      match_id = "test-match-#{System.unique_integer([:positive])}"
+
+      events = [
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          deck_name: "Draft Deck (2)",
+          format: nil,
+          main_deck: [%{arena_id: 91_234, count: 4}],
+          sideboard: []
+        }),
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          event_name: "DirectGameLimited",
+          format_type: "Limited"
+        }),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          mtga_deck_id: deck_id,
+          main_deck: [%{"arena_id" => 91_234, "count" => 4}]
+        }),
+        # User re-saves the deck in MTGA after playing it — MTGA still sends
+        # no format. This must not wipe the "Limited" the backfill inferred.
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          deck_name: "Draft Deck (2)",
+          format: nil,
+          main_deck: [%{arena_id: 91_234, count: 4}],
+          sideboard: []
+        })
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: deck_id)
+      assert deck.format == "Limited"
+    end
   end
 
   describe "game_completed projection" do

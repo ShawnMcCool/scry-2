@@ -79,14 +79,18 @@ defmodule Scry2.Decks.DeckProjection do
 
   defp project(%DeckUpdated{} = event) do
     if event.deck_id do
-      attrs = %{
-        mtga_deck_id: event.deck_id,
-        current_name: event.deck_name,
-        current_main_deck: %{"cards" => event.main_deck || []},
-        current_sideboard: %{"cards" => event.sideboard || []},
-        format: event.format,
-        last_updated_at: event.occurred_at
-      }
+      # Omit format when MTGA carries none (it never tags Limited decks).
+      # Writing nil here would clobber a format the DeckSubmitted backfill
+      # inferred from match context for a deck re-saved after being played.
+      attrs =
+        %{
+          mtga_deck_id: event.deck_id,
+          current_name: event.deck_name,
+          current_main_deck: %{"cards" => event.main_deck || []},
+          current_sideboard: %{"cards" => event.sideboard || []},
+          last_updated_at: event.occurred_at
+        }
+        |> maybe_put_format(event.format)
 
       Decks.upsert_deck!(attrs)
 
@@ -406,6 +410,11 @@ defmodule Scry2.Decks.DeckProjection do
   end
 
   defp maybe_add_draft_name(attrs, _), do: attrs
+
+  # Only stamp format when MTGA actually carries one. A nil would overwrite a
+  # format previously inferred from match context (see DeckSubmitted backfill).
+  defp maybe_put_format(attrs, nil), do: attrs
+  defp maybe_put_format(attrs, format), do: Map.put(attrs, :format, format)
 
   # Queries the Events log for an already-persisted MatchCreated event so that
   # DeckSubmitted can retroactively populate format_type/event_name/player_rank
