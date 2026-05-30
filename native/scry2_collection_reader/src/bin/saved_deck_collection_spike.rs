@@ -99,6 +99,16 @@ fn main() -> ExitCode {
     scan_deck_candidates(&offsets, &images, read_mem);
     drill_papa_pointer_fields(&offsets, &images, domain_addr, read_mem);
 
+    // Drill an arbitrary object instance (e.g. a manager found in the PAPA drill)
+    // to inspect its pointer fields. DRILL_ADDR=0x.. enables it.
+    if let Ok(drill_hex) = env::var("DRILL_ADDR") {
+        let trimmed = drill_hex.trim().trim_start_matches("0x");
+        match u64::from_str_radix(trimmed, 16) {
+            Ok(addr) => drill_object(&offsets, addr, read_mem),
+            Err(_) => eprintln!("[spike] DRILL_ADDR must be hex, e.g. 0x6fd38690"),
+        }
+    }
+
     // Task 3: residency walk here
     // The owning anchor + list field are discovered from Task 2 output; pass them
     // at runtime so re-runs don't require recompiling.
@@ -360,6 +370,30 @@ where
         }
     }
     None
+}
+
+/// Drill an arbitrary object instance: resolve its runtime class via the
+/// vtable, print the class name, and list its instance pointer fields. Used to
+/// inspect managers surfaced by the PAPA drill (e.g. the precon deck manager)
+/// and any deck object reachable from them.
+fn drill_object<F>(offsets: &MonoOffsets, obj_addr: u64, read_mem: F)
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    println!("\n=== drill object @ {obj_addr:#x} ===");
+    let Some(class_addr) = read_object_class(obj_addr, &read_mem) else {
+        println!("[spike] could not read runtime class via vtable");
+        return;
+    };
+    let Some(class_bytes) = read_mem(class_addr, CLASS_DEF_BLOB_LEN) else {
+        println!("[spike] could not read class bytes");
+        return;
+    };
+    match read_class_name(&class_bytes, &read_mem) {
+        Some(name) => println!("[spike] runtime class = {name}"),
+        None => println!("[spike] runtime class name unreadable"),
+    }
+    drill_pointer_fields(offsets, obj_addr, &class_bytes, &read_mem);
 }
 
 fn drill_pointer_fields<F>(
