@@ -28,6 +28,8 @@ defmodule Scry2.Decks do
     MulliganHand
   }
 
+  alias Scry2.Events
+  alias Scry2.Events.Deck.DeckInventory
   alias Scry2.LiveState.{RankClass, Snapshot}
   alias Scry2.Ranks.Format, as: RankFormat
   alias Scry2.Repo
@@ -660,6 +662,33 @@ defmodule Scry2.Decks do
           count + 1
       end
     end)
+  end
+
+  @doc """
+  One-time, idempotent backfill: upserts every deck from the most recent
+  `deck_inventory` domain event into `decks_decks` via
+  `upsert_inventory_deck!/1`.
+
+  Use this after upgrading to the durable-deck-records release so the full
+  collection already captured in the event log appears immediately, without
+  waiting for the next MTGA sync. Each `deck_inventory` event is a
+  full-collection snapshot, so the most recent one is authoritative — there is
+  no need to replay earlier snapshots. Surgical by design — it never truncates and
+  touches only `current_name`/`format` on each row, so `starred`, `archived`,
+  card lists, and stats are preserved. Safe to re-run.
+
+  Returns the number of decks upserted (0 if no `deck_inventory` event exists).
+  """
+  @spec backfill_inventory_decks!() :: non_neg_integer()
+  def backfill_inventory_decks! do
+    case Events.list_events(event_types: ["deck_inventory"], limit: 1) do
+      {[%DeckInventory{decks: decks}], _total} when is_list(decks) ->
+        Enum.each(decks, &upsert_inventory_deck!/1)
+        length(decks)
+
+      _ ->
+        0
+    end
   end
 
   @doc """
