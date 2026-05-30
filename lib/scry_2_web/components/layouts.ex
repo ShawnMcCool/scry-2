@@ -171,9 +171,9 @@ defmodule Scry2Web.Layouts do
       class={[
         "flex items-center text-base-content/50 hover:text-base-content",
         "h-7 rounded-md hover:bg-base-300/60 transition-colors",
-        if(@collapsed, do: "justify-center", else: "justify-end px-2")
+        if(@collapsed, do: "justify-center tooltip tooltip-right", else: "justify-end px-2")
       ]}
-      title={if(@collapsed, do: "Expand sidebar", else: "Collapse sidebar")}
+      data-tip={if(@collapsed, do: "Expand sidebar", else: nil)}
       aria-label={if(@collapsed, do: "Expand sidebar", else: "Collapse sidebar")}
       data-role="sidebar-toggle"
     >
@@ -198,13 +198,16 @@ defmodule Scry2Web.Layouts do
       navigate={@item.path}
       class={[
         "flex items-center rounded-md text-sm font-medium transition-colors",
-        if(@collapsed, do: "justify-center px-1 py-2", else: "gap-2.5 px-2 py-1.5"),
+        if(@collapsed,
+          do: "justify-center px-1 py-2 tooltip tooltip-right",
+          else: "gap-2.5 px-2 py-1.5"
+        ),
         if(@active,
           do: "bg-primary/10 text-primary",
           else: "text-base-content/70 hover:text-base-content hover:bg-base-300/60"
         )
       ]}
-      title={if(@collapsed, do: @item.label, else: nil)}
+      data-tip={if(@collapsed, do: @item.label, else: nil)}
       data-role="sidebar-item"
       data-path={@item.path}
     >

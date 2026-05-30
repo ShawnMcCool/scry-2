@@ -52,6 +52,29 @@ defmodule Scry2.Events.EnrichEventsTest do
     end
   end
 
+  describe "infer_limited_format/1" do
+    test "returns the granular draft label for draft queues" do
+      assert EnrichEvents.infer_limited_format("PickTwoDraft_SOS_20260421") == "Pick Two Draft"
+      assert EnrichEvents.infer_limited_format("QuickDraft_SOS_20260430") == "Quick Draft"
+      assert EnrichEvents.infer_limited_format("PremierDraft_SOS_20260421") == "Premier Draft"
+    end
+
+    test "returns the granular label for sealed" do
+      assert EnrichEvents.infer_limited_format("Sealed_SOS_20260421") == "Sealed"
+    end
+
+    test "collapses limited Direct Challenge to plain \"Limited\"" do
+      assert EnrichEvents.infer_limited_format("DirectGameLimited") == "Limited"
+    end
+
+    test "returns nil for constructed and unknown event names" do
+      assert EnrichEvents.infer_limited_format("Ladder") == nil
+      assert EnrichEvents.infer_limited_format("Traditional_Ladder") == nil
+      assert EnrichEvents.infer_limited_format("DirectGame") == nil
+      assert EnrichEvents.infer_limited_format(nil) == nil
+    end
+  end
+
   describe "enrich/2 — GameCompleted on_play enrichment" do
     test "populates on_play from ingestion state when nil on event" do
       event = build_game_completed(on_play: nil)

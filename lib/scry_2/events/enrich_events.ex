@@ -185,6 +185,35 @@ defmodule Scry2.Events.EnrichEvents do
     end
   end
 
+  @doc """
+  Infers a deck's Limited format label from an MTGA event_name string.
+
+  Returns the granular draft/sealed label ("Pick Two Draft", "Quick Draft",
+  "Sealed", ...) for limited queues, and plain "Limited" for limited Direct
+  Challenge games (`DirectGameLimited`) — those carry no meaningful
+  queue-format label. Returns nil for constructed/traditional or unknown
+  event names.
+
+  Used by DeckProjection to stamp a format on Limited decks that originate
+  from a `DeckUpdated` event, since MTGA never tags those decks with a format
+  and `infer_deck_format/1` (constructed-only) returns nil for them.
+  """
+  def infer_limited_format(nil), do: nil
+
+  def infer_limited_format(event_name) when is_binary(event_name) do
+    parsed = EventName.parse(event_name)
+
+    case parsed.format_type do
+      "Limited" ->
+        # DirectGameLimited parses to "Direct Challenge" — the queue, not a
+        # deck format. Collapse it to plain "Limited" per ADR/user intent.
+        if parsed.format == "Direct Challenge", do: "Limited", else: parsed.format
+
+      _ ->
+        nil
+    end
+  end
+
   # MTGA color enum: 1=W, 2=U, 3=B, 4=R, 5=G
   defp color_name("1"), do: "W"
   defp color_name("2"), do: "U"

@@ -81,6 +81,75 @@ defmodule Scry2.Decks.DeckProjectionTest do
       deck = Repo.get_by(Deck, mtga_deck_id: deck_id)
       assert deck.format == "Historic"
     end
+
+    test "backfills Limited format on a DeckUpdated-sourced deck (draft queue)" do
+      player = create_player()
+      deck_id = "test-deck-#{System.unique_integer([:positive])}"
+      match_id = "test-match-#{System.unique_integer([:positive])}"
+
+      events = [
+        # User built and named the deck in MTGA — MTGA tags no format.
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          deck_name: "SoS Pick Two II 1.0",
+          format: nil,
+          main_deck: [%{arena_id: 91_234, count: 4}],
+          sideboard: []
+        }),
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          event_name: "PickTwoDraft_SOS_20260421",
+          format_type: "Limited"
+        }),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          mtga_deck_id: deck_id,
+          main_deck: [%{"arena_id" => 91_234, "count" => 4}]
+        })
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: deck_id)
+      assert deck.format == "Pick Two Draft"
+    end
+
+    test "backfills plain \"Limited\" for a Direct Challenge limited deck" do
+      player = create_player()
+      deck_id = "test-deck-#{System.unique_integer([:positive])}"
+      match_id = "test-match-#{System.unique_integer([:positive])}"
+
+      events = [
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          deck_name: "PickTwo I 1.0",
+          format: nil,
+          main_deck: [%{arena_id: 91_234, count: 4}],
+          sideboard: []
+        }),
+        build_match_created(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          event_name: "DirectGameLimited",
+          format_type: "Limited"
+        }),
+        build_deck_submitted(%{
+          player_id: player.id,
+          mtga_match_id: match_id,
+          mtga_deck_id: deck_id,
+          main_deck: [%{"arena_id" => 91_234, "count" => 4}]
+        })
+      ]
+
+      project_events(DeckProjection, events)
+
+      deck = Repo.get_by(Deck, mtga_deck_id: deck_id)
+      assert deck.format == "Limited"
+    end
   end
 
   describe "game_completed projection" do

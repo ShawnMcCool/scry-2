@@ -181,10 +181,15 @@ defmodule Scry2.Decks.DeckProjection do
 
         # Backfill nil format from the match's event_name. DeckUpdated sometimes
         # carries event-type strings ("DirectGame") that normalize_deck_format/1
-        # filters to nil. The match's event_name reliably identifies the format.
+        # filters to nil; and MTGA never tags Limited decks (drafts, sealed,
+        # DirectGameLimited) with any format at all. The match's event_name
+        # reliably identifies the format — constructed first, then Limited.
         if is_nil(deck.format) do
           event_name = match_created_attrs[:event_name]
-          inferred = EnrichEvents.infer_deck_format(event_name)
+
+          inferred =
+            EnrichEvents.infer_deck_format(event_name) ||
+              EnrichEvents.infer_limited_format(event_name)
 
           if inferred do
             Decks.upsert_deck!(%{mtga_deck_id: mtga_deck_id, format: inferred})
@@ -390,7 +395,10 @@ defmodule Scry2.Decks.DeckProjection do
         display_name =
           if parsed.set_code, do: "#{parsed.format} — #{parsed.set_code}", else: parsed.format
 
-        Map.merge(attrs, %{current_name: display_name, format: parsed.format})
+        Map.merge(attrs, %{
+          current_name: display_name,
+          format: EnrichEvents.infer_limited_format(event_name)
+        })
 
       _ ->
         attrs
