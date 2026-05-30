@@ -1,6 +1,8 @@
 defmodule Scry2Web.DecksHelpersTest do
   use ExUnit.Case, async: true
 
+  doctest Scry2Web.DecksHelpers
+
   alias Scry2Web.DecksHelpers
 
   describe "deck_colors/1" do
@@ -494,6 +496,70 @@ defmodule Scry2Web.DecksHelpersTest do
 
       [game] = DecksHelpers.format_game_results(game_results)
       assert game.num_mulligans == 0
+    end
+  end
+
+  describe "deck_result_line/1" do
+    alias Scry2.Decks.Deck
+
+    test "trophy run for a 7-win draft deck" do
+      deck = %Deck{
+        mtga_deck_id: "draft:QuickDraft_SOS_20260430",
+        bo1_wins: 7,
+        bo1_losses: 2,
+        bo3_wins: 0,
+        bo3_losses: 0
+      }
+
+      assert DecksHelpers.deck_result_line(deck) == "Trophy run — 7-2"
+    end
+
+    test "plain finished record for a sub-trophy run" do
+      deck = %Deck{
+        mtga_deck_id: "draft:QuickDraft_SOS_20260430",
+        bo1_wins: 3,
+        bo1_losses: 4,
+        bo3_wins: 0,
+        bo3_losses: 0
+      }
+
+      assert DecksHelpers.deck_result_line(deck) == "Finished 3-4"
+    end
+
+    test "no trophy framing for a constructed deck even at 7+ wins" do
+      deck = %Deck{
+        mtga_deck_id: "real-deck-1",
+        bo1_wins: 12,
+        bo1_losses: 4,
+        bo3_wins: 0,
+        bo3_losses: 0
+      }
+
+      assert DecksHelpers.deck_result_line(deck) == "Finished 12-4"
+    end
+
+    test "combines bo1 and bo3 counts" do
+      deck = %Deck{
+        mtga_deck_id: "real-deck-1",
+        bo1_wins: 2,
+        bo1_losses: 1,
+        bo3_wins: 3,
+        bo3_losses: 2
+      }
+
+      assert DecksHelpers.deck_result_line(deck) == "Finished 5-3"
+    end
+
+    test "no matches yet" do
+      deck = %Deck{
+        mtga_deck_id: "draft:x",
+        bo1_wins: 0,
+        bo1_losses: 0,
+        bo3_wins: 0,
+        bo3_losses: 0
+      }
+
+      assert DecksHelpers.deck_result_line(deck) == "No matches recorded yet"
     end
   end
 

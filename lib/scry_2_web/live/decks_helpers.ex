@@ -65,6 +65,26 @@ defmodule Scry2Web.DecksHelpers do
   def deck_colors(%{deck_colors: colors}) when is_binary(colors), do: colors
   def deck_colors(_), do: ""
 
+  @doc """
+  A human-readable summary of a deck's match record, framed as a run result.
+  Trophy framing applies only to draft decks (a 7-win cap is meaningful there;
+  a constructed deck's tally is a lifetime count, not a run).
+
+      iex> Scry2Web.DecksHelpers.deck_result_line(%Scry2.Decks.Deck{mtga_deck_id: "draft:x", bo1_wins: 7, bo1_losses: 2})
+      "Trophy run — 7-2"
+  """
+  @spec deck_result_line(Scry2.Decks.Deck.t()) :: String.t()
+  def deck_result_line(deck) do
+    wins = (deck.bo1_wins || 0) + (deck.bo3_wins || 0)
+    losses = (deck.bo1_losses || 0) + (deck.bo3_losses || 0)
+
+    cond do
+      wins == 0 and losses == 0 -> "No matches recorded yet"
+      draft_deck?(deck) and wins >= 7 -> "Trophy run — #{wins}-#{losses}"
+      true -> "Finished #{wins}-#{losses}"
+    end
+  end
+
   # Delegated to LiveHelpers (imported via `use Scry2Web, :live_view`)
   defdelegate relative_time(dt), to: Scry2Web.LiveHelpers
   defdelegate format_date(dt), to: Scry2Web.LiveHelpers
@@ -350,6 +370,8 @@ defmodule Scry2Web.DecksHelpers do
   defdelegate match_score(match), to: Scry2Web.LiveHelpers
 
   # ── Private ─────────────────────────────────────────────────────────
+
+  defp draft_deck?(deck), do: String.starts_with?(deck.mtga_deck_id || "", "draft:")
 
   defp to_int(n) when is_integer(n), do: n
   defp to_int(n) when is_binary(n), do: String.to_integer(n)
