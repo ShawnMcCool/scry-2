@@ -70,7 +70,7 @@ defmodule Scry2.Events.SnapshotDiff do
   # ── Deck ─────────────────────────────────────────────────────────────────
 
   def changed?(%DeckInventory{} = event, previous_key) do
-    key = event.decks |> Enum.map(& &1.deck_id) |> Enum.sort()
+    key = event.decks |> Enum.map(&{&1.deck_id, &1.name, &1.format}) |> Enum.sort()
     compare(key, previous_key)
   end
 

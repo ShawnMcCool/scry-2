@@ -17,9 +17,10 @@ defmodule Scry2.Events.Deck.DeckInventory do
 
   ## Diff key
 
-  `SnapshotDiff` compares the sorted list of `deck_ids` extracted from `decks`
-  to detect additions or removals. Deck contents and names are excluded from
-  the diff key — only the presence or absence of a deck ID triggers a new event.
+  `SnapshotDiff` compares the sorted list of `{deck_id, name, format}` tuples
+  extracted from `decks`. A new event fires when a deck is added or removed,
+  **or** when an existing deck is renamed or re-formatted — so name/format
+  changes propagate to the projection.
 
   ## Slug
 

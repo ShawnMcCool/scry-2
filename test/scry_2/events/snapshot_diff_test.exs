@@ -264,7 +264,7 @@ defmodule Scry2.Events.SnapshotDiffTest do
   # ── DeckInventory ─────────────────────────────────────────────────────────
 
   describe "changed?/2 DeckInventory" do
-    test "returns :unchanged when deck IDs are identical" do
+    test "returns :unchanged when deck IDs, names, and formats are all identical" do
       event = build_deck_inventory()
       {:changed, key} = SnapshotDiff.changed?(event, nil)
       assert SnapshotDiff.changed?(event, key) == :unchanged
@@ -294,7 +294,7 @@ defmodule Scry2.Events.SnapshotDiffTest do
       assert {:changed, _new_key} = SnapshotDiff.changed?(updated_event, key)
     end
 
-    test "returns :unchanged when only deck names change (same deck_ids)" do
+    test "returns {:changed, key} when a deck is renamed (same deck_ids)" do
       event =
         build_deck_inventory(
           decks: [
@@ -311,7 +311,44 @@ defmodule Scry2.Events.SnapshotDiffTest do
           ]
         )
 
-      assert SnapshotDiff.changed?(renamed_event, key) == :unchanged
+      assert {:changed, new_key} = SnapshotDiff.changed?(renamed_event, key)
+      assert new_key != key
+    end
+
+    test "returns {:changed, key} when a deck's format changes (same deck_ids)" do
+      event =
+        build_deck_inventory(
+          decks: [
+            %{deck_id: "deck-abc-123", name: "My Deck", format: "Historic"}
+          ]
+        )
+
+      {:changed, key} = SnapshotDiff.changed?(event, nil)
+
+      reformatted_event =
+        build_deck_inventory(
+          decks: [
+            %{deck_id: "deck-abc-123", name: "My Deck", format: "Explorer"}
+          ]
+        )
+
+      assert {:changed, new_key} = SnapshotDiff.changed?(reformatted_event, key)
+      assert new_key != key
+    end
+
+    test "returns {:changed, key} when a deck's name transitions nil→value" do
+      event =
+        build_deck_inventory(decks: [%{deck_id: "deck-abc-123", name: nil, format: "Standard"}])
+
+      {:changed, key} = SnapshotDiff.changed?(event, nil)
+
+      named_event =
+        build_deck_inventory(
+          decks: [%{deck_id: "deck-abc-123", name: "Now Named", format: "Standard"}]
+        )
+
+      assert {:changed, new_key} = SnapshotDiff.changed?(named_event, key)
+      assert new_key != key
     end
 
     test "deck order does not matter — same ids in different order is :unchanged" do
