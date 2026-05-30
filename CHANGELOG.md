@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.47.3 — 2026-05-30
+
 ### Fixed
 
 - **Editing a Draft, Sealed, or Limited deck in MTGA after playing it no
