@@ -66,6 +66,7 @@ defmodule Scry2.PostDeployTasks do
     Scry2.PostDeployTasks.Tasks.SynthesisAlgoV2,
     Scry2.PostDeployTasks.Tasks.SynthesisTokenBoosterFixV1,
     Scry2.PostDeployTasks.Tasks.BackfillDraftBuildsV1,
+    Scry2.PostDeployTasks.Tasks.BackfillInventoryDecksV1,
     Scry2.PostDeployTasks.Tasks.SynthesisNameMarkupV1
   ]
 
