@@ -625,6 +625,101 @@ defmodule Scry2.DecksTest do
     end
   end
 
+  describe "stamp_draft_final_build!/4" do
+    test "stamps main deck and sideboard onto a draft deck row" do
+      deck =
+        TestFactory.create_deck(%{
+          mtga_deck_id: "draft:QuickDraft_SOS_20260430",
+          current_main_deck: %{}
+        })
+
+      at = ~U[2026-04-30 12:00:00Z]
+
+      Scry2.Decks.stamp_draft_final_build!(
+        deck.mtga_deck_id,
+        [%{"arena_id" => 93_811, "count" => 3}],
+        [%{"arena_id" => 93_999, "count" => 1}],
+        at
+      )
+
+      reloaded = Scry2.Decks.get_deck(deck.mtga_deck_id)
+      assert reloaded.current_main_deck == %{"cards" => [%{"arena_id" => 93_811, "count" => 3}]}
+      assert reloaded.current_sideboard == %{"cards" => [%{"arena_id" => 93_999, "count" => 1}]}
+      assert reloaded.last_updated_at == at
+    end
+
+    test "latest build wins, earlier build is ignored" do
+      deck =
+        TestFactory.create_deck(%{
+          mtga_deck_id: "draft:QuickDraft_SOS_20260430",
+          current_main_deck: %{}
+        })
+
+      Scry2.Decks.stamp_draft_final_build!(
+        deck.mtga_deck_id,
+        [%{"arena_id" => 1, "count" => 1}],
+        [],
+        ~U[2026-04-30 14:00:00Z]
+      )
+
+      Scry2.Decks.stamp_draft_final_build!(
+        deck.mtga_deck_id,
+        [%{"arena_id" => 2, "count" => 1}],
+        [],
+        ~U[2026-04-30 12:00:00Z]
+      )
+
+      reloaded = Scry2.Decks.get_deck(deck.mtga_deck_id)
+      assert reloaded.current_main_deck == %{"cards" => [%{"arena_id" => 1, "count" => 1}]}
+    end
+
+    test "leaves composition_hash nil so the deck stays draft-distinguishable" do
+      deck =
+        TestFactory.create_deck(%{
+          mtga_deck_id: "draft:QuickDraft_SOS_20260430",
+          current_main_deck: %{}
+        })
+
+      Scry2.Decks.stamp_draft_final_build!(
+        deck.mtga_deck_id,
+        [%{"arena_id" => 1, "count" => 1}],
+        [],
+        ~U[2026-04-30 12:00:00Z]
+      )
+
+      assert Scry2.Decks.get_deck(deck.mtga_deck_id).composition_hash == nil
+    end
+
+    test "no-op when the deck row does not exist" do
+      assert :ok =
+               Scry2.Decks.stamp_draft_final_build!(
+                 "draft:nope",
+                 [%{"arena_id" => 1, "count" => 1}],
+                 [],
+                 ~U[2026-04-30 12:00:00Z]
+               )
+    end
+
+    test "broadcasts deck_updated after a successful stamp" do
+      deck =
+        TestFactory.create_deck(%{
+          mtga_deck_id: "draft:QuickDraft_SOS_20260430",
+          current_main_deck: %{}
+        })
+
+      Topics.subscribe(Topics.decks_updates())
+
+      Scry2.Decks.stamp_draft_final_build!(
+        deck.mtga_deck_id,
+        [%{"arena_id" => 93_811, "count" => 3}],
+        [],
+        ~U[2026-04-30 12:00:00Z]
+      )
+
+      assert_receive {:deck_updated, "draft:QuickDraft_SOS_20260430"}
+    end
+  end
+
   describe "update_deck_flags!/2" do
     test "updates starred and archived and broadcasts" do
       Topics.subscribe(Topics.decks_updates())

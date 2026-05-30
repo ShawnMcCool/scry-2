@@ -554,6 +554,48 @@ defmodule Scry2.Decks do
   end
 
   @doc """
+  Stamps a draft deck's final build (main deck + leftover drafted pool) onto the
+  deck row's `current_main_deck` / `current_sideboard`.
+
+  Draft/limited decks never receive a `DeckUpdated` event — that fires only from
+  the in-game deck builder — so their card list lives only in
+  `decks_game_submissions`. This copies the latest submission onto the deck row so
+  the card list, mana grouping, and clipboard export work.
+
+  "Latest wins": overwrites only when `occurred_at` is at or after the
+  previously-stamped build (tracked in `last_updated_at`, which is otherwise
+  unused for draft decks), making replay order-independent. Never touches
+  `composition_hash`, so the column stays nil and draft decks remain
+  distinguishable from constructed decks (which always carry one).
+
+  No-op if the deck row does not exist (replay safety). Returns `:ok`.
+  """
+  @spec stamp_draft_final_build!(String.t(), list(), list(), DateTime.t()) :: :ok
+  def stamp_draft_final_build!(mtga_deck_id, main_deck, sideboard, %DateTime{} = occurred_at)
+      when is_binary(mtga_deck_id) do
+    case Repo.get_by(Deck, mtga_deck_id: mtga_deck_id) do
+      nil ->
+        :ok
+
+      deck ->
+        if is_nil(deck.last_updated_at) or
+             DateTime.compare(occurred_at, deck.last_updated_at) != :lt do
+          deck
+          |> Ecto.Changeset.change(%{
+            current_main_deck: %{"cards" => main_deck || []},
+            current_sideboard: %{"cards" => sideboard || []},
+            last_updated_at: occurred_at
+          })
+          |> Repo.update!()
+
+          broadcast_update(mtga_deck_id)
+        end
+
+        :ok
+    end
+  end
+
+  @doc """
   Updates the curation flags (`:starred`, `:archived`) on a deck. Used by
   both the LiveView toggles and by `DeckProjection` when auto-archiving on
   MTGA deletion. Broadcasts `decks:updates` on success.
