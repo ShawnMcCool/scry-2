@@ -554,6 +554,32 @@ defmodule Scry2.Decks do
   end
 
   @doc """
+  Upserts a deck row from a `DeckInventory` snapshot entry, non-destructively.
+
+  Reads `deck_id`, `name`, and `format` from the entry — tolerant of both atom
+  keys (the live domain-event struct) and string keys (the event rehydrated
+  from its payload during replay or backfill). Writes only the keys present
+  (`current_name`/`format`, and only when non-nil), so an existing deck's card
+  list, stats, colors, `composition_hash`, `starred`, and `archived` are never
+  touched. New decks insert as stubs (empty card list, nil hash).
+
+  Returns the upserted `%Deck{}`, or `:ok` when the entry carries no deck id.
+  """
+  @spec upsert_inventory_deck!(map()) :: Deck.t() | :ok
+  def upsert_inventory_deck!(entry) when is_map(entry) do
+    case inventory_field(entry, :deck_id) do
+      deck_id when is_binary(deck_id) ->
+        %{mtga_deck_id: deck_id}
+        |> maybe_put(:current_name, inventory_field(entry, :name))
+        |> maybe_put(:format, inventory_field(entry, :format))
+        |> upsert_deck!()
+
+      _ ->
+        :ok
+    end
+  end
+
+  @doc """
   Stamps a draft deck's final build (main deck + leftover drafted pool) onto the
   deck row's `current_main_deck` / `current_sideboard`.
 
@@ -754,6 +780,15 @@ defmodule Scry2.Decks do
   end
 
   defp maybe_stamp_composition_hash(attrs), do: attrs
+
+  # Reads a field from an inventory deck entry whether it was keyed with atoms
+  # (live struct) or strings (rehydrated from JSON payload during replay).
+  defp inventory_field(entry, key) when is_atom(key) do
+    Map.get(entry, key) || Map.get(entry, Atom.to_string(key))
+  end
+
+  defp maybe_put(attrs, _key, nil), do: attrs
+  defp maybe_put(attrs, key, value), do: Map.put(attrs, key, value)
 
   @doc """
   Upserts a match result by `(mtga_deck_id, mtga_match_id)`. Idempotent per ADR-016.
