@@ -11,6 +11,14 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Editing a Draft, Sealed, or Limited deck in MTGA after playing it no
+  longer wipes its format on the Decks page.** Following the v0.47.2 fix,
+  a deck you re-saved in MTGA after a match could still lose its **Limited**
+  label, because MTGA doesn't tag limited decks with a format. Scry2 now
+  keeps the format it worked out from your matches instead of clearing it.
+
 ## v0.47.2 — 2026-05-30
 
 ### Improved
