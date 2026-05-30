@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.47.6 — 2026-05-30
+
 ### Improved
 
 - **The Settings menu has moved to the bottom of the sidebar.** The gear
