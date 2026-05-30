@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.47.4 — 2026-05-30
+
 ### New
 
 - **Your draft and sealed decks are now fully preserved.** Each one shows
