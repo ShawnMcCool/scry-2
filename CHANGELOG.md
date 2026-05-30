@@ -11,6 +11,27 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The MTGA memory reader now reports exactly which parts are working.**
+  After an MTGA update, the **Operations → MTGA Memory** page shows which
+  collection reads still succeed and which broke, in plain language — so
+  you can see at a glance whether an update affected Scry2's reading.
+- **Added a safety guard that protects your match history.** Scry2 now
+  refuses to rebuild its data from scratch if doing so would drop events
+  that are no longer recoverable, instead of silently losing them.
+- Collapsed-sidebar buttons now show a styled tooltip on hover instead of
+  the plain browser one.
+
+### Fixed
+
+- **Draft, Sealed, and Pick Two decks you built in MTGA now show their
+  format and are recognized as Limited on the Decks page.** Previously,
+  decks you assembled and named yourself (as opposed to the ones Scry2
+  created automatically) showed a blank format and weren't grouped with
+  your other Limited decks, even though their matches were tracked
+  correctly.
+
 ## v0.47.1 — 2026-05-21
 
 ### New
