@@ -10,7 +10,10 @@ defmodule Scry2.NetDecking.Buildability do
   `free_arena_ids`, never hardcoded into a rule.
   """
 
+  alias Scry2.NetDecking.Buildability.Result
+
   @basic_land_names ~w(Plains Island Swamp Mountain Forest Wastes)
+  @rarities [:common, :uncommon, :rare, :mythic]
   @zero %{common: 0, uncommon: 0, rare: 0, mythic: 0}
 
   @doc "Default free-card policy: arena_ids in `cards_by_arena_id` that are basic lands."
@@ -51,4 +54,24 @@ defmodule Scry2.NetDecking.Buildability do
   defp rarity_key("mythic"), do: :mythic
   # Unknown/nil rarity is treated as rare so it is never silently free.
   defp rarity_key(_), do: :rare
+
+  @doc "Per-rarity shortfall of `cost` against current `wildcards` balances."
+  @spec affordability(map(), map()) :: map()
+  def affordability(cost, wildcards) do
+    Map.new(@rarities, fn rarity ->
+      {rarity, max(0, Map.get(cost, rarity, 0) - Map.get(wildcards, rarity, 0))}
+    end)
+  end
+
+  @doc "Derives status from total cost and shortfall."
+  @spec classify_status(map(), map()) :: Result.status()
+  def classify_status(cost, shortfall) do
+    cond do
+      total(cost) == 0 -> :buildable
+      total(shortfall) == 0 -> :craftable
+      true -> :short
+    end
+  end
+
+  defp total(map), do: Enum.reduce(@rarities, 0, fn r, acc -> acc + Map.get(map, r, 0) end)
 end

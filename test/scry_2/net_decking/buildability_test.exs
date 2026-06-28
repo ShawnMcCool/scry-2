@@ -18,4 +18,39 @@ defmodule Scry2.NetDecking.BuildabilityTest do
     assert Buildability.rarity_buckets(shortages, rarities) ==
              %{common: 0, uncommon: 3, rare: 3, mythic: 0}
   end
+
+  test "affordability returns per-rarity shortfall, never paying across rarities" do
+    cost = %{common: 0, uncommon: 2, rare: 3, mythic: 1}
+    wildcards = %{common: 10, uncommon: 5, rare: 1, mythic: 0}
+
+    assert Buildability.affordability(cost, wildcards) ==
+             %{common: 0, uncommon: 0, rare: 2, mythic: 1}
+  end
+
+  test "classify_status: buildable when cost is zero" do
+    assert Buildability.classify_status(%{common: 0, uncommon: 0, rare: 0, mythic: 0}, %{
+             common: 0,
+             uncommon: 0,
+             rare: 0,
+             mythic: 0
+           }) == :buildable
+  end
+
+  test "classify_status: craftable when cost > 0 but shortfall is zero" do
+    assert Buildability.classify_status(%{common: 0, uncommon: 2, rare: 0, mythic: 0}, %{
+             common: 0,
+             uncommon: 0,
+             rare: 0,
+             mythic: 0
+           }) == :craftable
+  end
+
+  test "classify_status: short when any rarity falls short" do
+    assert Buildability.classify_status(%{common: 0, uncommon: 0, rare: 3, mythic: 0}, %{
+             common: 0,
+             uncommon: 0,
+             rare: 2,
+             mythic: 0
+           }) == :short
+  end
 end
