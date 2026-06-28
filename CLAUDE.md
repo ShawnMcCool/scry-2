@@ -98,22 +98,21 @@ The `Scry2.Collection` context (ADR 034) links a Rustler NIF crate under
 `.mise.toml`; run `mise install` to get the matching `rustc`/`cargo`.
 `mix compile` builds the crate automatically.
 
-### Dev service
+### Local instance (always-on)
+
+`scripts/install-dev` installs the systemd user service `scry-2-dev`, which runs the working-tree (dev) code as the everyday local instance on **port 6015 against the real database** (`~/.local/share/scry_2/scry_2.db`). It applies pending migrations on start (`mix ecto.migrate`), so a restart picks up new code and schema together. This replaces the old split of a separate dev server (4444) plus a packaged release (6015) — one always-current instance now serves real gameplay data.
 
 ```bash
-scripts/install-dev    # install systemd user service for dev server
+scripts/install-dev                    # install/refresh the unit, start, health-check
+systemctl --user restart scry-2-dev    # after code changes that the instance must pick up
+scripts/healthcheck                    # GET /health: 200 only when DB + migrations are ready
+journalctl --user -u scry-2-dev -f     # logs
+iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1   # REPL (Ctrl+\ to detach)
 ```
 
-The dev server can run as a persistent systemd user service. `scripts/install-dev` installs a unit that runs `mix phx.server` via `mise exec`, with a named BEAM node for remote shell access.
+A bare `mix phx.server` (no `PORT`/`DATABASE_PATH`) still uses the throwaway dev defaults — port 4444 + `scry_2_dev.db` — for isolated development.
 
-```bash
-systemctl --user start scry-2-dev     # start
-systemctl --user stop scry-2-dev      # stop
-journalctl --user -u scry-2-dev -f    # logs
-iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1   # REPL
-```
-
-Disconnect the REPL with `Ctrl+\` (leaves the server running).
+**After changing code the running instance must pick up — migrations, deps, config, or supervised processes — restart `scry-2-dev` and run `scripts/healthcheck`.** The probe (`GET /health`) returns 200 only when the database is reachable and every migration is applied, so "up but migrations pending" is caught rather than read as healthy. (Because this instance runs `MIX_ENV=dev`, the in-app self-updater is inert — update via `git pull` + restart.)
 
 ### Install (end users)
 
@@ -168,11 +167,9 @@ Migrations run automatically at startup via `Ecto.Migrator` in the application s
 
 > Note: When compiling, always use the environment variable `MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8` to parallelize and speed up compilation.
 
-### Running dev and prod simultaneously
+### Isolated dev alongside the local instance
 
-Dev runs on port 4444 and prod runs on port 6015 — they do not conflict by default.
-
-Each instance has its own independent database (`scry_2_dev.db` in the project root for dev; `~/.local/share/scry_2/scry_2.db` for prod). Both watch `Player.log` and ingest events independently — there is no shared state between the two environments.
+The always-on local instance (above) is the only long-running process needed. For one-off isolated work, a bare `mix phx.server` runs on port 4444 against its own `scry_2_dev.db` — independent of the 6015 instance and its real database, so the two never conflict. Don't run a second process against the real database: SQLite tolerates one writer.
 
 ### Windows Installation
 
