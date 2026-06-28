@@ -34,8 +34,13 @@ defmodule Scry2.Decks.MtgaClipboardFormat do
 
   @spec format(Deck.t(), card_lookup()) :: String.t()
   def format(%Deck{} = deck, cards_by_arena_id) when is_map(cards_by_arena_id) do
-    main = render_section("Deck", deck.current_main_deck, cards_by_arena_id)
-    side = render_section("Sideboard", deck.current_sideboard, cards_by_arena_id)
+    format_card_lists(deck.current_main_deck, deck.current_sideboard, cards_by_arena_id)
+  end
+
+  @spec format_card_lists(map() | nil, map() | nil, card_lookup()) :: String.t()
+  def format_card_lists(main_deck, sideboard, cards_by_arena_id) when is_map(cards_by_arena_id) do
+    main = render_section("Deck", main_deck, cards_by_arena_id)
+    side = render_section("Sideboard", sideboard, cards_by_arena_id)
 
     [main, side]
     |> Enum.reject(&(&1 == ""))

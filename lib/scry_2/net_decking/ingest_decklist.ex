@@ -37,7 +37,10 @@ defmodule Scry2.NetDecking.IngestDecklist do
 
     main_cards = to_card_maps(main.resolved)
     side_cards = to_card_maps(side.resolved)
-    composition_hash = Decks.composition_hash(main_cards)
+
+    composition_hash =
+      Decks.composition_hash(main_cards) || :erlang.phash2({main_refs, side_refs})
+
     unresolved = normalize_unresolved(main.unresolved ++ side.unresolved)
 
     persist(attrs, main_cards, side_cards, unresolved, composition_hash)

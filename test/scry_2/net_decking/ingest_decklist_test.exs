@@ -41,6 +41,20 @@ defmodule Scry2.NetDecking.IngestDecklistTest do
     assert [%{"name" => "Made Up Card"}] = deck.unresolved_cards["cards"]
   end
 
+  test "re-ingesting an all-unresolved list deduplicates (no cards seeded)" do
+    attrs = %{
+      name: "Ghost Deck",
+      source_name: "manual",
+      decklist_text: "Deck\n4 Completely Made Up Card (XYZ) 99\n"
+    }
+
+    {:ok, first} = IngestDecklist.run(attrs)
+    {:ok, second} = IngestDecklist.run(attrs)
+
+    assert first.id == second.id
+    assert Repo.aggregate(Deck, :count) == 1
+  end
+
   test "re-ingesting the same list updates in place (idempotent)" do
     seed_cards()
 

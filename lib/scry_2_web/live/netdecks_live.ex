@@ -16,7 +16,6 @@ defmodule Scry2Web.NetdecksLive do
   use Scry2Web, :live_view
 
   alias Scry2.Cards
-  alias Scry2.Decks.Deck
   alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.NetDecking
   alias Scry2.Topics
@@ -174,13 +173,8 @@ defmodule Scry2Web.NetdecksLive do
     main_cards = (deck.main_deck || %{})["cards"] || []
     side_cards = (deck.sideboard || %{})["cards"] || []
     arena_ids = (main_cards ++ side_cards) |> Enum.map(& &1["arena_id"])
-
     lookup = Cards.list_by_arena_ids(arena_ids)
-
-    MtgaClipboardFormat.format(
-      %Deck{current_main_deck: deck.main_deck, current_sideboard: deck.sideboard},
-      lookup
-    )
+    MtgaClipboardFormat.format_card_lists(deck.main_deck, deck.sideboard, lookup)
   end
 
   defp visible(entries, search) do

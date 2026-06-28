@@ -5,7 +5,8 @@ defmodule Scry2.NetDecking.Deck do
   Card lists (`main_deck`, `sideboard`) use the same `{"cards" => [%{arena_id, count}]}`
   shape as `decks_decks`. `composition_hash` enables idempotent re-ingest.
   `unresolved_cards` records references that did not map to an arena_id —
-  the deck is still stored; the UI flags it as incompletely resolved.
+  the deck is still stored, with the unresolved references retained so the
+  catalog UI can surface them.
   """
   use Ecto.Schema
   import Ecto.Changeset

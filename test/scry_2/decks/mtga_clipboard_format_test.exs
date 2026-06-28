@@ -5,6 +5,42 @@ defmodule Scry2.Decks.MtgaClipboardFormatTest do
   alias Scry2.Decks.Deck
   alias Scry2.Decks.MtgaClipboardFormat
 
+  describe "format_card_lists/3" do
+    test "renders main deck and sideboard from raw card-list maps" do
+      cards = %{
+        100_001 => %Card{
+          arena_id: 100_001,
+          name: "Lightning Bolt",
+          collector_number: "162",
+          set: %Set{code: "m21"}
+        },
+        100_002 => %Card{
+          arena_id: 100_002,
+          name: "Negate",
+          collector_number: "56",
+          set: %Set{code: "znr"}
+        }
+      }
+
+      main_deck = %{"cards" => [%{"arena_id" => 100_001, "count" => 4}]}
+      sideboard = %{"cards" => [%{"arena_id" => 100_002, "count" => 2}]}
+
+      text = MtgaClipboardFormat.format_card_lists(main_deck, sideboard, cards)
+
+      assert text == """
+             Deck
+             4 Lightning Bolt (M21) 162
+
+             Sideboard
+             2 Negate (ZNR) 56\
+             """
+    end
+
+    test "tolerates nil main_deck and sideboard" do
+      assert MtgaClipboardFormat.format_card_lists(nil, nil, %{}) == ""
+    end
+  end
+
   describe "format/2" do
     test "renders a constructed deck with mainboard and sideboard" do
       cards = %{
