@@ -65,17 +65,9 @@ Invoke the skill **first**, then explore the codebase, then write code.
 
 Scry2 is a Phoenix/Elixir backend worker with a LiveView admin UI. It monitors Magic: The Gathering Arena's `Player.log` file, parses MTGA events, and persists them to a local SQLite database. It builds its card reference model by synthesising the user's local MTGA card database with Scryfall bulk metadata. The project is inspired by 17lands.com and self-hosted for one player's data.
 
-## Version Control (Jujutsu)
+## Releasing
 
-All repositories use **JJ (Jujutsu)** — never use raw `git` commands.
-
-- After completing a feature: `jj describe -m "type: short description"`
-- Use conventional commit style (e.g. `feat:`, `fix:`, `refactor:`). Concise and high-level.
-- Amend the existing change for follow-up fixes (if not yet pushed).
-- Start unrelated features with `jj new`.
-- Adjust the description as scope becomes clearer.
-
-### Releasing
+Use conventional commit style for commits (`feat:`, `fix:`, `refactor:`, `docs:`, `chore:`) — concise and high-level.
 
 **Always use `/ship patch|minor|major` to release.** The slash command at `.claude/commands/ship.md` runs the self-update safety checks, drafts user-facing release notes from the commits since the last tag (in MTGA-player language, not engineer language), prepends them under `## [Unreleased]` in `CHANGELOG.md` after you confirm the draft, and then delegates the actual tagging mechanics to `scripts/tag-release`.
 
@@ -85,10 +77,10 @@ The notes flow into both the GitHub Release body and the in-app **Settings → U
 /ship patch       # bug-fix release (x.y.Z → x.y.(Z+1))
 /ship minor       # feature release (x.Y.z → x.(Y+1).0)
 /ship major       # breaking release (X.y.z → (X+1).0.0)
-/ship             # plain ship (describe + push, no tag)
+/ship             # plain ship (commit + push, no tag)
 ```
 
-`scripts/tag-release` is the underlying mechanic — it runs `mix precommit`, bumps `mix.exs`, rotates `## [Unreleased]` to a versioned section, describes the jj change, tags, and pushes. Don't invoke it directly: it has no changelog-drafting step and only an empty-section guard as a backstop. CI then builds all platform archives and publishes to GitHub Releases.
+`scripts/tag-release` is the underlying mechanic — it runs `mix precommit`, bumps `mix.exs`, rotates `## [Unreleased]` to a versioned section, commits the release, tags, and pushes. Don't invoke it directly: it has no changelog-drafting step and only an empty-section guard as a backstop. CI then builds all platform archives and publishes to GitHub Releases.
 
 ## Build & Run
 
@@ -168,7 +160,7 @@ The release workflow:
 
 1. **Local build** — `scripts/release` builds the Elixir release (plus the tray binary on macOS) and stages everything in `_build/prod/package/`. On Linux the package omits the tray and includes the systemd unit + `.desktop` templates instead. Use this to verify a release builds before tagging.
 2. **Local install** — `scripts/install` builds and installs in one step. Use this to test the production release on your machine, or to keep the production app installed for your own gameplay analysis.
-3. **Tag and publish** — `scripts/tag-release <version>` runs `mix precommit`, bumps the version in `mix.exs`, creates a jj tag, and pushes to GitHub. GitHub Actions then builds all three platform archives (Linux, macOS, Windows) and publishes them to GitHub Releases.
+3. **Tag and publish** — `scripts/tag-release <version>` runs `mix precommit`, bumps the version in `mix.exs`, creates a git tag, and pushes to GitHub. GitHub Actions then builds all three platform archives (Linux, macOS, Windows) and publishes them to GitHub Releases.
 
 The CI build is authoritative for multi-platform releases. `scripts/release` and `scripts/install` are for local development and testing only. Platform-specific package installers live at `scripts/install-linux` and `scripts/install-macos` — these are copied into the release package and run *from inside* it, not from the repo root.
 

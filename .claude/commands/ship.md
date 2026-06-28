@@ -1,11 +1,11 @@
 ---
-description: Describe, bookmark, push jj changes — and optionally tag a release with a user-facing changelog and self-update safety check
+description: Commit and push changes — and optionally tag a release with a user-facing changelog and self-update safety check
 allowed-tools: Bash, Read, Write, Edit
 ---
 
-You are shipping one or more Jujutsu (jj) changes for Scry2, and optionally tagging a release that the in-app self-updater (`Scry2.SelfUpdate`) will deliver to end users. Scry2's end users are Magic: The Gathering Arena players — not engineers. The release notes they read in **Settings → Updates → "What's new in vX.Y.Z"** and on the GitHub Releases page must be written for them.
+You are shipping changes for Scry2, and optionally tagging a release that the in-app self-updater (`Scry2.SelfUpdate`) will deliver to end users. Scry2's end users are Magic: The Gathering Arena players — not engineers. The release notes they read in **Settings → Updates → "What's new in vX.Y.Z"** and on the GitHub Releases page must be written for them.
 
-> This skill supersedes the global `/ship` (`~/.claude/commands/ship.md`) when invoked from the Scry2 repo. Both share the same arg modes (`/ship` / `patch` / `minor` / `major`), the same halt-on-failure discipline, the same end-user changelog voice, and the same tag flow. This local version delegates the actual tagging mechanics to `scripts/tag-release` (which runs `mix precommit`, bumps `mix.exs`, rotates `## [Unreleased]`, describes the jj change, and pushes the tag) and adds Scry2-specific safety checks for the self-updater contract.
+> This skill supersedes the global `/ship` (`~/.claude/commands/ship.md`) when invoked from the Scry2 repo. Both share the same arg modes (`/ship` / `patch` / `minor` / `major`), the same halt-on-failure discipline, the same end-user changelog voice, and the same tag flow. This local version delegates the actual tagging mechanics to `scripts/tag-release` (which runs `mix precommit`, bumps `mix.exs`, rotates `## [Unreleased]`, commits the release, and pushes the tag) and adds Scry2-specific safety checks for the self-updater contract.
 
 ## Autonomy
 
@@ -15,7 +15,7 @@ You are shipping one or more Jujutsu (jj) changes for Scry2, and optionally tagg
 
 Invocation modes:
 
-- `/ship` — plain ship. Describe working change(s), advance, bookmark, push `main`. No tag.
+- `/ship` — plain ship. Commit working changes and push `main`. No tag.
 - `/ship major` — ship AND bump **major** version (X.y.z → (X+1).0.0), draft user-facing changelog, run safety checks, tag, push.
 - `/ship minor` — ship AND bump **minor** version (x.Y.z → x.(Y+1).0), same tag flow.
 - `/ship patch` — ship AND bump **patch** version (x.y.Z → x.y.(Z+1)), same tag flow.
@@ -29,17 +29,17 @@ Scry2 is a single repo, so the multi-repo discovery logic from the global `/ship
 Verify CWD is the Scry2 repo:
 
 ```bash
-test -d .jj && grep -q 'app: :scry_2' mix.exs
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 && grep -q 'app: :scry_2' mix.exs
 ```
 
 If either check fails, stop with "Not in the Scry2 repo. /ship must be invoked from the project root."
 
 ## Step 2: Scan working state
 
-Run `jj diff --stat` and `jj log --limit 1`. Classify:
+Run `git status --short` and `git log -1`. Classify:
 
-- **has changes** — diff is non-empty OR the working change already has a description (not "(no description set)")
-- **clean** — empty diff AND "(no description set)"
+- **has changes** — `git status --porcelain` is non-empty (uncommitted work in the tree or index)
+- **clean** — nothing to commit
 
 If clean AND no version bump requested → tell the user "Nothing to ship" and stop.
 
@@ -49,19 +49,17 @@ If the working copy has changes:
 
 ### 3a: Describe
 
-- Run `jj diff` to read the full diff
+- Run `git diff` to read the full diff
 - Write a concise description: imperative verb phrase, sentence case, no trailing period, ≤ 72 chars on the subject line
 - Use conventional prefixes: `feat:`, `fix:`, `refactor:`, `docs:`, `test:`, `chore:`
-- If the change already has a description that matches the diff, keep it
-- If the diff contains multiple distinct types of work that cleanly partition by file, split with `jj split -m "<description>" <files>` (the `-m` flag avoids opening an editor). If the work overlaps in shared files such that a split would leave a broken intermediate state, ship as one combined commit and mention both topics in the description (e.g. `feat(web): nav refresh and per-set printing rollup`).
+- If the diff contains multiple distinct types of work that cleanly partition by file, make separate commits (`git add <files> && git commit -m "<description>"` per group). If the work overlaps in shared files such that splitting would leave a broken intermediate state, ship as one combined commit and mention both topics in the description (e.g. `feat(web): nav refresh and per-set printing rollup`).
 
-### 3b: Advance, bookmark, push
+### 3b: Commit and push
 
 ```bash
-jj desc -m "<message>"
-jj new
-jj bookmark set main -r @-
-jj git push --bookmark main
+git add -A
+git commit -m "<message>"
+git push origin main
 ```
 
 If push fails, report the error and stop. If a tag is being requested, halt — don't tag a state that isn't on the remote.
@@ -133,13 +131,11 @@ Scry2's audience is the MTGA player using the dashboard. They care about: drafts
 
 5. Prepend the final notes to `CHANGELOG.md` **under `## [Unreleased]`** — leave `## [Unreleased]` as the header. `scripts/tag-release` will rotate that header to the versioned form when invoked in 4d. Do NOT write a `## v<version>` header yourself.
 
-6. Ship the changelog edit as its own jj change — `scripts/tag-release` requires a clean working copy:
+6. Commit the changelog edit on its own — `scripts/tag-release` requires a clean working tree:
 
    ```bash
-   jj desc -m "docs: changelog for v<version>"
-   jj new
-   jj bookmark set main -r @-
-   jj git push --bookmark main
+   git commit -am "docs: changelog for v<version>"
+   git push origin main
    ```
 
    The full changelog text goes in the summary at the end so the user can review what was drafted; no confirmation prompt.
@@ -156,9 +152,9 @@ The script:
 - Runs `mix precommit` (test gate — already run in 4a, but the script re-runs it as belt-and-braces)
 - Bumps version in `mix.exs`
 - Rotates `## [Unreleased]` in CHANGELOG.md to `## vX.Y.Z — YYYY-MM-DD` with the body you wrote in 4b
-- Describes the jj change as `chore: release vX.Y.Z`
-- Tags `vX.Y.Z` and moves the `main` bookmark
-- Pushes both the bookmark and the tag
+- Commits the release as `chore: release vX.Y.Z`
+- Tags `vX.Y.Z` on `main`
+- Pushes `main` and the tag
 
 The release workflow at `.github/workflows/release.yml` is triggered by the tag and builds Linux + macOS + Windows tarballs + MSI + per-platform `SHA256SUMS`. Kick off a background watch and report status in the final summary:
 
@@ -181,7 +177,6 @@ Final report to the user:
 
 ## Important
 
-- NEVER use `jj commit` — jj's working copy is already a commit
 - NEVER call `scripts/tag-release` directly outside this skill — it has no changelog-drafting step. (`tag-release` does have an empty-`[Unreleased]` guard as a backstop, but `/ship` is the path that produces good notes.)
 - **Halt on safety-check failures.** Don't silently override and don't offer a continue-anyway prompt. The self-updater runs on the user's machine. A broken upgrade path means manual reinstall — and `apply.lock` may make even that messy. Report what's wrong; the user re-runs `/ship` after fixing.
 - **End-user voice.** Changelog entries appear in **Settings → Updates → "What's new"**. If a line sounds like a commit message, rewrite it until it doesn't.

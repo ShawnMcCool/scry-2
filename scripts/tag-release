@@ -18,17 +18,24 @@ fi
 
 # Sync with remote to avoid tagging on stale local state
 echo "Fetching from remote..."
-jj git fetch
+git fetch origin
+
+# Releases are cut from main
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+if [[ "$BRANCH" != "main" ]]; then
+    echo "Error: releases must be tagged from the main branch (currently on '$BRANCH')."
+    exit 1
+fi
 
 # Run precommit checks — catches broken builds and format drift before tagging
 echo "Running precommit checks..."
 mix precommit
 
-# Ensure working copy is clean (precommit may have formatted files)
-if jj diff --summary 2>/dev/null | grep -q .; then
-    echo "Error: working copy has uncommitted changes after precommit (mix format likely changed files)."
+# Ensure working tree is clean (precommit may have formatted files)
+if [[ -n "$(git status --porcelain)" ]]; then
+    echo "Error: working tree has uncommitted changes after precommit (mix format likely changed files)."
     echo "Review, commit the changes, then re-run scripts/tag-release."
-    jj diff --summary
+    git status --short
     exit 1
 fi
 
@@ -105,30 +112,24 @@ else
     echo "Note: CHANGELOG.md not found, skipping rotation."
 fi
 
-# Describe the jj change (includes mix.exs + CHANGELOG.md rotation)
-jj describe -m "chore: release ${TAG}"
+# Commit the release change (mix.exs bump + CHANGELOG.md rotation)
+git add -A
+git commit -m "chore: release ${TAG}"
 
-# Capture the change ID before tagging (tagging makes @ immutable and creates a new empty commit)
-RELEASE_CHANGE=$(jj log -r @ --no-graph -T 'change_id')
-
-# Create the git tag at the current revision
+# Create the git tag at the release commit
 echo "Creating tag ${TAG}..."
-jj tag set "${TAG}"
+git tag "${TAG}"
 
-# Move main bookmark to the release commit so CI workflows trigger on main
-echo "Setting main bookmark..."
-jj bookmark set main -r "${RELEASE_CHANGE}"
-
-# Push main bookmark and the tag
+# Push main and the tag
 echo "Pushing main to remote..."
-jj git push -b main
+git push origin main
 
 echo "Pushing tag to remote..."
 git push origin "refs/tags/${TAG}"
 
 echo ""
 echo "Released ${TAG}. GitHub Actions will build and publish the release."
-REPO=$(jj git remote list 2>/dev/null | grep origin | awk '{print $2}' | sed 's|.*github.com[:/]||;s|\.git$||')
+REPO=$(git remote get-url origin 2>/dev/null | sed 's|.*github.com[:/]||;s|\.git$||')
 if [[ -n "$REPO" ]]; then
     echo "Monitor at: https://github.com/${REPO}/actions"
 fi

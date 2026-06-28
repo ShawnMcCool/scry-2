@@ -293,9 +293,9 @@ scripts/tag-release 0.2.0
 This will:
 1. Validate the version is semver
 2. Bump `version:` in `mix.exs`
-3. Describe the jj change as `chore: release v0.2.0`
+3. Commit the release as `chore: release v0.2.0`
 4. Create a `v0.2.0` git tag
-5. Push the bookmark and tag to the remote
+5. Push main and the tag to the remote
 
 GitHub Actions then builds Linux, macOS, and Windows release archives (including
 the tray binary for each platform), generates per-platform
