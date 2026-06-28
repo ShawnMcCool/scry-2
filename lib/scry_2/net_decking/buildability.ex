@@ -10,7 +10,7 @@ defmodule Scry2.NetDecking.Buildability do
   `free_arena_ids`, never hardcoded into a rule.
   """
 
-  alias Scry2.NetDecking.Buildability.Result
+  alias Scry2.NetDecking.Buildability.{Inputs, Result, Section}
 
   @basic_land_names ~w(Plains Island Swamp Mountain Forest Wastes)
   @rarities [:common, :uncommon, :rare, :mythic]
@@ -40,7 +40,7 @@ defmodule Scry2.NetDecking.Buildability do
   end
 
   @doc "Buckets missing copies by rarity."
-  @spec rarity_buckets([{integer(), integer()}], map()) :: map()
+  @spec rarity_buckets([{integer(), integer()}], map()) :: Section.rarity_map()
   def rarity_buckets(shortages, rarities) do
     Enum.reduce(shortages, @zero, fn {arena_id, missing}, acc ->
       key = rarity_key(Map.get(rarities, arena_id))
@@ -56,7 +56,7 @@ defmodule Scry2.NetDecking.Buildability do
   defp rarity_key(_), do: :rare
 
   @doc "Per-rarity shortfall of `cost` against current `wildcards` balances."
-  @spec affordability(map(), map()) :: map()
+  @spec affordability(map(), map()) :: Section.rarity_map()
   def affordability(cost, wildcards) do
     Map.new(@rarities, fn rarity ->
       {rarity, max(0, Map.get(cost, rarity, 0) - Map.get(wildcards, rarity, 0))}
@@ -74,4 +74,46 @@ defmodule Scry2.NetDecking.Buildability do
   end
 
   defp total(map), do: Enum.reduce(@rarities, 0, fn r, acc -> acc + Map.get(map, r, 0) end)
+
+  @doc "Orderable key: fewer missing mythics/rares/uncommons/commons sorts first; total breaks ties."
+  @spec sort_key(map()) :: {integer(), integer(), integer(), integer(), integer()}
+  def sort_key(cost) do
+    {Map.get(cost, :mythic, 0), Map.get(cost, :rare, 0), Map.get(cost, :uncommon, 0),
+     Map.get(cost, :common, 0), total(cost)}
+  end
+
+  @doc "Scores a deck against a collection. Status and sort_key derive from the maindeck."
+  @spec score(Inputs.t()) :: Result.t()
+  def score(%Inputs{} = inputs) do
+    main = section(inputs.main_cards, inputs)
+    side = section(inputs.side_cards, inputs)
+    status = classify_status(main.wildcard_cost, main.shortfall)
+
+    %Result{
+      status: status,
+      maindeck: main,
+      sideboard: side,
+      sort_key: sort_key(main.wildcard_cost)
+    }
+  end
+
+  defp section(cards, %Inputs{} = inputs) do
+    shortages = card_shortage(cards, inputs.owned, inputs.free_arena_ids)
+    cost = rarity_buckets(shortages, inputs.rarities)
+    shortfall = affordability(cost, inputs.wildcards)
+
+    total_copies = Enum.reduce(cards, 0, fn %{count: count}, acc -> acc + count end)
+    missing_copies = Enum.reduce(shortages, 0, fn {_id, m}, acc -> acc + m end)
+
+    %Section{
+      wildcard_cost: cost,
+      shortfall: shortfall,
+      owned_pct: owned_pct(total_copies, missing_copies),
+      total_copies: total_copies,
+      missing_copies: missing_copies
+    }
+  end
+
+  defp owned_pct(0, _missing), do: 1.0
+  defp owned_pct(total, missing), do: Float.round((total - missing) / total, 3)
 end
