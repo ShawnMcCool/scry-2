@@ -18,6 +18,14 @@ defmodule Scry2Web.Router do
   # Outside the :browser pipeline (no CSRF, no session — just a static file).
   get "/images/cards/:arena_id", Scry2Web.Plugs.CardImage, :call
 
+  # Plain HTTP readiness probe (DB connectivity + pending migrations).
+  # Outside the :browser pipeline and the first-run setup gate so it answers
+  # during boot, first-run, and while migrations are still running.
+  scope "/", Scry2Web do
+    pipe_through :api
+    get "/health", HealthController, :show
+  end
+
   scope "/", Scry2Web do
     pipe_through :browser
 

@@ -88,3 +88,19 @@ if config_env() == :prod do
     config :scry_2, Oban, plugins: []
   end
 end
+
+if config_env() == :dev do
+  # The always-on local instance (systemd) runs dev code as the user's
+  # production app by overriding the port + database via env vars. A bare
+  # `mix phx.server` with neither var set keeps the safe defaults from
+  # config/dev.exs (port 4444 + scry_2_dev.db), so isolated dev is unchanged.
+  if port = System.get_env("PORT") do
+    config :scry_2, Scry2Web.Endpoint,
+      url: [host: "localhost", port: String.to_integer(port), scheme: "http"],
+      http: [ip: {127, 0, 0, 1}, port: String.to_integer(port)]
+  end
+
+  if database_path = System.get_env("DATABASE_PATH") do
+    config :scry_2, Scry2.Repo, database: database_path
+  end
+end

@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Install the dev systemd user service for scry_2.
+# Install the always-on local systemd user service for scry_2.
+#
+# This runs the working-tree (dev) code as the user's everyday instance on
+# port 6015 against the real production database. It deliberately does NOT
+# start while the packaged release service (scry-2.service) is active — two
+# processes writing the same SQLite database risks corruption. Retire the
+# release first (the cutover), then re-run this.
+#
 # Usage: scripts/install-dev
 
 cd "$(dirname "$0")/.."
@@ -25,7 +32,18 @@ banner "Reloading systemd"
 systemctl --user daemon-reload
 systemctl --user enable "$service_name"
 
-# 3. Restart service if active, otherwise start it
+# 3. Safety: refuse to start alongside the packaged release on the same port/DB
+if systemctl --user is-active --quiet scry-2.service; then
+  banner "Release service scry-2.service is still active — NOT starting"
+  echo "  The packaged release is running on the same port + database."
+  echo "  Retire it first, then start this instance:"
+  echo "    systemctl --user disable --now scry-2.service"
+  echo "    systemctl --user start $service_name"
+  echo "  (Back up the database before the first start — migrations run on boot.)"
+  exit 0
+fi
+
+# 4. Start or restart the unified instance
 if systemctl --user is-active --quiet "$service_name"; then
   banner "Restarting service"
   systemctl --user restart "$service_name"
@@ -34,12 +52,19 @@ else
   systemctl --user start "$service_name"
 fi
 
-# 4. Status summary
+# 5. Validate readiness (waits out migrations on first/large boots)
+banner "Health check"
+if scripts/healthcheck; then
+  health="healthy"
+else
+  health="NOT READY — see output above and journalctl"
+fi
+
+# 6. Status summary
 banner "Install complete"
 echo "  Source:  $source_dir"
 echo "  Unit:    $unit_dst"
-echo "  URL:     http://localhost:4444"
+echo "  URL:     http://localhost:6015"
+echo "  Health:  $health  (scripts/healthcheck)"
 echo "  Logs:    journalctl --user -u $service_name -f"
 echo "  REPL:    iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1"
-echo ""
-systemctl --user status "$service_name" --no-pager 2>/dev/null || true

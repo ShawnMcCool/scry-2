@@ -1,5 +1,5 @@
 [Unit]
-Description=Scry2 (Dev)
+Description=Scry2 — always-on local instance (dev code, port 6015, real data)
 After=network-online.target
 Wants=network-online.target
 
@@ -7,14 +7,25 @@ Wants=network-online.target
 Type=exec
 # Patched by scripts/install-dev to the actual source directory.
 WorkingDirectory=/path/to/scry_2
+# Apply any pending migrations before the server starts. `mix phx.server`
+# runs with RELEASE_NAME unset, so the in-app Ecto.Migrator is skipped and
+# this is what keeps the schema current. On a large database this can take
+# a moment — TimeoutStartSec below allows for it.
 ExecStartPre=/usr/bin/mise exec -- mix ecto.migrate
 ExecStart=/usr/bin/mise exec -- mix phx.server
 Environment=MIX_ENV=dev
+# Run as the user's everyday instance: production port + the real database.
+# A bare `mix phx.server` (no PORT/DATABASE_PATH) still uses the safe dev
+# defaults (4444 + scry_2_dev.db) for throwaway local development.
+Environment=PORT=6015
+Environment=DATABASE_PATH=%h/.local/share/scry_2/scry_2.db
 Environment=MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8
 Environment=ELIXIR_ERL_OPTIONS="-name scry_2_dev@127.0.0.1"
 Restart=on-failure
 RestartSec=5
 KillMode=mixed
+# Allow time for a cold compile + migrations on start.
+TimeoutStartSec=300
 TimeoutStopSec=30
 LimitNOFILE=65536
 

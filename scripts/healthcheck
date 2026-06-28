@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# Validate that the running Scry2 instance is actually serving — not just that
+# the process is up. Polls GET /health (DB connectivity + pending migrations)
+# until ready or a timeout, so a restart that is still running migrations
+# reports "not ready yet" instead of a false "down".
+#
+# Exit codes:
+#   0  healthy (HTTP 200, status: ok)
+#   1  reachable but not ready (HTTP 503 — pending migrations or DB issue)
+#   2  unreachable (service not running / wrong port)
+#
+# Env:
+#   PORT      port to probe (default 6015)
+#   TIMEOUT   seconds to wait for readiness (default 90)
+set -euo pipefail
+
+PORT="${PORT:-6015}"
+TIMEOUT="${TIMEOUT:-90}"
+URL="http://127.0.0.1:${PORT}/health"
+
+deadline=$((SECONDS + TIMEOUT))
+last_body=""
+last_code=""
+
+while :; do
+  if response="$(curl -sS --max-time 5 -w $'\n%{http_code}' "$URL" 2>/dev/null)"; then
+    last_code="$(printf '%s' "$response" | tail -n1)"
+    last_body="$(printf '%s' "$response" | sed '$d')"
+
+    case "$last_code" in
+      200)
+        echo "$last_body"
+        echo "OK — $URL is healthy."
+        exit 0
+        ;;
+      503)
+        # Reachable but not ready (likely migrations still running). Keep waiting.
+        : ;;
+      *)
+        echo "DOWN — $URL returned unexpected HTTP $last_code"
+        exit 2
+        ;;
+    esac
+  fi
+
+  if (( SECONDS >= deadline )); then
+    if [[ -n "$last_code" ]]; then
+      echo "$last_body"
+      echo "NOT READY — $URL responded HTTP ${last_code} for ${TIMEOUT}s (pending migrations or DB issue)."
+      exit 1
+    else
+      echo "DOWN — could not reach $URL within ${TIMEOUT}s (is the service running on port ${PORT}?)"
+      exit 2
+    fi
+  fi
+
+  sleep 2
+done
