@@ -602,6 +602,89 @@ defmodule Scry2.Cards do
     end)
   end
 
+  @doc """
+  Resolves parsed card references to `%{arena_id, count}` entries.
+
+  Each ref is `%{name, set_code, collector_number, count}`. Matches on
+  `(set_code, collector_number)` first, then case-insensitive name. Returns
+  `%{resolved: [%{arena_id, count}], unresolved: [ref]}`. Never drops a ref.
+
+  Uses two batch queries — never N+1:
+  1. By lowercased name (handles name-only refs and provides a fallback for
+     refs that also carry set/collector data).
+  2. By `(set_code, collector_number)` pairs (only when at least one ref
+     supplies both; wins over the name match).
+  """
+  @spec resolve_references([map()]) :: %{resolved: [map()], unresolved: [map()]}
+  def resolve_references(refs) when is_list(refs) do
+    names = refs |> Enum.map(& &1.name) |> Enum.map(&String.downcase/1) |> Enum.uniq()
+
+    set_collector_refs =
+      Enum.reject(refs, &(is_nil(&1.set_code) or is_nil(&1.collector_number)))
+
+    set_codes =
+      set_collector_refs |> Enum.map(fn r -> String.upcase(r.set_code) end) |> Enum.uniq()
+
+    collector_numbers = set_collector_refs |> Enum.map(& &1.collector_number) |> Enum.uniq()
+
+    by_name_candidates =
+      Card
+      |> where([c], fragment("lower(?)", c.name) in ^names)
+      |> Repo.all()
+
+    by_set_collector_candidates =
+      if set_codes == [] do
+        []
+      else
+        Card
+        |> join(:inner, [c], s in assoc(c, :set))
+        |> where(
+          [c, s],
+          fragment("upper(?)", s.code) in ^set_codes and
+            c.collector_number in ^collector_numbers
+        )
+        |> preload([c, s], set: s)
+        |> Repo.all()
+      end
+
+    by_set_collector =
+      Map.new(by_set_collector_candidates, fn card ->
+        {{reference_set_code(card), card.collector_number}, card}
+      end)
+
+    by_name =
+      Enum.reduce(by_name_candidates, %{}, fn card, acc ->
+        Map.put_new(acc, String.downcase(card.name), card)
+      end)
+
+    {resolved, unresolved} =
+      Enum.reduce(refs, {[], []}, fn ref, {res, unres} ->
+        case match_card_ref(ref, by_set_collector, by_name) do
+          nil -> {res, [ref | unres]}
+          card -> {[%{arena_id: card.arena_id, count: ref.count} | res], unres}
+        end
+      end)
+
+    %{resolved: Enum.reverse(resolved), unresolved: Enum.reverse(unresolved)}
+  end
+
+  defp match_card_ref(ref, by_set_collector, by_name) do
+    set_code = ref.set_code && String.upcase(ref.set_code)
+    collector_number = ref.collector_number
+    key = {set_code, collector_number}
+
+    cond do
+      set_code && collector_number && Map.has_key?(by_set_collector, key) ->
+        Map.get(by_set_collector, key)
+
+      true ->
+        Map.get(by_name, String.downcase(ref.name))
+    end
+  end
+
+  defp reference_set_code(%Card{set: %{code: code}}) when is_binary(code), do: String.upcase(code)
+  defp reference_set_code(_), do: nil
+
   # Decodes MTGA's comma-separated integer type enums to a space-separated
   # human-readable string (e.g. "2,5" → "Creature Land"). Used only for
   # MtgaCard fallback entries where synthesised data is unavailable.
