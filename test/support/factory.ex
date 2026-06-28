@@ -1138,6 +1138,22 @@ defmodule Scry2.TestFactory do
     snapshot
   end
 
+  # ── NetDecking ───────────────────────────────────────────────────────────
+
+  def create_netdeck(attrs \\ %{}) do
+    base = Map.new(attrs)
+
+    {:ok, deck} =
+      Scry2.NetDecking.import_decklist(%{
+        name: base[:name] || "Test Netdeck",
+        archetype: base[:archetype],
+        source_name: base[:source_name] || "manual",
+        decklist_text: base[:decklist_text] || "Deck\n4 Test Card\n"
+      })
+
+    deck
+  end
+
   # ── MatchEconomy summaries ───────────────────────────────────────────────
 
   def build_match_economy_summary(attrs \\ %{}) do
