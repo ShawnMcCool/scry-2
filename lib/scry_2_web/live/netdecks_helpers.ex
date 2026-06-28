@@ -17,6 +17,7 @@ defmodule Scry2Web.NetdecksHelpers do
     end
   end
 
+  @doc "Whole-percent label for an owned fraction (0.0–1.0), e.g. \"82%\"."
   @spec format_owned_pct(float()) :: String.t()
   def format_owned_pct(fraction), do: "#{round(fraction * 100)}%"
 
