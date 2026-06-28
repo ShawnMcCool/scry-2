@@ -31,6 +31,7 @@ defmodule Scry2Web.SidebarNav do
       items: [
         %{path: "/matches", label: "Matches", icon: "hero-trophy"},
         %{path: "/decks", label: "Decks", icon: "hero-rectangle-stack"},
+        %{path: "/netdecks", label: "NetDecks", icon: "hero-globe-alt"},
         %{path: "/drafts", label: "Drafts", icon: "hero-gift"}
       ]
     },

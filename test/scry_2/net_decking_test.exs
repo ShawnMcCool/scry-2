@@ -44,4 +44,44 @@ defmodule Scry2.NetDeckingTest do
     catalog = NetDecking.catalog()
     assert [%{result: %{status: :short}}] = catalog.short
   end
+
+  test "deck_detail returns per-card owned/missing rows, balances, and export text" do
+    bolt = create_card(name: "Lightning Bolt", rarity: "rare")
+    _mountain = create_card(name: "Mountain", rarity: "common")
+
+    create_collection_snapshot(
+      entries: [{bolt.arena_id, 2}],
+      wildcards_common: 0,
+      wildcards_uncommon: 0,
+      wildcards_rare: 5,
+      wildcards_mythic: 0
+    )
+
+    {:ok, deck} =
+      NetDecking.import_decklist(%{
+        name: "Mono-Red",
+        archetype: "Aggro",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+      })
+
+    detail = NetDecking.deck_detail(deck)
+
+    # Own 2 of 4 rare Bolts, 5 rare wildcards on hand → craftable
+    assert detail.result.status == :craftable
+    assert detail.wildcards.rare == 5
+
+    bolt_row = Enum.find(detail.main_rows, &(&1.arena_id == bolt.arena_id))
+    assert bolt_row.needed == 4
+    assert bolt_row.owned == 2
+    assert bolt_row.missing == 2
+    assert bolt_row.rarity == "rare"
+    refute bolt_row.free?
+
+    mountain_row = Enum.find(detail.main_rows, &(&1.name == "Mountain"))
+    assert mountain_row.free?
+    assert mountain_row.missing == 0
+
+    assert detail.export_text =~ "Lightning Bolt"
+  end
 end

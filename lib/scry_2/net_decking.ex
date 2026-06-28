@@ -16,6 +16,7 @@ defmodule Scry2.NetDecking do
   alias Scry2.Cards
   alias Scry2.Collection
   alias Scry2.Collection.Snapshot
+  alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.NetDecking.Buildability
   alias Scry2.NetDecking.Buildability.Inputs
   alias Scry2.NetDecking.Deck
@@ -79,7 +80,74 @@ defmodule Scry2.NetDecking do
     end)
   end
 
+  @doc """
+  Detailed view model for a single deck, scored against the current snapshot.
+
+  Returns `%{deck, result, wildcards, main_rows, side_rows, export_text}` where
+  each row is `%{arena_id, name, rarity, needed, owned, missing, free?}`.
+  `wildcards` are the player's current owned balances; `export_text` is the
+  MTGA clipboard-import string.
+  """
+  @spec deck_detail(Deck.t()) :: map()
+  def deck_detail(%Deck{} = deck) do
+    snapshot = Collection.current()
+    {owned, wildcards} = collection_context(snapshot)
+
+    cards_by_arena_id = cards_for([deck])
+
+    rarities =
+      Map.new(cards_by_arena_id, fn {arena_id, card} -> {arena_id, card_rarity(card)} end)
+
+    free_ids = Buildability.default_free_ids(cards_by_arena_id)
+
+    inputs = %Inputs{
+      main_cards: card_entries(deck.main_deck),
+      side_cards: card_entries(deck.sideboard),
+      owned: owned,
+      wildcards: wildcards,
+      rarities: rarities,
+      free_arena_ids: free_ids
+    }
+
+    %{
+      deck: deck,
+      result: Buildability.score(inputs),
+      wildcards: wildcards,
+      main_rows: card_rows(deck.main_deck, cards_by_arena_id, owned, rarities, free_ids),
+      side_rows: card_rows(deck.sideboard, cards_by_arena_id, owned, rarities, free_ids),
+      export_text:
+        MtgaClipboardFormat.format_card_lists(deck.main_deck, deck.sideboard, cards_by_arena_id)
+    }
+  end
+
   # ── Helpers ─────────────────────────────────────────────────────────
+
+  defp card_rows(card_list, cards_by_arena_id, owned, rarities, free_ids) do
+    card_list
+    |> card_entries()
+    |> Enum.map(fn %{arena_id: arena_id, count: needed} ->
+      free? = MapSet.member?(free_ids, arena_id)
+      owned_count = Map.get(owned, arena_id, 0)
+      missing = if free?, do: 0, else: max(0, needed - owned_count)
+
+      %{
+        arena_id: arena_id,
+        name: card_name(cards_by_arena_id, arena_id),
+        rarity: Map.get(rarities, arena_id),
+        needed: needed,
+        owned: owned_count,
+        missing: missing,
+        free?: free?
+      }
+    end)
+  end
+
+  defp card_name(cards_by_arena_id, arena_id) do
+    case Map.get(cards_by_arena_id, arena_id) do
+      %{name: name} when is_binary(name) -> name
+      _other -> "#" <> Integer.to_string(arena_id)
+    end
+  end
 
   defp collection_context(nil), do: {%{}, @empty_wildcards}
 

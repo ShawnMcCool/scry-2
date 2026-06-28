@@ -18,7 +18,7 @@ defmodule Scry2Web.NetdecksLiveTest do
 
     {:ok, view, _html} = live(conn, ~p"/netdecks")
     assert render(view) =~ "Mono-Red"
-    assert render(view) =~ "Buildable"
+    assert render(view) =~ "Buildable now"
   end
 
   test "import event adds a deck to the catalog", %{conn: conn} do
@@ -26,9 +26,35 @@ defmodule Scry2Web.NetdecksLiveTest do
     {:ok, view, _html} = live(conn, ~p"/netdecks")
 
     view
-    |> form("#netdeck-import", import: %{name: "Burn", decklist_text: "Deck\n4 Lightning Bolt\n"})
+    |> form("#netdeck-import",
+      import: %{name: "Burn", archetype: "Aggro", decklist_text: "Deck\n4 Lightning Bolt\n"}
+    )
     |> render_submit()
 
     assert render(view) =~ "Burn"
+  end
+
+  test "detail view lists the deck's cards and a copy button", %{conn: conn} do
+    bolt = create_card(name: "Lightning Bolt", rarity: "rare")
+    create_card(name: "Mountain", rarity: "common")
+    create_collection_snapshot(entries: [{bolt.arena_id, 2}], wildcards_rare: 5)
+
+    {:ok, deck} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Mono-Red",
+        archetype: "Aggro",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+      })
+
+    {:ok, _view, html} = live(conn, ~p"/netdecks/#{deck.id}")
+
+    assert html =~ "Lightning Bolt"
+    assert html =~ "Copy to MTGA"
+    assert html =~ "Aggro"
+  end
+
+  test "unknown deck id redirects back to the catalog", %{conn: conn} do
+    assert {:error, {:live_redirect, %{to: "/netdecks"}}} = live(conn, ~p"/netdecks/999999")
   end
 end

@@ -36,13 +36,14 @@ defmodule Scry2Web.SidebarNavTest do
   end
 
   describe "items/0" do
-    test "returns all 9 items in section order" do
+    test "returns all 10 items in section order" do
       paths = SidebarNav.items() |> Enum.map(& &1.path)
 
       assert paths == [
                "/cards",
                "/matches",
                "/decks",
+               "/netdecks",
                "/drafts",
                "/player",
                "/ranks",
