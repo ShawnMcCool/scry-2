@@ -57,4 +57,17 @@ defmodule Scry2Web.NetdecksLiveTest do
   test "unknown deck id redirects back to the catalog", %{conn: conn} do
     assert {:error, {:live_redirect, %{to: "/netdecks"}}} = live(conn, ~p"/netdecks/999999")
   end
+
+  test "Fetch now triggers a refresh and flashes", %{conn: conn} do
+    # No sources → the inline worker is a no-op (no network), so we test the
+    # trigger + flash, not source behaviour (covered in worker/source tests).
+    previous = Application.get_env(:scry_2, :netdecking_sources)
+    Application.put_env(:scry_2, :netdecking_sources, [])
+    on_exit(fn -> Application.put_env(:scry_2, :netdecking_sources, previous) end)
+
+    {:ok, view, _html} = live(conn, ~p"/netdecks")
+    html = render_click(view, "fetch_now")
+
+    assert html =~ "Fetching"
+  end
 end

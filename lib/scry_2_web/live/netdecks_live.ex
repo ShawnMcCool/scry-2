@@ -16,6 +16,7 @@ defmodule Scry2Web.NetdecksLive do
 
   alias Scry2.NetDecking
   alias Scry2.Topics
+  alias Scry2.Workers.PeriodicallyFetchNetdecks
   alias Scry2Web.NetdecksHelpers
 
   @empty_catalog %{buildable: [], craftable: [], short: []}
@@ -24,7 +25,7 @@ defmodule Scry2Web.NetdecksLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.collection_snapshots())
 
-    {:ok, assign(socket, search: "", catalog: @empty_catalog, detail: nil)}
+    {:ok, assign(socket, search: "", catalog: @empty_catalog, detail: nil, sources: [])}
   end
 
   @impl true
@@ -36,7 +37,8 @@ defmodule Scry2Web.NetdecksLive do
   end
 
   def handle_params(_params, _uri, socket) do
-    {:noreply, assign(socket, detail: nil, catalog: NetDecking.catalog())}
+    {:noreply,
+     assign(socket, detail: nil, catalog: NetDecking.catalog(), sources: source_summary())}
   end
 
   @impl true
@@ -61,6 +63,15 @@ defmodule Scry2Web.NetdecksLive do
 
   def handle_event("search", %{"value" => query}, socket) do
     {:noreply, assign(socket, search: query)}
+  end
+
+  def handle_event("fetch_now", _params, socket) do
+    Oban.insert(PeriodicallyFetchNetdecks.new(%{}))
+
+    {:noreply,
+     socket
+     |> put_flash(:info, "Fetching decks from sources…")
+     |> assign(catalog: NetDecking.catalog(), sources: source_summary())}
   end
 
   def handle_event("copied", _params, socket) do
@@ -99,7 +110,7 @@ defmodule Scry2Web.NetdecksLive do
       current_path={@player_scope_uri}
     >
       <.detail :if={@detail} detail={@detail} />
-      <.catalog :if={is_nil(@detail)} catalog={@catalog} search={@search} />
+      <.catalog :if={is_nil(@detail)} catalog={@catalog} search={@search} sources={@sources} />
     </Layouts.app>
     """
   end
@@ -108,6 +119,7 @@ defmodule Scry2Web.NetdecksLive do
 
   attr :catalog, :map, required: true
   attr :search, :string, required: true
+  attr :sources, :list, required: true
 
   defp catalog(assigns) do
     assigns = assign(assigns, :total, catalog_total(assigns.catalog))
@@ -119,6 +131,15 @@ defmodule Scry2Web.NetdecksLive do
       <p class="text-sm text-base-content/55 mt-1">
         Paste decks from anywhere — see what you can build now and what's a wildcard away.
       </p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2 mb-6 text-xs text-base-content/55">
+      <span :for={source <- @sources} class="badge badge-sm badge-ghost gap-1">
+        {source.source_name} · {source.count}
+      </span>
+      <button type="button" phx-click="fetch_now" class="btn btn-xs btn-ghost gap-1">
+        <.icon name="hero-arrow-path" class="size-3.5" /> Fetch now
+      </button>
     </div>
 
     <details class="bg-base-200 rounded-xl mb-6 group">
@@ -397,6 +418,10 @@ defmodule Scry2Web.NetdecksLive do
 
   defp catalog_total(catalog) do
     Enum.sum(Enum.map([:buildable, :craftable, :short], &length(catalog[&1] || [])))
+  end
+
+  defp source_summary do
+    NetDecking.list_decks() |> NetdecksHelpers.source_summary()
   end
 
   defp presence(nil), do: nil
