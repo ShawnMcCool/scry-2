@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.49.1 — 2026-06-29
+
 ### Improved
 
 - **Netdeck pages now show card images.** Opening a netdeck lays its cards out
