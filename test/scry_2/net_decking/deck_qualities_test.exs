@@ -85,5 +85,22 @@ defmodule Scry2.NetDecking.DeckQualitiesTest do
       entries = [%{arena_id: 1, count: 1}, %{arena_id: 2, count: 1}]
       assert DeckQualities.newest_set_code(entries, cards, sets) == nil
     end
+
+    test "ignores sets with a nil released_at (no Date.compare crash)" do
+      cards = %{
+        1 => %{set_id: 100},
+        2 => %{set_id: 100},
+        3 => %{set_id: 200},
+        4 => %{set_id: 200}
+      }
+
+      sets = %{
+        100 => %{code: "DATED", released_at: ~D[2026-04-24]},
+        200 => %{code: "UNDATED", released_at: nil}
+      }
+
+      entries = Enum.map(1..4, &%{arena_id: &1, count: 1})
+      assert DeckQualities.newest_set_code(entries, cards, sets) == "DATED"
+    end
   end
 end

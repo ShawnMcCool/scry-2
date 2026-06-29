@@ -88,7 +88,7 @@ defmodule Scry2.NetDecking.DeckQualities do
     |> Enum.frequencies_by(& &1.set_id)
     |> Enum.filter(fn {_set_id, count} -> count >= 2 end)
     |> Enum.map(fn {set_id, _count} -> Map.get(sets, set_id) end)
-    |> Enum.reject(&is_nil/1)
+    |> Enum.reject(fn set -> is_nil(set) or is_nil(set.released_at) end)
     |> Enum.sort_by(& &1.released_at, {:desc, Date})
     |> case do
       [%{code: code} | _] -> code
