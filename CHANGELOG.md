@@ -11,6 +11,20 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **The Netdecks page is now a visual deck gallery.** Instead of a plain list,
+  each deck shows as a card with its artwork — a large hero illustration plus
+  three smaller ones from the deck's key cards — its **color identity**, the set
+  it's built around, and your buildability at a glance (build now / wildcards
+  needed / how complete you are). Much faster to spot a deck you want.
+- **Duplicate decks are grouped together.** When lots of players bring the same
+  deck to an event, Netdecks now collapses those near-identical lists into a
+  single card and shows how many players ran it (e.g. "×20 lists") — so the page
+  shows the actual variety of the format instead of 30 copies of the same deck.
+  Each card is named by its colors and signature card (like "Izzet · Colorstorm
+  Stallion"), since these decks don't come with names of their own.
+
 ## v0.49.1 — 2026-06-29
 
 ### Improved
