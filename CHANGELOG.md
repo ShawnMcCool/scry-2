@@ -11,6 +11,13 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **Netdeck pages now show card images.** Opening a netdeck lays its cards out
+  as images — the same way the Decks page does — with a badge on each showing
+  how many copies you own versus how many the deck needs, and cards you're
+  missing dimmed so you can see at a glance what you'd still have to craft.
+
 ## v0.49.0 — 2026-06-29
 
 ### New
