@@ -737,4 +737,40 @@ defmodule Scry2.CardsTest do
       refute Map.has_key?(result, "absent card")
     end
   end
+
+  describe "resolve_references/1 DFC fallback" do
+    test "resolves a double-faced name (Front // Back) to the front-face card" do
+      front = TestFactory.create_card(name: "Roaring Furnace")
+
+      refs = [
+        %{
+          name: "Roaring Furnace // Steaming Sauna",
+          set_code: nil,
+          collector_number: nil,
+          count: 2
+        }
+      ]
+
+      assert %{resolved: [%{arena_id: arena_id, count: 2}], unresolved: []} =
+               Cards.resolve_references(refs)
+
+      assert arena_id == front.arena_id
+    end
+
+    test "a true split card stored with // matches its full name first" do
+      split = TestFactory.create_card(name: "Crude Abattoir // Unsavory Kitchen")
+
+      refs = [
+        %{
+          name: "Crude Abattoir // Unsavory Kitchen",
+          set_code: nil,
+          collector_number: nil,
+          count: 1
+        }
+      ]
+
+      assert %{resolved: [%{arena_id: arena_id}]} = Cards.resolve_references(refs)
+      assert arena_id == split.arena_id
+    end
+  end
 end

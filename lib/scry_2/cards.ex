@@ -637,7 +637,11 @@ defmodule Scry2.Cards do
   """
   @spec resolve_references([map()]) :: %{resolved: [map()], unresolved: [map()]}
   def resolve_references(refs) when is_list(refs) do
-    names = refs |> Enum.map(& &1.name) |> Enum.map(&String.downcase/1) |> Enum.uniq()
+    names =
+      refs
+      |> Enum.flat_map(fn ref -> [ref.name, front_face(ref.name)] end)
+      |> Enum.map(&String.downcase/1)
+      |> Enum.uniq()
 
     set_collector_refs =
       Enum.reject(refs, &(is_nil(&1.set_code) or is_nil(&1.collector_number)))
@@ -697,8 +701,22 @@ defmodule Scry2.Cards do
       set_code && collector_number && Map.has_key?(by_set_collector, key) ->
         Map.get(by_set_collector, key)
 
-      true ->
+      Map.has_key?(by_name, String.downcase(ref.name)) ->
         Map.get(by_name, String.downcase(ref.name))
+
+      true ->
+        # Double-faced source names ("Front // Back") fall back to the front
+        # face; full-name match above wins, so true split cards stored with
+        # "//" still resolve to their own row.
+        Map.get(by_name, String.downcase(front_face(ref.name)))
+    end
+  end
+
+  # Front face of a double-faced/split name; the whole string if no " // ".
+  defp front_face(name) do
+    case String.split(name, " // ", parts: 2) do
+      [front, _back] -> front
+      _ -> name
     end
   end
 
