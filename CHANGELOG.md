@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.49.0 — 2026-06-29
+
 ### New
 
 - **Netdecks — a new page for browsing competitive Standard decks against your
