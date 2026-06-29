@@ -62,4 +62,26 @@ defmodule Scry2.NetDecking.DeckQualities do
 
     @wubrg |> Enum.filter(&MapSet.member?(letters, &1)) |> Enum.join()
   end
+
+  @rarity_rank %{"mythic" => 4, "rare" => 3, "uncommon" => 2, "common" => 1}
+
+  @doc "Top-n nonland arena_ids by rarity, then mana value, then arena_id. Hero = first."
+  @spec signature_arena_ids([map()], %{optional(integer()) => map()}, pos_integer()) :: [
+          integer()
+        ]
+  def signature_arena_ids(card_entries, cards, n) do
+    card_entries
+    |> Enum.map(fn %{arena_id: id} -> {id, Map.get(cards, id)} end)
+    |> Enum.reject(fn {_id, card} -> is_nil(card) or land?(card) end)
+    |> Enum.sort_by(fn {id, card} -> {rarity_rank(card), mana_value(card), id} end, :desc)
+    |> Enum.take(n)
+    |> Enum.map(fn {id, _card} -> id end)
+  end
+
+  defp land?(%{is_land: true}), do: true
+  defp land?(_), do: false
+  defp rarity_rank(%{rarity: r}), do: Map.get(@rarity_rank, r, 0)
+  defp rarity_rank(_), do: 0
+  defp mana_value(%{mana_value: mv}) when is_number(mv), do: mv
+  defp mana_value(_), do: 0
 end

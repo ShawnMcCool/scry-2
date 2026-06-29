@@ -33,4 +33,24 @@ defmodule Scry2.NetDecking.DeckQualitiesTest do
       assert DeckQualities.deck_color_identity([%{arena_id: 1, count: 1}], cards) == ""
     end
   end
+
+  describe "signature_arena_ids/3" do
+    test "top-n nonland cards by rarity then mana value then arena_id" do
+      cards = %{
+        10 => %{rarity: "mythic", mana_value: 5, is_land: false},
+        11 => %{rarity: "rare", mana_value: 6, is_land: false},
+        12 => %{rarity: "rare", mana_value: 2, is_land: false},
+        13 => %{rarity: "common", mana_value: 1, is_land: false},
+        99 => %{rarity: "rare", mana_value: 9, is_land: true}
+      }
+
+      entries = Enum.map([10, 11, 12, 13, 99], &%{arena_id: &1, count: 1})
+      assert DeckQualities.signature_arena_ids(entries, cards, 4) == [10, 11, 12, 13]
+    end
+
+    test "returns fewer than n when not enough nonland cards; all-land -> []" do
+      cards = %{1 => %{rarity: "rare", mana_value: 9, is_land: true}}
+      assert DeckQualities.signature_arena_ids([%{arena_id: 1, count: 1}], cards, 4) == []
+    end
+  end
 end
