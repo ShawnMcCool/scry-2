@@ -27,6 +27,7 @@ defmodule Scry2.Config do
           | :start_watcher
           | :start_importer
           | :raw_event_retention_days
+          | :netdecking_local_feed_path
 
   @doc """
   Loads configuration from TOML and stores it in `:persistent_term`.
@@ -115,7 +116,10 @@ defmodule Scry2.Config do
       mtga_data_dir: nil,
       # ADR-039: raw-event retention window in days. nil = keep forever.
       # The dial exists but nothing prunes yet — see Scry2.Events.RawRetention.
-      raw_event_retention_days: nil
+      raw_event_retention_days: nil,
+      # Path to the out-of-band NetDecking JSON meta-feed. nil = local feed
+      # disabled (Scry2.NetDecking.Sources.LocalJsonSource yields []).
+      netdecking_local_feed_path: nil
     }
 
     if Application.get_env(:scry_2, :skip_user_config, false) do
@@ -189,7 +193,10 @@ defmodule Scry2.Config do
           defaults.mtga_data_dir,
       raw_event_retention_days:
         get_in(toml, ["mtga_logs", "raw_event_retention_days"]) ||
-          defaults.raw_event_retention_days
+          defaults.raw_event_retention_days,
+      netdecking_local_feed_path:
+        expand(get_in(toml, ["netdecking", "local_feed_path"])) ||
+          defaults.netdecking_local_feed_path
     }
   end
 

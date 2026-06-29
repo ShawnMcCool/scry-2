@@ -55,8 +55,22 @@ config :scry_2, Oban,
        # whenever MTGA is running, regardless of in-game activity.
        # `RefreshJob` has a 30-second Oban unique window (no pile-up) and
        # discards cleanly when MTGA isn't found (no retry storm).
-       {"*/15 * * * *", Scry2.Collection.RefreshJob, args: %{"trigger" => "cron"}}
+       {"*/15 * * * *", Scry2.Collection.RefreshJob, args: %{"trigger" => "cron"}},
+       # Daily 06:30 UTC — refresh the NetDecking catalog from enabled sources
+       # (local JSON feed + mtgo.com Standard). Offset after card synthesis
+       # (05:30) so arena_id resolution sees fresh reference data.
+       {"30 6 * * *", Scry2.Workers.PeriodicallyFetchNetdecks}
      ]}
+  ]
+
+# NetDecking automated sources, run by Scry2.Workers.PeriodicallyFetchNetdecks.
+# LocalJsonSource is the canonical out-of-band feed; MtgoSource fetches
+# current-Standard decklists from mtgo.com. See
+# decisions/architecture/*-netdecking-automated-sourcing.md.
+config :scry_2,
+  netdecking_sources: [
+    Scry2.NetDecking.Sources.LocalJsonSource,
+    Scry2.NetDecking.Sources.MtgoSource
   ]
 
 # Trigger a background update check when a LiveView mounts and the

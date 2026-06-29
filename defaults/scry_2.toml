@@ -98,3 +98,14 @@ start_importer = true
 # release alongside a dev server on the same machine (dev uses 4444 by
 # default, so they do not conflict).
 port = 6015
+
+# ── NetDecking ──────────────────────────────────────────────────────────────
+# The NetDecking catalog of external Standard decks (scored against your
+# collection) is refreshed daily from mtgo.com plus an optional local feed.
+[netdecking]
+# Path to an out-of-band JSON meta-feed of Standard decks (the canonical,
+# zero-network source). Shape:
+#   {"decks": [{"name", "archetype"?, "source_url"?, "decklist_text"}]}
+# where decklist_text is MTGA clipboard format ("4 Card (SET) 123"). Unset =
+# the local feed is disabled; mtgo.com is still fetched.
+# local_feed_path = "/home/you/.config/scry_2/netdecks.json"
