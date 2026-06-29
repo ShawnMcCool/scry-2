@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.50.0 — 2026-06-29
+
 ### New
 
 - **The Netdecks page is now a visual deck gallery.** Instead of a plain list,
