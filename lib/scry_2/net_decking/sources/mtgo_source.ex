@@ -21,6 +21,9 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
   @default_max_events 8
 
   @impl true
+  def source_name, do: "mtgo"
+
+  @impl true
   def fetch, do: fetch([])
 
   @spec fetch(keyword()) :: [Scry2.NetDecking.Source.raw_deck()]

@@ -111,4 +111,36 @@ defmodule Scry2.NetDeckingTest do
     assert row.owned == 4
     assert row.missing == 0
   end
+
+  test "source_status summarizes decks per source with counts and latest fetch" do
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "A",
+        source_name: "mtgo",
+        decklist_text: "Deck\n1 Alpha\n"
+      })
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "B",
+        source_name: "mtgo",
+        decklist_text: "Deck\n1 Beta\n"
+      })
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "C",
+        source_name: "local",
+        decklist_text: "Deck\n1 Gamma\n"
+      })
+
+    status = NetDecking.source_status()
+
+    assert [
+             %{source_name: "local", count: 1},
+             %{source_name: "mtgo", count: 2}
+           ] = status
+
+    assert Enum.all?(status, &match?(%DateTime{}, &1.latest))
+  end
 end

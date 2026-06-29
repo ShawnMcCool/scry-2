@@ -81,7 +81,6 @@ defmodule Scry2.NetDecking.Sources.MtgoExtract do
 
     %{
       name: "#{event} — #{player}",
-      source_name: "mtgo",
       decklist_text: text,
       archetype: nil,
       source_url: source_url

@@ -57,15 +57,22 @@ Moxfield.
 
 **Architecture:**
 
-- Each source is a plain module implementing `Source` — no processes.
-  `IngestSource.run/1` pipes every `raw_deck` through the unchanged
+- Each source is a plain module implementing `Source` — no processes. A source
+  *declares* its provenance once via `source_name/0`; `IngestSource.run/1`
+  stamps that onto every deck and pipes it through the unchanged
   `IngestDecklist.run/1` funnel (Parse→Resolve→Dedup→Persist), shared with
-  manual paste.
+  manual paste. `raw_deck` therefore describes the *deck* (name, list,
+  archetype, per-deck `source_url`), not its origin — source identity lives
+  behind its owner, the source, with one source of truth.
 - `Scry2.Workers.PeriodicallyFetchNetdecks` (Oban cron, daily 06:30 UTC) runs
   the enabled sources **in isolation**: a source that raises is logged and
   skipped so it can never abort the others or fail the cron. Because the funnel
   only upserts, a failed fetch means "no new decks," never data loss — this
   graceful degradation is a deliberate, documented exception to let-it-crash.
+  The default source roster is owned by the worker (`@default_sources`);
+  `config :scry_2, :netdecking_sources` is the override seam, not a duplicate.
+- Per-source catalog status is a context read model (`NetDecking.source_status/0`);
+  the LiveView renders it rather than re-deriving grouping in the web layer.
 
 **Resolution correctness (two changes):**
 
@@ -95,3 +102,11 @@ Moxfield.
   time-sensitive and should be re-checked before each release.
 - The ownership-by-name change also hardens manual paste against multi-printing
   mismatches — a correctness win beyond the sourcing feature.
+
+**Accepted incoherence (recorded, not fixed):** the `Buildability` engine is
+`arena_id`-keyed but fed name-aggregated counts mapped onto a representative
+`arena_id`, so `owned[arena_id]` means "owned of this card's identity." A purer
+design keys the engine on an opaque `card_key`. That refactors the engine and
+all its tests for marginal clarity, the overload is documented in
+`OwnedIdentity`'s `@moduledoc`, and rot-risk is low. Convergence point: revisit
+only if a second identity scheme (e.g. oracle id vs name) is ever needed.

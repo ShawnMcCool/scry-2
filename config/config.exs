@@ -63,16 +63,6 @@ config :scry_2, Oban,
      ]}
   ]
 
-# NetDecking automated sources, run by Scry2.Workers.PeriodicallyFetchNetdecks.
-# LocalJsonSource is the canonical out-of-band feed; MtgoSource fetches
-# current-Standard decklists from mtgo.com. See
-# decisions/architecture/*-netdecking-automated-sourcing.md.
-config :scry_2,
-  netdecking_sources: [
-    Scry2.NetDecking.Sources.LocalJsonSource,
-    Scry2.NetDecking.Sources.MtgoSource
-  ]
-
 # Trigger a background update check when a LiveView mounts and the
 # persistent_term cache is stale. Kept true in dev/prod so the
 # System tab always shows current release info without a user click;

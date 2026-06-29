@@ -38,7 +38,11 @@ defmodule Scry2Web.NetdecksLive do
 
   def handle_params(_params, _uri, socket) do
     {:noreply,
-     assign(socket, detail: nil, catalog: NetDecking.catalog(), sources: source_summary())}
+     assign(socket,
+       detail: nil,
+       catalog: NetDecking.catalog(),
+       sources: NetDecking.source_status()
+     )}
   end
 
   @impl true
@@ -71,7 +75,7 @@ defmodule Scry2Web.NetdecksLive do
     {:noreply,
      socket
      |> put_flash(:info, "Fetching decks from sources…")
-     |> assign(catalog: NetDecking.catalog(), sources: source_summary())}
+     |> assign(catalog: NetDecking.catalog(), sources: NetDecking.source_status())}
   end
 
   def handle_event("copied", _params, socket) do
@@ -418,10 +422,6 @@ defmodule Scry2Web.NetdecksLive do
 
   defp catalog_total(catalog) do
     Enum.sum(Enum.map([:buildable, :craftable, :short], &length(catalog[&1] || [])))
-  end
-
-  defp source_summary do
-    NetDecking.list_decks() |> NetdecksHelpers.source_summary()
   end
 
   defp presence(nil), do: nil

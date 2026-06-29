@@ -8,14 +8,13 @@ defmodule Scry2.NetDecking.IngestSourceTest do
   defmodule StubSource do
     @behaviour Scry2.NetDecking.Source
     @impl true
+    def source_name, do: "stub"
+
+    @impl true
     def fetch do
       [
-        %{
-          name: "Mono Red",
-          source_name: "stub",
-          decklist_text: "Deck\n4 Roaring Furnace (DFT) 1\n"
-        },
-        %{name: "Empty", source_name: "stub", decklist_text: ""}
+        %{name: "Mono Red", decklist_text: "Deck\n4 Roaring Furnace (DFT) 1\n"},
+        %{name: "Empty", decklist_text: ""}
       ]
     end
   end

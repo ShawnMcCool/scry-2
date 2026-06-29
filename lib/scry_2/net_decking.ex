@@ -36,6 +36,27 @@ defmodule Scry2.NetDecking do
   @spec list_decks() :: [Deck.t()]
   def list_decks, do: Deck |> order_by([deck], asc: deck.name) |> Repo.all()
 
+  @doc """
+  Per-source catalog status for the UI strip: `[%{source_name, count, latest}]`
+  sorted by source name, where `latest` is the most recent `fetched_at` for
+  that source.
+  """
+  @spec source_status() :: [
+          %{source_name: String.t(), count: non_neg_integer(), latest: DateTime.t()}
+        ]
+  def source_status do
+    list_decks()
+    |> Enum.group_by(& &1.source_name)
+    |> Enum.map(fn {source_name, decks} ->
+      %{
+        source_name: source_name,
+        count: length(decks),
+        latest: decks |> Enum.map(& &1.fetched_at) |> Enum.max(DateTime)
+      }
+    end)
+    |> Enum.sort_by(& &1.source_name)
+  end
+
   @spec get_deck(integer() | String.t()) :: Deck.t() | nil
   def get_deck(id), do: Repo.get(Deck, id)
 

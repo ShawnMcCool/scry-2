@@ -15,7 +15,6 @@ defmodule Scry2.NetDecking.Sources.MtgoExtractTest do
     assert length(decks) == 2
     deck = hd(decks)
 
-    assert deck.source_name == "mtgo"
     assert deck.source_url == @url
     assert deck.name =~ "Standard Challenge 32"
     # quantity + card name lines, e.g. "1 Thundering Falls"

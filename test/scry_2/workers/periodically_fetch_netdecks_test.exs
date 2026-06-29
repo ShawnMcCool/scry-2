@@ -10,12 +10,18 @@ defmodule Scry2.Workers.PeriodicallyFetchNetdecksTest do
   defmodule OkSource do
     @behaviour Scry2.NetDecking.Source
     @impl true
+    def source_name, do: "ok"
+
+    @impl true
     def fetch,
-      do: [%{name: "Mono Red", source_name: "ok", decklist_text: "Deck\n4 Roaring Furnace\n"}]
+      do: [%{name: "Mono Red", decklist_text: "Deck\n4 Roaring Furnace\n"}]
   end
 
   defmodule BoomSource do
     @behaviour Scry2.NetDecking.Source
+    @impl true
+    def source_name, do: "boom"
+
     @impl true
     def fetch, do: raise("boom")
   end

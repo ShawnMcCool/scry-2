@@ -5,14 +5,18 @@ defmodule Scry2.NetDecking.Sources.LocalJsonSourceTest do
 
   @fixture Path.expand("../../../fixtures/netdecking/local_feed.json", __DIR__)
 
-  test "reads the feed file into raw_deck maps" do
+  test "declares its provenance name" do
+    assert LocalJsonSource.source_name() == "local"
+  end
+
+  test "reads the feed file into raw_deck maps (deck facts only; identity is the source's)" do
     [deck | _] = LocalJsonSource.fetch(path: @fixture)
 
     assert deck.name == "Mono-Red Aggro"
-    assert deck.source_name == "local"
     assert deck.archetype == "Aggro"
     assert deck.source_url == "https://example.invalid/mono-red"
     assert deck.decklist_text =~ "Roaring Furnace"
+    refute Map.has_key?(deck, :source_name)
   end
 
   test "missing file yields an empty list (degrades, never crashes)" do

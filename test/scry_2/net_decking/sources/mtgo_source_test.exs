@@ -29,11 +29,14 @@ defmodule Scry2.NetDecking.Sources.MtgoSourceTest do
     :ok
   end
 
+  test "declares its provenance name" do
+    assert MtgoSource.source_name() == "mtgo"
+  end
+
   test "fetches standard event links from the landing page and parses each" do
     decks = MtgoSource.fetch(req_options: [plug: {Req.Test, MtgoSource}], max_events: 5)
 
     assert decks != []
-    assert Enum.all?(decks, &(&1.source_name == "mtgo"))
     assert Enum.all?(decks, &(&1.source_url =~ "standard-challenge"))
   end
 

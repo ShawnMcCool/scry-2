@@ -20,6 +20,9 @@ defmodule Scry2.NetDecking.Sources.LocalJsonSource do
   require Scry2.Log, as: Log
 
   @impl true
+  def source_name, do: "local"
+
+  @impl true
   def fetch, do: fetch(path: Config.get(:netdecking_local_feed_path))
 
   @spec fetch(keyword()) :: [Scry2.NetDecking.Source.raw_deck()]
@@ -44,7 +47,6 @@ defmodule Scry2.NetDecking.Sources.LocalJsonSource do
   defp to_raw_deck(%{"name" => name, "decklist_text" => text} = deck) do
     %{
       name: name,
-      source_name: "local",
       decklist_text: text,
       archetype: deck["archetype"],
       source_url: deck["source_url"]

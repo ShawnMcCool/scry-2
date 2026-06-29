@@ -11,8 +11,9 @@ defmodule Scry2.Workers.PeriodicallyFetchNetdecks do
   enqueueable on demand from the dashboard. Runs on the always-on dev instance
   via the base crontab, like the other `Periodically*` workers.
 
-  Enabled sources come from `config :scry_2, :netdecking_sources`, overridable
-  per-job via the `"sources"` arg (a list of module-name strings).
+  The default source roster is `@default_sources` (the single source of truth);
+  `config :scry_2, :netdecking_sources` is the override seam (used by tests),
+  and a job may override per-run via the `"sources"` arg (module-name strings).
   """
   use Oban.Worker, queue: :imports, max_attempts: 1, unique: [period: 300]
 

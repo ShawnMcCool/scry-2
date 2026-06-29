@@ -17,17 +17,17 @@ defmodule Scry2.NetDecking.IngestSource do
           failed: non_neg_integer()
         }
   def run(source_module) when is_atom(source_module) do
-    decks = source_module.fetch()
+    name = source_module.source_name()
 
     {ingested, failed} =
-      Enum.reduce(decks, {0, 0}, fn raw_deck, {ok, bad} ->
-        case ingest_one(raw_deck) do
+      source_module.fetch()
+      |> Enum.reduce({0, 0}, fn raw_deck, {ok, bad} ->
+        case ingest_one(Map.put(raw_deck, :source_name, name)) do
           :ok -> {ok + 1, bad}
           :error -> {ok, bad + 1}
         end
       end)
 
-    name = decks |> List.first() |> source_name(source_module)
     Log.info(:importer, "netdeck source #{name}: #{ingested} ingested, #{failed} failed")
     %{source: name, ingested: ingested, failed: failed}
   end
@@ -46,7 +46,4 @@ defmodule Scry2.NetDecking.IngestSource do
         :error
     end
   end
-
-  defp source_name(%{source_name: name}, _module), do: name
-  defp source_name(_nil, module), do: inspect(module)
 end
