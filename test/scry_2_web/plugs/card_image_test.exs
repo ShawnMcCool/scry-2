@@ -35,6 +35,19 @@ defmodule Scry2Web.Plugs.CardImageTest do
       assert conn.status == 404
     end
 
+    test "serves the art variant from {id}-art.jpg", %{conn: conn, cache_dir: cache_dir} do
+      File.write!(Path.join(cache_dir, "555-art.jpg"), "ART")
+
+      conn =
+        conn
+        |> assign(:image_cache_dir, cache_dir)
+        |> Map.put(:path_params, %{"arena_id" => "555-art.jpg"})
+        |> Scry2Web.Plugs.CardImage.call([])
+
+      assert conn.status == 200
+      assert conn.resp_body == "ART"
+    end
+
     test "returns 404 for non-integer arena_id", %{conn: conn, cache_dir: cache_dir} do
       conn =
         conn

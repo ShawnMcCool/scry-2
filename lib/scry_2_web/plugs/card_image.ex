@@ -16,13 +16,19 @@ defmodule Scry2Web.Plugs.CardImage do
   def init(opts), do: opts
 
   def call(conn, _opts) do
-    arena_id_str = conn.path_params["arena_id"] || conn.params["arena_id"]
+    raw = conn.path_params["arena_id"] || conn.params["arena_id"]
     # Strip .jpg suffix if present (Phoenix route captures "91001.jpg" as the param)
-    arena_id_str = String.replace_suffix(arena_id_str, ".jpg", "")
+    base = String.replace_suffix(raw, ".jpg", "")
+
+    {variant, id_str} =
+      if String.ends_with?(base, "-art"),
+        do: {:art, String.replace_suffix(base, "-art", "")},
+        else: {:full, base}
+
     cache_dir = conn.assigns[:image_cache_dir] || Config.get(:image_cache_dir)
 
-    with {arena_id, ""} <- Integer.parse(arena_id_str),
-         path <- ImageCache.path_for(arena_id, :full, cache_dir),
+    with {arena_id, ""} <- Integer.parse(id_str),
+         path <- ImageCache.path_for(arena_id, variant, cache_dir),
          true <- File.exists?(path) do
       conn
       |> put_resp_content_type("image/jpeg")
