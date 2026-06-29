@@ -45,11 +45,23 @@ defmodule Scry2Web.NetdecksLive do
   end
 
   def handle_params(_params, _uri, socket) do
+    catalog = NetDecking.catalog()
+
+    art_ids =
+      [catalog.buildable, catalog.craftable, catalog.short]
+      |> List.flatten()
+      |> Enum.flat_map(& &1.signature_arena_ids)
+      |> Enum.uniq()
+
+    if connected?(socket), do: ImageCache.ensure_cached(art_ids, variant: :art)
+    cached = art_ids |> Enum.filter(&ImageCache.cached?(&1, :art)) |> MapSet.new()
+
     {:noreply,
      assign(socket,
        detail: nil,
-       catalog: NetDecking.catalog(),
-       sources: NetDecking.source_status()
+       catalog: catalog,
+       sources: NetDecking.source_status(),
+       cached_arena_ids: cached
      )}
   end
 
@@ -122,7 +134,13 @@ defmodule Scry2Web.NetdecksLive do
       current_path={@player_scope_uri}
     >
       <.detail :if={@detail} detail={@detail} cached_arena_ids={@cached_arena_ids} />
-      <.catalog :if={is_nil(@detail)} catalog={@catalog} search={@search} sources={@sources} />
+      <.catalog
+        :if={is_nil(@detail)}
+        catalog={@catalog}
+        search={@search}
+        sources={@sources}
+        cached_arena_ids={@cached_arena_ids}
+      />
     </Layouts.app>
     """
   end
@@ -132,6 +150,7 @@ defmodule Scry2Web.NetdecksLive do
   attr :catalog, :map, required: true
   attr :search, :string, required: true
   attr :sources, :list, required: true
+  attr :cached_arena_ids, :any, required: true
 
   defp catalog(assigns) do
     assigns = assign(assigns, :total, catalog_total(assigns.catalog))
@@ -219,34 +238,77 @@ defmodule Scry2Web.NetdecksLive do
         Nothing here yet.
       </p>
 
-      <ul class="space-y-0.5">
-        <li :for={entry <- entries}>
-          <.link
-            patch={~p"/netdecks/#{entry.deck.id}"}
-            class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-base-content/5 transition-colors"
-          >
-            <span class="font-medium truncate">{entry.deck.name}</span>
-            <span :if={entry.deck.archetype} class="badge badge-sm badge-ghost shrink-0">
-              {entry.deck.archetype}
-            </span>
-            <span
-              :if={NetdecksHelpers.unresolved_count(entry.deck) > 0}
-              class="tooltip shrink-0"
-              data-tip={"#{NetdecksHelpers.unresolved_count(entry.deck)} card(s) not recognised"}
-            >
-              <.icon name="hero-exclamation-triangle" class="size-4 text-warning/80" />
-            </span>
-            <span class="flex-1"></span>
-            <.cost_pips cost={entry.result.maindeck.wildcard_cost} />
-            <span class="text-xs text-base-content/45 w-12 text-right shrink-0 tabular-nums">
-              {NetdecksHelpers.format_owned_pct(entry.result.maindeck.owned_pct)}
-            </span>
-          </.link>
-        </li>
-      </ul>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        <.deck_tile
+          :for={entry <- entries}
+          entry={entry}
+          cached_arena_ids={@cached_arena_ids}
+        />
+      </div>
     </section>
     """
   end
+
+  attr :entry, :map, required: true
+  attr :cached_arena_ids, :any, required: true
+
+  defp deck_tile(assigns) do
+    [hero | micros] = pad_signature(assigns.entry.signature_arena_ids)
+    assigns = assign(assigns, hero: hero, micros: micros)
+
+    ~H"""
+    <.link
+      patch={~p"/netdecks/#{@entry.deck.id}"}
+      class="flex gap-3 p-3 rounded-xl bg-base-200/60 hover:bg-base-200 border border-base-300/40 transition-colors"
+    >
+      <div class="flex gap-1.5 shrink-0">
+        <.card_image
+          :if={@hero}
+          arena_id={@hero}
+          variant={:art}
+          class="w-[9.5rem] h-[7rem] object-cover"
+          cached_ids={@cached_arena_ids}
+        />
+        <div class="flex flex-col gap-1 justify-between">
+          <%= for id <- @micros do %>
+            <.card_image
+              :if={id}
+              arena_id={id}
+              variant={:art}
+              class="w-24 h-[2.05rem] object-cover"
+              cached_ids={@cached_arena_ids}
+            />
+          <% end %>
+        </div>
+      </div>
+
+      <div class="flex flex-col justify-center gap-1.5 min-w-0">
+        <div class="font-medium leading-tight truncate">{@entry.label}</div>
+        <div class="flex items-center gap-2 text-xs text-base-content/55">
+          <.mana_pips colors={@entry.color_identity} />
+          <.set_icon :if={@entry.set_code} code={@entry.set_code} />
+          <span class="tabular-nums">×{@entry.variant_count}</span>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+          <.cost_pips cost={@entry.result.maindeck.wildcard_cost} />
+          <span class="text-base-content/45 tabular-nums">
+            {NetdecksHelpers.format_owned_pct(@entry.result.maindeck.owned_pct)}
+          </span>
+          <span :if={sideboard_count(@entry.deck) > 0} class="badge badge-xs badge-ghost">
+            SB {sideboard_count(@entry.deck)}
+          </span>
+        </div>
+      </div>
+    </.link>
+    """
+  end
+
+  defp pad_signature(ids), do: Enum.take(ids ++ [nil, nil, nil, nil], 4)
+
+  defp sideboard_count(%{sideboard: %{"cards" => cards}}) when is_list(cards),
+    do: Enum.reduce(cards, 0, fn c, acc -> acc + (c["count"] || 0) end)
+
+  defp sideboard_count(_), do: 0
 
   # ── Detail view ──────────────────────────────────────────────────────────
 

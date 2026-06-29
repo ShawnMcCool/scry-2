@@ -17,8 +17,24 @@ defmodule Scry2Web.NetdecksLiveTest do
       })
 
     {:ok, view, _html} = live(conn, ~p"/netdecks")
-    assert render(view) =~ "Mono-Red"
+    assert render(view) =~ "Mono-White · Lightning Bolt"
     assert render(view) =~ "Buildable now"
+  end
+
+  test "catalog renders clustered deck tiles with labels", %{conn: conn} do
+    bolt = create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    create_card(name: "Mountain", rarity: "common", color_identity: "")
+    create_collection_snapshot(entries: [{bolt.arena_id, 4}])
+
+    {:ok, _} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Burn",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+      })
+
+    {:ok, _view, html} = live(conn, ~p"/netdecks")
+    assert html =~ "Mono-Red · Lightning Bolt"
   end
 
   test "import event adds a deck to the catalog", %{conn: conn} do
