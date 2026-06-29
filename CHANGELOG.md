@@ -11,6 +11,28 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Netdecks — a new page for browsing competitive Standard decks against your
+  collection.** Open **Netdecks** in the sidebar to see a catalog of Standard
+  decks grouped by what they'd cost you: ones you can **build right now** from
+  cards you own, ones you can **craft now** with the wildcards you already have,
+  and ones that are a known number of wildcards short. Open any deck for a
+  card-by-card breakdown of what you own versus what's missing, the wildcard
+  cost to finish it, and a **Copy to MTGA** button to import it straight into
+  Arena. You can paste any decklist yourself, or let Scry2 fill the catalog for
+  you (below).
+- **The Netdecks catalog fills itself automatically.** Scry2 now pulls
+  current-Standard decklists daily from mtgo.com, plus an optional local deck
+  file you can point it at — so you don't have to paste decks by hand. Hit
+  **Fetch now** on the Netdecks page to refresh on demand.
+
+### Improved
+
+- **Netdecks counts cards you own across every printing**, and correctly
+  recognizes double-faced cards — so its "you can build this" math matches what
+  MTGA actually lets you put in a deck.
+
 ## v0.48.0 — 2026-05-30
 
 ### New
