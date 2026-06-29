@@ -109,3 +109,6 @@ port = 6015
 # where decklist_text is MTGA clipboard format ("4 Card (SET) 123"). Unset =
 # the local feed is disabled; mtgo.com is still fetched.
 # local_feed_path = "/home/you/.config/scry_2/netdecks.json"
+# How aggressively to collapse near-duplicate decks in the catalog (0.0–1.0).
+# Higher = stricter (more distinct tiles); 0.7 collapses event near-dupes well.
+# cluster_threshold = 0.7

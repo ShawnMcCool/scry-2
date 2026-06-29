@@ -28,6 +28,7 @@ defmodule Scry2.Config do
           | :start_importer
           | :raw_event_retention_days
           | :netdecking_local_feed_path
+          | :netdecking_cluster_threshold
 
   @doc """
   Loads configuration from TOML and stores it in `:persistent_term`.
@@ -119,7 +120,9 @@ defmodule Scry2.Config do
       raw_event_retention_days: nil,
       # Path to the out-of-band NetDecking JSON meta-feed. nil = local feed
       # disabled (Scry2.NetDecking.Sources.LocalJsonSource yields []).
-      netdecking_local_feed_path: nil
+      netdecking_local_feed_path: nil,
+      # Read-time Jaccard cutoff for collapsing near-duplicate netdecks (0.0–1.0).
+      netdecking_cluster_threshold: 0.7
     }
 
     if Application.get_env(:scry_2, :skip_user_config, false) do
@@ -196,7 +199,10 @@ defmodule Scry2.Config do
           defaults.raw_event_retention_days,
       netdecking_local_feed_path:
         expand(get_in(toml, ["netdecking", "local_feed_path"])) ||
-          defaults.netdecking_local_feed_path
+          defaults.netdecking_local_feed_path,
+      netdecking_cluster_threshold:
+        get_in(toml, ["netdecking", "cluster_threshold"]) ||
+          defaults.netdecking_cluster_threshold
     }
   end
 
