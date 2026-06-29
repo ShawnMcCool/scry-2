@@ -603,6 +603,26 @@ defmodule Scry2.Cards do
   end
 
   @doc """
+  Maps each given card name (case-insensitive) to all `arena_id`s that share it.
+
+  Returns `%{downcased_name => [arena_id]}`; names with no matching card are
+  omitted. Single batch query — never N+1. Used to aggregate collection
+  ownership across printings: a card owned under any printing's `arena_id`
+  counts toward any deck listing that card by name (see
+  `Scry2.NetDecking.OwnedIdentity`).
+  """
+  @spec printings_by_name([String.t()]) :: %{String.t() => [integer()]}
+  def printings_by_name(names) when is_list(names) do
+    downcased = names |> Enum.map(&String.downcase/1) |> Enum.uniq()
+
+    Card
+    |> where([c], fragment("lower(?)", c.name) in ^downcased)
+    |> select([c], {fragment("lower(?)", c.name), c.arena_id})
+    |> Repo.all()
+    |> Enum.group_by(fn {name, _id} -> name end, fn {_name, id} -> id end)
+  end
+
+  @doc """
   Resolves parsed card references to `%{arena_id, count}` entries.
 
   Each ref is `%{name, set_code, collector_number, count}`. Matches on

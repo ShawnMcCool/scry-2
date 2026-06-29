@@ -722,4 +722,19 @@ defmodule Scry2.CardsTest do
       assert Cards.list_booster_cards_by_set(-1) == []
     end
   end
+
+  describe "printings_by_name/1" do
+    test "groups every arena_id sharing a (case-insensitive) name" do
+      first = TestFactory.create_card(name: "Roaring Furnace")
+      second = TestFactory.create_card(name: "Roaring Furnace")
+      _other = TestFactory.create_card(name: "Lightning Bolt")
+
+      result = Cards.printings_by_name(["roaring furnace", "Absent Card"])
+
+      assert Enum.sort(result["roaring furnace"]) ==
+               Enum.sort([first.arena_id, second.arena_id])
+
+      refute Map.has_key?(result, "absent card")
+    end
+  end
 end
