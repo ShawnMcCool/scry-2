@@ -143,4 +143,42 @@ defmodule Scry2.NetDeckingTest do
 
     assert Enum.all?(status, &match?(%DateTime{}, &1.latest))
   end
+
+  test "catalog collapses near-identical decks into one representative with a count" do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    create_card(name: "Goblin Raider", rarity: "common", color_identity: "R")
+    create_card(name: "Shock Bolt", rarity: "common", color_identity: "R")
+    create_card(name: "Grizzly Bear", rarity: "rare", color_identity: "G")
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Red A",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n"
+      })
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Red B",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n1 Grizzly Bear\n"
+      })
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Bears",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Grizzly Bear\n"
+      })
+
+    catalog = NetDecking.catalog()
+    entries = catalog.buildable ++ catalog.craftable ++ catalog.short
+
+    # Red A + Red B share 3/4 nonland cards (Jaccard 0.75 >= 0.7) -> one entry, count 2.
+    red = Enum.find(entries, &(&1.variant_count == 2))
+    assert red
+    assert red.color_identity == "R"
+    assert red.label =~ "Mono-Red"
+    assert Enum.any?(entries, &(&1.variant_count == 1))
+  end
 end

@@ -16,15 +16,19 @@ defmodule Scry2.NetDecking do
   alias Scry2.Cards
   alias Scry2.Collection
   alias Scry2.Collection.Snapshot
+  alias Scry2.Config
   alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.NetDecking.Buildability
   alias Scry2.NetDecking.Buildability.Inputs
   alias Scry2.NetDecking.Deck
+  alias Scry2.NetDecking.DeckClusters
+  alias Scry2.NetDecking.DeckQualities
   alias Scry2.NetDecking.IngestDecklist
   alias Scry2.NetDecking.OwnedIdentity
   alias Scry2.Repo
 
   @empty_wildcards %{common: 0, uncommon: 0, rare: 0, mythic: 0}
+  @cluster_signature_cards 4
 
   # ── Writes ──────────────────────────────────────────────────────────
 
@@ -61,9 +65,15 @@ defmodule Scry2.NetDecking do
   def get_deck(id), do: Repo.get(Deck, id)
 
   @doc """
-  Scores all corpus decks against the current collection snapshot, grouped:
-  `%{buildable: [entry], craftable: [entry], short: [entry]}` where each entry
-  is `%{deck: Deck.t(), result: Buildability.Result.t()}`, sorted cheapest-first.
+  Scores all corpus decks against the current collection snapshot, clusters
+  near-duplicate decks (read-time only — every deck row stays in the DB), and
+  groups by buildability status:
+  `%{buildable: [entry], craftable: [entry], short: [entry]}`, sorted
+  cheapest-first.
+
+  Each entry is the cluster representative decorated for display:
+  `%{deck, result, color_identity, signature_arena_ids, label, set_code,
+  variant_count}`.
   """
   @spec catalog() :: %{buildable: [map()], craftable: [map()], short: [map()]}
   def catalog do
@@ -73,24 +83,41 @@ defmodule Scry2.NetDecking do
 
     cards_by_arena_id = cards_for(decks)
     owned = owned_by_identity(raw_owned, cards_by_arena_id)
-
-    rarities =
-      Map.new(cards_by_arena_id, fn {arena_id, card} -> {arena_id, card_rarity(card)} end)
-
+    rarities = Map.new(cards_by_arena_id, fn {id, card} -> {id, card_rarity(card)} end)
     free_ids = Buildability.default_free_ids(cards_by_arena_id)
+    sets = sets_by_id()
 
-    decks
-    |> Enum.map(fn deck ->
-      inputs = %Inputs{
-        main_cards: card_entries(deck.main_deck),
-        side_cards: card_entries(deck.sideboard),
-        owned: owned,
-        wildcards: wildcards,
-        rarities: rarities,
-        free_arena_ids: free_ids
-      }
+    scored =
+      Map.new(decks, fn deck ->
+        result =
+          Buildability.score(%Inputs{
+            main_cards: card_entries(deck.main_deck),
+            side_cards: card_entries(deck.sideboard),
+            owned: owned,
+            wildcards: wildcards,
+            rarities: rarities,
+            free_arena_ids: free_ids
+          })
 
-      %{deck: deck, result: Buildability.score(inputs)}
+        {deck.id, %{deck: deck, result: result}}
+      end)
+
+    items =
+      Enum.map(decks, fn deck ->
+        %{
+          id: deck.id,
+          set: nonland_signature(deck, cards_by_arena_id, free_ids),
+          weight: total_wildcard_cost(scored[deck.id].result)
+        }
+      end)
+
+    threshold = Config.get(:netdecking_cluster_threshold) || 0.7
+
+    items
+    |> DeckClusters.group(threshold)
+    |> Enum.map(fn cluster ->
+      %{deck: deck, result: result} = scored[cluster.representative_id]
+      decorate(deck, result, cluster.count, cards_by_arena_id, sets)
     end)
     |> Enum.sort_by(& &1.result.sort_key)
     |> Enum.group_by(& &1.result.status)
@@ -145,6 +172,51 @@ defmodule Scry2.NetDecking do
   end
 
   # ── Helpers ─────────────────────────────────────────────────────────
+
+  defp decorate(deck, result, count, cards, sets) do
+    entries = card_entries(deck.main_deck)
+    colors = DeckQualities.deck_color_identity(entries, cards)
+    signature = DeckQualities.signature_arena_ids(entries, cards, @cluster_signature_cards)
+    hero_name = signature |> List.first() |> card_name_or(cards)
+
+    %{
+      deck: deck,
+      result: result,
+      color_identity: colors,
+      signature_arena_ids: signature,
+      label: "#{DeckQualities.color_combo_name(colors)} · #{hero_name}",
+      set_code: DeckQualities.newest_set_code(entries, cards, sets),
+      variant_count: count
+    }
+  end
+
+  defp card_name_or(nil, _cards), do: "Unknown"
+
+  defp card_name_or(arena_id, cards) do
+    case Map.get(cards, arena_id) do
+      %{name: name} when is_binary(name) -> name
+      _ -> "#" <> Integer.to_string(arena_id)
+    end
+  end
+
+  defp nonland_signature(deck, cards, free_ids) do
+    deck.main_deck
+    |> card_entries()
+    |> Enum.map(& &1.arena_id)
+    |> Enum.reject(fn id ->
+      MapSet.member?(free_ids, id) or match?(%{is_land: true}, Map.get(cards, id))
+    end)
+    |> MapSet.new()
+  end
+
+  defp total_wildcard_cost(result) do
+    result.maindeck.wildcard_cost |> Map.values() |> Enum.sum()
+  end
+
+  defp sets_by_id do
+    Cards.list_sets()
+    |> Map.new(fn set -> {set.id, %{code: set.code, released_at: set.released_at}} end)
+  end
 
   defp card_rows(card_list, cards_by_arena_id, owned, rarities, free_ids) do
     card_list
