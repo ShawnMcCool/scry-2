@@ -19,9 +19,9 @@ defmodule Scry2.Cards.ImageCacheTest do
     end
   end
 
-  describe "path_for/2" do
+  describe "path_for/3" do
     test "returns the filesystem path for an arena_id", %{cache_dir: cache_dir} do
-      path = ImageCache.path_for(91001, cache_dir)
+      path = ImageCache.path_for(91001, :full, cache_dir)
       assert path == Path.join(cache_dir, "91001.jpg")
     end
   end
@@ -119,6 +119,27 @@ defmodule Scry2.Cards.ImageCacheTest do
 
       assert {:ok, %{cached: 0, downloaded: 0, failed: 1}} =
                ImageCache.ensure_cached([91_003], cache_dir: cache_dir)
+    end
+
+    test "ensure_cached :art downloads art_crop to {id}-art.jpg", %{cache_dir: cache_dir} do
+      TestFactory.create_scryfall_card(%{
+        arena_id: 92_001,
+        name: "Art Var",
+        image_uris: %{"normal" => "http://x/n.jpg", "art_crop" => "http://x/a.jpg"}
+      })
+
+      Req.Test.stub(ImageCache, fn conn -> Plug.Conn.send_resp(conn, 200, "ARTBYTES") end)
+
+      assert {:ok, %{downloaded: 1}} =
+               ImageCache.ensure_cached([92_001],
+                 cache_dir: cache_dir,
+                 variant: :art,
+                 req_options: [plug: {Req.Test, ImageCache}]
+               )
+
+      assert ImageCache.url_for(92_001, :art) == "/images/cards/92001-art.jpg"
+      assert ImageCache.cached?(92_001, :art, cache_dir)
+      assert File.read!(ImageCache.path_for(92_001, :art, cache_dir)) == "ARTBYTES"
     end
 
     test "handles mixed cached and uncached", %{cache_dir: cache_dir} do

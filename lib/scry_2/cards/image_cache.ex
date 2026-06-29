@@ -40,21 +40,24 @@ defmodule Scry2.Cards.ImageCache do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
   end
 
-  @spec url_for(integer()) :: String.t()
-  def url_for(arena_id) when is_integer(arena_id) do
-    "/images/cards/#{arena_id}.jpg"
+  @spec url_for(integer(), :full | :art) :: String.t()
+  def url_for(arena_id, variant \\ :full) when is_integer(arena_id) do
+    "/images/cards/#{arena_id}#{suffix(variant)}.jpg"
   end
 
   @doc "Returns true if the image for this arena_id is cached on disk."
-  @spec cached?(integer()) :: boolean()
-  def cached?(arena_id) when is_integer(arena_id) do
-    arena_id |> path_for() |> File.exists?()
+  @spec cached?(integer(), :full | :art, String.t()) :: boolean()
+  def cached?(arena_id, variant \\ :full, cache_dir \\ Config.get(:image_cache_dir)) do
+    arena_id |> path_for(variant, cache_dir) |> File.exists?()
   end
 
-  @spec path_for(integer(), String.t()) :: String.t()
-  def path_for(arena_id, cache_dir \\ Config.get(:image_cache_dir)) do
-    Path.join(cache_dir, "#{arena_id}.jpg")
+  @spec path_for(integer(), :full | :art, String.t()) :: String.t()
+  def path_for(arena_id, variant \\ :full, cache_dir \\ Config.get(:image_cache_dir)) do
+    Path.join(cache_dir, "#{arena_id}#{suffix(variant)}.jpg")
   end
+
+  defp suffix(:art), do: "-art"
+  defp suffix(_), do: ""
 
   @spec ensure_cached([integer()], keyword()) ::
           {:ok,
@@ -62,17 +65,18 @@ defmodule Scry2.Cards.ImageCache do
   def ensure_cached(arena_ids, opts \\ []) do
     cache_dir = Keyword.get(opts, :cache_dir, Config.get(:image_cache_dir))
     req_options = Keyword.get(opts, :req_options, [])
+    variant = Keyword.get(opts, :variant, :full)
 
     File.mkdir_p!(cache_dir)
 
     stats =
       Enum.reduce(arena_ids, %{cached: 0, downloaded: 0, failed: 0}, fn arena_id, stats ->
-        path = path_for(arena_id, cache_dir)
+        path = path_for(arena_id, variant, cache_dir)
 
         if File.exists?(path) do
           %{stats | cached: stats.cached + 1}
         else
-          case download_image(arena_id, path, req_options) do
+          case download_image(arena_id, path, variant, req_options) do
             :ok -> %{stats | downloaded: stats.downloaded + 1}
             :error -> %{stats | failed: stats.failed + 1}
           end
@@ -80,7 +84,7 @@ defmodule Scry2.Cards.ImageCache do
       end)
 
     if stats.downloaded > 0 do
-      Log.info(:importer, "image cache: downloaded #{stats.downloaded} card images")
+      Log.info(:importer, "image cache: downloaded #{stats.downloaded} #{variant} card images")
     end
 
     {:ok, stats}
@@ -97,7 +101,14 @@ defmodule Scry2.Cards.ImageCache do
 
   # ── Internals ───────────────────────────────────────────────────────────
 
-  defp download_image(arena_id, path, req_options) do
+  defp download_image(arena_id, path, :art, req_options) do
+    case Cards.get_art_url_for_arena_id(arena_id) do
+      nil -> :error
+      url -> fetch_and_save(url, path, req_options)
+    end
+  end
+
+  defp download_image(arena_id, path, :full, req_options) do
     case Cards.get_image_url_for_arena_id(arena_id) do
       nil ->
         download_image_via_api(arena_id, path, req_options)

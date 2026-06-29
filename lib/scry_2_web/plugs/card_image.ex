@@ -22,7 +22,7 @@ defmodule Scry2Web.Plugs.CardImage do
     cache_dir = conn.assigns[:image_cache_dir] || Config.get(:image_cache_dir)
 
     with {arena_id, ""} <- Integer.parse(arena_id_str),
-         path <- ImageCache.path_for(arena_id, cache_dir),
+         path <- ImageCache.path_for(arena_id, :full, cache_dir),
          true <- File.exists?(path) do
       conn
       |> put_resp_content_type("image/jpeg")
