@@ -53,16 +53,29 @@ defmodule Scry2Web.NetdecksLive do
       |> Enum.flat_map(& &1.signature_arena_ids)
       |> Enum.uniq()
 
-    if connected?(socket), do: ImageCache.ensure_cached(art_ids, variant: :art)
     cached = art_ids |> Enum.filter(&ImageCache.cached?(&1, :art)) |> MapSet.new()
 
-    {:noreply,
-     assign(socket,
-       detail: nil,
-       catalog: catalog,
-       sources: NetDecking.source_status(),
-       cached_arena_ids: cached
-     )}
+    socket =
+      assign(socket,
+        detail: nil,
+        catalog: catalog,
+        sources: NetDecking.source_status(),
+        cached_arena_ids: cached
+      )
+
+    # Download missing art crops off the request path; re-render when ready so
+    # the catalog never blocks on a first-view cache miss (~170 crops).
+    socket =
+      if connected?(socket) and art_ids != [] do
+        start_async(socket, :cache_art, fn ->
+          ImageCache.ensure_cached(art_ids, variant: :art)
+          art_ids |> Enum.filter(&ImageCache.cached?(&1, :art)) |> MapSet.new()
+        end)
+      else
+        socket
+      end
+
+    {:noreply, socket}
   end
 
   @impl true
@@ -120,6 +133,13 @@ defmodule Scry2Web.NetdecksLive do
   end
 
   def handle_info(_message, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_async(:cache_art, {:ok, cached}, socket) do
+    {:noreply, assign(socket, cached_arena_ids: cached)}
+  end
+
+  def handle_async(:cache_art, {:exit, _reason}, socket), do: {:noreply, socket}
 
   @impl true
   def render(assigns) do
