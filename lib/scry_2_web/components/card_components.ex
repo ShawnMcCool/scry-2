@@ -38,6 +38,7 @@ defmodule Scry2Web.CardComponents do
   attr :name, :string, default: "Card image"
   attr :class, :string, default: "w-[4.5rem]"
   attr :id, :string, default: nil
+  attr :variant, :atom, default: :full
   attr :cached, :boolean, default: nil
   attr :cached_ids, :any, default: nil
   attr :rest, :global
@@ -45,7 +46,7 @@ defmodule Scry2Web.CardComponents do
   def card_image(assigns) do
     assigns =
       assigns
-      |> assign(:src, ImageCache.url_for(assigns.arena_id))
+      |> assign(:src, ImageCache.url_for(assigns.arena_id, assigns.variant))
       |> assign(:cached?, resolve_cached(assigns))
 
     ~H"""
