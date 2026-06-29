@@ -1,0 +1,11 @@
+{
+  "format": "Standard",
+  "decks": [
+    {
+      "name": "Mono-Red Aggro",
+      "archetype": "Aggro",
+      "source_url": "https://example.invalid/mono-red",
+      "decklist_text": "Deck\n4 Roaring Furnace (DFT) 1\n20 Mountain\n"
+    }
+  ]
+}
