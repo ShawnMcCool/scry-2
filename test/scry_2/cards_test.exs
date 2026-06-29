@@ -133,6 +133,18 @@ defmodule Scry2.CardsTest do
     end
   end
 
+  describe "get_art_url_for_arena_id/1" do
+    test "returns the scryfall art_crop url for an arena_id" do
+      TestFactory.create_scryfall_card(%{
+        arena_id: 700_010,
+        name: "Art Test",
+        image_uris: %{"normal" => "http://x/normal.jpg", "art_crop" => "http://x/art.jpg"}
+      })
+
+      assert Cards.get_art_url_for_arena_id(700_010) == "http://x/art.jpg"
+    end
+  end
+
   describe "get_image_url_for_arena_id/1" do
     test "direct arena_id match returns that row's image" do
       TestFactory.create_scryfall_card(%{

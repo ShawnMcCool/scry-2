@@ -453,24 +453,30 @@ defmodule Scry2.Cards do
   Used by `ImageCache` to avoid redundant Scryfall API calls.
   """
   def get_image_url_for_arena_id(arena_id) when is_integer(arena_id) do
-    # Two Scryfall rows can share the same (set, collector_number) when
-    # a printing has a "flavor name" treatment overlay — Scryfall stores
-    # the parody / Universes-Beyond name in `name` wrapped in literal
-    # double quotes (e.g. `"The Very Hungry Archaic"` for the Wildgrowth
-    # Archaic SOS overlay). Rank quoted-name rows as `1` and canonical
-    # rows as `0`, then ORDER BY rank so `limit: 1` always picks the
-    # canonical row when one exists. Mirrors
-    # `MergeFields.prefer_canonical_printing/2`.
-    direct =
-      Repo.one(
-        from sc in "cards_scryfall_cards",
-          where: sc.arena_id == ^arena_id,
-          order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
-          select: fragment("json_extract(?, '$.normal')", sc.image_uris),
-          limit: 1
-      )
+    image_uri_for_arena_id(arena_id, "$.normal")
+  end
 
-    direct ||
+  @doc "Returns the Scryfall `art_crop` (illustration-only) URL for an arena_id, or nil."
+  def get_art_url_for_arena_id(arena_id) when is_integer(arena_id) do
+    image_uri_for_arena_id(arena_id, "$.art_crop")
+  end
+
+  # Two Scryfall rows can share the same (set, collector_number) when
+  # a printing has a "flavor name" treatment overlay — Scryfall stores
+  # the parody / Universes-Beyond name in `name` wrapped in literal
+  # double quotes (e.g. `"The Very Hungry Archaic"` for the Wildgrowth
+  # Archaic SOS overlay). Rank quoted-name rows as `1` and canonical
+  # rows as `0`, then ORDER BY rank so `limit: 1` always picks the
+  # canonical row when one exists. Mirrors
+  # `MergeFields.prefer_canonical_printing/2`.
+  defp image_uri_for_arena_id(arena_id, json_path) do
+    Repo.one(
+      from sc in "cards_scryfall_cards",
+        where: sc.arena_id == ^arena_id,
+        order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
+        select: fragment("json_extract(?, ?)", sc.image_uris, ^json_path),
+        limit: 1
+    ) ||
       Repo.one(
         from mc in "cards_mtga_cards",
           join: sc in "cards_scryfall_cards",
@@ -479,7 +485,7 @@ defmodule Scry2.Cards do
               sc.collector_number == mc.collector_number,
           where: mc.arena_id == ^arena_id,
           order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
-          select: fragment("json_extract(?, '$.normal')", sc.image_uris),
+          select: fragment("json_extract(?, ?)", sc.image_uris, ^json_path),
           limit: 1
       ) ||
       Repo.one(
@@ -488,9 +494,9 @@ defmodule Scry2.Cards do
           on: sc.name == cc.name,
           where:
             cc.arena_id == ^arena_id and
-              not is_nil(fragment("json_extract(?, '$.normal')", sc.image_uris)),
+              not is_nil(fragment("json_extract(?, ?)", sc.image_uris, ^json_path)),
           order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
-          select: fragment("json_extract(?, '$.normal')", sc.image_uris),
+          select: fragment("json_extract(?, ?)", sc.image_uris, ^json_path),
           limit: 1
       )
   end
