@@ -21,6 +21,7 @@ defmodule Scry2.NetDecking do
   alias Scry2.NetDecking.Buildability.Inputs
   alias Scry2.NetDecking.Deck
   alias Scry2.NetDecking.IngestDecklist
+  alias Scry2.NetDecking.OwnedIdentity
   alias Scry2.Repo
 
   @empty_wildcards %{common: 0, uncommon: 0, rare: 0, mythic: 0}
@@ -47,9 +48,10 @@ defmodule Scry2.NetDecking do
   def catalog do
     decks = list_decks()
     snapshot = Collection.current()
-    {owned, wildcards} = collection_context(snapshot)
+    {raw_owned, wildcards} = collection_context(snapshot)
 
     cards_by_arena_id = cards_for(decks)
+    owned = owned_by_identity(raw_owned, cards_by_arena_id)
 
     rarities =
       Map.new(cards_by_arena_id, fn {arena_id, card} -> {arena_id, card_rarity(card)} end)
@@ -91,9 +93,10 @@ defmodule Scry2.NetDecking do
   @spec deck_detail(Deck.t()) :: map()
   def deck_detail(%Deck{} = deck) do
     snapshot = Collection.current()
-    {owned, wildcards} = collection_context(snapshot)
+    {raw_owned, wildcards} = collection_context(snapshot)
 
     cards_by_arena_id = cards_for([deck])
+    owned = owned_by_identity(raw_owned, cards_by_arena_id)
 
     rarities =
       Map.new(cards_by_arena_id, fn {arena_id, card} -> {arena_id, card_rarity(card)} end)
@@ -147,6 +150,16 @@ defmodule Scry2.NetDecking do
       %{name: name} when is_binary(name) -> name
       _other -> "#" <> Integer.to_string(arena_id)
     end
+  end
+
+  # Aggregates raw arena_id-keyed ownership across printings onto each deck
+  # card's representative arena_id (card-name identity). Collector-less web
+  # sources resolve to one printing; the player may own another. See
+  # `Scry2.NetDecking.OwnedIdentity`.
+  defp owned_by_identity(raw_owned, cards_by_arena_id) do
+    names = cards_by_arena_id |> Map.values() |> Enum.map(& &1.name) |> Enum.uniq()
+    printings = Cards.printings_by_name(names)
+    OwnedIdentity.owned_by_representative(cards_by_arena_id, raw_owned, printings)
   end
 
   defp collection_context(nil), do: {%{}, @empty_wildcards}

@@ -84,4 +84,31 @@ defmodule Scry2.NetDeckingTest do
 
     assert detail.export_text =~ "Lightning Bolt"
   end
+
+  test "deck_detail counts a card owned under a different printing as owned" do
+    # Two printings of one card share a name; the deck resolves to one, the
+    # player owns the other. Name-identity ownership must still count it.
+    printing_a = create_card(name: "Roaring Furnace", rarity: "rare")
+    printing_b = create_card(name: "Roaring Furnace", rarity: "rare")
+
+    {:ok, deck} =
+      NetDecking.import_decklist(%{
+        name: "DFC Test",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Roaring Furnace\n"
+      })
+
+    [%{"arena_id" => resolved_id}] = deck.main_deck["cards"]
+
+    other_id =
+      Enum.find([printing_a.arena_id, printing_b.arena_id], &(&1 != resolved_id))
+
+    create_collection_snapshot(entries: [{other_id, 4}])
+
+    detail = NetDecking.deck_detail(deck)
+    row = Enum.find(detail.main_rows, &(&1.name == "Roaring Furnace"))
+
+    assert row.owned == 4
+    assert row.missing == 0
+  end
 end
