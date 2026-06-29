@@ -14,4 +14,23 @@ defmodule Scry2.NetDecking.DeckQualitiesTest do
       assert DeckQualities.color_combo_name("WUBRG") == "5-color"
     end
   end
+
+  describe "deck_color_identity/2" do
+    test "unions color_identity across the maindeck in WUBRG order" do
+      cards = %{
+        1 => %{color_identity: "R"},
+        2 => %{color_identity: "W"},
+        3 => %{color_identity: ""},
+        4 => %{color_identity: nil}
+      }
+
+      entries = [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 2}, %{arena_id: 3, count: 1}]
+      assert DeckQualities.deck_color_identity(entries, cards) == "WR"
+    end
+
+    test "no colored cards yields empty string" do
+      cards = %{1 => %{color_identity: ""}}
+      assert DeckQualities.deck_color_identity([%{arena_id: 1, count: 1}], cards) == ""
+    end
+  end
 end

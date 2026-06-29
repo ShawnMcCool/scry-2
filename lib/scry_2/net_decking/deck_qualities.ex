@@ -44,4 +44,22 @@ defmodule Scry2.NetDecking.DeckQualities do
       name -> name
     end
   end
+
+  @wubrg ~w(W U B R G)
+
+  @doc "WUBRG-ordered color string for the deck's maindeck (e.g. \"WR\"; \"\" = colorless)."
+  @spec deck_color_identity([map()], %{optional(integer()) => map()}) :: String.t()
+  def deck_color_identity(card_entries, cards) do
+    letters =
+      card_entries
+      |> Enum.flat_map(fn %{arena_id: id} ->
+        case Map.get(cards, id) do
+          %{color_identity: ci} when is_binary(ci) -> String.graphemes(ci)
+          _ -> []
+        end
+      end)
+      |> MapSet.new()
+
+    @wubrg |> Enum.filter(&MapSet.member?(letters, &1)) |> Enum.join()
+  end
 end
