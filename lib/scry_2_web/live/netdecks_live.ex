@@ -14,6 +14,7 @@ defmodule Scry2Web.NetdecksLive do
   """
   use Scry2Web, :live_view
 
+  alias Scry2.Cards.ImageCache
   alias Scry2.NetDecking
   alias Scry2.Topics
   alias Scry2.Workers.PeriodicallyFetchNetdecks
@@ -25,14 +26,21 @@ defmodule Scry2Web.NetdecksLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.collection_snapshots())
 
-    {:ok, assign(socket, search: "", catalog: @empty_catalog, detail: nil, sources: [])}
+    {:ok,
+     assign(socket,
+       search: "",
+       catalog: @empty_catalog,
+       detail: nil,
+       sources: [],
+       cached_arena_ids: MapSet.new()
+     )}
   end
 
   @impl true
   def handle_params(%{"id" => id}, _uri, socket) do
     case NetDecking.get_deck(id) do
       nil -> {:noreply, push_navigate(socket, to: ~p"/netdecks")}
-      deck -> {:noreply, assign(socket, detail: NetDecking.deck_detail(deck))}
+      deck -> {:noreply, assign_detail(socket, NetDecking.deck_detail(deck))}
     end
   end
 
@@ -91,7 +99,7 @@ defmodule Scry2Web.NetdecksLive do
   def handle_info({:snapshot_saved, _snapshot}, socket) do
     socket =
       if detail = socket.assigns.detail do
-        assign(socket, detail: NetDecking.deck_detail(detail.deck))
+        assign_detail(socket, NetDecking.deck_detail(detail.deck))
       else
         assign(socket, catalog: NetDecking.catalog())
       end
@@ -113,7 +121,7 @@ defmodule Scry2Web.NetdecksLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <.detail :if={@detail} detail={@detail} />
+      <.detail :if={@detail} detail={@detail} cached_arena_ids={@cached_arena_ids} />
       <.catalog :if={is_nil(@detail)} catalog={@catalog} search={@search} sources={@sources} />
     </Layouts.app>
     """
@@ -243,6 +251,7 @@ defmodule Scry2Web.NetdecksLive do
   # ── Detail view ──────────────────────────────────────────────────────────
 
   attr :detail, :map, required: true
+  attr :cached_arena_ids, :any, required: true
 
   defp detail(assigns) do
     assigns =
@@ -354,15 +363,28 @@ defmodule Scry2Web.NetdecksLive do
           </span>
         </div>
 
-        <.card_list title="Maindeck" rows={@detail.main_rows} />
-        <.card_list :if={@detail.side_rows != []} title="Sideboard" rows={@detail.side_rows} />
+        <.card_list
+          title="Maindeck"
+          section="main"
+          rows={@detail.main_rows}
+          cached_arena_ids={@cached_arena_ids}
+        />
+        <.card_list
+          :if={@detail.side_rows != []}
+          title="Sideboard"
+          section="side"
+          rows={@detail.side_rows}
+          cached_arena_ids={@cached_arena_ids}
+        />
       </div>
     </div>
     """
   end
 
   attr :title, :string, required: true
+  attr :section, :string, required: true
   attr :rows, :list, required: true
+  attr :cached_arena_ids, :any, required: true
 
   defp card_list(assigns) do
     ~H"""
@@ -370,14 +392,22 @@ defmodule Scry2Web.NetdecksLive do
       <h3 class="text-xs font-semibold text-base-content/40 uppercase tracking-widest mb-2">
         {@title}
       </h3>
-      <ul class="divide-y divide-base-300/40">
-        <li :for={row <- @rows} class="flex items-center gap-2 py-1.5 text-sm">
+      <div class="flex flex-wrap gap-2">
+        <div
+          :for={row <- @rows}
+          class="relative w-[4.5rem] sm:w-20"
+          title={"#{row.name} — #{if row.free?, do: "basic land", else: "#{row.owned}/#{row.needed} owned"}"}
+        >
           <% state = NetdecksHelpers.card_row_state(row) %>
-          <span class="w-6 text-right tabular-nums text-base-content/55">{row.needed}</span>
-          <span class="flex-1 truncate">{row.name}</span>
-          <.rarity_badge :if={row.rarity} rarity={row.rarity} />
+          <.card_image
+            id={"netdeck-#{@section}-#{row.arena_id}"}
+            arena_id={row.arena_id}
+            name={row.name}
+            class={if row.missing > 0, do: "w-full opacity-40", else: "w-full"}
+            cached_ids={@cached_arena_ids}
+          />
           <span class={[
-            "text-xs tabular-nums w-16 text-right shrink-0",
+            "absolute top-1 right-1 rounded bg-black/75 px-1 text-[0.7rem] font-bold tabular-nums pointer-events-none",
             NetdecksHelpers.card_row_tone(state)
           ]}>
             <%= if row.free? do %>
@@ -386,8 +416,8 @@ defmodule Scry2Web.NetdecksLive do
               {row.owned}/{row.needed}
             <% end %>
           </span>
-        </li>
-      </ul>
+        </div>
+      </div>
     </div>
     """
   end
@@ -418,6 +448,21 @@ defmodule Scry2Web.NetdecksLive do
 
   defp visible(entries, search) do
     Enum.filter(entries || [], &NetdecksHelpers.match_search?(&1, search))
+  end
+
+  # Loads a deck detail and precomputes the on-disk image set once (web concern,
+  # not domain), mirroring DecksLive. Kept out of mount per the Phoenix Iron Law.
+  defp assign_detail(socket, detail) do
+    arena_ids =
+      (detail.main_rows ++ detail.side_rows)
+      |> Enum.map(& &1.arena_id)
+      |> Enum.uniq()
+
+    if connected?(socket), do: ImageCache.ensure_cached(arena_ids)
+
+    cached = arena_ids |> Enum.filter(&ImageCache.cached?/1) |> MapSet.new()
+
+    assign(socket, detail: detail, cached_arena_ids: cached)
   end
 
   defp catalog_total(catalog) do
