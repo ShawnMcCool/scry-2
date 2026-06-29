@@ -78,6 +78,24 @@ defmodule Scry2.NetDecking.DeckQualities do
     |> Enum.map(fn {id, _card} -> id end)
   end
 
+  @doc "Code of the newest set (by released_at) contributing >=2 of the deck's cards; nil if none."
+  @spec newest_set_code([map()], %{optional(integer()) => map()}, %{optional(integer()) => map()}) ::
+          String.t() | nil
+  def newest_set_code(card_entries, cards, sets) do
+    card_entries
+    |> Enum.map(fn %{arena_id: id} -> Map.get(cards, id) end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.frequencies_by(& &1.set_id)
+    |> Enum.filter(fn {_set_id, count} -> count >= 2 end)
+    |> Enum.map(fn {set_id, _count} -> Map.get(sets, set_id) end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.sort_by(& &1.released_at, {:desc, Date})
+    |> case do
+      [%{code: code} | _] -> code
+      [] -> nil
+    end
+  end
+
   defp land?(%{is_land: true}), do: true
   defp land?(_), do: false
   defp rarity_rank(%{rarity: r}), do: Map.get(@rarity_rank, r, 0)

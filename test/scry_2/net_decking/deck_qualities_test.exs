@@ -53,4 +53,37 @@ defmodule Scry2.NetDecking.DeckQualitiesTest do
       assert DeckQualities.signature_arena_ids([%{arena_id: 1, count: 1}], cards, 4) == []
     end
   end
+
+  describe "newest_set_code/3" do
+    test "newest set (by released_at) among sets with >=2 cards" do
+      cards = %{
+        1 => %{set_id: 100},
+        2 => %{set_id: 100},
+        3 => %{set_id: 200},
+        4 => %{set_id: 200},
+        5 => %{set_id: 300}
+      }
+
+      sets = %{
+        100 => %{code: "OLD", released_at: ~D[2025-01-01]},
+        200 => %{code: "NEW", released_at: ~D[2026-04-24]},
+        300 => %{code: "SOLO", released_at: ~D[2026-12-01]}
+      }
+
+      entries = Enum.map(1..5, &%{arena_id: &1, count: 1})
+      assert DeckQualities.newest_set_code(entries, cards, sets) == "NEW"
+    end
+
+    test "nil when no set has >=2 cards" do
+      cards = %{1 => %{set_id: 100}, 2 => %{set_id: 200}}
+
+      sets = %{
+        100 => %{code: "A", released_at: ~D[2026-01-01]},
+        200 => %{code: "B", released_at: ~D[2026-02-01]}
+      }
+
+      entries = [%{arena_id: 1, count: 1}, %{arena_id: 2, count: 1}]
+      assert DeckQualities.newest_set_code(entries, cards, sets) == nil
+    end
+  end
 end
