@@ -72,4 +72,23 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.unresolved_count(%{unresolved_cards: %{"cards" => []}}) == 0
     assert NetdecksHelpers.unresolved_count(%{unresolved_cards: nil}) == 0
   end
+
+  describe "source_summary/1" do
+    test "groups decks by source_name with counts and the latest fetch time" do
+      decks = [
+        %{source_name: "local", fetched_at: ~U[2026-06-29 06:30:00Z]},
+        %{source_name: "mtgo", fetched_at: ~U[2026-06-29 06:31:00Z]},
+        %{source_name: "mtgo", fetched_at: ~U[2026-06-28 06:31:00Z]}
+      ]
+
+      assert NetdecksHelpers.source_summary(decks) == [
+               %{source_name: "local", count: 1, latest: ~U[2026-06-29 06:30:00Z]},
+               %{source_name: "mtgo", count: 2, latest: ~U[2026-06-29 06:31:00Z]}
+             ]
+    end
+
+    test "empty list yields no rows" do
+      assert NetdecksHelpers.source_summary([]) == []
+    end
+  end
 end

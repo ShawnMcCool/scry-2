@@ -108,4 +108,22 @@ defmodule Scry2Web.NetdecksHelpers do
 
   defp contains?(nil, _query_lower), do: false
   defp contains?(value, query_lower), do: String.contains?(String.downcase(value), query_lower)
+
+  @doc """
+  Per-source deck counts and latest fetch time for the catalog status strip.
+
+  Returns `[%{source_name, count, latest}]` sorted by source name.
+  """
+  def source_summary(decks) do
+    decks
+    |> Enum.group_by(& &1.source_name)
+    |> Enum.map(fn {source_name, group} ->
+      %{
+        source_name: source_name,
+        count: length(group),
+        latest: group |> Enum.map(& &1.fetched_at) |> Enum.max(DateTime)
+      }
+    end)
+    |> Enum.sort_by(& &1.source_name)
+  end
 end
