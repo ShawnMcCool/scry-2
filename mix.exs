@@ -70,6 +70,8 @@ defmodule Scry2.MixProject do
       # that fights `Ecto.Adapters.SQL.Sandbox` ownership in tests.
       {:oban, "~> 2.21.0"},
       {:req, "~> 0.5"},
+      # zstd codec for compressing mtga_logs_events.raw_json at rest (ADR-042)
+      {:ezstd, "~> 1.0"},
       {:nimble_csv, "~> 1.2"},
       {:toml, "~> 0.7"},
       {:tidewave, "~> 0.5", only: :dev},
