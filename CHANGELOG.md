@@ -11,6 +11,20 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The interface is sized more comfortably on large and high-resolution
+  displays.** It had been scaling up with your window width and rendering
+  everything oversized on big monitors; it now holds a standard, comfortable
+  size everywhere.
+- **Hovering a card on the Netdecks page now shows the full card.** The deck
+  tiles use cropped artwork — hovering one now pops the complete card (rules
+  text and all) instead of an enlarged crop.
+- **Netdeck card lists now show a simple copy count.** Each card shows how many
+  copies the deck runs (like a normal decklist) rather than an "owned / needed"
+  number — you can still tell what you're missing from the dimmed cards and the
+  wildcard summary.
+
 ## v0.50.0 — 2026-06-29
 
 ### New
