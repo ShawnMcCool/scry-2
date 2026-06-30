@@ -18,7 +18,8 @@ defmodule Scry2.MtgaLogIngestionTest do
         })
 
       assert record.event_type == "MatchStart"
-      assert record.raw_json == ~s({"foo":"bar"})
+      # raw_json is stored as a zstd frame since ADR-042 stage 1a.
+      assert Scry2.Events.RawCompression.decompress(record.raw_json) == ~s({"foo":"bar"})
       assert record.processed == false
 
       assert_receive {:event, %{id: id, event_type: "MatchStart"}}

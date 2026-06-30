@@ -36,6 +36,18 @@ defmodule Scry2.Events.RawCompressionTest do
     end
   end
 
+  describe "ensure_compressed/1 (idempotent)" do
+    test "compresses plaintext" do
+      assert RawCompression.compressed?(RawCompression.ensure_compressed("{}"))
+    end
+
+    test "leaves an already-compressed frame untouched (no double compression)" do
+      once = RawCompression.compress(~s({"a":1}))
+      assert RawCompression.ensure_compressed(once) == once
+      assert RawCompression.decompress(RawCompression.ensure_compressed(once)) == ~s({"a":1})
+    end
+  end
+
   describe "decompress/1 legacy passthrough" do
     # The table holds a mix of legacy plaintext rows (pre-migration) and
     # compressed rows. MTGA raw_json always starts with '{' (0x7B), never the

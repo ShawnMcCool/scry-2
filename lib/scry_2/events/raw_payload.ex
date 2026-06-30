@@ -1,6 +1,8 @@
 defmodule Scry2.Events.RawPayload do
   @moduledoc """
-  Process-local cache for `Jason.decode/1` of an MTGA raw event payload.
+  Process-local cache for the decoded MTGA raw event payload — decompresses
+  the stored `raw_json` (zstd frame or legacy plaintext, ADR-042) then
+  `Jason.decode/1`s it.
 
   Both `Scry2.Events.IngestRawEvents` (gameObjects/rank capture) and
   `Scry2.Events.IdentifyDomainEvents` (translation clauses) need to look
@@ -19,6 +21,8 @@ defmodule Scry2.Events.RawPayload do
   accumulate one cached payload per event ever processed.
   """
 
+  alias Scry2.Events.RawCompression
+
   @prefix __MODULE__
 
   @doc """
@@ -31,7 +35,7 @@ defmodule Scry2.Events.RawPayload do
 
     case Process.get(cache_key) do
       nil ->
-        result = Jason.decode(raw_json)
+        result = Jason.decode(RawCompression.decompress(raw_json))
         if match?({:ok, _}, result), do: Process.put(cache_key, result)
         result
 
@@ -40,7 +44,7 @@ defmodule Scry2.Events.RawPayload do
     end
   end
 
-  def decode(%{raw_json: raw_json}), do: Jason.decode(raw_json)
+  def decode(%{raw_json: raw_json}), do: Jason.decode(RawCompression.decompress(raw_json))
 
   @doc "Drops the cached payload for `id` from the process dictionary."
   @spec forget(integer()) :: :ok

@@ -34,6 +34,7 @@ defmodule Scry2.MtgaLogIngestion do
 
   import Ecto.Query
 
+  alias Scry2.Events.RawCompression
   alias Scry2.MtgaLogIngestion.{Cursor, EventRecord}
   alias Scry2.Repo
   alias Scry2.Topics
@@ -54,7 +55,7 @@ defmodule Scry2.MtgaLogIngestion do
   from the previous file.
   """
   def insert_event!(attrs) do
-    changeset = EventRecord.changeset(%EventRecord{}, Map.new(attrs))
+    changeset = EventRecord.changeset(%EventRecord{}, compress_raw_json(Map.new(attrs)))
 
     case Repo.insert(changeset,
            on_conflict: :nothing,
@@ -96,6 +97,7 @@ defmodule Scry2.MtgaLogIngestion do
       Enum.map(events_attrs, fn attrs ->
         attrs
         |> Map.new()
+        |> compress_raw_json()
         |> Map.put_new(:inserted_at, now)
         |> Map.put_new(:processed, false)
       end)
@@ -137,6 +139,18 @@ defmodule Scry2.MtgaLogIngestion do
   def broadcast_inserted(_), do: :ok
 
   defp in_transaction?, do: Repo.in_transaction?()
+
+  # zstd-compress the raw_json payload at the write boundary (ADR-042 stage
+  # 1a). Idempotent via `ensure_compressed/1`. Handles atom or string keys;
+  # leaves attrs without a binary raw_json untouched (the changeset's
+  # validate_required surfaces a genuinely missing payload).
+  defp compress_raw_json(%{raw_json: raw} = attrs) when is_binary(raw),
+    do: %{attrs | raw_json: RawCompression.ensure_compressed(raw)}
+
+  defp compress_raw_json(%{"raw_json" => raw} = attrs) when is_binary(raw),
+    do: %{attrs | "raw_json" => RawCompression.ensure_compressed(raw)}
+
+  defp compress_raw_json(attrs), do: attrs
 
   @doc "Returns unprocessed raw events with id > last_raw_event_id, ordered by id."
   def list_unprocessed_after(last_raw_event_id, opts \\ []) do
@@ -239,13 +253,21 @@ defmodule Scry2.MtgaLogIngestion do
   def deferred_types_with_payloads(deferred_types) do
     types = MapSet.to_list(deferred_types)
 
-    from(r in EventRecord,
-      where: r.event_type in ^types and r.raw_json != "{}",
-      group_by: r.event_type,
-      select: {r.event_type, count(r.id)}
-    )
+    # Emptiness ("{}") can't be tested in SQL anymore: since ADR-042 stage 1a,
+    # raw_json is a zstd frame (BLOB) for new rows and plaintext for legacy
+    # rows, and SQLite TEXT/BLOB affinity makes a literal comparison both
+    # unsupported and unreliable. Decompress and test in Elixir instead. The
+    # deferred-type set is small and curated (empty by default), so the row
+    # load is bounded.
+    from(r in EventRecord, where: r.event_type in ^types, select: {r.event_type, r.raw_json})
     |> Repo.all()
-    |> Map.new()
+    |> Enum.reduce(%{}, fn {type, raw_json}, acc ->
+      if RawCompression.decompress(raw_json) == "{}" do
+        acc
+      else
+        Map.update(acc, type, 1, &(&1 + 1))
+      end
+    end)
   end
 
   @doc """
@@ -398,10 +420,12 @@ defmodule Scry2.MtgaLogIngestion do
   end
 
   defp format_error_for_export(record) do
+    decompressed = RawCompression.decompress(record.raw_json)
+
     raw_event =
-      case Jason.decode(record.raw_json) do
+      case Jason.decode(decompressed) do
         {:ok, parsed} -> parsed
-        {:error, _} -> record.raw_json
+        {:error, _} -> decompressed
       end
 
     %{

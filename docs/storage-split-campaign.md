@@ -287,7 +287,7 @@ Implementation-level (Claude decides, non-blocking): compression lib
 
 | Stage | Status | Notes |
 |---|---|---|
-| 1a compress raw at rest | 🟡 in progress | PLAIN per-row zstd chosen; `ezstd` added; codec next (TDD), then schema→binary + read/write seams + batched migration (gated on DB backup) |
+| 1a compress raw at rest | 🟢 code done | PLAIN per-row zstd. Codec + ensure_compressed; schema→:binary; compress at both write seams; decompress at read seams; filter fixed; backfill written (manual, NOT auto-run). 2634 tests green. **Only the real-DB backfill run remains — gated on backup + Shawn.** |
 | 2a stub+null ignored raw_json | ⬜ ready | Q2 resolved; revises ADR-020 |
 | 2b dedup StartHook | ⬜ optional | marginal after 1a (~7 MB); low priority |
 | 2c collapse collection snapshots | ⬜ ready | separate table; diff primitive exists |
@@ -297,6 +297,18 @@ Implementation-level (Claude decides, non-blocking): compression lib
 
 ## Session log
 
+- **2026-06-30 (cont. 2)** — Wired stage 1a end-to-end (TDD, 2634 tests green,
+  format clean): schema `raw_json` → `:binary`; compress at both write seams
+  (`insert_event!` + `insert_events!` via a shared idempotent
+  `compress_raw_json/1` using `RawCompression.ensure_compressed/1`);
+  decompress at read seams (`RawPayload.decode/1`, `format_error_for_export`);
+  rewrote `deferred_types_with_payloads/1` to test emptiness in Elixir (the
+  `:binary` field broke the SQL `!= "{}"` literal — BLOB/TEXT affinity); added
+  `RawCompressionBackfill` (manual, resumable, idempotent — NOT a migration,
+  run from the live remote shell after a DB backup). Retranslate/coverage need
+  no change (they go through the read seam). **REMAINING for 1a: run the
+  backfill on the real 4 GB DB — gated on backup + Shawn present.** Next stages
+  ready: 2a (stub+null ignored), 2c (collection keyframe+diff), 1b (90d prune).
 - **2026-06-30 (cont.)** — Resolved Q4: PLAIN per-row zstd. Built stage-1a
   codec `Scry2.Events.RawCompression` (`compress/1`, `decompress/1` with
   magic-byte legacy passthrough, `compressed?/1`) TDD, 7/7 green, clean

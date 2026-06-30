@@ -40,6 +40,17 @@ defmodule Scry2.Events.RawCompression do
   end
 
   @doc """
+  Compresses `payload` unless it is already a zstd frame.
+
+  Idempotent — safe to call at write seams and on re-ingest. Double
+  compression would corrupt the row (`decompress/1` only unwraps one frame),
+  so this guard is load-bearing, not cosmetic.
+  """
+  @spec ensure_compressed(binary()) :: binary()
+  def ensure_compressed(@zstd_magic <> _rest = frame), do: frame
+  def ensure_compressed(payload) when is_binary(payload), do: compress(payload)
+
+  @doc """
   Returns the original payload, decompressing zstd frames and passing legacy
   plaintext through unchanged.
   """

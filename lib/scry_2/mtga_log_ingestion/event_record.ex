@@ -17,7 +17,10 @@ defmodule Scry2.MtgaLogIngestion.EventRecord do
     field :file_offset, :integer
     field :source_file, :string
     field :log_epoch, :integer, default: 0
-    field :raw_json, :string
+    # Stored as a zstd frame (BLOB) since ADR-042 stage 1a; legacy rows are
+    # plaintext JSON. Always read through `Scry2.Events.RawCompression`.
+    # SQLite is dynamically typed, so the column needs no DB-level migration.
+    field :raw_json, :binary
     field :processed, :boolean, default: false
     field :processed_at, :utc_datetime
     field :processing_error, :string
