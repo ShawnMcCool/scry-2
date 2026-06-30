@@ -132,11 +132,12 @@
 /* Make LiveView wrapper divs transparent for layout */
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
-/* Fluid root font-size — scales all rem-based sizing proportionally
-   so the UI is comfortable on any resolution from laptop to 4K.
-   ~16px at 940px viewport, ~21px at 1536px (1440p), caps at 24px. */
+/* Root font-size — drives all rem-based sizing. Held near the 16px web
+   standard with only a gentle bump on small laptops, capped at 16px so wide
+   and 4K displays don't inflate the whole UI. (Was clamp(16px,0.85vw+8px,24px),
+   which hit 21–24px on 1440p/4K — everything rendered ~1.5x too large.) */
 html {
-  font-size: clamp(16px, 0.85vw + 8px, 24px);
+  font-size: clamp(15px, 0.25vw + 11px, 16px);
 }
 
 /* This file is for your main application CSS */
