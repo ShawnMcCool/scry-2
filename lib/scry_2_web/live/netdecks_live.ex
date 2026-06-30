@@ -68,7 +68,10 @@ defmodule Scry2Web.NetdecksLive do
     socket =
       if connected?(socket) and art_ids != [] do
         start_async(socket, :cache_art, fn ->
+          # Art crops for the tiles; full cards for the hover popup (CardHover
+          # pops the full card, not the crop).
           ImageCache.ensure_cached(art_ids, variant: :art)
+          ImageCache.ensure_cached(art_ids, variant: :full)
           art_ids |> Enum.filter(&ImageCache.cached?(&1, :art)) |> MapSet.new()
         end)
       else
@@ -495,7 +498,7 @@ defmodule Scry2Web.NetdecksLive do
             <%= if row.free? do %>
               basic
             <% else %>
-              {row.owned}/{row.needed}
+              {row.needed}
             <% end %>
           </span>
         </div>

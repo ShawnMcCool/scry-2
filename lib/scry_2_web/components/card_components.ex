@@ -58,6 +58,7 @@ defmodule Scry2Web.CardComponents do
       loading="lazy"
       class={["rounded-sm aspect-[488/680]", @class]}
       phx-hook="CardHover"
+      data-card-src={ImageCache.url_for(@arena_id, :full)}
       {@rest}
     />
     <div
