@@ -95,9 +95,18 @@ low-priority relative to 1a and 2c.
 Content-hash the inventory blob; persist/emit only on change. ~80–90% of
 330 MB reclaimable. `DeckGetDeckSummariesV2` is a secondary candidate.
 
-### Stage 2c — Collapse `collection_snapshots` to keyframe + diff
-Drop `cards_json` from non-keyframe rows; reconstruct from the nearest
-keyframe forward through the existing diff chain. 48 MB → ~3 MB.
+### Stage 2c — Shrink `collection_snapshots` (~48 MB)
+Direction (Shawn): keep the *current* full collection, don't hoard old
+redundant data. Two parts:
+- **Done — compress `cards_json`.** zstd via the `encode_entries`/
+  `decode_entries` seam pair; `Snapshot.cards_json` → `:binary`; manual
+  `Collection.compress_existing_cards_json!/0` backfill. ~48 MB → ~4–5 MB,
+  every full collection still trivially readable, zero reconstruction risk.
+- **Deferred (needs go-ahead) — drop old fulls.** Keep only the latest full
+  + the diff chain (~4 MB → <1 MB) via a verify-before-null backfill
+  (reconstruct each old snapshot from latest + reverse-diffs, assert equal,
+  then null; keep a full at the one diff-chain gap) and ongoing nulling in
+  `save_snapshot`. Touches captured source data, so gated on confirmation.
 
 ### Stage 1b — Enable bounded retention (execution)
 Build the deferred ADR-039 pieces: a prune worker and the *surgical*
