@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.51.0 — 2026-06-30
+
 ### Improved
 
 - **The interface is sized more comfortably on large and high-resolution
