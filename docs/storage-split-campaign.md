@@ -80,8 +80,14 @@ Measured per-row on 4,000 real `GreToClientEvent` payloads (avg 4.7 KB):
 | plain zstd L19 | 7.7× | |
 | sample-dictionary (256 KB–1 MB) L19 | **21–22×** | recovers cross-message redundancy; round-trip verified |
 
-So the realistic raw-store target is **~420 MB plain** or **~180 MB with a
-dictionary** — both huge vs 3.24 GB, neither the earlier (wrong) ~65 MB.
+**Measured full-store (2026-06-30):** a 23,322-row uniform sample across the
+*whole* table (all event types, read-only) compresses **8.35× blended** at
+L19 — static dumps compress harder than GRE, so the blend beats GRE-alone.
+**Raw store 3.24 GB → ~388 MB.** Note: SQLite does not shrink the file on
+UPDATE; a `VACUUM` after the backfill is required to reclaim disk.
+
+So the realistic raw-store target is **~388 MB plain** (measured) or ~180 MB
+with a dictionary — both huge vs 3.24 GB, neither the earlier (wrong) ~65 MB.
 **Plain-vs-dictionary is an open design question (see below).** ezstd has no
 trainer; the "dictionary" is a held-out sample of real payloads fed as raw
 dictionary content (`create_cdict`/`create_ddict`), versioned by zstd's
@@ -264,11 +270,30 @@ Dependency chain: **1a → 2a/2b/2c → 1b → Phase 2.**
 Implementation-level (Claude decides, non-blocking): compression lib
 (`ezstd` chosen — simplest, battle-tested), keyframe interval for 2c.
 
-4. **Stage 1a plain vs dictionary → PLAIN per-row zstd.** ~7.7× → raw store
-   ~440 MB (90-day-bounded). Rejected the dictionary: ~260 MB leaner but the
-   dictionary is a single point of failure (lose it → whole raw store
-   undecodable), against the data-integrity ethos. Self-contained frames;
-   every row decodes on its own.
+4. **Stage 1a plain vs dictionary → PLAIN per-row zstd.** Measured 8.35×
+   blended → raw store ~388 MB (90-day-bounded). Rejected the dictionary:
+   ~200 MB leaner but a single point of failure (lose it → whole raw store
+   undecodable), against the data-integrity ethos. Self-contained frames.
+
+### NEXT open questions (gate stages 2a / 2c / 1b — for Shawn)
+
+5. **Stage 2a placement (stub+null ignored).** `@ignored` is domain knowledge
+   in `IdentifyDomainEvents` (the ACL), but raw is persisted in
+   `MtgaLogIngestion` *before* the ACL runs (ADR-015 ordering). So where does
+   the null-the-blob happen? (a) ingestion reads the ACL's published
+   ignored-type set at write time (boundary crossing); (b) a post-processing
+   step nulls raw_json after the ACL classifies it ignored (two writes, cleaner
+   boundary). Also: 2a is now only ~50 MB post-compression — confirm it's still
+   worth doing vs dropping. **Recommend (b) if done at all; low priority.**
+6. **Stage 2c: keep collection snapshots at all?** Shawn said "we really don't
+   even need them maybe." Options: (a) keyframe + diff (drop cards_json from
+   non-keyframe rows, reconstruct via the existing diff chain; pick interval);
+   (b) keep only current snapshot + full diff history; (c) just zstd-compress
+   cards_json (simplest, ~separate from the raw work). Needs a direction.
+7. **Stage 1b surgical retranslate design.** 90-day prune needs retranslate to
+   rebuild only the still-covered window instead of refusing (coverage guard).
+   Confirm the approach before building, and the prune execution is gated like
+   the backfill (deletes raw).
 
 ---
 
@@ -297,6 +322,12 @@ Implementation-level (Claude decides, non-blocking): compression lib
 
 ## Session log
 
+- **2026-06-30 (cont. 3)** — Measured full-store compression read-only on the
+  real DB (23,322-row sample, app not booted, DB untouched): **8.35× blended →
+  raw store 3.24 GB → ~388 MB.** Added VACUUM caveat to the backfill (SQLite
+  won't shrink the file on UPDATE). Recorded next-stage design questions
+  (Q5 2a placement, Q6 2c snapshot direction, Q7 1b surgical retranslate) —
+  these gate further progress; **stopped here awaiting Shawn's decisions.**
 - **2026-06-30 (cont. 2)** — Wired stage 1a end-to-end (TDD, 2634 tests green,
   format clean): schema `raw_json` → `:binary`; compress at both write seams
   (`insert_event!` + `insert_events!` via a shared idempotent

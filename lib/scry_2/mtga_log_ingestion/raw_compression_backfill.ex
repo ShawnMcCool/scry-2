@@ -17,6 +17,14 @@ defmodule Scry2.MtgaLogIngestion.RawCompressionBackfill do
   interruption simply continues. No row is ever deleted.
 
   Pass `progress_every: n` to control the log cadence (default 50 batches).
+
+  ## Reclaiming disk
+
+  Compression rewrites payloads in place but SQLite does NOT shrink the file
+  on UPDATE — freed pages stay in the file. After the backfill, run `VACUUM`
+  to actually reclaim disk (needs free space ~= the final DB size, and an
+  exclusive lock, so do it with the instance stopped). Measured full-store
+  reclaim is ~8.3× (raw store 3.24 GB of payload -> ~390 MB).
   """
 
   import Ecto.Query
