@@ -24,6 +24,7 @@ defmodule Scry2.Collection do
   """
 
   alias Ecto.Multi
+  alias Scry2.Events.RawCompression
   alias Scry2.Collection.BuildChange
   alias Scry2.Collection.Diff
   alias Scry2.Collection.RefreshJob
@@ -260,6 +261,47 @@ defmodule Scry2.Collection do
   @doc "Total number of `Diff` rows persisted."
   @spec count_diffs() :: non_neg_integer()
   def count_diffs, do: Repo.aggregate(Diff, :count, :id)
+
+  @doc """
+  One-time, idempotent backfill that zstd-compresses legacy plaintext
+  `cards_json` rows (ADR-042 stage 2c). Safe to re-run — already-compressed
+  rows are skipped. Lossless: `decode_entries/1` reads both forms.
+
+  Run by hand (after a DB backup) from the live remote shell; then `VACUUM`
+  to reclaim the freed pages (SQLite keeps them on UPDATE):
+
+      iex> Scry2.Collection.compress_existing_cards_json!()
+      %{scanned: 374, compressed: 374, bytes_before: ..., bytes_after: ...}
+  """
+  @spec compress_existing_cards_json!() :: %{
+          scanned: non_neg_integer(),
+          compressed: non_neg_integer(),
+          bytes_before: non_neg_integer(),
+          bytes_after: non_neg_integer()
+        }
+  def compress_existing_cards_json! do
+    from(s in Snapshot, select: %{id: s.id, cards_json: s.cards_json})
+    |> Repo.all()
+    |> Enum.reduce(%{scanned: 0, compressed: 0, bytes_before: 0, bytes_after: 0}, fn
+      %{cards_json: nil}, acc ->
+        Map.update!(acc, :scanned, &(&1 + 1))
+
+      %{id: id, cards_json: cards_json}, acc ->
+        acc = Map.update!(acc, :scanned, &(&1 + 1))
+
+        if RawCompression.compressed?(cards_json) do
+          acc
+        else
+          frame = RawCompression.compress(cards_json)
+          Repo.update_all(from(s in Snapshot, where: s.id == ^id), set: [cards_json: frame])
+
+          acc
+          |> Map.update!(:compressed, &(&1 + 1))
+          |> Map.update!(:bytes_before, &(&1 + byte_size(cards_json)))
+          |> Map.update!(:bytes_after, &(&1 + byte_size(frame)))
+        end
+    end)
+  end
 
   @doc """
   Number of diffs where neither side recorded a change. High empty-diff

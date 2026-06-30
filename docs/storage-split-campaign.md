@@ -285,11 +285,18 @@ Implementation-level (Claude decides, non-blocking): compression lib
    step nulls raw_json after the ACL classifies it ignored (two writes, cleaner
    boundary). Also: 2a is now only ~50 MB post-compression — confirm it's still
    worth doing vs dropping. **Recommend (b) if done at all; low priority.**
-6. **Stage 2c: keep collection snapshots at all?** Shawn said "we really don't
-   even need them maybe." Options: (a) keyframe + diff (drop cards_json from
-   non-keyframe rows, reconstruct via the existing diff chain; pick interval);
-   (b) keep only current snapshot + full diff history; (c) just zstd-compress
-   cards_json (simplest, ~separate from the raw work). Needs a direction.
+6. **Stage 2c → "need current full collection, not old redundant data."**
+   DONE part 1: zstd-compress `cards_json` (option c) — 48 MB → ~4-5 MB, every
+   full collection still trivially readable, zero reconstruction risk.
+   **OPEN (Q6b): also DROP old fulls entirely** (keep only the latest full +
+   the diff chain)? That gets ~4 MB → <1 MB but touches captured source data.
+   Safe path is designed: a verify-before-null backfill (reconstruct each old
+   snapshot from latest + reverse-diffs, assert == stored, THEN null; keep a
+   full at the one diff-chain gap) + ongoing null-the-third-most-recent in
+   `save_snapshot` (so synchronous diff + async crafts/economy consumers, which
+   read consecutive pairs and already tolerate `cards_json: nil`, always have
+   their fulls). Consumers verified: UI reads latest only; attribution reads
+   pairs at creation. **Needs Shawn's go-ahead before nulling captured data.**
 7. **Stage 1b surgical retranslate design.** 90-day prune needs retranslate to
    rebuild only the still-covered window instead of refusing (coverage guard).
    Confirm the approach before building, and the prune execution is gated like
@@ -315,13 +322,23 @@ Implementation-level (Claude decides, non-blocking): compression lib
 | 1a compress raw at rest | 🟢 code done | PLAIN per-row zstd. Codec + ensure_compressed; schema→:binary; compress at both write seams; decompress at read seams; filter fixed; backfill written (manual, NOT auto-run). 2634 tests green. **Only the real-DB backfill run remains — gated on backup + Shawn.** |
 | 2a stub+null ignored raw_json | ⬜ ready | Q2 resolved; revises ADR-020 |
 | 2b dedup StartHook | ⬜ optional | marginal after 1a (~7 MB); low priority |
-| 2c collapse collection snapshots | ⬜ ready | separate table; diff primitive exists |
+| 2c collection snapshots | 🟢 compression done | `cards_json` → :binary zstd (encode/decode_entries seam); `Collection.compress_existing_cards_json!/0` backfill (manual). 2638 tests green. **Open: also drop old fulls (keep latest+diffs)? — Q6b below** |
 | 1b retention execution (90d) | ⬜ ready | Q1 resolved; needs surgical retranslate |
 | 3 domain-event diet | ⛔ deferred | Q3: keep all granular events |
 | Phase 2 split | ⬜ not started | Design B |
 
 ## Session log
 
+- **2026-06-30 (cont. 4)** — Shawn directed stage 2c: "need current full
+  collection, don't keep old redundant data." Implemented the safe part —
+  zstd-compress `cards_json` (mirror of 1a): `Snapshot.cards_json` → `:binary`,
+  compress/decompress folded into the `encode_entries`/`decode_entries` seam
+  pair (transparent to all callers), `Collection.compress_existing_cards_json!/0`
+  manual backfill. TDD, 2638 tests green, format clean. Mapped all cards_json
+  consumers: UI reads latest only; crafts/economy/snapshot_diff read consecutive
+  pairs at creation and already tolerate nil cards_json. **Stopped before the
+  riskier "drop old fulls" step (Q6b) — it nulls captured source data; awaiting
+  Shawn's go-ahead. Design recorded above.**
 - **2026-06-30 (cont. 3)** — Measured full-store compression read-only on the
   real DB (23,322-row sample, app not booted, DB untouched): **8.35× blended →
   raw store 3.24 GB → ~388 MB.** Added VACUUM caveat to the backfill (SQLite

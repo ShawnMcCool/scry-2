@@ -90,6 +90,26 @@ defmodule Scry2.Collection.SnapshotTest do
       decoded = entries |> Snapshot.encode_entries() |> Snapshot.decode_entries()
       assert decoded == entries
     end
+
+    test "encode_entries produces a compressed zstd frame at rest (ADR-042 stage 2c)" do
+      entries = for n <- 1..500, do: {n, rem(n, 4) + 1}
+      encoded = Snapshot.encode_entries(entries)
+
+      plaintext =
+        entries
+        |> Enum.map(fn {a, c} -> %{"arena_id" => a, "count" => c} end)
+        |> Jason.encode!()
+
+      assert Scry2.Events.RawCompression.compressed?(encoded)
+      assert byte_size(encoded) < byte_size(plaintext)
+      assert Snapshot.decode_entries(encoded) == entries
+    end
+
+    test "decode_entries reads legacy plaintext cards_json (mixed table)" do
+      legacy = Jason.encode!([%{"arena_id" => 30_001, "count" => 2}])
+      refute Scry2.Events.RawCompression.compressed?(legacy)
+      assert Snapshot.decode_entries(legacy) == [{30_001, 2}]
+    end
   end
 
   describe "boosters round-trip via encode/decode" do

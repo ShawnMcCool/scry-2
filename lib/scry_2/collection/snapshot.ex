@@ -3,9 +3,10 @@ defmodule Scry2.Collection.Snapshot do
   One capture of the player's MTGA card collection from process memory.
 
   Append-only. The `cards_json` column holds the canonical list of
-  `%{arena_id, count}` entries as a JSON blob — keeping the schema flat
-  (no child table) so a snapshot round-trips as one row regardless of
-  collection size.
+  `%{arena_id, count}` entries as a zstd-compressed JSON blob (ADR-042
+  stage 2c; legacy rows are plaintext) — keeping the schema flat (no child
+  table) so a snapshot round-trips as one row regardless of collection size.
+  Always go through `encode_entries/1` / `decode_entries/1`.
 
   Walker-path fields (`wildcards_*`, `gold`, `gems`, `vault_progress`)
   are nullable — the scanner fallback can't populate them yet. The
@@ -29,6 +30,8 @@ defmodule Scry2.Collection.Snapshot do
 
   use Ecto.Schema
   import Ecto.Changeset
+
+  alias Scry2.Events.RawCompression
 
   @type entry :: {arena_id :: integer(), count :: integer()}
   @type t :: %__MODULE__{}
@@ -83,7 +86,9 @@ defmodule Scry2.Collection.Snapshot do
     field :mtga_build_hint, :string
     field :card_count, :integer
     field :total_copies, :integer
-    field :cards_json, :string
+    # zstd frame (BLOB) since ADR-042 stage 2c; legacy rows are plaintext JSON.
+    # Read/written only through decode_entries/1 + encode_entries/1.
+    field :cards_json, :binary
     field :wildcards_common, :integer
     field :wildcards_uncommon, :integer
     field :wildcards_rare, :integer
@@ -239,18 +244,26 @@ defmodule Scry2.Collection.Snapshot do
     |> validate_number(:total_copies, greater_than_or_equal_to: 0)
   end
 
-  @doc "Encodes an entries list as the canonical JSON blob."
-  @spec encode_entries([entry()]) :: String.t()
+  @doc """
+  Encodes an entries list into the stored `cards_json` value — a zstd frame
+  (ADR-042 stage 2c). Inverse of `decode_entries/1`.
+  """
+  @spec encode_entries([entry()]) :: binary()
   def encode_entries(entries) do
     entries
     |> Enum.map(fn {arena_id, count} -> %{"arena_id" => arena_id, "count" => count} end)
     |> Jason.encode!()
+    |> RawCompression.compress()
   end
 
-  @doc "Decodes `cards_json` back into an entries list of tuples."
-  @spec decode_entries(String.t()) :: [entry()]
+  @doc """
+  Decodes a stored `cards_json` value back into an entries list of tuples.
+  Transparently handles both zstd frames and legacy plaintext JSON.
+  """
+  @spec decode_entries(binary()) :: [entry()]
   def decode_entries(cards_json) when is_binary(cards_json) do
     cards_json
+    |> RawCompression.decompress()
     |> Jason.decode!()
     |> Enum.map(fn %{"arena_id" => arena_id, "count" => count} -> {arena_id, count} end)
   end
