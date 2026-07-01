@@ -84,12 +84,9 @@ with real-payload round-trip verification before migrating the real DB
 (backup first). **Open: plain vs sample-dictionary — see Decision Drivers.**
 
 ### Stage 2a — Stop persisting `raw_json` for `@ignored` types
-**Resolved:** keep a metadata row stub (event_type, timestamp) for the
-unrecognized-type warning accounting and null the blob. This **revises
-ADR-020's invariant** that ignored events keep full `raw_json`. Note: after
-1a compresses everything, the byte saving here is only ~50 MB — stage 2a's
-real value is semantic (don't carry noise across the split), so it is
-low-priority relative to 1a and 2c.
+**Skipped (2026-07-01, Q5 "ignore for now").** After 1a compresses everything
+the saving is only ~50 MB — not worth the ingestion/ACL boundary change or the
+ADR-020 revision. Left for later if it ever matters.
 
 ### Stage 2b — Deduplicate `StartHook` (and similar re-dumps)
 Content-hash the inventory blob; persist/emit only on change. ~80–90% of
@@ -112,7 +109,10 @@ redundant data. Two parts:
 Build the deferred ADR-039 pieces: a prune worker and the *surgical*
 retranslate (rebuild only the still-covered window instead of refusing). The
 coverage guard already prevents deletion of unreproducible domain events.
-**Resolved:** prune at 90 days (`raw_event_retention_days = 90`).
+**Resolved:** prune at 90 days (`raw_event_retention_days = 90`). **Not built
+unattended (2026-07-01):** it deletes the irreplaceable raw log and reworks the
+core destructive retranslate path — build together with a backup and firm
+intent. Plan lives in `docs/storage-split-campaign.md`.
 
 ### Stage 3 — (deferred) domain-event diet
 `priority_assigned` (65 MB, 58% of domain events) and the other granular

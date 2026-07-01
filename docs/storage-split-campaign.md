@@ -275,7 +275,46 @@ Implementation-level (Claude decides, non-blocking): compression lib
    ~200 MB leaner but a single point of failure (lose it → whole raw store
    undecodable), against the data-integrity ethos. Self-contained frames.
 
-### NEXT open questions (gate stages 2a / 2c / 1b — for Shawn)
+### Decisions RESOLVED 2026-07-01 + findings
+
+- **Q5 → skip stage 2a** ("ignore for now"). ~50 MB post-compression; not worth
+  the ingestion/ACL boundary change.
+- **Q6b → approved, but not built (recommend skip).** After compression the
+  collection table is ~4 MB. Dropping old fulls to reach <1 MB requires: (a) a
+  SQLite **table-rebuild migration** (`cards_json` is `NOT NULL`), and (b) a
+  reconstruction+verify pass (rebuild each old snapshot from latest + reverse
+  diffs `prev = next − acquired + removed`, assert == stored, then drop; keep a
+  full at the one diff-chain gap). That's disproportionate machinery + a
+  migration touching irreplaceable captured collection data for ~3 MB.
+  **Recommendation: treat compression as sufficient.** If we still want it,
+  do it together (backup first). The reverse-diff reconstruction algorithm and
+  gap handling are specified in the session log below.
+- **Q7 → approved ("i guess"), NOT built unattended.** The 90-day prune
+  **deletes the irreplaceable raw event log** and requires reworking the core
+  destructive retranslate path (`Events.retranslate_from_raw!` currently
+  `ensure_raw_coverage!` → `delete_all(EventRecord)` → rebuild; it *refuses* on
+  a coverage gap). "Surgical retranslate" = rebuild only the still-raw-covered
+  window and KEEP domain events older than the prune horizon instead of
+  refusing. Plan below. This is the one remaining meaningful win (bounds
+  long-term raw growth) but it is destructive — **build together, with a backup
+  and firm intent, not overnight on "i guess."**
+
+### Stage 1b plan (surgical retranslate + prune) — ready to build together
+
+1. **Surgical retranslate.** New path that, given the coverage gap, deletes and
+   rebuilds ONLY domain events whose `mtga_source_id` still has surviving raw
+   (the covered window), leaving older domain events untouched. Contrast with
+   `retranslate_from_raw!` which deletes ALL domain events then rebuilds.
+   Add as a distinct function; keep the refusing one for full rebuilds.
+2. **Prune function** (manual/gated, mirrors the backfills): delete raw older
+   than `raw_event_retention_days` (90). Uses `RawRetention.prune_cutoff/2`.
+   Never auto-run.
+3. **Optional Oban cron** to prune on a schedule — only after the manual path is
+   proven and Shawn opts in.
+4. Coverage guard (ADR-039) already prevents deleting domain events that raw can
+   no longer reproduce.
+
+### (historical) open questions
 
 5. **Stage 2a placement (stub+null ignored).** `@ignored` is domain knowledge
    in `IdentifyDomainEvents` (the ACL), but raw is persisted in
@@ -320,15 +359,26 @@ Implementation-level (Claude decides, non-blocking): compression lib
 | Stage | Status | Notes |
 |---|---|---|
 | 1a compress raw at rest | 🟢 code done | PLAIN per-row zstd. Codec + ensure_compressed; schema→:binary; compress at both write seams; decompress at read seams; filter fixed; backfill written (manual, NOT auto-run). 2634 tests green. **Only the real-DB backfill run remains — gated on backup + Shawn.** |
-| 2a stub+null ignored raw_json | ⬜ ready | Q2 resolved; revises ADR-020 |
-| 2b dedup StartHook | ⬜ optional | marginal after 1a (~7 MB); low priority |
-| 2c collection snapshots | 🟢 compression done | `cards_json` → :binary zstd (encode/decode_entries seam); `Collection.compress_existing_cards_json!/0` backfill (manual). 2638 tests green. **Open: also drop old fulls (keep latest+diffs)? — Q6b below** |
-| 1b retention execution (90d) | ⬜ ready | Q1 resolved; needs surgical retranslate |
+| 2a stub+null ignored raw_json | ⛔ skipped | Q5: ignore for now (Shawn). ~50 MB post-compression; not worth the ACL-boundary change |
+| 2b dedup StartHook | ⛔ skipped | marginal after 1a; low priority |
+| 2c collection snapshots | 🟢 compression done; drop deferred | `cards_json` → :binary zstd + `compress_existing_cards_json!/0` backfill. 2638 tests green. Q6b (drop old fulls) approved BUT found to need a NOT-NULL table-rebuild migration + reconstruction/verify for only ~3 MB on captured data → **recommend compression is sufficient; drop not built** |
+| 1b retention execution (90d) | 📋 planned, not built | Q7 approved ("i guess") but it DELETES the irreplaceable raw log + reworks the destructive retranslate path → not built unattended; concrete plan below |
 | 3 domain-event diet | ⛔ deferred | Q3: keep all granular events |
 | Phase 2 split | ⬜ not started | Design B |
 
 ## Session log
 
+- **2026-07-01** — Shawn: Q5 skip 2a; Q6b "seems ok"; Q7 "i guess".
+  Investigated both before building. **Findings that changed the calculus:**
+  Q6b needs a NOT-NULL table-rebuild migration + reconstruction/verify for only
+  ~3 MB on irreplaceable captured collection data (compression already got it to
+  ~4 MB); Q7 deletes the irreplaceable raw log and reworks the core destructive
+  retranslate path. Per the project's data-integrity-first culture, **did NOT
+  build either unattended overnight** — recorded ready-to-build plans + a
+  recommendation to treat compression as sufficient for collection and to do the
+  raw prune together with a backup. Skipped 2a/2b. Net: the two big safe wins
+  (1a raw compression, 2c collection compression) are done; the remaining items
+  are destructive/low-ROI and await a firmer, attended go.
 - **2026-06-30 (cont. 4)** — Shawn directed stage 2c: "need current full
   collection, don't keep old redundant data." Implemented the safe part —
   zstd-compress `cards_json` (mirror of 1a): `Snapshot.cards_json` → `:binary`,
