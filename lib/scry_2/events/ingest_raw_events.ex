@@ -179,7 +179,16 @@ defmodule Scry2.Events.IngestRawEvents do
   defp run_retranslation(opts) do
     on_progress = Keyword.get(opts, :on_progress)
     total = MtgaLogIngestion.count_all()
-    fresh_ingestion = IngestionState.load()
+
+    # `:seed_self_user_id` seeds a fresh state so seat perspective survives a
+    # SessionStarted that fell out of a pruned retention window (ADR-042 stage
+    # 1b, surgical retranslate). Absent → load persisted/default state as before.
+    fresh_ingestion =
+      case Keyword.get(opts, :seed_self_user_id) do
+        nil -> IngestionState.load()
+        seed -> IngestionState.new(self_user_id: seed)
+      end
+
     do_retranslate_chunk(0, fresh_ingestion, total, 0, on_progress)
   end
 

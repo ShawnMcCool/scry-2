@@ -106,13 +106,29 @@ redundant data. Two parts:
   `save_snapshot`. Touches captured source data, so gated on confirmation.
 
 ### Stage 1b — Enable bounded retention (execution)
-Build the deferred ADR-039 pieces: a prune worker and the *surgical*
-retranslate (rebuild only the still-covered window instead of refusing). The
-coverage guard already prevents deletion of unreproducible domain events.
-**Resolved:** prune at 90 days (`raw_event_retention_days = 90`). **Not built
-unattended (2026-07-01):** it deletes the irreplaceable raw log and reworks the
-core destructive retranslate path — build together with a backup and firm
-intent. Plan lives in `docs/storage-split-campaign.md`.
+Build the deferred ADR-039 pieces: a prune and the *surgical* retranslate
+(rebuild only the still-covered window instead of refusing). The coverage guard
+already prevents deletion of unreproducible domain events. **Resolved:** prune
+at 90 days (`raw_event_retention_days = 90`).
+
+**Built 2026-07-01 (manual gated, no cron), test-first:**
+- `Scry2.MtgaLogIngestion.prune_before!/1` — deletes raw older than a cutoff
+  (never domain events).
+- `Scry2.Events.prune_raw!/1` — config-gated orchestration (nil retention =
+  keep-forever no-op).
+- `Scry2.Events.retranslate_covered!/0` — the surgical, post-prune-safe
+  retranslate: deletes+rebuilds only the covered window, **preserves** orphaned
+  (source-pruned) and synthetic (nil-source) domain events, and seeds
+  `self_user_id` from persisted ingestion state so seat perspective survives a
+  pruned `SessionStarted` (boundary decision: seed + accept tail drift). The
+  refusing full-rebuild paths (`retranslate_from_raw!`, `reingest!`,
+  `reset_all!`) are unchanged — the post-prune gap correctly keeps them
+  refusing unless forced.
+
+**NOT yet run on the real DB** — it deletes the irreplaceable raw log, so the
+operator runs it deliberately, after a backup. The Oban cron is deferred until
+the manual path is proven. Runbook + design notes in
+`docs/storage-split-campaign.md`.
 
 ### Stage 3 — (deferred) domain-event diet
 `priority_assigned` (65 MB, 58% of domain events) and the other granular

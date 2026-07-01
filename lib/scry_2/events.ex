@@ -642,6 +642,89 @@ defmodule Scry2.Events do
   end
 
   @doc """
+  Prunes raw events older than the retention window (ADR-042 stage 1b).
+
+  Reads `raw_event_retention_days` from config (override with `:retention_days`;
+  `:now` for a fixed clock). `nil` days means keep forever — a no-op returning
+  `%{deleted: 0, cutoff: nil}`. Otherwise deletes raw older than `now - days`
+  and returns `%{deleted: count, cutoff: cutoff}`.
+
+  Manual and gated: nothing calls this on a schedule. It deletes the
+  irreplaceable raw log, so run it deliberately, after a backup. Domain events
+  are never touched — the ADR-039 coverage guard protects the full-rebuild
+  paths afterward, and `retranslate_covered!/0` is the post-prune-safe rebuild.
+  """
+  @spec prune_raw!(keyword()) :: %{deleted: non_neg_integer(), cutoff: DateTime.t() | nil}
+  def prune_raw!(opts \\ []) do
+    require Scry2.Log, as: Log
+    now = Keyword.get(opts, :now, DateTime.utc_now())
+    days = Keyword.get(opts, :retention_days, Scry2.Events.RawRetention.retention_days())
+
+    case Scry2.Events.RawRetention.prune_cutoff(days, now) do
+      nil ->
+        %{deleted: 0, cutoff: nil}
+
+      cutoff ->
+        deleted = Scry2.MtgaLogIngestion.prune_before!(cutoff)
+        Log.info(:ingester, "prune_raw: deleted #{deleted} raw events older than #{cutoff}")
+        %{deleted: deleted, cutoff: cutoff}
+    end
+  end
+
+  @doc """
+  Surgically rebuilds the domain event log from surviving raw after a prune.
+
+  Unlike `retranslate_from_raw!/1` (which refuses on a coverage gap and, when
+  forced, wipes the ENTIRE domain log), this deletes and rebuilds ONLY the
+  domain events whose raw source still exists — the covered window. Orphaned
+  domain events (raw pruned) and synthetic events (nil source) are preserved:
+  they cannot be rebuilt from raw and must never be lost (ADR-017 / ADR-039).
+
+  `self_user_id` is seeded from the persisted ingestion state so seat
+  perspective survives a `SessionStarted` that fell out of the retention
+  window (ADR-042 stage 1b boundary handling).
+
+  Use after a translator change once a prune has permanently orphaned old
+  domain events. Rebuilds all projections afterward, like `reingest!/1`.
+  """
+  @spec retranslate_covered!() :: :ok
+  def retranslate_covered! do
+    require Scry2.Log, as: Log
+
+    # Capture the seed BEFORE clearing state — it survives the pruned SessionStarted.
+    seed = IngestionState.load().session.self_user_id
+
+    Log.info(
+      :ingester,
+      "retranslate_covered: rebuilding covered window (seed self_user_id=#{inspect(seed)})"
+    )
+
+    # Delete ONLY domain events whose raw source still exists (the covered window).
+    # Orphaned (source pruned) and synthetic (nil source) events are left untouched.
+    surviving_raw_ids = from(raw in Scry2.MtgaLogIngestion.EventRecord, select: raw.id)
+
+    {deleted, _} =
+      from(domain in EventRecord, where: domain.mtga_source_id in subquery(surviving_raw_ids))
+      |> Repo.delete_all()
+
+    Log.info(:ingester, "retranslate_covered: deleted #{deleted} covered domain events")
+
+    # Reset the ingestion snapshot + raw processed flags so the rebuild is clean.
+    Repo.delete_all(Scry2.Events.IngestionState.Snapshot)
+
+    Scry2.MtgaLogIngestion.EventRecord
+    |> Repo.update_all(set: [processed: false, processed_at: nil, processing_error: nil])
+
+    # Rebuild the covered window from surviving raw, seeded with self_user_id.
+    Scry2.Events.IngestRawEvents.retranslate_all_direct!(seed_self_user_id: seed)
+
+    # Rebuild all projections from the full domain log (rebuilt covered + kept orphaned).
+    replay_projections!()
+
+    :ok
+  end
+
+  @doc """
   Rebuilds all projection tables from the domain event store.
 
   Each projector owns its own replay (ADR-029): truncates its tables,

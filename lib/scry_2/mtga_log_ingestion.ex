@@ -307,6 +307,24 @@ defmodule Scry2.MtgaLogIngestion do
     Repo.aggregate(EventRecord, :count)
   end
 
+  @doc """
+  Deletes raw events older than `cutoff` (exclusive) and returns the number
+  removed. Stage 1b retention execution (ADR-042 / ADR-039).
+
+  Deletes ONLY `mtga_logs_events` rows — never domain events. Domain events
+  derived from the pruned raw become orphaned (a coverage gap), which
+  correctly makes the full-rebuild paths in `Scry2.Events` refuse afterward.
+  Manual and gated: nothing calls this on a schedule.
+  """
+  @spec prune_before!(DateTime.t()) :: non_neg_integer()
+  def prune_before!(%DateTime{} = cutoff) do
+    {deleted, _} =
+      from(e in EventRecord, where: e.mtga_timestamp < ^cutoff)
+      |> Repo.delete_all()
+
+    deleted
+  end
+
   @doc "Returns the count of raw events not yet processed."
   def count_unprocessed do
     from(r in EventRecord, where: r.processed == false)

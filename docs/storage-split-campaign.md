@@ -299,7 +299,48 @@ Implementation-level (Claude decides, non-blocking): compression lib
   long-term raw growth) but it is destructive — **build together, with a backup
   and firm intent, not overnight on "i guess."**
 
-### Stage 1b plan (surgical retranslate + prune) — ready to build together
+### Stage 1b — BUILT (2026-07-01, manual gated, no cron)
+
+Code-complete and tested; **not yet run on the real DB** (it deletes the
+irreplaceable raw log, so the operator runs it deliberately, after a backup).
+
+- `Scry2.MtgaLogIngestion.prune_before!(cutoff)` — deletes raw
+  `mtga_logs_events` older than `cutoff` (exclusive); returns the count. Never
+  touches `domain_events`. Table-owner mechanic.
+- `Scry2.Events.prune_raw!(opts)` — orchestration. Reads
+  `raw_event_retention_days` from config (override `:retention_days`; `:now`
+  for a fixed clock). `nil` days → no-op `%{deleted: 0, cutoff: nil}`. Else
+  deletes raw older than `now - days`, returns `%{deleted:, cutoff:}`. Config
+  defaults to `nil` (keep forever), so an accidental call is a no-op until
+  `raw_event_retention_days = 90` is set or passed.
+- `Scry2.Events.retranslate_covered!/0` — the post-prune-safe retranslate.
+  Deletes + rebuilds ONLY domain events whose raw source still exists (the
+  covered window); **preserves** orphaned (source pruned) and synthetic
+  (nil-source) events; seeds `self_user_id` from persisted `IngestionState`
+  (boundary decision: seed + accept tail drift for one match straddling the
+  cutoff); then `replay_projections!`. Contrast `retranslate_from_raw!/1`,
+  which refuses on a gap and, when forced, wipes the whole domain log.
+- `:seed_self_user_id` threaded through `IngestRawEvents.run_retranslation`.
+- The full-rebuild seatbelts (`retranslate_from_raw!`, `reingest!`,
+  `reset_all!`) are unchanged — they still refuse on the (now-permanent)
+  post-prune coverage gap unless forced. That's correct: after a prune, a full
+  wipe-and-rebuild WOULD lose the orphaned history, so it must refuse.
+- Tests: `test/scry_2/events/raw_prune_test.exs` +
+  `surgical_retranslate_test.exs` (11 tests). Full precommit 2649 green.
+
+**Operational runbook (run deliberately, attended):**
+1. Back up the real DB (`~/.local/share/scry_2/scry_2.db`).
+2. In the remote shell: `Scry2.Events.prune_raw!(retention_days: 90)` →
+   inspect `%{deleted:, cutoff:}`. `VACUUM` to reclaim disk (SQLite won't
+   shrink the file on DELETE).
+3. If the translator later changes, rebuild the still-covered window with
+   `Scry2.Events.retranslate_covered!()` (NOT `retranslate_from_raw!`, which
+   would refuse on the post-prune gap or lose orphaned history when forced).
+
+**Deferred:** the Oban cron that prunes on a schedule — only after the manual
+path is proven on the real DB and Shawn opts in.
+
+### Stage 1b plan (surgical retranslate + prune) — original design notes
 
 1. **Surgical retranslate.** New path that, given the coverage gap, deletes and
    rebuilds ONLY domain events whose `mtga_source_id` still has surviving raw
@@ -362,12 +403,26 @@ Implementation-level (Claude decides, non-blocking): compression lib
 | 2a stub+null ignored raw_json | ⛔ skipped | Q5: ignore for now (Shawn). ~50 MB post-compression; not worth the ACL-boundary change |
 | 2b dedup StartHook | ⛔ skipped | marginal after 1a; low priority |
 | 2c collection snapshots | ✅ compression DONE + backfilled (2026-07-01) | `cards_json` → :binary zstd; backfill RUN on real DB: 48.8 MB → 3.5 MB (14×). Q6b (drop old fulls) not built — needs NOT-NULL table-rebuild + reconstruction for ~3 MB; compression deemed sufficient |
-| 1b retention execution (90d) | 📋 planned, not built | Q7 approved ("i guess") but it DELETES the irreplaceable raw log + reworks the destructive retranslate path → not built unattended; concrete plan below |
+| 1b retention execution (90d) | ✅ code built + tested (2026-07-01), NOT yet run on real DB | Manual gated path, no cron: `MtgaLogIngestion.prune_before!/1` + `Events.prune_raw!/1` (config-gated prune) and `Events.retranslate_covered!/0` (surgical retranslate — rebuilds only the covered window, keeps orphaned + synthetic, seeds self_user_id). 11 TDD tests, full precommit green. Run deliberately after a backup; runbook below |
 | 3 domain-event diet | ⛔ deferred | Q3: keep all granular events |
 | Phase 2 split | ⬜ not started | Design B |
 
 ## Session log
 
+- **2026-07-01 (cont. 2)** — Built Stage 1b (manual gated, no cron), test-first.
+  Boundary decision (Shawn): **seed self_user_id, accept tail drift.**
+  `MtgaLogIngestion.prune_before!/1` deletes raw older than a cutoff (never
+  domain events); `Events.prune_raw!/1` computes the cutoff from
+  `raw_event_retention_days` (config-gated, nil = keep-forever no-op) and
+  prunes. `Events.retranslate_covered!/0` is the surgical, post-prune-safe
+  rebuild: deletes+rebuilds ONLY domain events whose raw source survives,
+  preserves orphaned + synthetic events, seeds self_user_id from persisted
+  `IngestionState`, then `replay_projections!`. Threaded `:seed_self_user_id`
+  through `IngestRawEvents.run_retranslation`. 11 new TDD tests
+  (raw_prune_test + surgical_retranslate_test); full precommit **2649 tests
+  green, zero warnings**. **NOT run on the real DB** — destructive (deletes
+  irreplaceable raw); operator runs it deliberately after a backup (runbook
+  above). Oban cron deferred until the manual path is proven on the real DB.
 - **2026-07-01 (cont.)** — EXECUTED the backfills on the real DB + fixed the
   live instance. **Incident:** the June-29 VM had hot-reloaded my changed
   `mtga_log_ingestion.ex` (Phoenix dev code-reloader) but never loaded the new
