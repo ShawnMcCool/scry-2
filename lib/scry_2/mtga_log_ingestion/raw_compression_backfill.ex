@@ -76,7 +76,12 @@ defmodule Scry2.MtgaLogIngestion.RawCompressionBackfill do
         stats
 
       _ ->
-        stats = Enum.reduce(rows, stats, &compress_row/2)
+        # One transaction per batch — 713k autocommit fsyncs would be
+        # pathologically slow; batching cuts it to one commit per batch.
+        {:ok, stats} =
+          Repo.transaction(fn -> Enum.reduce(rows, stats, &compress_row/2) end,
+            timeout: :infinity
+          )
 
         if rem(batch_num, progress_every) == 0 do
           Log.info(

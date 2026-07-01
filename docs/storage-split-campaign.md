@@ -358,15 +358,30 @@ Implementation-level (Claude decides, non-blocking): compression lib
 
 | Stage | Status | Notes |
 |---|---|---|
-| 1a compress raw at rest | 🟢 code done | PLAIN per-row zstd. Codec + ensure_compressed; schema→:binary; compress at both write seams; decompress at read seams; filter fixed; backfill written (manual, NOT auto-run). 2634 tests green. **Only the real-DB backfill run remains — gated on backup + Shawn.** |
+| 1a compress raw at rest | ✅ DONE + backfilled (2026-07-01) | PLAIN per-row zstd wired end-to-end; backfill RUN on real DB: raw_json 2.96 GB → 379 MB (7.8×); DB 3.8 GB → 1.3 GB after VACUUM. Backfill made batch-transactional. |
 | 2a stub+null ignored raw_json | ⛔ skipped | Q5: ignore for now (Shawn). ~50 MB post-compression; not worth the ACL-boundary change |
 | 2b dedup StartHook | ⛔ skipped | marginal after 1a; low priority |
-| 2c collection snapshots | 🟢 compression done; drop deferred | `cards_json` → :binary zstd + `compress_existing_cards_json!/0` backfill. 2638 tests green. Q6b (drop old fulls) approved BUT found to need a NOT-NULL table-rebuild migration + reconstruction/verify for only ~3 MB on captured data → **recommend compression is sufficient; drop not built** |
+| 2c collection snapshots | ✅ compression DONE + backfilled (2026-07-01) | `cards_json` → :binary zstd; backfill RUN on real DB: 48.8 MB → 3.5 MB (14×). Q6b (drop old fulls) not built — needs NOT-NULL table-rebuild + reconstruction for ~3 MB; compression deemed sufficient |
 | 1b retention execution (90d) | 📋 planned, not built | Q7 approved ("i guess") but it DELETES the irreplaceable raw log + reworks the destructive retranslate path → not built unattended; concrete plan below |
 | 3 domain-event diet | ⛔ deferred | Q3: keep all granular events |
 | Phase 2 split | ⬜ not started | Design B |
 
 ## Session log
+
+- **2026-07-01 (cont.)** — EXECUTED the backfills on the real DB + fixed the
+  live instance. **Incident:** the June-29 VM had hot-reloaded my changed
+  `mtga_log_ingestion.ex` (Phoenix dev code-reloader) but never loaded the new
+  `:ezstd` NIF → Watcher crashed on `:ezstd.compress/2` → max restart intensity
+  → `scry_2` app down (nothing on 6015). **Lesson: adding a native dep requires
+  a full restart; the dev code-reloader will pick up source mid-flight and
+  crash on the missing NIF.** Fix = restart. Then: backed up DB (verified,
+  4.08 GB), batch-transactioned `RawCompressionBackfill` (avoid 715k fsyncs),
+  stopped instance, ran both backfills standalone (single writer):
+  **raw_json 2.96 GB → 379 MB (7.8×), cards_json 48.8 MB → 3.5 MB (14×)**;
+  VACUUM'd **3.8 GB → 1.3 GB DB**; restarted, healthy, all read paths (collection/
+  operations/dashboard) 200, 0 plaintext raw rows remain. Backup kept at
+  `~/.local/share/scry_2/scry_2.db.pre-compress-backfill-2026-07-01`.
+
 
 - **2026-07-01** — Shawn: Q5 skip 2a; Q6b "seems ok"; Q7 "i guess".
   Investigated both before building. **Findings that changed the calculus:**
