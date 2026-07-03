@@ -409,6 +409,17 @@ path is proven on the real DB and Shawn opts in.
 
 ## Session log
 
+- **2026-07-01 (cont. 3)** — Committed Stage 1b (`d45edfaa`, not pushed).
+  **Validated the prune's real-world impact read-only against the static backup
+  snapshot** (zero risk, live instance untouched): 713,590 raw rows, span
+  2026-04-06 → 2026-06-30 (~86 days). A **90-day prune today deletes 0 rows** —
+  the DB isn't 90 days deep yet, so bounded retention correctly removes nothing
+  until data ages past the window (starts biting within days, then continuously;
+  for reference a 60d window would drop ~272k rows / 38%, a 30d window ~466k /
+  65%). Confirms the timestamp comparison works against the real stored format
+  (`2026-04-06T18:47:40Z`). **Conclusion: nothing destructive to run now**; the
+  prune is a safe no-op at 90d today and only matters as data ages. Kicked off
+  the **Phase 2 design pass** (see below / new ADR).
 - **2026-07-01 (cont. 2)** — Built Stage 1b (manual gated, no cron), test-first.
   Boundary decision (Shawn): **seed self_user_id, accept tail drift.**
   `MtgaLogIngestion.prune_before!/1` deletes raw older than a cutoff (never
