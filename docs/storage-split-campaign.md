@@ -405,10 +405,29 @@ path is proven on the real DB and Shawn opts in.
 | 2c collection snapshots | ✅ compression DONE + backfilled (2026-07-01) | `cards_json` → :binary zstd; backfill RUN on real DB: 48.8 MB → 3.5 MB (14×). Q6b (drop old fulls) not built — needs NOT-NULL table-rebuild + reconstruction for ~3 MB; compression deemed sufficient |
 | 1b retention execution (90d) | ✅ code built + tested (2026-07-01), NOT yet run on real DB | Manual gated path, no cron: `MtgaLogIngestion.prune_before!/1` + `Events.prune_raw!/1` (config-gated prune) and `Events.retranslate_covered!/0` (surgical retranslate — rebuilds only the covered window, keeps orphaned + synthetic, seeds self_user_id). 11 TDD tests, full precommit green. Run deliberately after a backup; runbook below |
 | 3 domain-event diet | ⛔ deferred | Q3: keep all granular events |
-| Phase 2 split | ⬜ not started | Design B |
+| Phase 2 split | 🚧 in progress — reframed to a multi-user analytics platform | Spec: `docs/superpowers/specs/2026-07-04-client-server-split-design.md` (fat SQLite client + uplink → shared Postgres analytics store; raw stays client-side; opt-out anonymized aggregation). Phases 2a→2d. **2a shipped** (client uplink core: UploadKey + WireEvent codec + unsent-batch selection; 14 tests). Supersedes the earlier "Design B / multiple devices" framing |
 
 ## Session log
 
+- **2026-07-04** — Phase 2 design pass (brainstorming) + Phase 2a shipped.
+  **Reframed Phase 2** from the campaign's "Design B / one user, many devices"
+  to a **multi-user analytics platform**: fat SQLite client (= today's app +
+  uplink; standalone = self-host) → frequent small HTTPS batches of domain
+  events only → shared Postgres analytics store (user attribution, not tenant
+  isolation) → opt-out anonymized cross-user aggregation. Raw stays 100%
+  client-side; clients own retranslation + re-upload via a content-addressed,
+  retranslation-stable upload key (idempotent upsert). Accounts likely,
+  provider deferred. Full spec:
+  `docs/superpowers/specs/2026-07-04-client-server-split-design.md`; plan for
+  2a: `docs/superpowers/plans/2026-07-04-phase-2a-client-uplink-core.md` (both
+  untracked, per project convention). **Shipped Phase 2a** (subagent-driven,
+  TDD, 3 commits `e735afeb`/`017f8889`/`20445e9b`): `Scry2.Uplink.UploadKey`,
+  `Scry2.Uplink.WireEvent` (codec), `Scry2.Uplink` (unsent-batch over the
+  reused named-cursor store). Pure client-side library, **zero runtime behavior
+  change** (no production callers yet); 14 new tests, full precommit green
+  (2663 tests). **Re-scope note:** the spec's "thread user_scope through
+  projectors" moved from 2a → 2b — it needs server-side `user_id` columns and
+  would be dead plumbing in the client. All Phase-2 commits unpushed (hold).
 - **2026-07-01 (cont. 3)** — Committed Stage 1b (`d45edfaa`, not pushed).
   **Validated the prune's real-world impact read-only against the static backup
   snapshot** (zero risk, live instance untouched): 713,590 raw rows, span
