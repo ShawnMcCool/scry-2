@@ -53,6 +53,8 @@ defmodule Scry2.Events.EventRecord do
     field :inserted_at, :utc_datetime
   end
 
+  @type t :: %__MODULE__{}
+
   @doc """
   Changeset for inserting a new domain event. `payload` is validated as
   a map (Ecto `:map` type), `event_type` is required, `inserted_at` is
