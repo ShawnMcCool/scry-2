@@ -409,6 +409,23 @@ path is proven on the real DB and Shawn opts in.
 
 ## Session log
 
+- **2026-07-06 (cont.)** — Shipped the **Phase 2b-2 server ingest foundation**
+  (Postgres, commit `75f836d0`). Additive and SQLite-safe by construction:
+  `Scry2.ServerRepo` (Postgres) is kept OUT of `:ecto_repos` and the default app
+  supervisor, so the client's SQLite workflow never needs Postgres — **proven**
+  by running the default DB-backed suite with the container stopped (green).
+  Pieces: `docker-compose.yml` (Postgres :5433), `postgrex` dep, dev/test
+  config, a migration for `users` (opt-out `contributes`) + shared
+  `domain_events` (`user_id` attribution, unique `(user_id, upload_key)`,
+  jsonb), and `Scry2.Server.{User,DomainEvent,Ingest}` — idempotent upsert keyed
+  by `(user_id, upload_key)` (dedups re-uploads, updates payload in place on a
+  retranslation, does NOT dedup across users). Opt-in server tests: `:server`
+  tag excluded by default, `Scry2.ServerCase` + `SCRY2_SERVER_TESTS=1` gate,
+  `test.server` mix alias, CI Postgres service. **5 server tests green; default
+  precommit 2667 green.** **Next (2b-2 cont.):** user-scoped projections
+  (thread `user_scope` through the projector macro — the piece deferred from
+  2a), then the ingest HTTP endpoint + auth-token→user, the real HTTP
+  `Transport`, run-mode supervision, and Shawn's backfill.
 - **2026-07-06** — Pushed Stage 1b + Phase 2a to `origin/main`. Shipped **Phase
   2b-1** (client uplink runtime, subagent-driven, TDD, commit `47378c8a`):
   `Scry2.Uplink.Transport` (behaviour — `send_batch/2`) and
