@@ -12,6 +12,23 @@ jobs:
     env:
       MIX_ENV: test
 
+    # Postgres for the SERVER-tier tests (client/server split, ADR-042 Phase 2).
+    # The default `mix test` step does NOT use it (server tests are excluded and
+    # Scry2.ServerRepo is not started); the dedicated server step below does.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: scry2
+          POSTGRES_PASSWORD: scry2
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U scry2"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v4
 
@@ -56,3 +73,8 @@ jobs:
 
       - name: Run tests
         run: mix test
+
+      - name: Run server-tier tests (Postgres)
+        env:
+          SCRY2_SERVER_TESTS: "1"
+        run: mix test.server

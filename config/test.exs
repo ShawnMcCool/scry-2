@@ -25,6 +25,18 @@ config :scry_2, Scry2.Repo,
   queue_target: 5_000,
   queue_interval: 60_000
 
+# SERVER tier (client/server split, ADR-042 Phase 2) — Postgres.
+# Only used by `:server`-tagged tests (excluded by default). Bring up
+# `docker compose up -d`, then run `SCRY2_SERVER_TESTS=1 MIX_ENV=test mix test.server`.
+config :scry_2, Scry2.ServerRepo,
+  hostname: "localhost",
+  port: 5433,
+  username: "scry2",
+  password: "scry2",
+  database: "scry2_server_test#{System.get_env("MIX_TEST_PARTITION")}",
+  pool: Ecto.Adapters.SQL.Sandbox,
+  pool_size: 5
+
 # Don't start the MTGA log watcher or card importers during tests.
 # Tests that need these exercise them directly via the module API.
 config :scry_2, start_watcher: false, start_importer: false

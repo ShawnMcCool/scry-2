@@ -1,5 +1,16 @@
 import Config
 
+# SERVER tier (client/server split, ADR-042 Phase 2) — Postgres, dev only.
+# The client is SQLite-only and does not need this; start it with
+# `docker compose up -d` when developing the server.
+config :scry_2, Scry2.ServerRepo,
+  hostname: "localhost",
+  port: 5433,
+  username: "scry2",
+  password: "scry2",
+  database: "scry2_server_dev",
+  pool_size: 5
+
 # Configure your database
 config :scry_2, Scry2.Repo,
   database: Path.expand("../scry_2_dev.db", __DIR__),

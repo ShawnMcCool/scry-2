@@ -1,0 +1,32 @@
+# Local Postgres for the scry_2 SERVER tier (client/server split, ADR-042 Phase 2).
+#
+# The client (default deployment) is SQLite-only and does NOT need this. Only
+# the multi-user analytics server uses Postgres. Bring it up before running the
+# server or the `:server`-tagged tests:
+#
+#   docker compose up -d
+#   MIX_ENV=test mix ecto.create -r Scry2.ServerRepo
+#   MIX_ENV=test mix ecto.migrate -r Scry2.ServerRepo
+#   mix test --only server
+#
+# Port 5433 (not the default 5432) avoids clashing with any native Postgres.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: scry2_server_pg
+    environment:
+      POSTGRES_USER: scry2
+      POSTGRES_PASSWORD: scry2
+      POSTGRES_DB: scry2_server_dev
+    ports:
+      - "5433:5432"
+    volumes:
+      - scry2_server_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scry2"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  scry2_server_pgdata:

@@ -45,6 +45,10 @@ defmodule Scry2.MixProject do
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
       {:ecto_sqlite3, "~> 0.18"},
+      # Postgres driver for the SERVER tier only (client/server split, ADR-042
+      # Phase 2). The client stays SQLite; Scry2.ServerRepo (Postgres) is kept
+      # out of `ecto_repos` so the default SQLite workflow never needs Postgres.
+      {:postgrex, "~> 0.19"},
       {:phoenix_html, "~> 4.1"},
       {:phoenix_live_reload, "~> 1.2", only: :dev},
       {:phoenix_live_view, "~> 1.1.0"},
@@ -93,6 +97,13 @@ defmodule Scry2.MixProject do
       "ecto.reset": ["ecto.drop", "ecto.setup"],
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "test.prod_smoke": ["ecto.create --quiet", "ecto.migrate --quiet", "test --only prod_smoke"],
+      # SERVER-tier tests (Postgres). Bring up `docker compose up -d` first, then
+      # run `MIX_ENV=test mix test.server`. Uses the separate Scry2.ServerRepo.
+      "test.server": [
+        "ecto.create --quiet -r Scry2.ServerRepo",
+        "ecto.migrate --quiet -r Scry2.ServerRepo",
+        "test --only server"
+      ],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
       "assets.build": ["compile", "tailwind scry_2", "esbuild scry_2"],
       "assets.deploy": [
