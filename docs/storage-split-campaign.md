@@ -409,6 +409,20 @@ path is proven on the real DB and Shawn opts in.
 
 ## Session log
 
+- **2026-07-06** — Pushed Stage 1b + Phase 2a to `origin/main`. Shipped **Phase
+  2b-1** (client uplink runtime, subagent-driven, TDD, commit `47378c8a`):
+  `Scry2.Uplink.Transport` (behaviour — `send_batch/2`) and
+  `Scry2.Uplink.Sender` (GenServer: interval flush + on-demand `flush/1`; drains
+  `Uplink.unsent_batch`, ships via the injected transport, advances the cursor
+  ONLY on `:ok` so failures/offline retry the same batch). Transport is
+  dependency-injected → the real HTTP impl + the server are deferred to 2b-2;
+  Sender is NOT wired into the supervisor (inert in prod, started only in
+  tests). Added a `child_spec/1` that ids by `:name` (lets multiple senders run;
+  needed by the retry test). 4 tests, precommit green (2667). Plan:
+  `docs/superpowers/plans/2026-07-06-phase-2b1-client-uplink-runtime.md`.
+  **Next (needs input): Phase 2b-2 = the Postgres server** (ingest API,
+  idempotent upsert, user-scoped projections) + the real HTTP transport +
+  supervision wiring + Shawn's backfill. Blocked on a server-infra decision.
 - **2026-07-04** — Phase 2 design pass (brainstorming) + Phase 2a shipped.
   **Reframed Phase 2** from the campaign's "Design B / one user, many devices"
   to a **multi-user analytics platform**: fat SQLite client (= today's app +
