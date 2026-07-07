@@ -405,10 +405,35 @@ path is proven on the real DB and Shawn opts in.
 | 2c collection snapshots | ✅ compression DONE + backfilled (2026-07-01) | `cards_json` → :binary zstd; backfill RUN on real DB: 48.8 MB → 3.5 MB (14×). Q6b (drop old fulls) not built — needs NOT-NULL table-rebuild + reconstruction for ~3 MB; compression deemed sufficient |
 | 1b retention execution (90d) | ✅ code built + tested (2026-07-01), NOT yet run on real DB | Manual gated path, no cron: `MtgaLogIngestion.prune_before!/1` + `Events.prune_raw!/1` (config-gated prune) and `Events.retranslate_covered!/0` (surgical retranslate — rebuilds only the covered window, keeps orphaned + synthetic, seeds self_user_id). 11 TDD tests, full precommit green. Run deliberately after a backup; runbook below |
 | 3 domain-event diet | ⛔ deferred | Q3: keep all granular events |
-| Phase 2 split | 🚧 in progress — reframed to a multi-user analytics platform | Spec: `docs/superpowers/specs/2026-07-04-client-server-split-design.md` (fat SQLite client + uplink → shared Postgres analytics store; raw stays client-side; opt-out anonymized aggregation). Phases 2a→2d. **2a shipped** (client uplink core: UploadKey + WireEvent codec + unsent-batch selection; 14 tests). Supersedes the earlier "Design B / multiple devices" framing |
+| Phase 2 split | 🚧 in progress — reframed to a multi-user analytics platform | Spec: `docs/superpowers/specs/2026-07-04-client-server-split-design.md` (fat SQLite client + uplink → shared Postgres analytics store; raw stays client-side; opt-out anonymized aggregation). Phases 2a→2d. **Shipped:** 2a client uplink core (UploadKey + WireEvent codec + unsent-batch selection); 2b-1 client runtime (`Sender` + `Transport` behaviour). **2b-2 in progress:** server foundation (Postgres `ServerRepo`, `users`/`clients`/`domain_events`, idempotent `(user_id, upload_key)` ingest, SHA-256 bearer-token auth) + client HTTP `Transport` (Req). **Next in 2b-2:** ingest HTTP endpoint+route → end-to-end → run-mode supervision + backfill. Everything additive + inert on the client (proven: default suite green with Postgres stopped). Supersedes the earlier "Design B / multiple devices" framing |
 
 ## Session log
 
+- **2026-07-07** — Phase 2b-2 continued + a live-instance incident.
+  **Incident:** adding the `postgrex` dep broke the `scry-2-dev` hot code-reloader
+  (it can't load a new dependency application into the already-running VM) → every
+  web request incl. `/health` returned a **CompileError 500**; the background
+  watcher/Oban kept running on already-loaded code, so **no gameplay capture was
+  lost**. The restart then hit **`:eaddrinuse`** on 6015 because a stale legacy
+  **`scry-2.service`** (packaged prod release v0.48.0) had re-enabled itself and
+  grabbed the port → crash-loop → "scry 2 isn't running." **Fix:** `systemctl
+  --user disable --now scry-2.service`, restart `scry-2-dev`, healthy. Lessons →
+  memory ([[scry2-local-instance-is-dev-code-on-port-6015-with-real-data]]):
+  adding a dep needs a FULL restart (not hot-reload); the legacy prod unit recurs
+  and fights for 6015 (suspect it first on `:eaddrinuse`). The watcher resumes
+  from its persisted byte cursor (`mtga_logs_cursor`) on restart, so normal
+  downtime loses nothing — only a long outage spanning an MTGA log rotation would.
+  **Built (subagent-driven, TDD, all pushed; every piece isolated + inert on the
+  client; mix runs kept in `MIX_ENV=test` to protect the running instance):**
+  `Scry2.Uplink.Transport.Http` — real `Req`-based transport, `Req.Test`-tested
+  (`d0a58c22`); and server-tier per-client bearer-token auth — `clients` table +
+  `Scry2.Server.Client` + `Scry2.Server.Clients.create!/authenticate` with
+  SHA-256-hashed tokens (`e19e5f59`). Server suite now **10 tests green**; the
+  default SQLite precommit is unaffected.
+  **Next in 2b-2:** the ingest HTTP endpoint + route (first router-touching change
+  — do controller-before-route so the live instance's compile never goes red),
+  then true end-to-end (client `Sender` → HTTP → server rows) + run-mode
+  supervision wiring + Shawn's backfill.
 - **2026-07-06 (cont.)** — Shipped the **Phase 2b-2 server ingest foundation**
   (Postgres, commit `75f836d0`). Additive and SQLite-safe by construction:
   `Scry2.ServerRepo` (Postgres) is kept OUT of `:ecto_repos` and the default app
