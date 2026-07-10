@@ -7,6 +7,11 @@ defmodule Scry2.NetDecking.Deck do
   `unresolved_cards` records references that did not map to an arena_id —
   the deck is still stored, with the unresolved references retained so the
   catalog UI can surface them.
+
+  Competitive provenance (UIDR-010) is structured and nullable: `pilot`,
+  `event_name`, `event_date`, `placement` (final standing after playoffs —
+  top 8 hold their playoff placement), `swiss_rank`, `field_size`, `wins`,
+  `losses`. Sources without it (manual paste, local JSON) leave it nil.
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -24,12 +29,33 @@ defmodule Scry2.NetDecking.Deck do
     field :source_url, :string
     field :fetched_at, :utc_datetime_usec
     field :unresolved_cards, :map
+    field :pilot, :string
+    field :event_name, :string
+    field :event_date, :date
+    field :placement, :integer
+    field :swiss_rank, :integer
+    field :field_size, :integer
+    field :wins, :integer
+    field :losses, :integer
 
     timestamps(type: :utc_datetime_usec)
   end
 
   @required [:name, :format, :main_deck, :sideboard, :source_name, :fetched_at]
-  @optional [:archetype, :composition_hash, :source_url, :unresolved_cards]
+  @optional [
+    :archetype,
+    :composition_hash,
+    :source_url,
+    :unresolved_cards,
+    :pilot,
+    :event_name,
+    :event_date,
+    :placement,
+    :swiss_rank,
+    :field_size,
+    :wins,
+    :losses
+  ]
 
   @spec changeset(map()) :: Ecto.Changeset.t()
   @spec changeset(t(), map()) :: Ecto.Changeset.t()

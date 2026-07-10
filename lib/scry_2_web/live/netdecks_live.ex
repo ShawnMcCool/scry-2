@@ -15,10 +15,10 @@ defmodule Scry2Web.NetdecksLive do
   use Scry2Web, :live_view
 
   alias Scry2.NetDecking
-  alias Scry2.Topics
-  alias Scry2.Workers.PeriodicallyFetchNetdecks
+  alias Scry2.NetDecking.IngestSource
   alias Scry2Web.CardImages
   alias Scry2Web.NetdecksHelpers
+  alias Scry2.Topics
 
   @empty_catalog %{buildable: [], craftable: [], short: []}
 
@@ -26,13 +26,20 @@ defmodule Scry2Web.NetdecksLive do
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.collection_snapshots())
 
+    browse_sources = NetdecksHelpers.browse_source_options(NetDecking.browsable_sources())
+
     {:ok,
      assign(socket,
        search: "",
        catalog: @empty_catalog,
        detail: nil,
        sources: [],
-       cached_card_ids: CardImages.empty()
+       cached_card_ids: CardImages.empty(),
+       import_open: false,
+       import_mode: "paste",
+       browse_sources: browse_sources,
+       browse: NetdecksHelpers.initial_browse(browse_sources),
+       imported_urls: MapSet.new()
      )}
   end
 
@@ -60,7 +67,8 @@ defmodule Scry2Web.NetdecksLive do
       |> assign(
         detail: nil,
         catalog: catalog,
-        sources: NetDecking.source_status()
+        sources: NetDecking.source_status(),
+        imported_urls: NetDecking.imported_source_urls()
       )
       |> CardImages.request(art_ids, variants: [:art, :full])
 
@@ -91,13 +99,80 @@ defmodule Scry2Web.NetdecksLive do
     {:noreply, assign(socket, search: query)}
   end
 
-  def handle_event("fetch_now", _params, socket) do
-    Oban.insert(PeriodicallyFetchNetdecks.new(%{}))
+  def handle_event("toggle_import_panel", _params, socket) do
+    {:noreply, assign(socket, import_open: not socket.assigns.import_open)}
+  end
 
-    {:noreply,
-     socket
-     |> put_flash(:info, "Fetching decks from sources…")
-     |> assign(catalog: NetDecking.catalog(), sources: NetDecking.source_status())}
+  def handle_event("import_mode", %{"mode" => mode}, socket) when mode in ~w(paste browse) do
+    socket = assign(socket, import_mode: mode)
+
+    if mode == "browse" and browse_needs_load?(socket.assigns.browse) do
+      {:noreply, load_events(socket)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_event("browse_config", params, socket) do
+    browse = socket.assigns.browse
+
+    chosen_option =
+      Enum.find(socket.assigns.browse_sources, fn option -> option.name == params["source"] end)
+
+    browse =
+      cond do
+        chosen_option && chosen_option.name != browse.source_name ->
+          %{
+            browse
+            | source: chosen_option.module,
+              source_name: chosen_option.name,
+              formats: chosen_option.formats,
+              format: List.first(chosen_option.formats)
+          }
+
+        params["format"] in browse.formats ->
+          %{browse | format: params["format"]}
+
+        true ->
+          browse
+      end
+
+    {:noreply, socket |> assign(browse: browse) |> load_events()}
+  end
+
+  def handle_event("browse_load", _params, socket) do
+    {:noreply, load_events(socket)}
+  end
+
+  def handle_event("browse_toggle_event", %{"url" => url}, socket) do
+    browse = socket.assigns.browse
+    selected = NetdecksHelpers.toggle_selection(browse.selected, url)
+    {:noreply, assign(socket, browse: %{browse | selected: selected})}
+  end
+
+  def handle_event("browse_import", _params, socket) do
+    browse = socket.assigns.browse
+    event_urls = MapSet.to_list(browse.selected)
+    source = browse.source
+
+    if event_urls == [] or browse.importing? do
+      {:noreply, socket}
+    else
+      {:noreply,
+       socket
+       |> assign(browse: %{browse | importing?: true})
+       |> start_async(:browse_import, fn ->
+         Enum.map(event_urls, fn event_url -> IngestSource.run_event(source, event_url) end)
+       end)}
+    end
+  end
+
+  def handle_event("toggle_auto_fetch", %{"source" => source_name}, socket) do
+    enabled = not NetDecking.auto_fetch_enabled?(source_name)
+    NetDecking.set_auto_fetch(source_name, enabled)
+
+    browse = socket.assigns.browse
+    {:noreply, assign(socket, browse: %{browse | auto_fetch?: enabled})}
   end
 
   def handle_event("copied", _params, socket) do
@@ -107,6 +182,43 @@ defmodule Scry2Web.NetdecksLive do
   def handle_event("copy_failed", _params, socket) do
     {:noreply,
      put_flash(socket, :error, "Couldn't reach the clipboard. Select the text to copy manually.")}
+  end
+
+  @impl true
+  def handle_async(:browse_events, {:ok, {:ok, events}}, socket) do
+    browse = socket.assigns.browse
+    {:noreply, assign(socket, browse: %{browse | events: events, loading?: false})}
+  end
+
+  def handle_async(:browse_events, {:ok, {:error, _reason}}, socket) do
+    {:noreply, assign_browse_error(socket)}
+  end
+
+  def handle_async(:browse_events, {:exit, _reason}, socket) do
+    {:noreply, assign_browse_error(socket)}
+  end
+
+  def handle_async(:browse_import, {:ok, results}, socket) do
+    browse = socket.assigns.browse
+
+    {:noreply,
+     socket
+     |> assign(
+       browse: %{browse | importing?: false, selected: MapSet.new()},
+       catalog: NetDecking.catalog(),
+       sources: NetDecking.source_status(),
+       imported_urls: NetDecking.imported_source_urls()
+     )
+     |> put_flash(:info, NetdecksHelpers.import_flash(results))}
+  end
+
+  def handle_async(:browse_import, {:exit, _reason}, socket) do
+    browse = socket.assigns.browse
+
+    {:noreply,
+     socket
+     |> assign(browse: %{browse | importing?: false})
+     |> put_flash(:error, "Import crashed — nothing may have been saved. Try again.")}
   end
 
   @impl true
@@ -142,6 +254,11 @@ defmodule Scry2Web.NetdecksLive do
         search={@search}
         sources={@sources}
         cached_ids={@cached_card_ids}
+        import_open={@import_open}
+        import_mode={@import_mode}
+        browse={@browse}
+        browse_sources={@browse_sources}
+        imported_urls={@imported_urls}
       />
     </Layouts.app>
     """
@@ -153,6 +270,11 @@ defmodule Scry2Web.NetdecksLive do
   attr :search, :string, required: true
   attr :sources, :list, required: true
   attr :cached_ids, :any, required: true
+  attr :import_open, :boolean, required: true
+  attr :import_mode, :string, required: true
+  attr :browse, :map, required: true
+  attr :browse_sources, :list, required: true
+  attr :imported_urls, :any, required: true
 
   defp catalog(assigns) do
     assigns = assign(assigns, :total, catalog_total(assigns.catalog))
@@ -170,44 +292,83 @@ defmodule Scry2Web.NetdecksLive do
       <span :for={source <- @sources} class="badge badge-sm badge-ghost gap-1">
         {source.source_name} · {source.count}
       </span>
-      <button type="button" phx-click="fetch_now" class="btn btn-xs btn-ghost gap-1">
-        <.icon name="hero-arrow-path" class="size-3.5" /> Fetch now
-      </button>
     </div>
 
-    <details class="bg-base-200 rounded-xl mb-6 group">
-      <summary class="cursor-pointer select-none px-4 py-3 text-sm font-medium flex items-center gap-2">
-        <.icon name="hero-plus" class="size-4" /> Import a deck
-      </summary>
-      <form id="netdeck-import" phx-submit="import" class="px-4 pb-4 space-y-3">
-        <div class="flex flex-col sm:flex-row gap-2">
-          <input
-            type="text"
-            name="import[name]"
-            required
-            placeholder="Deck name"
-            class="input input-bordered input-sm flex-1"
-          />
-          <input
-            type="text"
-            name="import[archetype]"
-            placeholder="Archetype (optional)"
-            class="input input-bordered input-sm flex-1"
-          />
-        </div>
-        <textarea
-          name="import[decklist_text]"
-          placeholder="Deck&#10;4 Lightning Bolt (M21) 162&#10;…"
-          rows="6"
-          class="textarea textarea-bordered w-full text-sm font-mono"
-        ></textarea>
-        <div class="flex justify-end">
-          <button type="submit" class="btn btn-primary btn-sm">
-            <.icon name="hero-arrow-down-tray" class="size-4" /> Import
+    <div class="bg-base-200 rounded-xl mb-6">
+      <button
+        type="button"
+        phx-click="toggle_import_panel"
+        class="w-full text-left cursor-pointer select-none px-4 py-3 text-sm font-medium flex items-center gap-2"
+      >
+        <.icon name={if @import_open, do: "hero-chevron-down", else: "hero-plus"} class="size-4" />
+        Import decks
+      </button>
+
+      <div :if={@import_open}>
+        <div role="tablist" class="tabs tabs-border px-4">
+          <button
+            type="button"
+            role="tab"
+            class={["tab", @import_mode == "paste" && "tab-active"]}
+            phx-click="import_mode"
+            phx-value-mode="paste"
+          >
+            Paste
+          </button>
+          <button
+            :if={@browse}
+            type="button"
+            role="tab"
+            class={["tab", @import_mode == "browse" && "tab-active"]}
+            phx-click="import_mode"
+            phx-value-mode="browse"
+          >
+            Browse
           </button>
         </div>
-      </form>
-    </details>
+
+        <form
+          :if={@import_mode == "paste"}
+          id="netdeck-import"
+          phx-submit="import"
+          class="px-4 py-4 space-y-3"
+        >
+          <div class="flex flex-col sm:flex-row gap-2">
+            <input
+              type="text"
+              name="import[name]"
+              required
+              placeholder="Deck name"
+              class="input input-bordered input-sm flex-1"
+            />
+            <input
+              type="text"
+              name="import[archetype]"
+              placeholder="Archetype (optional)"
+              class="input input-bordered input-sm flex-1"
+            />
+          </div>
+          <textarea
+            name="import[decklist_text]"
+            placeholder="Deck&#10;4 Lightning Bolt (M21) 162&#10;…"
+            rows="6"
+            class="textarea textarea-bordered w-full text-sm font-mono"
+          ></textarea>
+          <div class="flex justify-end">
+            <button type="submit" class="btn btn-primary btn-sm">
+              <.icon name="hero-arrow-down-tray" class="size-4" /> Import
+            </button>
+          </div>
+        </form>
+
+        <.browse_pane
+          :if={@import_mode == "browse" && @browse}
+          browse={@browse}
+          browse_sources={@browse_sources}
+          imported_urls={@imported_urls}
+        />
+      </div>
+    </div>
 
     <.empty_state :if={@total == 0} icon="hero-rectangle-stack">
       No decks yet — paste an MTGA decklist above to start your catalog.
@@ -251,12 +412,135 @@ defmodule Scry2Web.NetdecksLive do
     """
   end
 
+  # ── Import browser (UIDR-011) ────────────────────────────────────────────
+
+  attr :browse, :map, required: true
+  attr :browse_sources, :list, required: true
+  attr :imported_urls, :any, required: true
+
+  defp browse_pane(assigns) do
+    ~H"""
+    <div class="px-4 py-4 space-y-3">
+      <div class="flex flex-wrap items-center gap-3">
+        <form phx-change="browse_config" class="flex flex-wrap items-center gap-2">
+          <select name="source" class="select select-bordered select-sm w-auto">
+            <option
+              :for={option <- @browse_sources}
+              value={option.name}
+              selected={option.name == @browse.source_name}
+            >
+              {option.name}
+            </option>
+          </select>
+          <select
+            name="format"
+            class="select select-bordered select-sm w-auto"
+            disabled={length(@browse.formats) <= 1}
+          >
+            <option
+              :for={format <- @browse.formats}
+              value={format}
+              selected={format == @browse.format}
+            >
+              {format}
+            </option>
+          </select>
+        </form>
+
+        <label class="flex items-center gap-2 text-xs text-base-content/55 cursor-pointer">
+          <input
+            type="checkbox"
+            class="toggle toggle-xs"
+            checked={@browse.auto_fetch?}
+            phx-click="toggle_auto_fetch"
+            phx-value-source={@browse.source_name}
+          /> Fetch new events daily
+        </label>
+      </div>
+
+      <div
+        :if={@browse.loading?}
+        class="flex items-center gap-2 text-sm text-base-content/55 py-2"
+      >
+        <span class="loading loading-spinner loading-sm"></span> Loading events…
+      </div>
+
+      <div
+        :if={@browse.error}
+        class="flex items-center gap-3 text-sm bg-warning/10 text-warning rounded-lg p-3"
+      >
+        <span class="flex-1">{@browse.error}</span>
+        <button type="button" phx-click="browse_load" class="btn btn-xs btn-ghost">
+          Retry
+        </button>
+      </div>
+
+      <p
+        :if={@browse.events == [] && !@browse.loading? && !@browse.error}
+        class="text-sm text-base-content/55 py-2"
+      >
+        No events listed for {@browse.format} right now.
+      </p>
+
+      <div
+        :if={@browse.events && @browse.events != []}
+        class="rounded-lg border border-base-300/40 divide-y divide-base-300/40"
+      >
+        <label
+          :for={event <- @browse.events}
+          class="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer hover:bg-base-300/20"
+        >
+          <input
+            type="checkbox"
+            class="checkbox checkbox-sm"
+            phx-click="browse_toggle_event"
+            phx-value-url={event.url}
+            checked={MapSet.member?(@browse.selected, event.url)}
+          />
+          <span class="min-w-0 flex-1 truncate">{event.name}</span>
+          <span :if={event.date} class="text-xs text-base-content/45 tabular-nums shrink-0">
+            {NetdecksHelpers.format_event_date(event.date)}
+          </span>
+          <span
+            :if={MapSet.member?(@imported_urls, event.url)}
+            class="badge badge-xs badge-ghost shrink-0"
+          >
+            imported
+          </span>
+        </label>
+      </div>
+
+      <div :if={@browse.events && @browse.events != []} class="flex justify-end">
+        <button
+          type="button"
+          phx-click="browse_import"
+          disabled={MapSet.size(@browse.selected) == 0 || @browse.importing?}
+          class="btn btn-primary btn-sm"
+        >
+          <span :if={@browse.importing?} class="loading loading-spinner loading-xs"></span>
+          <.icon
+            :if={!@browse.importing?}
+            name="hero-arrow-down-tray"
+            class="size-4"
+          /> Import selected events
+        </button>
+      </div>
+    </div>
+    """
+  end
+
   attr :entry, :map, required: true
   attr :cached_ids, :any, required: true
 
   defp deck_tile(assigns) do
     [hero | micros] = pad_signature(assigns.entry.signature_arena_ids)
-    assigns = assign(assigns, hero: hero, micros: micros)
+
+    assigns =
+      assign(assigns,
+        hero: hero,
+        micros: micros,
+        subtitle: NetdecksHelpers.tile_subtitle(assigns.entry.provenance)
+      )
 
     ~H"""
     <.link
@@ -268,7 +552,7 @@ defmodule Scry2Web.NetdecksLive do
           :if={@hero}
           arena_id={@hero}
           variant={:art}
-          class="w-[9.5rem] h-[7rem] object-cover"
+          class="w-[6.75rem] h-[5rem] object-cover"
           cached_ids={@cached_ids}
         />
         <div class="flex flex-col gap-1 justify-between">
@@ -277,23 +561,37 @@ defmodule Scry2Web.NetdecksLive do
               :if={id}
               arena_id={id}
               variant={:art}
-              class="w-24 h-[2.05rem] object-cover"
+              class="w-[4.25rem] h-[1.4rem] object-cover"
               cached_ids={@cached_ids}
             />
           <% end %>
         </div>
       </div>
 
-      <div class="flex flex-col justify-center gap-1.5 min-w-0">
+      <div class="flex flex-col gap-1.5 min-w-0">
         <div class="font-medium leading-tight truncate">{@entry.label}</div>
+        <div :if={@subtitle} class="text-xs text-base-content/55 truncate">{@subtitle}</div>
         <div class="flex items-center gap-2 text-xs text-base-content/55">
           <.mana_pips colors={@entry.color_identity} />
           <.set_icon :if={@entry.set_code} code={@entry.set_code} />
           <span class="tabular-nums">×{@entry.variant_count}</span>
         </div>
-        <div class="flex items-center gap-2 text-xs">
-          <.cost_pips cost={@entry.result.maindeck.wildcard_cost} />
-          <span class="text-base-content/45 tabular-nums">
+        <div
+          :if={
+            NetdecksHelpers.any_cost?(@entry.result.maindeck.wildcard_cost) ||
+              !NetdecksHelpers.fully_owned?(@entry.result) ||
+              sideboard_count(@entry.deck) > 0
+          }
+          class="flex items-center gap-2 text-xs"
+        >
+          <.cost_pips
+            :if={NetdecksHelpers.any_cost?(@entry.result.maindeck.wildcard_cost)}
+            cost={@entry.result.maindeck.wildcard_cost}
+          />
+          <span
+            :if={!NetdecksHelpers.fully_owned?(@entry.result)}
+            class="text-base-content/45 tabular-nums"
+          >
             {NetdecksHelpers.format_owned_pct(@entry.result.maindeck.owned_pct)}
           </span>
           <span :if={sideboard_count(@entry.deck) > 0} class="badge badge-xs badge-ghost">
@@ -321,7 +619,8 @@ defmodule Scry2Web.NetdecksLive do
     assigns =
       assign(assigns,
         meta: NetdecksHelpers.status_meta(assigns.detail.result.status),
-        unresolved: NetdecksHelpers.unresolved_count(assigns.detail.deck)
+        unresolved: NetdecksHelpers.unresolved_count(assigns.detail.deck),
+        provenance_line: NetdecksHelpers.detail_provenance(assigns.detail)
       )
 
     ~H"""
@@ -334,8 +633,24 @@ defmodule Scry2Web.NetdecksLive do
       </.link>
       <.kind_label class="mb-1">netdeck</.kind_label>
       <div class="flex items-center gap-3 flex-wrap">
-        <h1 class="text-2xl font-beleren leading-tight">{@detail.deck.name}</h1>
+        <h1 class="text-2xl font-beleren leading-tight">{@detail.label}</h1>
         <span class={["badge badge-sm", @meta.badge]}>{@meta.label}</span>
+      </div>
+      <div
+        :if={@provenance_line || @detail.deck.source_url}
+        class="flex items-center gap-2 mt-1 text-sm text-base-content/55 flex-wrap"
+      >
+        <span :if={@provenance_line}>{@provenance_line}</span>
+        <a
+          :if={@detail.deck.source_url}
+          href={@detail.deck.source_url}
+          target="_blank"
+          rel="noopener"
+          class="link link-hover inline-flex items-center gap-1"
+        >
+          {NetdecksHelpers.source_host(@detail.deck.source_url)}
+          <.icon name="hero-arrow-top-right-on-square" class="size-3.5" />
+        </a>
       </div>
       <div class="flex items-center gap-3 mt-2 text-xs text-base-content/55">
         <span :if={@detail.deck.archetype} class="badge badge-sm badge-ghost">
@@ -440,6 +755,62 @@ defmodule Scry2Web.NetdecksLive do
           rows={@detail.side_rows}
           cached_ids={@cached_ids}
         />
+
+        <.variants_list
+          :if={length(@detail.variants) > 1}
+          variants={@detail.variants}
+          current_deck_id={@detail.deck.id}
+        />
+      </div>
+    </div>
+    """
+  end
+
+  # Every deck in the same cluster, best finish first (UIDR-010). Rows
+  # navigate to that variant's detail; the row being viewed is marked.
+  attr :variants, :list, required: true
+  attr :current_deck_id, :integer, required: true
+
+  defp variants_list(assigns) do
+    ~H"""
+    <div>
+      <h3 class="text-xs font-semibold text-base-content/40 uppercase tracking-widest mb-2">
+        Variants ({length(@variants)})
+      </h3>
+      <div class="rounded-xl bg-base-200/60 border border-base-300/40 divide-y divide-base-300/40">
+        <.link
+          :for={variant <- @variants}
+          patch={~p"/netdecks/#{variant.deck.id}"}
+          class={[
+            "flex items-center gap-3 px-3 py-2 text-sm hover:bg-base-200 transition-colors",
+            variant.deck.id == @current_deck_id && "bg-base-200/80"
+          ]}
+        >
+          <span class="min-w-0 flex-1 truncate">
+            {variant.deck.pilot || variant.deck.name}
+          </span>
+          <span :if={variant.finish} class="text-xs text-base-content/55 tabular-nums shrink-0">
+            {variant.finish}
+          </span>
+          <span :if={variant.record} class="text-xs text-base-content/45 tabular-nums shrink-0">
+            {variant.record}
+          </span>
+          <span
+            :if={variant.deck.event_date}
+            class="text-xs text-base-content/45 tabular-nums shrink-0 hidden sm:inline"
+          >
+            {NetdecksHelpers.format_event_date(variant.deck.event_date)}
+          </span>
+          <span class="shrink-0">
+            <.cost_pips cost={variant.wildcard_cost} size="size-3.5" />
+          </span>
+          <span
+            :if={variant.deck.id == @current_deck_id}
+            class="badge badge-xs badge-ghost shrink-0"
+          >
+            viewing
+          </span>
+        </.link>
       </div>
     </div>
     """
@@ -512,6 +883,37 @@ defmodule Scry2Web.NetdecksLive do
 
   defp visible(entries, search) do
     Enum.filter(entries || [], &NetdecksHelpers.match_search?(&1, search))
+  end
+
+  defp browse_needs_load?(nil), do: false
+  defp browse_needs_load?(browse), do: is_nil(browse.events) and not browse.loading?
+
+  # Kicks off the async event listing for the current source + format.
+  # HTTP stays out of the LiveView process; the pane shows a loading state.
+  defp load_events(socket) do
+    browse = socket.assigns.browse
+    source = browse.source
+    format = browse.format
+
+    browse = %{
+      browse
+      | loading?: true,
+        error: nil,
+        events: nil,
+        selected: MapSet.new(),
+        auto_fetch?: NetDecking.auto_fetch_enabled?(browse.source_name)
+    }
+
+    socket
+    |> assign(browse: browse)
+    |> start_async(:browse_events, fn -> source.list_events(format) end)
+  end
+
+  defp assign_browse_error(socket) do
+    browse = socket.assigns.browse
+
+    error = "Couldn't load events from #{browse.source_name}. Check your connection."
+    assign(socket, browse: %{browse | loading?: false, error: error})
   end
 
   # Loads a deck detail and precomputes the on-disk image set once (web concern,

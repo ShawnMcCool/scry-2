@@ -13,6 +13,9 @@ defmodule Scry2.Workers.PeriodicallyFetchNetdecksTest do
     def source_name, do: "ok"
 
     @impl true
+    def formats, do: []
+
+    @impl true
     def fetch,
       do: [%{name: "Mono Red", decklist_text: "Deck\n4 Roaring Furnace\n"}]
   end
@@ -23,13 +26,24 @@ defmodule Scry2.Workers.PeriodicallyFetchNetdecksTest do
     def source_name, do: "boom"
 
     @impl true
+    def formats, do: []
+
+    @impl true
     def fetch, do: raise("boom")
   end
 
   setup do
     previous = Application.get_env(:scry_2, :netdecking_sources)
     Application.put_env(:scry_2, :netdecking_sources, [BoomSource, OkSource])
-    on_exit(fn -> Application.put_env(:scry_2, :netdecking_sources, previous) end)
+
+    on_exit(fn ->
+      if previous do
+        Application.put_env(:scry_2, :netdecking_sources, previous)
+      else
+        Application.delete_env(:scry_2, :netdecking_sources)
+      end
+    end)
+
     :ok
   end
 
@@ -39,5 +53,14 @@ defmodule Scry2.Workers.PeriodicallyFetchNetdecksTest do
     assert :ok = perform_job(PeriodicallyFetchNetdecks, %{})
 
     assert NetDecking.list_decks() != []
+  end
+
+  test "skips a source whose auto-fetch setting is off" do
+    create_card(name: "Roaring Furnace")
+    NetDecking.set_auto_fetch("ok", false)
+
+    assert :ok = perform_job(PeriodicallyFetchNetdecks, %{})
+
+    assert NetDecking.list_decks() == []
   end
 end

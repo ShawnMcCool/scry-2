@@ -25,7 +25,15 @@ defmodule Scry2.NetDecking.IngestDecklist do
           required(:decklist_text) => String.t(),
           optional(:archetype) => String.t(),
           optional(:format) => String.t(),
-          optional(:source_url) => String.t()
+          optional(:source_url) => String.t(),
+          optional(:pilot) => String.t(),
+          optional(:event_name) => String.t(),
+          optional(:event_date) => Date.t(),
+          optional(:placement) => pos_integer(),
+          optional(:swiss_rank) => pos_integer(),
+          optional(:field_size) => pos_integer(),
+          optional(:wins) => non_neg_integer(),
+          optional(:losses) => non_neg_integer()
         }
 
   @spec run(attrs()) :: {:ok, Deck.t()} | {:error, Ecto.Changeset.t()}
@@ -77,7 +85,15 @@ defmodule Scry2.NetDecking.IngestDecklist do
         source_name: attrs.source_name,
         source_url: attrs[:source_url],
         fetched_at: DateTime.utc_now(),
-        unresolved_cards: %{"cards" => unresolved}
+        unresolved_cards: %{"cards" => unresolved},
+        pilot: attrs[:pilot],
+        event_name: attrs[:event_name],
+        event_date: attrs[:event_date],
+        placement: attrs[:placement],
+        swiss_rank: attrs[:swiss_rank],
+        field_size: attrs[:field_size],
+        wins: attrs[:wins],
+        losses: attrs[:losses]
       })
 
     Repo.insert_or_update(changeset)

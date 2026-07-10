@@ -22,6 +22,10 @@ defmodule Scry2.NetDecking.Sources.LocalJsonSource do
   @impl true
   def source_name, do: "local"
 
+  # Not browsable: the feed is a single out-of-band file, not an event catalog.
+  @impl true
+  def formats, do: []
+
   @impl true
   def fetch, do: fetch(path: Config.get(:netdecking_local_feed_path))
 

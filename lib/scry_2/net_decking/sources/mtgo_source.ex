@@ -5,6 +5,11 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
   each event page server-renders `window.MTGO.decklists.data`, parsed by
   `Scry2.NetDecking.Sources.MtgoExtract`.
 
+  Browsable (import browser): `formats/0` declares `["standard"]`;
+  `list_events/2` scrapes the landing page into `%{name, date, url}` events
+  (name + date parsed from the link slug — the landing page carries nothing
+  richer); `fetch_event/2` pulls one event's decklists by URL.
+
   First-party Wizards/Daybreak source — no Cloudflare, honest User-Agent, never
   a browser-UA spoof. Politeness: events fetched per run are capped; HTTP is
   isolated behind a `req_options` opt so tests stub it with `Req.Test`. A failed
@@ -24,6 +29,9 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
   def source_name, do: "mtgo"
 
   @impl true
+  def formats, do: ["standard"]
+
+  @impl true
   def fetch, do: fetch([])
 
   @spec fetch(keyword()) :: [Scry2.NetDecking.Source.raw_deck()]
@@ -31,12 +39,20 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
     req_options = Keyword.get(opts, :req_options, [])
     max_events = Keyword.get(opts, :max_events, @default_max_events)
 
-    case get("#{@base}/decklists", req_options) do
-      {:ok, landing} ->
-        landing
-        |> standard_links()
+    case list_events("standard", opts) do
+      {:ok, events} ->
+        events
         |> Enum.take(max_events)
-        |> Enum.flat_map(fn path -> fetch_event(path, req_options) end)
+        |> Enum.flat_map(fn event ->
+          case fetch_event(event.url, req_options: req_options) do
+            {:ok, raw_decks} ->
+              raw_decks
+
+            {:error, reason} ->
+              Log.warning(:importer, "mtgo event #{event.url} failed: #{inspect(reason)}")
+              []
+          end
+        end)
 
       {:error, reason} ->
         Log.warning(:importer, "mtgo landing fetch failed: #{inspect(reason)}")
@@ -44,23 +60,66 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
     end
   end
 
-  defp standard_links(html) do
-    ~r{/decklist/standard-[a-z0-9-]+}
-    |> Regex.scan(html)
-    |> List.flatten()
-    |> Enum.uniq()
+  @impl true
+  def list_events(format), do: list_events(format, [])
+
+  @spec list_events(String.t(), keyword()) ::
+          {:ok, [Scry2.NetDecking.Source.event()]} | {:error, term()}
+  def list_events(format, opts) do
+    req_options = Keyword.get(opts, :req_options, [])
+
+    with {:ok, landing} <- get("#{@base}/decklists", req_options) do
+      events =
+        ~r{/decklist/#{format}-[a-z0-9-]+}
+        |> Regex.scan(landing)
+        |> List.flatten()
+        |> Enum.uniq()
+        |> Enum.map(&parse_event_link(&1, format))
+
+      {:ok, events}
+    end
   end
 
-  defp fetch_event(path, req_options) do
-    url = @base <> path
+  @impl true
+  def fetch_event(url), do: fetch_event(url, [])
 
-    case get(url, req_options) do
-      {:ok, html} ->
-        MtgoExtract.raw_decks(html, url)
+  @spec fetch_event(String.t(), keyword()) ::
+          {:ok, [Scry2.NetDecking.Source.raw_deck()]} | {:error, term()}
+  def fetch_event(url, opts) do
+    req_options = Keyword.get(opts, :req_options, [])
 
-      {:error, reason} ->
-        Log.warning(:importer, "mtgo event #{path} failed: #{inspect(reason)}")
-        []
+    with {:ok, html} <- get(url, req_options) do
+      {:ok, MtgoExtract.raw_decks(html, url)}
+    end
+  end
+
+  @doc """
+  Pure: one landing-page link path → an event. Slugs end in the event date
+  fused to a numeric event id (`…-2026-06-2712845670`); the leading words
+  humanize into the event name (`standard-challenge-32` → "Standard
+  Challenge 32"). Slugs without the date suffix yield `date: nil`.
+  """
+  @spec parse_event_link(String.t(), String.t()) :: Scry2.NetDecking.Source.event()
+  def parse_event_link("/decklist/" <> slug = path, _format) do
+    case Regex.run(~r/^([a-z0-9-]+?)-(\d{4})-(\d{2})-(\d{2})\d+$/, slug) do
+      [_, name_slug, year, month, day] ->
+        %{name: humanize(name_slug), date: to_date(year, month, day), url: @base <> path}
+
+      nil ->
+        %{name: humanize(slug), date: nil, url: @base <> path}
+    end
+  end
+
+  defp humanize(slug) do
+    slug
+    |> String.split("-")
+    |> Enum.map_join(" ", &String.capitalize/1)
+  end
+
+  defp to_date(year, month, day) do
+    case Date.new(String.to_integer(year), String.to_integer(month), String.to_integer(day)) do
+      {:ok, date} -> date
+      {:error, _} -> nil
     end
   end
 

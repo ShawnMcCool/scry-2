@@ -11,31 +11,32 @@ defmodule Scry2.Workers.PeriodicallyFetchNetdecks do
   enqueueable on demand from the dashboard. Runs on the always-on dev instance
   via the base crontab, like the other `Periodically*` workers.
 
-  The default source roster is `@default_sources` (the single source of truth);
-  `config :scry_2, :netdecking_sources` is the override seam (used by tests),
-  and a job may override per-run via the `"sources"` arg (module-name strings).
+  The source roster is `Scry2.NetDecking.sources/0` (the single source of
+  truth, overridable via `config :scry_2, :netdecking_sources`); a job may
+  override per-run via the `"sources"` arg (module-name strings). Sources
+  whose per-source auto-fetch setting is off
+  (`Scry2.NetDecking.auto_fetch_enabled?/1`) are skipped — the import
+  browser is then the only way that source's decks enter the catalog.
   """
   use Oban.Worker, queue: :imports, max_attempts: 1, unique: [period: 300]
 
+  alias Scry2.NetDecking
   alias Scry2.NetDecking.IngestSource
-  alias Scry2.NetDecking.Sources.{LocalJsonSource, MtgoSource}
 
   require Scry2.Log, as: Log
-
-  @default_sources [LocalJsonSource, MtgoSource]
 
   @impl Oban.Worker
   def perform(%Oban.Job{} = job) do
     job.args
     |> Map.get("sources")
     |> resolve_sources()
+    |> Enum.filter(fn source -> NetDecking.auto_fetch_enabled?(source.source_name()) end)
     |> Enum.each(&run_isolated/1)
 
     :ok
   end
 
-  defp resolve_sources(nil),
-    do: Application.get_env(:scry_2, :netdecking_sources, @default_sources)
+  defp resolve_sources(nil), do: NetDecking.sources()
 
   defp resolve_sources(list) when is_list(list), do: Enum.map(list, &to_module/1)
 

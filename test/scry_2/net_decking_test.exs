@@ -181,4 +181,219 @@ defmodule Scry2.NetDeckingTest do
     assert red.label =~ "Mono-Red"
     assert Enum.any?(entries, &(&1.variant_count == 1))
   end
+
+  test "deck_detail falls back to the economy inventory when the collection snapshot has no wildcards" do
+    # The fallback scanner captures cards only — wildcards_* stay nil on the
+    # collection snapshot. The log-derived economy inventory is then the best
+    # available balance.
+    bolt = create_card(name: "Lightning Bolt", rarity: "rare")
+
+    create_collection_snapshot(entries: [{bolt.arena_id, 0}])
+    create_inventory_snapshot(wildcards_rare: 7, wildcards_mythic: 2)
+
+    {:ok, deck} =
+      NetDecking.import_decklist(%{
+        name: "Burn",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n"
+      })
+
+    detail = NetDecking.deck_detail(deck)
+
+    assert detail.wildcards.rare == 7
+    assert detail.wildcards.mythic == 2
+    # 4 rare Bolts owned 0, 7 rare wildcards on hand → craftable
+    assert detail.result.status == :craftable
+  end
+
+  test "snapshot wildcards win over the economy inventory when present" do
+    bolt = create_card(name: "Lightning Bolt", rarity: "rare")
+
+    create_collection_snapshot(entries: [{bolt.arena_id, 0}], wildcards_rare: 1)
+    create_inventory_snapshot(wildcards_rare: 7)
+
+    {:ok, deck} =
+      NetDecking.import_decklist(%{
+        name: "Burn",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n"
+      })
+
+    detail = NetDecking.deck_detail(deck)
+
+    assert detail.wildcards.rare == 1
+  end
+
+  test "catalog entries carry the cluster's best-finish provenance" do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    create_card(name: "Goblin Raider", rarity: "common", color_identity: "R")
+    create_card(name: "Shock Bolt", rarity: "common", color_identity: "R")
+    create_card(name: "Grizzly Bear", rarity: "rare", color_identity: "G")
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Standard Challenge 32 — deep",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n",
+        pilot: "deep",
+        event_name: "Standard Challenge 32",
+        event_date: ~D[2026-06-08],
+        placement: 14,
+        field_size: 42
+      })
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Standard Challenge 32 — winner",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n1 Grizzly Bear\n",
+        pilot: "winner",
+        event_name: "Standard Challenge 32",
+        event_date: ~D[2026-06-26],
+        placement: 1,
+        field_size: 42
+      })
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Bears",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Grizzly Bear\n"
+      })
+
+    catalog = NetDecking.catalog()
+    entries = catalog.buildable ++ catalog.craftable ++ catalog.short
+
+    red = Enum.find(entries, &(&1.variant_count == 2))
+    assert red.provenance.finish == "1st"
+    assert red.provenance.event_name == "Standard Challenge 32"
+    assert red.provenance.event_date == ~D[2026-06-26]
+
+    bears = Enum.find(entries, &(&1.variant_count == 1))
+    assert bears.provenance == nil
+  end
+
+  test "deck_detail returns the archetype label and the cluster's variants sorted by finish" do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    create_card(name: "Goblin Raider", rarity: "common", color_identity: "R")
+    create_card(name: "Shock Bolt", rarity: "common", color_identity: "R")
+
+    {:ok, deep_deck} =
+      NetDecking.import_decklist(%{
+        name: "Standard Challenge 32 — deep",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n",
+        pilot: "deep",
+        event_name: "Standard Challenge 32",
+        event_date: ~D[2026-06-08],
+        placement: 14,
+        swiss_rank: 14,
+        field_size: 42,
+        wins: 3,
+        losses: 2
+      })
+
+    {:ok, _winner_deck} =
+      NetDecking.import_decklist(%{
+        name: "Standard Challenge 32 — winner",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n3 Shock Bolt\n",
+        pilot: "winner",
+        event_name: "Standard Challenge 32",
+        event_date: ~D[2026-06-26],
+        placement: 1,
+        field_size: 42,
+        wins: 7,
+        losses: 2
+      })
+
+    detail = NetDecking.deck_detail(deep_deck)
+
+    assert detail.label =~ "Mono-Red"
+
+    assert [first_variant, second_variant] = detail.variants
+    assert first_variant.deck.pilot == "winner"
+    assert first_variant.finish == "1st"
+    assert first_variant.record == "7-2"
+    assert second_variant.deck.pilot == "deep"
+    assert second_variant.finish == "14th of 42"
+    assert %{} = first_variant.wildcard_cost
+  end
+
+  test "deck_detail for an unclustered deck lists only itself as a variant" do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+    {:ok, deck} =
+      NetDecking.import_decklist(%{
+        name: "Solo",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n"
+      })
+
+    detail = NetDecking.deck_detail(deck)
+
+    assert [%{deck: %{id: variant_id}, finish: nil, record: nil}] = detail.variants
+    assert variant_id == deck.id
+  end
+
+  describe "browsable_sources/1" do
+    defmodule Browsable do
+      @behaviour Scry2.NetDecking.Source
+      @impl true
+      def source_name, do: "browsable"
+      @impl true
+      def formats, do: ["standard"]
+      @impl true
+      def fetch, do: []
+    end
+
+    defmodule NotBrowsable do
+      @behaviour Scry2.NetDecking.Source
+      @impl true
+      def source_name, do: "not-browsable"
+      @impl true
+      def formats, do: []
+      @impl true
+      def fetch, do: []
+    end
+
+    test "keeps only sources that declare at least one format" do
+      assert NetDecking.browsable_sources([Browsable, NotBrowsable]) == [Browsable]
+    end
+  end
+
+  test "imported_source_urls returns the distinct non-nil source urls" do
+    create_card(name: "Lightning Bolt")
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "A",
+        source_name: "mtgo",
+        source_url: "https://example/event-1",
+        decklist_text: "Deck\n4 Lightning Bolt\n"
+      })
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "B",
+        source_name: "manual",
+        decklist_text: "Deck\n2 Lightning Bolt\n"
+      })
+
+    assert NetDecking.imported_source_urls() == MapSet.new(["https://example/event-1"])
+  end
+
+  describe "auto-fetch setting" do
+    test "defaults to enabled" do
+      assert NetDecking.auto_fetch_enabled?("mtgo")
+    end
+
+    test "round-trips off and on" do
+      NetDecking.set_auto_fetch("mtgo", false)
+      refute NetDecking.auto_fetch_enabled?("mtgo")
+
+      NetDecking.set_auto_fetch("mtgo", true)
+      assert NetDecking.auto_fetch_enabled?("mtgo")
+    end
+  end
 end

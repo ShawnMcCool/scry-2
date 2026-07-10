@@ -14,6 +14,13 @@ defmodule Scry2.NetDecking.Sources.MtgoExtract do
   Arena by name, and `Scry2.Cards.resolve_references/1` handles double-faced
   names via its front-face fallback.
 
+  Provenance: the same object carries `standings` (swiss rank), `final_rank`
+  (standing after playoffs — top 8 hold their playoff placement), `winloss`,
+  `starttime`, and `player_count`, all keyed by `loginid`. Each raw deck is
+  stamped with `pilot`, `event_name`, `event_date`, `placement` (final rank),
+  `swiss_rank`, `field_size`, `wins`, and `losses`; a player missing from a
+  lookup gets nil — provenance is only ever what the page published.
+
   No HTTP, no DB — fully testable from a captured fixture.
   """
   @marker "window.MTGO.decklists.data ="
@@ -22,12 +29,54 @@ defmodule Scry2.NetDecking.Sources.MtgoExtract do
   def raw_decks(html, source_url) when is_binary(html) do
     with {:ok, json} <- extract_object(html),
          {:ok, %{"decklists" => decklists} = data} when is_list(decklists) <- JSON.decode(json) do
-      event = data["description"] || "MTGO Standard"
-      Enum.map(decklists, &to_raw_deck(&1, event, source_url))
+      context = event_context(data)
+      Enum.map(decklists, &to_raw_deck(&1, context, source_url))
     else
       _ -> []
     end
   end
+
+  defp event_context(data) do
+    %{
+      # display_name feeds deck.name (required) and may fall back; event_name
+      # is provenance and stays nil unless the page published one (UIDR-010).
+      display_name: data["description"] || "MTGO Standard",
+      event_name: data["description"],
+      event_date: parse_start_date(data["starttime"]),
+      field_size: parse_int(get_in(data, ["player_count", "players"])),
+      swiss_rank_by_login: rank_lookup(data["standings"], "rank"),
+      placement_by_login: rank_lookup(data["final_rank"], "rank"),
+      wins_by_login: rank_lookup(data["winloss"], "wins"),
+      losses_by_login: rank_lookup(data["winloss"], "losses")
+    }
+  end
+
+  defp rank_lookup(entries, field) when is_list(entries) do
+    Map.new(entries, fn entry -> {entry["loginid"], parse_int(entry[field])} end)
+  end
+
+  defp rank_lookup(_entries, _field), do: %{}
+
+  # "2026-06-08 20:00:00.0" → ~D[2026-06-08]
+  defp parse_start_date(<<date_part::binary-size(10), _rest::binary>>) do
+    case Date.from_iso8601(date_part) do
+      {:ok, date} -> date
+      {:error, _} -> nil
+    end
+  end
+
+  defp parse_start_date(_), do: nil
+
+  defp parse_int(value) when is_integer(value), do: value
+
+  defp parse_int(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {int, ""} -> int
+      _ -> nil
+    end
+  end
+
+  defp parse_int(_), do: nil
 
   defp extract_object(html) do
     case :binary.match(html, @marker) do
@@ -70,20 +119,29 @@ defmodule Scry2.NetDecking.Sources.MtgoExtract do
     end
   end
 
-  defp to_raw_deck(decklist, event, source_url) do
+  defp to_raw_deck(decklist, context, source_url) do
     main = lines(decklist["main_deck"])
     side = lines(decklist["sideboard_deck"] || decklist["sideboard"])
     player = decklist["player"] || "Unknown"
+    login_id = decklist["loginid"]
 
     text =
       (["Deck"] ++ main ++ ["", "Sideboard"] ++ side)
       |> Enum.join("\n")
 
     %{
-      name: "#{event} — #{player}",
+      name: "#{context.display_name} — #{player}",
       decklist_text: text,
       archetype: nil,
-      source_url: source_url
+      source_url: source_url,
+      pilot: player,
+      event_name: context.event_name,
+      event_date: context.event_date,
+      placement: Map.get(context.placement_by_login, login_id),
+      swiss_rank: Map.get(context.swiss_rank_by_login, login_id),
+      field_size: context.field_size,
+      wins: Map.get(context.wins_by_login, login_id),
+      losses: Map.get(context.losses_by_login, login_id)
     }
   end
 

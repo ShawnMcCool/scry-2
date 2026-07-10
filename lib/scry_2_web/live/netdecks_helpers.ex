@@ -73,6 +73,14 @@ defmodule Scry2Web.NetdecksHelpers do
   def format_owned_pct(fraction), do: "#{round(fraction * 100)}%"
 
   @doc """
+  True when every maindeck card is owned. Fully-owned tiles omit the cost
+  and percentage — "100%" next to a zero cost is dead information the
+  Buildable-now section heading already carries.
+  """
+  @spec fully_owned?(map()) :: boolean()
+  def fully_owned?(%{maindeck: %{owned_pct: owned_pct}}), do: owned_pct >= 1.0
+
+  @doc """
   Per-card ownership state for styling a decklist row:
   `:free` (basic land), `:owned` (have all needed), `:missing` (own none),
   `:partial` (own some but not all).
@@ -108,4 +116,143 @@ defmodule Scry2Web.NetdecksHelpers do
 
   defp contains?(nil, _query_lower), do: false
   defp contains?(value, query_lower), do: String.contains?(String.downcase(value), query_lower)
+
+  @doc """
+  Tile provenance subtitle: "1st · Standard Challenge 32 · Jun 26".
+  Absent parts are omitted; nil provenance yields nil (no line, UIDR-010).
+  """
+  @spec tile_subtitle(map() | nil) :: String.t() | nil
+  def tile_subtitle(nil), do: nil
+
+  def tile_subtitle(provenance) do
+    join_parts([
+      provenance.finish,
+      provenance.event_name,
+      format_event_date(provenance.event_date)
+    ])
+  end
+
+  @doc """
+  Detail-header provenance line:
+  "Venom01 — 1st · Standard Challenge 32 · Jun 26, 2026 · 7-2".
+  Takes the `deck_detail` map (`deck` + `finish` + `record`); nil when the
+  deck carries no provenance at all. The source link renders separately.
+  """
+  @spec detail_provenance(map()) :: String.t() | nil
+  def detail_provenance(%{deck: deck, finish: finish, record: record}) do
+    join_parts([
+      pilot_finish(deck.pilot, finish),
+      deck.event_name,
+      format_event_date_long(deck.event_date),
+      record
+    ])
+  end
+
+  defp pilot_finish(nil, finish), do: finish
+  defp pilot_finish(pilot, nil), do: pilot
+  defp pilot_finish(pilot, finish), do: "#{pilot} — #{finish}"
+
+  defp join_parts(parts) do
+    case Enum.reject(parts, &is_nil/1) do
+      [] -> nil
+      present -> Enum.join(present, " · ")
+    end
+  end
+
+  @doc ~s(Short event date for tiles: "Jun 26"; nil in, nil out.)
+  @spec format_event_date(Date.t() | nil) :: String.t() | nil
+  def format_event_date(nil), do: nil
+  def format_event_date(date), do: Calendar.strftime(date, "%b %-d")
+
+  @doc ~s(Long event date for the detail header: "Jun 26, 2026"; nil in, nil out.)
+  @spec format_event_date_long(Date.t() | nil) :: String.t() | nil
+  def format_event_date_long(nil), do: nil
+  def format_event_date_long(date), do: Calendar.strftime(date, "%b %-d, %Y")
+
+  @doc ~s(Link text for a source URL: host without "www." — "mtgo.com".)
+  @spec source_host(String.t() | nil) :: String.t() | nil
+  def source_host(nil), do: nil
+
+  def source_host(url) do
+    case URI.parse(url).host do
+      nil -> nil
+      host -> String.replace_prefix(host, "www.", "")
+    end
+  end
+
+  # ── Import browser state (UIDR-011) ────────────────────────────────────
+
+  @doc "Picker metadata for browsable source modules: `[%{name, module, formats}]`."
+  @spec browse_source_options([module()]) :: [map()]
+  def browse_source_options(source_modules) do
+    Enum.map(source_modules, fn source_module ->
+      %{
+        name: source_module.source_name(),
+        module: source_module,
+        formats: source_module.formats()
+      }
+    end)
+  end
+
+  @doc """
+  Fresh browse-pane state pointing at the first browsable source and its
+  first format; nil when nothing is browsable (the Browse tab hides).
+  """
+  @spec initial_browse([map()]) :: map() | nil
+  def initial_browse([]), do: nil
+
+  def initial_browse([first_option | _rest]) do
+    %{
+      source: first_option.module,
+      source_name: first_option.name,
+      formats: first_option.formats,
+      format: List.first(first_option.formats),
+      events: nil,
+      loading?: false,
+      error: nil,
+      selected: MapSet.new(),
+      importing?: false,
+      auto_fetch?: true
+    }
+  end
+
+  @doc "Adds the url to the selection if absent, removes it if present."
+  @spec toggle_selection(MapSet.t(), String.t()) :: MapSet.t()
+  def toggle_selection(selected, url) do
+    if MapSet.member?(selected, url) do
+      MapSet.delete(selected, url)
+    else
+      MapSet.put(selected, url)
+    end
+  end
+
+  @doc """
+  Flash message for a batch of per-event import results
+  (`[{:ok, %{ingested: n, ...}} | {:error, reason}]`).
+  """
+  @spec import_flash([{:ok, map()} | {:error, term()}]) :: String.t()
+  def import_flash(results) do
+    {ok_summaries, failures} = Enum.split_with(results, &match?({:ok, _summary}, &1))
+    failed_count = length(failures)
+
+    case {ok_summaries, failed_count} do
+      {[], failed} ->
+        "Couldn't import — #{pluralize(failed, "event")} failed."
+
+      {summaries, failed} ->
+        decks = summaries |> Enum.map(fn {:ok, summary} -> summary.ingested end) |> Enum.sum()
+
+        base =
+          "Imported #{pluralize(decks, "deck")} from #{pluralize(length(summaries), "event")}."
+
+        if failed > 0 do
+          base <> " #{pluralize(failed, "event")} failed."
+        else
+          base
+        end
+    end
+  end
+
+  defp pluralize(1, noun), do: "1 #{noun}"
+  defp pluralize(count, noun), do: "#{count} #{noun}s"
 end

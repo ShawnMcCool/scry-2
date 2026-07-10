@@ -22,7 +22,22 @@ defmodule Scry2.NetDecking.Source do
           required(:name) => String.t(),
           required(:decklist_text) => String.t(),
           optional(:archetype) => String.t(),
-          optional(:source_url) => String.t()
+          optional(:source_url) => String.t(),
+          optional(:pilot) => String.t(),
+          optional(:event_name) => String.t(),
+          optional(:event_date) => Date.t(),
+          optional(:placement) => pos_integer(),
+          optional(:swiss_rank) => pos_integer(),
+          optional(:field_size) => pos_integer(),
+          optional(:wins) => non_neg_integer(),
+          optional(:losses) => non_neg_integer()
+        }
+
+  @typedoc "One browsable event on a source's landing page (import browser)."
+  @type event :: %{
+          required(:name) => String.t(),
+          required(:url) => String.t(),
+          required(:date) => Date.t() | nil
         }
 
   @doc "Stable provenance label for this source (e.g. \"local\", \"mtgo\")."
@@ -30,4 +45,19 @@ defmodule Scry2.NetDecking.Source do
 
   @doc "Fetch the current set of decks from this source."
   @callback fetch() :: [raw_deck()]
+
+  @doc """
+  Formats this source can be browsed by in the import browser. `[]` means
+  the source is not browsable (e.g. the local JSON feed) and the browser
+  will not offer it.
+  """
+  @callback formats() :: [String.t()]
+
+  @doc "Recent events for a format, newest first, from the source's landing page."
+  @callback list_events(format :: String.t()) :: {:ok, [event()]} | {:error, term()}
+
+  @doc "Every raw deck of one event, identified by its landing-page URL."
+  @callback fetch_event(url :: String.t()) :: {:ok, [raw_deck()]} | {:error, term()}
+
+  @optional_callbacks list_events: 1, fetch_event: 1
 end

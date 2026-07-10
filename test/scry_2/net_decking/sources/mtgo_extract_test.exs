@@ -26,4 +26,56 @@ defmodule Scry2.NetDecking.Sources.MtgoExtractTest do
   test "html without the data assignment yields []" do
     assert MtgoExtract.raw_decks("<html>nope</html>", "u") == []
   end
+
+  test "joins standings, final rank, and win/loss onto each deck by loginid" do
+    [first_deck, second_deck] = MtgoExtract.raw_decks(@html, @url)
+
+    assert first_deck.pilot == "1OR513N86"
+    assert first_deck.event_name == "Standard Challenge 32"
+    assert first_deck.event_date == ~D[2026-06-08]
+    assert first_deck.placement == 14
+    assert first_deck.swiss_rank == 14
+    assert first_deck.field_size == 42
+    assert first_deck.wins == 3
+    assert first_deck.losses == 2
+
+    assert second_deck.pilot == "Misplacedginger"
+    assert second_deck.placement == 25
+    assert second_deck.wins == 1
+    assert second_deck.losses == 2
+  end
+
+  test "a page without a description yields nil event_name, not a fallback" do
+    html = ~s"""
+    <script>window.MTGO.decklists.data = {
+    "decklists": [{"loginid": "1", "player": "solo",
+      "main_deck": [{"qty": 4, "card_attributes": {"card_name": "Sear"}}],
+      "sideboard_deck": []}]};</script>
+    """
+
+    [deck] = MtgoExtract.raw_decks(html, "u")
+
+    assert deck.event_name == nil
+    assert deck.name == "MTGO Standard — solo"
+  end
+
+  test "decks without standings entries carry nil provenance" do
+    html = ~s"""
+    <script>window.MTGO.decklists.data = {"description": "Standard League",
+    "decklists": [{"loginid": "1", "player": "solo",
+      "main_deck": [{"qty": 4, "card_attributes": {"card_name": "Sear"}}],
+      "sideboard_deck": []}]};</script>
+    """
+
+    [deck] = MtgoExtract.raw_decks(html, "u")
+
+    assert deck.pilot == "solo"
+    assert deck.event_name == "Standard League"
+    assert deck.event_date == nil
+    assert deck.placement == nil
+    assert deck.swiss_rank == nil
+    assert deck.field_size == nil
+    assert deck.wins == nil
+    assert deck.losses == nil
+  end
 end
