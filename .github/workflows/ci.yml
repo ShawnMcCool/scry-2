@@ -46,8 +46,9 @@ jobs:
           path: |
             deps
             _build
-          key: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-${{ hashFiles('**/mix.lock') }}
-          restore-keys: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-
+            priv/native
+          key: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-nif1-${{ hashFiles('**/mix.lock') }}
+          restore-keys: ubuntu-latest-mix-${{ env.MIX_ENV }}-1.19-28-nif1-
 
       - name: Cache cargo build
         uses: actions/cache@v4
