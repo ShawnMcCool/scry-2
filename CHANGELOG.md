@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.52.2 — 2026-07-11
+
 ### New
 
 - The **Netdecks page** now shows where each deck actually performed: pilot, event, date, and finish (placement, record, field size) appear under the archetype name on catalog tiles and the deck page — and you can browse the other variants of an archetype from its tile.
