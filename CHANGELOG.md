@@ -11,6 +11,17 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- Scry2's database now takes a fraction of the disk space it used to — game event history and collection snapshots are stored compressed. Existing data is converted automatically in the background; nothing is lost.
+- Card images now appear the moment they finish downloading, on every page — placeholders flip to images without reloading.
+
+### Fixed
+
+- Fixed the match page showing gray placeholders in **Revealed cards** after a new MTGA set releases. The images now download automatically the first time you open the match.
+- Fixed the **Drafts**, **Decks**, and **Netdecks** pages hanging on first view of new cards while images downloaded one at a time. Pages now load instantly and images fill in as they arrive.
+- Fixed netdeck art tiles going blank when opening a deck's details.
+
 ## v0.51.0 — 2026-06-30
 
 ### Improved
