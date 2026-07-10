@@ -20,6 +20,10 @@ defmodule Scry2Web.Components.RevealedCardsCard do
   attr :groups, :list, required: true, doc: "Output of `MatchBoardView.group_by_seat_and_zone/1`."
   attr :card_names_by_arena_id, :map, default: %{}
 
+  attr :cached_ids, :any,
+    default: nil,
+    doc: "MapSet of arena_ids with a cached image — see `CardComponents.card_image/1`."
+
   def card(assigns) do
     ~H"""
     <div :if={@groups != []} class="card bg-base-200 shadow-sm" data-test="revealed-cards-card">
@@ -38,6 +42,7 @@ defmodule Scry2Web.Components.RevealedCardsCard do
             seat_label={group.label}
             zones={group.zones}
             card_names_by_arena_id={@card_names_by_arena_id}
+            cached_ids={@cached_ids}
           />
         </div>
       </div>
@@ -49,6 +54,7 @@ defmodule Scry2Web.Components.RevealedCardsCard do
   attr :seat_label, :string, required: true
   attr :zones, :list, required: true
   attr :card_names_by_arena_id, :map, default: %{}
+  attr :cached_ids, :any, default: nil
 
   defp seat_group(assigns) do
     ~H"""
@@ -70,6 +76,7 @@ defmodule Scry2Web.Components.RevealedCardsCard do
             id={"revealed-#{@group_idx}-#{zone.zone_id}-#{idx}-#{arena_id}"}
             arena_id={arena_id}
             name={Map.get(@card_names_by_arena_id, arena_id, "Card ##{arena_id}")}
+            cached_ids={@cached_ids}
             class="w-[3.5rem]"
           />
         </div>

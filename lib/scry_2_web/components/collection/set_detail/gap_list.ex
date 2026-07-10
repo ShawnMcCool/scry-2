@@ -18,7 +18,7 @@ defmodule Scry2Web.Collection.SetDetail.GapList do
   @rarity_order ~w(mythic rare uncommon common)
 
   attr :completion, SetCompletion, required: true
-  attr :cached_arena_ids, :any, default: nil
+  attr :cached_ids, :any, default: nil
 
   def gap_list(assigns) do
     sections = build_sections(assigns.completion)
@@ -53,7 +53,7 @@ defmodule Scry2Web.Collection.SetDetail.GapList do
             :for={{card, count} <- gaps}
             card={card}
             count={count}
-            cached_arena_ids={@cached_arena_ids}
+            cached_ids={@cached_ids}
           />
         </div>
       </section>

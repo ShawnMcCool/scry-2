@@ -14,6 +14,7 @@ defmodule Scry2Web.MatchesLive do
 
   alias Scry2.{Cards, LiveState, MatchEconomy, Matches}
   alias Scry2.Topics
+  alias Scry2Web.CardImages
   alias Scry2Web.Components.{RankBadge, RevealedCardsCard}
   alias Scry2Web.Live.MatchBoardView
   alias Scry2Web.MatchesHelpers
@@ -288,7 +289,7 @@ defmodule Scry2Web.MatchesLive do
       if deck_submission, do: extract_arena_ids(deck_submission), else: []
 
     revealed_rows = LiveState.get_revealed_cards_by_match_id(match.mtga_match_id)
-    revealed_arena_ids = revealed_rows |> Enum.map(& &1.arena_id) |> Enum.uniq()
+    revealed_arena_ids = MatchBoardView.revealed_arena_ids(revealed_rows)
     revealed_groups = MatchBoardView.group_by_seat_and_zone(revealed_rows)
 
     cards_by_arena_id =
@@ -297,7 +298,8 @@ defmodule Scry2Web.MatchesLive do
         ids -> Cards.list_by_arena_ids(ids)
       end
 
-    assign(socket,
+    socket
+    |> assign(
       match: match,
       matches: [],
       opponent_history: opponent_history,
@@ -306,11 +308,12 @@ defmodule Scry2Web.MatchesLive do
       revealed_groups: revealed_groups,
       match_economy_summary: MatchEconomy.get_summary(match.mtga_match_id)
     )
+    |> CardImages.request(revealed_arena_ids)
   end
 
   defp assign_revealed_cards(socket, mtga_match_id) do
     revealed_rows = LiveState.get_revealed_cards_by_match_id(mtga_match_id)
-    revealed_arena_ids = revealed_rows |> Enum.map(& &1.arena_id) |> Enum.uniq()
+    revealed_arena_ids = MatchBoardView.revealed_arena_ids(revealed_rows)
     revealed_groups = MatchBoardView.group_by_seat_and_zone(revealed_rows)
 
     # Merge any new arena_ids into the existing card map without
@@ -324,10 +327,12 @@ defmodule Scry2Web.MatchesLive do
         ids -> Map.merge(existing, Cards.list_by_arena_ids(ids))
       end
 
-    assign(socket,
+    socket
+    |> assign(
       revealed_groups: revealed_groups,
       cards_by_arena_id: cards_by_arena_id
     )
+    |> CardImages.request(revealed_arena_ids)
   end
 
   # ── Index render ─────────────────────────────────────────────────────
@@ -464,6 +469,7 @@ defmodule Scry2Web.MatchesLive do
       <RevealedCardsCard.card
         groups={@revealed_groups}
         card_names_by_arena_id={card_names_from(@cards_by_arena_id)}
+        cached_ids={@cached_card_ids}
       />
 
       <%!-- Opponent history --%>

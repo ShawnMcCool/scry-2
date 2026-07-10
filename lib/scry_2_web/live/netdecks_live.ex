@@ -14,10 +14,10 @@ defmodule Scry2Web.NetdecksLive do
   """
   use Scry2Web, :live_view
 
-  alias Scry2.Cards.ImageCache
   alias Scry2.NetDecking
   alias Scry2.Topics
   alias Scry2.Workers.PeriodicallyFetchNetdecks
+  alias Scry2Web.CardImages
   alias Scry2Web.NetdecksHelpers
 
   @empty_catalog %{buildable: [], craftable: [], short: []}
@@ -32,7 +32,7 @@ defmodule Scry2Web.NetdecksLive do
        catalog: @empty_catalog,
        detail: nil,
        sources: [],
-       cached_arena_ids: MapSet.new()
+       cached_card_ids: CardImages.empty()
      )}
   end
 
@@ -53,30 +53,16 @@ defmodule Scry2Web.NetdecksLive do
       |> Enum.flat_map(& &1.signature_arena_ids)
       |> Enum.uniq()
 
-    cached = art_ids |> Enum.filter(&ImageCache.cached?(&1, :art)) |> MapSet.new()
-
+    # Art crops for the tiles; full cards for the hover popup (CardHover
+    # pops the full card, not the crop).
     socket =
-      assign(socket,
+      socket
+      |> assign(
         detail: nil,
         catalog: catalog,
-        sources: NetDecking.source_status(),
-        cached_arena_ids: cached
+        sources: NetDecking.source_status()
       )
-
-    # Download missing art crops off the request path; re-render when ready so
-    # the catalog never blocks on a first-view cache miss (~170 crops).
-    socket =
-      if connected?(socket) and art_ids != [] do
-        start_async(socket, :cache_art, fn ->
-          # Art crops for the tiles; full cards for the hover popup (CardHover
-          # pops the full card, not the crop).
-          ImageCache.ensure_cached(art_ids, variant: :art)
-          ImageCache.ensure_cached(art_ids, variant: :full)
-          art_ids |> Enum.filter(&ImageCache.cached?(&1, :art)) |> MapSet.new()
-        end)
-      else
-        socket
-      end
+      |> CardImages.request(art_ids, variants: [:art, :full])
 
     {:noreply, socket}
   end
@@ -138,13 +124,6 @@ defmodule Scry2Web.NetdecksLive do
   def handle_info(_message, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_async(:cache_art, {:ok, cached}, socket) do
-    {:noreply, assign(socket, cached_arena_ids: cached)}
-  end
-
-  def handle_async(:cache_art, {:exit, _reason}, socket), do: {:noreply, socket}
-
-  @impl true
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
@@ -156,13 +135,13 @@ defmodule Scry2Web.NetdecksLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <.detail :if={@detail} detail={@detail} cached_arena_ids={@cached_arena_ids} />
+      <.detail :if={@detail} detail={@detail} cached_ids={@cached_card_ids} />
       <.catalog
         :if={is_nil(@detail)}
         catalog={@catalog}
         search={@search}
         sources={@sources}
-        cached_arena_ids={@cached_arena_ids}
+        cached_ids={@cached_card_ids}
       />
     </Layouts.app>
     """
@@ -173,7 +152,7 @@ defmodule Scry2Web.NetdecksLive do
   attr :catalog, :map, required: true
   attr :search, :string, required: true
   attr :sources, :list, required: true
-  attr :cached_arena_ids, :any, required: true
+  attr :cached_ids, :any, required: true
 
   defp catalog(assigns) do
     assigns = assign(assigns, :total, catalog_total(assigns.catalog))
@@ -265,7 +244,7 @@ defmodule Scry2Web.NetdecksLive do
         <.deck_tile
           :for={entry <- entries}
           entry={entry}
-          cached_arena_ids={@cached_arena_ids}
+          cached_ids={@cached_ids}
         />
       </div>
     </section>
@@ -273,7 +252,7 @@ defmodule Scry2Web.NetdecksLive do
   end
 
   attr :entry, :map, required: true
-  attr :cached_arena_ids, :any, required: true
+  attr :cached_ids, :any, required: true
 
   defp deck_tile(assigns) do
     [hero | micros] = pad_signature(assigns.entry.signature_arena_ids)
@@ -290,7 +269,7 @@ defmodule Scry2Web.NetdecksLive do
           arena_id={@hero}
           variant={:art}
           class="w-[9.5rem] h-[7rem] object-cover"
-          cached_ids={@cached_arena_ids}
+          cached_ids={@cached_ids}
         />
         <div class="flex flex-col gap-1 justify-between">
           <%= for id <- @micros do %>
@@ -299,7 +278,7 @@ defmodule Scry2Web.NetdecksLive do
               arena_id={id}
               variant={:art}
               class="w-24 h-[2.05rem] object-cover"
-              cached_ids={@cached_arena_ids}
+              cached_ids={@cached_ids}
             />
           <% end %>
         </div>
@@ -336,7 +315,7 @@ defmodule Scry2Web.NetdecksLive do
   # ── Detail view ──────────────────────────────────────────────────────────
 
   attr :detail, :map, required: true
-  attr :cached_arena_ids, :any, required: true
+  attr :cached_ids, :any, required: true
 
   defp detail(assigns) do
     assigns =
@@ -452,14 +431,14 @@ defmodule Scry2Web.NetdecksLive do
           title="Maindeck"
           section="main"
           rows={@detail.main_rows}
-          cached_arena_ids={@cached_arena_ids}
+          cached_ids={@cached_ids}
         />
         <.card_list
           :if={@detail.side_rows != []}
           title="Sideboard"
           section="side"
           rows={@detail.side_rows}
-          cached_arena_ids={@cached_arena_ids}
+          cached_ids={@cached_ids}
         />
       </div>
     </div>
@@ -469,7 +448,7 @@ defmodule Scry2Web.NetdecksLive do
   attr :title, :string, required: true
   attr :section, :string, required: true
   attr :rows, :list, required: true
-  attr :cached_arena_ids, :any, required: true
+  attr :cached_ids, :any, required: true
 
   defp card_list(assigns) do
     ~H"""
@@ -489,7 +468,7 @@ defmodule Scry2Web.NetdecksLive do
             arena_id={row.arena_id}
             name={row.name}
             class={if row.missing > 0, do: "w-full opacity-40", else: "w-full"}
-            cached_ids={@cached_arena_ids}
+            cached_ids={@cached_ids}
           />
           <span class={[
             "absolute top-1 right-1 rounded bg-black/75 px-1 text-[0.7rem] font-bold tabular-nums pointer-events-none",
@@ -543,11 +522,9 @@ defmodule Scry2Web.NetdecksLive do
       |> Enum.map(& &1.arena_id)
       |> Enum.uniq()
 
-    if connected?(socket), do: ImageCache.ensure_cached(arena_ids)
-
-    cached = arena_ids |> Enum.filter(&ImageCache.cached?/1) |> MapSet.new()
-
-    assign(socket, detail: detail, cached_arena_ids: cached)
+    socket
+    |> assign(detail: detail)
+    |> CardImages.request(arena_ids)
   end
 
   defp catalog_total(catalog) do

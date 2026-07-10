@@ -89,6 +89,24 @@ defmodule Scry2Web.Live.MatchBoardViewTest do
     end
   end
 
+  describe "revealed_arena_ids/1" do
+    test "returns [] for empty input" do
+      assert MatchBoardView.revealed_arena_ids([]) == []
+    end
+
+    test "returns unique arena_ids across all seats and zones" do
+      rows = [
+        card(1, 4, 101),
+        card(1, 5, 102),
+        card(2, 4, 201),
+        # Same card revealed in two zones — one download suffices.
+        card(2, 5, 101)
+      ]
+
+      assert MatchBoardView.revealed_arena_ids(rows) |> Enum.sort() == [101, 102, 201]
+    end
+  end
+
   describe "zone_label/1" do
     test "names every documented CardHolderType value" do
       assert MatchBoardView.zone_label(1) == "Library"

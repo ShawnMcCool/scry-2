@@ -63,6 +63,15 @@ defmodule Scry2Web.Live.MatchBoardView do
   end
 
   @doc """
+  Unique arena_ids across every revealed row, regardless of seat or
+  zone. The set of card images the match detail page needs cached.
+  """
+  @spec revealed_arena_ids([RevealedCard.t()]) :: [integer()]
+  def revealed_arena_ids(rows) when is_list(rows) do
+    rows |> Enum.map(& &1.arena_id) |> Enum.uniq()
+  end
+
+  @doc """
   Symbolic name for an MTGA seat-id enum value. Falls back to
   `"Seat <n>"` for unknown values so the UI never shows a bare
   integer.

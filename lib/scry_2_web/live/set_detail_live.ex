@@ -33,7 +33,7 @@ defmodule Scry2Web.SetDetailLive do
   import Scry2Web.Collection.SetDetail.SetSummary, only: [set_summary: 1]
 
   alias Scry2.Cards
-  alias Scry2.Cards.ImageCache
+  alias Scry2Web.CardImages
   alias Scry2.Cards.Set
   alias Scry2.Cards.SetRoster
   alias Scry2.Collection
@@ -63,7 +63,7 @@ defmodule Scry2Web.SetDetailLive do
       |> assign(:sets, [])
       |> assign(:snapshot, nil)
       |> assign(:completion, nil)
-      |> assign(:cached_arena_ids, MapSet.new())
+      |> assign(:cached_card_ids, CardImages.empty())
 
     {:ok, socket}
   end
@@ -137,13 +137,6 @@ defmodule Scry2Web.SetDetailLive do
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
-  @impl true
-  def handle_async(:cache_images, _result, socket) do
-    rendered = rendered_arena_ids(socket.assigns.completion)
-    cached = rendered |> Enum.filter(&ImageCache.cached?/1) |> MapSet.new()
-    {:noreply, assign(socket, :cached_arena_ids, cached)}
-  end
-
   # ── Pipeline -------------------------------------------------------------
 
   defp load_state(socket) do
@@ -157,15 +150,13 @@ defmodule Scry2Web.SetDetailLive do
         |> assign(:set, nil)
         |> assign(:snapshot, nil)
         |> assign(:completion, nil)
-        |> assign(:cached_arena_ids, MapSet.new())
+        |> assign(:cached_card_ids, CardImages.empty())
 
       set ->
         snapshot = Collection.current()
         cards_in_set = Cards.list_booster_cards_by_set(set.id)
         holdings = build_holdings(snapshot)
         completion = SetCompletion.from(set, cards_in_set, holdings)
-        rendered = rendered_arena_ids(completion)
-        cached = rendered |> Enum.filter(&ImageCache.cached?/1) |> MapSet.new()
 
         socket
         |> assign(:sets, sets)
@@ -179,8 +170,7 @@ defmodule Scry2Web.SetDetailLive do
           )
         )
         |> assign(:completion, completion)
-        |> assign(:cached_arena_ids, cached)
-        |> maybe_cache_images(rendered)
+        |> CardImages.request(rendered_arena_ids(completion))
     end
   end
 
@@ -198,17 +188,9 @@ defmodule Scry2Web.SetDetailLive do
 
   defp build_holdings(%Snapshot{}), do: []
 
-  defp rendered_arena_ids(nil), do: []
-
   defp rendered_arena_ids(%SetCompletion{buckets: buckets}) do
     (buckets.missing ++ buckets.partial)
     |> Enum.map(fn {card, _count} -> card.arena_id end)
-  end
-
-  defp maybe_cache_images(socket, []), do: socket
-
-  defp maybe_cache_images(socket, ids) do
-    start_async(socket, :cache_images, fn -> ImageCache.ensure_cached(ids) end)
   end
 
   defp sets_in_display_order(rosters) do
@@ -313,7 +295,7 @@ defmodule Scry2Web.SetDetailLive do
               </div>
             <% else %>
               <.set_summary completion={@completion} />
-              <.gap_list completion={@completion} cached_arena_ids={@cached_arena_ids} />
+              <.gap_list completion={@completion} cached_ids={@cached_card_ids} />
             <% end %>
           </div>
       <% end %>

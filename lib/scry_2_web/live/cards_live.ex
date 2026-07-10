@@ -14,8 +14,8 @@ defmodule Scry2Web.CardsLive do
 
   alias Phoenix.LiveView.JS
   alias Scry2.{Cards, Console, Topics}
-  alias Scry2.Cards.ImageCache
   alias Scry2.Workers.{PeriodicallyImportScryfallCards, PeriodicallySynthesizeCards}
+  alias Scry2Web.CardImages
   alias Scry2Web.CardsHelpers, as: Helpers
 
   @result_cap 100
@@ -37,7 +37,7 @@ defmodule Scry2Web.CardsLive do
      |> assign(:filter_open, false)
      |> assign(:results, [])
      |> assign(:result_total, 0)
-     |> assign(:cached_arena_ids, MapSet.new())
+     |> assign(:cached_card_ids, CardImages.empty())
      |> assign(:import_log, [])
      |> assign(:data_stats, empty_data_stats())
      |> assign(:import_status, empty_import_status())}
@@ -184,16 +184,6 @@ defmodule Scry2Web.CardsLive do
   def handle_info(_other, socket), do: {:noreply, socket}
 
   @impl true
-  def handle_async(:cache_images, {:ok, _stats}, socket) do
-    arena_ids = socket.assigns.results |> Enum.map(& &1.arena_id) |> Enum.filter(& &1)
-    cached = arena_ids |> Enum.filter(&ImageCache.cached?/1) |> MapSet.new()
-    {:noreply, assign(socket, :cached_arena_ids, cached)}
-  end
-
-  @impl true
-  def handle_async(:cache_images, {:exit, _reason}, socket), do: {:noreply, socket}
-
-  @impl true
   def render(assigns) do
     ~H"""
     <Layouts.console_mount socket={@socket} />
@@ -292,14 +282,14 @@ defmodule Scry2Web.CardsLive do
               arena_id={card.arena_id || 0}
               name={card.name}
               class="w-full"
-              cached={MapSet.member?(@cached_arena_ids, card.arena_id || 0)}
+              cached_ids={@cached_card_ids}
             />
             <.card_name
               arena_id={card.arena_id || 0}
               name={card.name}
               id={"card-name-#{card.id}"}
               class="text-xs truncate"
-              cached={MapSet.member?(@cached_arena_ids, card.arena_id || 0)}
+              cached_ids={@cached_card_ids}
             />
             <.rarity_badge rarity={card.rarity} />
           </div>
@@ -654,19 +644,14 @@ defmodule Scry2Web.CardsLive do
       total = Cards.count_cards(filters)
       results = Cards.list_cards(filters)
 
-      arena_ids = results |> Enum.map(& &1.arena_id) |> Enum.filter(& &1)
-      cached = arena_ids |> Enum.filter(&ImageCache.cached?/1) |> MapSet.new()
-
       socket
       |> assign(:results, results)
       |> assign(:result_total, total)
-      |> assign(:cached_arena_ids, cached)
-      |> start_async(:cache_images, fn -> ImageCache.ensure_cached(arena_ids) end)
+      |> CardImages.request(Enum.map(results, & &1.arena_id))
     else
       socket
       |> assign(:results, [])
       |> assign(:result_total, 0)
-      |> assign(:cached_arena_ids, MapSet.new())
     end
   end
 

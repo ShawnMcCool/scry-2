@@ -56,6 +56,28 @@ defmodule Scry2Web.MatchesLiveTest do
     end
   end
 
+  describe "match detail — revealed cards" do
+    test "renders revealed cards and completes the image-caching async", %{conn: conn} do
+      match = Factory.create_match(mtga_match_id: "revealed-images-1")
+
+      {:ok, _snapshot} =
+        Scry2.LiveState.record_final("revealed-images-1", %{reader_version: "0.0.1"})
+
+      {:ok, _board} =
+        Scry2.LiveState.record_final_board("revealed-images-1", %{
+          reader_version: "0.0.1",
+          zones: [%{seat_id: 2, zone_id: 4, arena_ids: [999_991, 999_992]}]
+        })
+
+      {:ok, view, html} = live(conn, ~p"/matches/#{match.id}")
+      assert html =~ "Revealed cards"
+
+      # Drains the :cache_images start_async kicked off on detail load —
+      # fails if the LiveView lacks a matching handle_async clause.
+      assert render_async(view) =~ "Revealed cards"
+    end
+  end
+
   describe "match detail — opponent + rank display" do
     test "renders memory-enriched opponent screen name and rank", %{conn: conn} do
       match =

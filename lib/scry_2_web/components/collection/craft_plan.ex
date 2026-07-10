@@ -17,7 +17,7 @@ defmodule Scry2Web.Collection.CraftPlan do
   @rarities ~w(mythic rare uncommon common)
 
   attr :value, :any, required: true
-  attr :cached_arena_ids, :any, default: nil
+  attr :cached_ids, :any, default: nil
 
   def craft_plan(assigns) do
     plan = assigns.value
@@ -76,7 +76,7 @@ defmodule Scry2Web.Collection.CraftPlan do
                     <.card_name
                       arena_id={row.holding.arena_id}
                       name={row.holding.card.name || "—"}
-                      cached={cached?(@cached_arena_ids, row.holding.arena_id)}
+                      cached_ids={@cached_ids}
                     />
                   </td>
                   <td class="capitalize">{row.holding.card.rarity || "—"}</td>
@@ -94,7 +94,4 @@ defmodule Scry2Web.Collection.CraftPlan do
 
   defp tile_value(0, owned), do: "Have #{owned || 0}"
   defp tile_value(gap, owned), do: "#{gap} more (have #{owned || 0})"
-
-  defp cached?(nil, _), do: false
-  defp cached?(set, arena_id), do: MapSet.member?(set, arena_id)
 end

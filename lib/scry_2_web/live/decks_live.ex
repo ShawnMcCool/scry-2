@@ -19,6 +19,7 @@ defmodule Scry2Web.DecksLive do
   alias Scry2.Decks
   alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.Topics
+  alias Scry2Web.CardImages
   alias Scry2Web.DecksAnalysisHelpers
   alias Scry2Web.DecksHelpers
 
@@ -43,7 +44,7 @@ defmodule Scry2Web.DecksLive do
        format_counts: %{bo1: 0, bo3: 0},
        active_format: nil,
        cards_by_arena_id: %{},
-       cached_arena_ids: MapSet.new(),
+       cached_card_ids: CardImages.empty(),
        active_tab: :overview,
        mulligan_analytics: nil,
        mulligan_heatmap: [],
@@ -444,7 +445,7 @@ defmodule Scry2Web.DecksLive do
             performance={@performance}
             deck={@deck}
             cards_by_arena_id={@cards_by_arena_id}
-            cached_arena_ids={@cached_arena_ids}
+            cached_ids={@cached_card_ids}
             winrate_period={@winrate_period}
           />
         <% :matches -> %>
@@ -462,7 +463,7 @@ defmodule Scry2Web.DecksLive do
             versions={@versions}
             version_matches={@version_matches}
             cards_by_arena_id={@cards_by_arena_id}
-            cached_arena_ids={@cached_arena_ids}
+            cached_ids={@cached_card_ids}
           />
         <% :analysis -> %>
           <.analysis_tab
@@ -543,7 +544,7 @@ defmodule Scry2Web.DecksLive do
   attr :performance, :map, required: true
   attr :deck, :map, required: true
   attr :cards_by_arena_id, :map, required: true
-  attr :cached_arena_ids, :any, required: true
+  attr :cached_ids, :any, required: true
   attr :winrate_period, :string, required: true
 
   defp overview_tab(assigns) do
@@ -592,7 +593,7 @@ defmodule Scry2Web.DecksLive do
                 :for={card <- cards}
                 id={"card-row-#{col_idx}-#{card.arena_id}"}
                 class="flex items-baseline gap-2 text-sm py-0.5 cursor-default"
-                phx-hook={if MapSet.member?(@cached_arena_ids, card.arena_id), do: "CardHover"}
+                phx-hook={if MapSet.member?(@cached_ids.full, card.arena_id), do: "CardHover"}
                 data-card-src={ImageCache.url_for(card.arena_id)}
                 data-card-alt={card.name}
               >
@@ -630,7 +631,7 @@ defmodule Scry2Web.DecksLive do
                     arena_id={card.arena_id}
                     name={card.name}
                     class="w-full"
-                    cached_ids={@cached_arena_ids}
+                    cached_ids={@cached_ids}
                   />
                   <span class="absolute top-1 right-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
                     {card.count}
@@ -643,7 +644,7 @@ defmodule Scry2Web.DecksLive do
           <.sideboard_splay
             :if={@sideboard != []}
             cards={@sideboard}
-            cached_ids={@cached_arena_ids}
+            cached_ids={@cached_ids}
           />
         </div>
       </div>
@@ -1365,7 +1366,7 @@ defmodule Scry2Web.DecksLive do
   attr :versions, :list, required: true
   attr :version_matches, :map, required: true
   attr :cards_by_arena_id, :map, required: true
-  attr :cached_arena_ids, :any, required: true
+  attr :cached_ids, :any, required: true
 
   defp changes_tab(%{versions: []} = assigns) do
     ~H"""
@@ -1417,7 +1418,7 @@ defmodule Scry2Web.DecksLive do
             :if={version.version_number > 1}
             version={version}
             cards_by_arena_id={@cards_by_arena_id}
-            cached_arena_ids={@cached_arena_ids}
+            cached_ids={@cached_card_ids}
           />
 
           <%!-- Initial version summary --%>
@@ -1451,7 +1452,7 @@ defmodule Scry2Web.DecksLive do
 
   attr :version, :map, required: true
   attr :cards_by_arena_id, :map, required: true
-  attr :cached_arena_ids, :any, required: true
+  attr :cached_ids, :any, required: true
 
   defp version_card_diffs(assigns) do
     main_added = DecksHelpers.parse_diff_cards(assigns.version.main_deck_added)
@@ -1481,7 +1482,7 @@ defmodule Scry2Web.DecksLive do
             name={DecksHelpers.card_name(card.arena_id, @cards_by_arena_id)}
             count={card.count}
             kind={:added}
-            cached_ids={@cached_arena_ids}
+            cached_ids={@cached_ids}
           />
         </div>
       </div>
@@ -1498,7 +1499,7 @@ defmodule Scry2Web.DecksLive do
             name={DecksHelpers.card_name(card.arena_id, @cards_by_arena_id)}
             count={card.count}
             kind={:removed}
-            cached_ids={@cached_arena_ids}
+            cached_ids={@cached_ids}
           />
         </div>
       </div>
@@ -1697,18 +1698,11 @@ defmodule Scry2Web.DecksLive do
 
     export_text = MtgaClipboardFormat.format(deck, export_cards)
 
-    if connected?(socket) do
-      ImageCache.ensure_cached(arena_ids)
-    end
-
-    # Precompute the cached-on-disk set once so card_image / card_diff_image
-    # / phx-hook checks render without an N×File.exists? per template render.
-    cached_arena_ids =
-      arena_ids |> Enum.filter(&ImageCache.cached?/1) |> MapSet.new()
-
     total_pages = max(1, ceil(matches_total / 20))
 
-    assign(socket,
+    socket
+    |> CardImages.request(arena_ids)
+    |> assign(
       deck: deck,
       performance: performance,
       match_count: match_count,
@@ -1722,7 +1716,6 @@ defmodule Scry2Web.DecksLive do
       format_counts: format_counts,
       active_format: active_format,
       cards_by_arena_id: cards_by_arena_id,
-      cached_arena_ids: cached_arena_ids,
       active_tab: tab,
       mulligan_analytics: mulligan_analytics,
       mulligan_heatmap: mulligan_heatmap,

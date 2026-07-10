@@ -11,10 +11,10 @@ defmodule Scry2Web.DraftsLive do
   use Scry2Web, :live_view
 
   alias Scry2.Cards
-  alias Scry2.Cards.ImageCache
   alias Scry2.Drafts
   alias Scry2.Matches
   alias Scry2.Topics
+  alias Scry2Web.CardImages
   alias Scry2Web.DraftsHelpers
 
   # ── Lifecycle ────────────────────────────────────────────────────────
@@ -112,13 +112,14 @@ defmodule Scry2Web.DraftsLive do
       :picks ->
         arena_ids = all_pack_arena_ids(draft)
         cards_by_arena_id = Cards.list_by_arena_ids(arena_ids)
-        if connected?(socket), do: ImageCache.ensure_cached(arena_ids)
-        assign(base, cards_by_arena_id: cards_by_arena_id)
+
+        base
+        |> assign(cards_by_arena_id: cards_by_arena_id)
+        |> CardImages.request(arena_ids)
 
       :deck ->
         pool_ids = pool_arena_ids(draft)
         cards_by_arena_id = Cards.list_by_arena_ids(pool_ids)
-        if connected?(socket), do: ImageCache.ensure_cached(pool_ids)
         groups = DraftsHelpers.group_pool_by_type(pool_ids, cards_by_arena_id)
 
         decks =
@@ -126,11 +127,13 @@ defmodule Scry2Web.DraftsLive do
             do: Matches.list_decks_for_event(draft.event_name, player_id),
             else: []
 
-        assign(base,
+        base
+        |> assign(
           card_pool_groups: groups,
           cards_by_arena_id: cards_by_arena_id,
           submitted_decks: decks
         )
+        |> CardImages.request(pool_ids)
 
       :matches ->
         event_matches =
@@ -342,6 +345,7 @@ defmodule Scry2Web.DraftsLive do
         :if={@active_tab == :picks}
         draft={@draft}
         cards_by_arena_id={@cards_by_arena_id}
+        cached_ids={@cached_card_ids}
       />
       <.deck_tab
         :if={@active_tab == :deck}
@@ -349,6 +353,7 @@ defmodule Scry2Web.DraftsLive do
         card_pool_groups={@card_pool_groups}
         cards_by_arena_id={@cards_by_arena_id}
         submitted_decks={@submitted_decks}
+        cached_ids={@cached_card_ids}
       />
       <.matches_tab :if={@active_tab == :matches} matches={@event_matches} />
     </Layouts.app>
@@ -381,6 +386,7 @@ defmodule Scry2Web.DraftsLive do
 
   attr :draft, :map, required: true
   attr :cards_by_arena_id, :map, required: true
+  attr :cached_ids, :any, default: nil
 
   defp picks_tab(assigns) do
     grouped =
@@ -415,6 +421,7 @@ defmodule Scry2Web.DraftsLive do
             id={"pick-#{pick.draft_id}-#{pack_num}-#{pick_num}-#{idx}-#{arena_id}"}
             arena_id={arena_id}
             name={card_name(@cards_by_arena_id, arena_id)}
+            cached_ids={@cached_ids}
             class={
               if(arena_id == pick.picked_arena_id,
                 do: "w-[72px] ring-2 ring-primary rounded-[5px]",
@@ -438,6 +445,7 @@ defmodule Scry2Web.DraftsLive do
             id={"pick-solo-#{pick.draft_id}-#{pack_num}-#{pick_num}"}
             arena_id={pick.picked_arena_id}
             name={card_name(@cards_by_arena_id, pick.picked_arena_id)}
+            cached_ids={@cached_ids}
             class="w-[72px] ring-2 ring-primary rounded-[5px]"
             data-picked={to_string(pick.picked_arena_id)}
           />
@@ -454,6 +462,7 @@ defmodule Scry2Web.DraftsLive do
   attr :card_pool_groups, :list, required: true
   attr :cards_by_arena_id, :map, required: true
   attr :submitted_decks, :list, required: true
+  attr :cached_ids, :any, default: nil
 
   defp deck_tab(assigns) do
     ~H"""
@@ -500,6 +509,7 @@ defmodule Scry2Web.DraftsLive do
               arena_id={arena_id}
               name={card_name(@cards_by_arena_id, arena_id)}
               class="w-[56px]"
+              cached_ids={@cached_ids}
             />
           </div>
         </div>

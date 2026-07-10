@@ -10,7 +10,7 @@ defmodule Scry2Web.Collection.SetDetail.GapCard do
 
   attr :card, :map, required: true
   attr :count, :integer, required: true
-  attr :cached_arena_ids, :any, default: nil
+  attr :cached_ids, :any, default: nil
 
   def gap_card(assigns) do
     ~H"""
@@ -19,7 +19,7 @@ defmodule Scry2Web.Collection.SetDetail.GapCard do
         arena_id={@card.arena_id}
         name={@card.name}
         class="w-[5.5rem]"
-        cached_ids={@cached_arena_ids}
+        cached_ids={@cached_ids}
       />
       <span
         class="text-[10px] text-base-content/70 truncate w-full text-center"

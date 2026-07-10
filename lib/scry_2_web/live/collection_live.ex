@@ -42,7 +42,6 @@ defmodule Scry2Web.CollectionLive do
   import Scry2Web.Collection.WildcardSummary, only: [wildcard_summary: 1]
 
   alias Scry2.Cards
-  alias Scry2.Cards.ImageCache
   alias Scry2.Cards.SetRoster
   alias Scry2.Collection
   alias Scry2.Collection.BuildChange
@@ -51,6 +50,7 @@ defmodule Scry2Web.CollectionLive do
   alias Scry2.Collection.Holding
   alias Scry2.Collection.ReaderHealth
   alias Scry2.Collection.Snapshot
+  alias Scry2Web.CardImages
   alias Scry2Web.Collection.BuildChangeBanner
   alias Scry2.Topics
   alias Scry2Web.CardsHelpers
@@ -88,7 +88,7 @@ defmodule Scry2Web.CollectionLive do
       |> assign(:latest_diff, nil)
       |> assign(:diff_cards, %{})
       |> assign(:recent_diffs, [])
-      |> assign(:cached_arena_ids, MapSet.new())
+      |> assign(:cached_card_ids, CardImages.empty())
       |> assign(:browser_holdings, [])
       |> assign(:browser_total, 0)
       |> assign(:loaded, false)
@@ -286,14 +286,6 @@ defmodule Scry2Web.CollectionLive do
 
   def handle_info(_other, socket), do: {:noreply, socket}
 
-  @impl true
-  def handle_async(:cache_images, _result, socket) do
-    # Downloads wrote to disk; recompute presence across all snapshot cards
-    # so both the browser grid and the craft plan flip from placeholder to
-    # image. Discards the async result — disk is the source of truth.
-    {:noreply, assign(socket, :cached_arena_ids, cached_set(socket.assigns.cards_by_arena_id))}
-  end
-
   # ── Pipeline -------------------------------------------------------------
 
   defp load_snapshot_state(socket) do
@@ -312,7 +304,6 @@ defmodule Scry2Web.CollectionLive do
     |> assign(:latest_diff, Collection.latest_diff())
     |> assign(:diff_cards, diff_cards(Collection.latest_diff()))
     |> assign(:recent_diffs, Collection.list_diffs(limit: 10))
-    |> assign(:cached_arena_ids, cached_set(cards))
   end
 
   defp apply_browser_filters(socket) do
@@ -336,7 +327,7 @@ defmodule Scry2Web.CollectionLive do
     |> assign(:browser_holdings, visible)
     |> assign(:browser_total, length(filtered))
     |> assign(:active_set_record, active_set_record(rosters, code))
-    |> maybe_cache_images()
+    |> cache_rendered_images()
   end
 
   defp build_craft_plan(_holdings, nil),
@@ -365,13 +356,6 @@ defmodule Scry2Web.CollectionLive do
     |> Cards.list_by_arena_ids()
   end
 
-  defp cached_set(cards) when is_map(cards) do
-    cards
-    |> Map.keys()
-    |> Enum.filter(&ImageCache.cached?/1)
-    |> MapSet.new()
-  end
-
   @doc """
   Arena ids whose images are actually rendered on the page — the visible
   browser holdings plus the craft-plan playset cards, de-duplicated. This
@@ -385,23 +369,9 @@ defmodule Scry2Web.CollectionLive do
     Enum.uniq(browser ++ craft)
   end
 
-  # Kick off an async download of any rendered-but-uncached images.
-  # `handle_async(:cache_images, ...)` recomputes presence on completion.
-  defp maybe_cache_images(socket) do
-    if connected?(socket) do
-      socket.assigns.browser_holdings
-      |> rendered_arena_ids(socket.assigns.craft_plan)
-      |> Enum.reject(&MapSet.member?(socket.assigns.cached_arena_ids, &1))
-      |> start_cache_images(socket)
-    else
-      socket
-    end
-  end
-
-  defp start_cache_images([], socket), do: socket
-
-  defp start_cache_images(arena_ids, socket) do
-    start_async(socket, :cache_images, fn -> ImageCache.ensure_cached(arena_ids) end)
+  defp cache_rendered_images(socket) do
+    ids = rendered_arena_ids(socket.assigns.browser_holdings, socket.assigns.craft_plan)
+    CardImages.request(socket, ids)
   end
 
   # ── Filter helpers -------------------------------------------------------
@@ -630,9 +600,9 @@ defmodule Scry2Web.CollectionLive do
               rarities={@filter_rarities}
               active_set={@active_set}
               active_set_record={@active_set_record}
-              cached_arena_ids={@cached_arena_ids}
+              cached_ids={@cached_card_ids}
             />
-            <.craft_plan value={@craft_plan} cached_arena_ids={@cached_arena_ids} />
+            <.craft_plan value={@craft_plan} cached_ids={@cached_card_ids} />
             <.acquisition_history diffs={@recent_diffs} />
           <% else %>
             <div

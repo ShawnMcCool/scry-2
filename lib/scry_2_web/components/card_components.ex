@@ -3,19 +3,23 @@ defmodule Scry2Web.CardComponents do
   Reusable function components for displaying card images.
 
   These components render `<img>` tags pointing to the card image
-  Plug route (`/images/cards/{arena_id}.jpg`). Call
-  `Scry2.Cards.ImageCache.ensure_cached/2` in your LiveView mount
-  before rendering — this ensures images are on disk before the
-  browser requests them.
+  Plug route (`/images/cards/{arena_id}.jpg`). The LiveView declares
+  the ids it renders via `Scry2Web.CardImages.request/3` and threads
+  the managed `@cached_card_ids` assign into `cached_ids` — that is
+  how placeholders flip to images when downloads complete.
 
   ## Usage
 
-      # In mount:
-      ImageCache.ensure_cached(arena_ids)
+      # In handle_params (or wherever the ids become known):
+      socket = CardImages.request(socket, arena_ids)
 
       # In template:
-      <.card_image arena_id={91001} name="Lightning Bolt" />
-      <.card_hand arena_ids={[91001, 91002, 91003]} />
+      <.card_image arena_id={91001} name="Lightning Bolt" cached_ids={@cached_card_ids} />
+      <.card_hand arena_ids={[91001, 91002, 91003]} cached_ids={@cached_card_ids} />
+
+  Without `cached_ids` the component falls back to a `File.exists?`
+  per render — fine for one-off contexts, but such a page never
+  re-renders when a download completes.
   """
 
   use Phoenix.Component
@@ -39,8 +43,11 @@ defmodule Scry2Web.CardComponents do
   attr :class, :string, default: "w-[4.5rem]"
   attr :id, :string, default: nil
   attr :variant, :atom, default: :full
-  attr :cached, :boolean, default: nil
-  attr :cached_ids, :any, default: nil
+
+  attr :cached_ids, :any,
+    default: nil,
+    doc: "`@cached_card_ids` from `Scry2Web.CardImages` — `%{full: MapSet, art: MapSet}`."
+
   attr :rest, :global
 
   def card_image(assigns) do
@@ -90,7 +97,6 @@ defmodule Scry2Web.CardComponents do
   attr :name, :string, required: true
   attr :id, :string, default: nil
   attr :class, :string, default: nil
-  attr :cached, :boolean, default: nil
   attr :cached_ids, :any, default: nil
 
   def card_name(assigns) do
@@ -200,15 +206,19 @@ defmodule Scry2Web.CardComponents do
     """
   end
 
-  # Resolve `cached?` without a syscall when the caller supplied a MapSet.
-  # Precedence: cached_ids MapSet > explicit cached boolean > File.exists?.
-  # Templates render N cards per page; LiveViews precompute the MapSet once
-  # in mount/handle_params and thread it through, so this stays O(N) memory
-  # lookups instead of O(N) syscalls per render.
-  defp resolve_cached(%{cached_ids: %MapSet{} = ids, arena_id: arena_id}),
-    do: MapSet.member?(ids, arena_id)
+  # Resolve `cached?` without a syscall when the caller supplied
+  # `@cached_card_ids` (the variant-keyed map maintained by
+  # `Scry2Web.CardImages`). Templates render N cards per page; the map
+  # keeps this at O(N) memory lookups instead of O(N) syscalls per
+  # render. The syscall fallback is variant-aware: an art crop is only
+  # "cached" when the -art file itself exists.
+  defp resolve_cached(%{cached_ids: %{full: _} = cached} = assigns) do
+    MapSet.member?(Map.fetch!(cached, variant(assigns)), assigns.arena_id)
+  end
 
-  defp resolve_cached(%{cached: cached}) when is_boolean(cached), do: cached
+  defp resolve_cached(%{arena_id: arena_id} = assigns),
+    do: ImageCache.cached?(arena_id, variant(assigns))
 
-  defp resolve_cached(%{arena_id: arena_id}), do: ImageCache.cached?(arena_id)
+  # `card_name` has no variant attr — its hover pops the full card.
+  defp variant(assigns), do: Map.get(assigns, :variant, :full)
 end

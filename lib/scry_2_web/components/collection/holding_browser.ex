@@ -4,7 +4,8 @@ defmodule Scry2Web.Collection.HoldingBrowser do
   card image, rarity badge, name, and a count-of-four playset badge.
 
   Pure renderer over a `[Scry2.Collection.Holding.t()]` plus the active
-  filters and an `cached_arena_ids` MapSet for image presence.
+  filters and the host's `@cached_card_ids` map (see
+  `Scry2Web.CardImages`) for image presence.
 
   Host LiveView events:
 
@@ -27,7 +28,7 @@ defmodule Scry2Web.Collection.HoldingBrowser do
   attr :rarities, :any, default: nil
   attr :active_set, :any, default: nil
   attr :active_set_record, :any, default: nil
-  attr :cached_arena_ids, :any, default: nil
+  attr :cached_ids, :any, default: nil
 
   def holding_browser(assigns) do
     rarities = assigns.rarities || MapSet.new()
@@ -113,7 +114,7 @@ defmodule Scry2Web.Collection.HoldingBrowser do
                 arena_id={holding.arena_id}
                 name={holding.card.name || ""}
                 class="w-full"
-                cached={cached?(@cached_arena_ids, holding.arena_id)}
+                cached_ids={@cached_ids}
               />
               <span
                 class={[
@@ -130,7 +131,7 @@ defmodule Scry2Web.Collection.HoldingBrowser do
               name={holding.card.name || "—"}
               id={"holding-name-#{holding.arena_id}"}
               class="text-xs truncate"
-              cached={cached?(@cached_arena_ids, holding.arena_id)}
+              cached_ids={@cached_ids}
             />
             <.rarity_badge rarity={holding.card.rarity || "common"} />
           </div>
@@ -143,7 +144,4 @@ defmodule Scry2Web.Collection.HoldingBrowser do
   defp count_badge_class(count) when count >= 4, do: "badge-soft badge-success"
   defp count_badge_class(count) when count >= 2, do: "badge-soft badge-warning"
   defp count_badge_class(_), do: "badge-soft badge-error"
-
-  defp cached?(nil, _), do: false
-  defp cached?(set, arena_id), do: MapSet.member?(set, arena_id)
 end
