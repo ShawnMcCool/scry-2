@@ -6,7 +6,8 @@
 //! ```text
 //! PAPA singleton
 //!   <InventoryManager>k__BackingField
-//!     _inventoryServiceWrapper  ← innermost composed level exposed today
+//!     (base class InventoryManagerCore since June 2026)
+//!     InventoryServiceWrapper     ← `_inventoryServiceWrapper` pre-June-2026
 //!       <Cards>k__BackingField   -> Dictionary<int,int>
 //!       m_inventory              -> ClientPlayerInventory { 7 fields }
 //! ```
@@ -19,13 +20,21 @@
 //!   `walk_collection` orchestrator).
 //! - [`from_papa_class`] is the **outer** layer: caller has resolved
 //!   the live `MonoDomain *`, the `MonoClass *` of `PAPA`, and the
-//!   `MonoClassDef` byte buffers for `PAPA`, `InventoryManager`,
-//!   `InventoryServiceWrapper`, `Dictionary<int,int>`, and
-//!   `ClientPlayerInventory`. It reads PAPA's static `_instance`
+//!   `MonoClassDef` byte buffers for `PAPA` and
+//!   `Dictionary<int,int>`. It reads PAPA's static `_instance`
 //!   field via [`super::vtable`], chases two instance fields
 //!   (`<InventoryManager>k__BackingField` and
-//!   `_inventoryServiceWrapper`), and delegates to
-//!   [`from_service_wrapper`].
+//!   [`WRAPPER_FIELD_NAMES`], the latter through the class's parent
+//!   chain), and delegates to [`from_service_wrapper`].
+
+/// Candidate names for the service-wrapper field on
+/// `InventoryManager`, tried in order. MTGA's June 2026 build renamed
+/// `_inventoryServiceWrapper` to plain `InventoryServiceWrapper` (and
+/// moved it to the `InventoryManagerCore` base class); the old name
+/// stays as a fallback so the walker keeps working if a future build
+/// reverts.
+pub const WRAPPER_FIELD_NAMES: [&str; 2] =
+    ["InventoryServiceWrapper", "_inventoryServiceWrapper"];
 
 use super::boosters::{self, BoosterRow};
 use super::dict::{self, DictEntry};
@@ -262,20 +271,29 @@ where
 
     let inventory_manager_class_bytes =
         object::read_runtime_class_bytes(inventory_manager_addr, &read_mem)?;
-    let service_wrapper_addr = object::read_instance_pointer(
-        offsets,
-        &inventory_manager_class_bytes,
-        inventory_manager_addr,
-        "_inventoryServiceWrapper",
-        &read_mem,
-    )?;
+    // MTGA's June 2026 build moved the wrapper (and
+    // `_playerCardsVersion`) onto a new base class,
+    // `InventoryManagerCore`, and renamed the wrapper field from
+    // `_inventoryServiceWrapper` to plain `InventoryServiceWrapper` —
+    // a rename the `<...>k__BackingField` fallback cannot bridge. Both
+    // reads therefore resolve through the parent chain, trying the
+    // current name first and the pre-June-2026 name second.
+    let service_wrapper_addr = WRAPPER_FIELD_NAMES.iter().find_map(|name| {
+        object::read_instance_pointer_in_chain(
+            offsets,
+            &inventory_manager_class_bytes,
+            inventory_manager_addr,
+            name,
+            &read_mem,
+        )
+    })?;
 
-    // `_playerCardsVersion` is a sibling i32 on InventoryManager.
+    // `_playerCardsVersion` is a sibling i32 on InventoryManagerCore.
     // Cheap to read (4 bytes after the same hops we just did); the
     // reader uses it to short-circuit cards-dict iteration when
     // unchanged across snapshots. None when the field can't be
     // resolved (build drift); Reader treats that as "always re-read".
-    let cards_version = super::instance_field::read_instance_i32(
+    let cards_version = super::instance_field::read_instance_i32_in_chain(
         offsets,
         &inventory_manager_class_bytes,
         inventory_manager_addr,
@@ -1029,6 +1047,154 @@ mod tests {
         assert!(!result.cards_skipped);
         assert_eq!(result.entries.len(), 2);
         assert_eq!(result.cards_version, Some(4_217));
+        Ok(())
+    }
+
+    /// Write a `MonoClassDef` blob like [`write_class_def_simple`] but
+    /// with a non-null `MonoClass.parent` pointer — models a derived
+    /// class whose fields live on a base class.
+    fn write_class_def_with_parent(
+        mem: &mut FakeMem,
+        class_addr: u64,
+        fields_addr: u64,
+        field_count: u32,
+        parent_addr: u64,
+    ) {
+        let o = MonoOffsets::mtga_default();
+        let mut buf = vec![0u8; mono::CLASS_DEF_BLOB_LEN];
+        buf[o.class_fields..o.class_fields + 8].copy_from_slice(&fields_addr.to_le_bytes());
+        buf[o.class_def_field_count..o.class_def_field_count + 4]
+            .copy_from_slice(&field_count.to_le_bytes());
+        buf[o.class_parent..o.class_parent + 8].copy_from_slice(&parent_addr.to_le_bytes());
+        mem.add(class_addr, buf);
+    }
+
+    /// MTGA's June 2026 build split `InventoryManager`: the wrapper
+    /// and `_playerCardsVersion` moved to a new base class
+    /// `InventoryManagerCore`, and the wrapper field was renamed from
+    /// `_inventoryServiceWrapper` to the plain `InventoryServiceWrapper`.
+    /// The walk must resolve both through the parent chain.
+    #[test]
+    fn from_papa_class_resolves_wrapper_on_parent_class_with_plain_name() -> Result<(), String> {
+        let offsets = MonoOffsets::mtga_default();
+        let mut mem = FakeMem::default();
+
+        let wrapper_addr = build_service_wrapper_fixture(
+            &mut mem,
+            &[("Cards", 0x10, false), ("m_inventory", 0x20, false)],
+            &[(74116, 1), (32388, 4)],
+            [42, 17, 5, 2, 12_345, 3_000],
+            30.1,
+        );
+
+        // ---- InventoryManagerCore (base) class: declares the wrapper
+        // under its post-June-2026 plain name plus _playerCardsVersion.
+        let core_class: u64 = 0x96_0000;
+        let core_fields_addr: u64 = 0x97_0000;
+        install_fields(
+            &mut mem,
+            core_fields_addr,
+            0x98_0000,
+            0x99_0000,
+            &[
+                ("InventoryServiceWrapper", 0x30, false),
+                ("_playerCardsVersion", 0x48, false),
+            ],
+        );
+        write_class_def_simple(&mut mem, core_class, core_fields_addr, 2);
+
+        // ---- InventoryManager (derived) class: no wrapper field of
+        // its own; parent → InventoryManagerCore.
+        let im_addr: u64 = 0x90_0000;
+        let im_vtable: u64 = 0x91_0000;
+        let im_class: u64 = 0x92_0000;
+        let im_fields_addr: u64 = 0x93_0000;
+        install_fields(
+            &mut mem,
+            im_fields_addr,
+            0x94_0000,
+            0x95_0000,
+            &[("_rotationWarningsSeen", 0x60, false)],
+        );
+        write_class_def_with_parent(&mut mem, im_class, im_fields_addr, 1, core_class);
+        let mut im_obj = vec![0u8; 0x80];
+        im_obj[0x30..0x38].copy_from_slice(&wrapper_addr.to_le_bytes());
+        im_obj[0x48..0x4c].copy_from_slice(&4_217i32.to_le_bytes());
+        link_object_to_class(&mut mem, im_addr, im_obj, im_vtable, im_class);
+
+        // ---- PAPA class + static storage + singleton wired to IM
+        let papa_class_addr: u64 = 0xB0_0000;
+        let papa_fields_addr: u64 = 0xA0_0000;
+        let papa_rti: u64 = 0xB1_0000;
+        let papa_vtable: u64 = 0xB2_0000;
+        let papa_storage: u64 = 0xB3_0000;
+        let domain_addr: u64 = 0xB4_0000;
+        let papa_vtable_size: i32 = 3;
+
+        install_fields(
+            &mut mem,
+            papa_fields_addr,
+            0xA1_0000,
+            0xA2_0000,
+            &[
+                ("_instance", 0x10, true),
+                ("<InventoryManager>k__BackingField", 0x40, false),
+            ],
+        );
+        write_class_def_with_vtable(
+            &mut mem,
+            papa_class_addr,
+            papa_fields_addr,
+            2,
+            papa_rti,
+            papa_vtable_size,
+        );
+
+        let mut domain = vec![0u8; 0x100];
+        domain[offsets.domain_id..offsets.domain_id + 4].copy_from_slice(&0u32.to_le_bytes());
+        mem.add(domain_addr, domain);
+        install_static_storage_chain(
+            &mut mem,
+            papa_rti,
+            papa_vtable,
+            papa_storage,
+            papa_vtable_size,
+        );
+
+        let papa_singleton: u64 = 0xC0_0000;
+        let mut storage = vec![0u8; 0x40];
+        storage[0x10..0x18].copy_from_slice(&papa_singleton.to_le_bytes());
+        mem.add(papa_storage, storage);
+
+        let mut papa_obj = vec![0u8; 0x80];
+        papa_obj[0x40..0x48].copy_from_slice(&im_addr.to_le_bytes());
+        mem.add(papa_singleton, papa_obj);
+
+        let papa_class_bytes = mem
+            .read(papa_class_addr, mono::CLASS_DEF_BLOB_LEN)
+            .ok_or("papa class read")?;
+        let dict_class_bytes = mem
+            .read(0x32_0000, mono::CLASS_DEF_BLOB_LEN)
+            .ok_or("dict class read")?;
+
+        let result = from_papa_class(
+            &offsets,
+            papa_class_addr,
+            domain_addr,
+            &papa_class_bytes,
+            &dict_class_bytes,
+            None,
+            |a, l| mem.read(a, l),
+        )
+        .ok_or("walk should resolve the wrapper via the parent class")?;
+
+        assert_eq!(result.entries.len(), 2);
+        assert_eq!(result.inventory.gold, 12_345);
+        assert_eq!(
+            result.cards_version,
+            Some(4_217),
+            "_playerCardsVersion must resolve through the parent chain"
+        );
         Ok(())
     }
 

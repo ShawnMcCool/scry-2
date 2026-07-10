@@ -39,7 +39,8 @@ mono_get_root_domain()                  -> MonoDomain *
   class PAPA
     <Instance>k__BackingField           (STATIC field — read via VTable)
       <InventoryManager>k__BackingField (instance)
-        _inventoryServiceWrapper        (instance)
+        InventoryServiceWrapper         (instance — on the
+                                         InventoryManagerCore base class)
           <Cards>k__BackingField        -> Dictionary<int,int>   (collection)
           m_inventory                   -> ClientPlayerInventory
                                             { wcCommon, wcUncommon,
@@ -47,6 +48,31 @@ mono_get_root_domain()                  -> MonoDomain *
                                               gold, gems, vaultProgress,
                                               boosters: List<ClientBoosterInfo> }
 ```
+
+**June 2026 refactor (verified live 2026-07-11):** MTGA split
+`InventoryManager` (Core.dll) — a new base class `InventoryManagerCore`
+(SharedClientCore) now declares the wrapper and version fields, and the
+wrapper field was renamed:
+
+- `_inventoryServiceWrapper` → **`InventoryServiceWrapper`** (plain
+  public name; the `<...>k__BackingField` fallback cannot bridge a
+  rename to a plain name) — offset `0x30` on `InventoryManagerCore`.
+- `_playerCardsVersion` — same name, moved to `InventoryManagerCore`
+  at offset `0x48`.
+- `InventoryManager`'s own field list shrank to 4 fields starting at
+  offset `0x50` (`OnRedeemWildcardResponse`, `OnPurchaseSkinResponse`,
+  `_rotationWarningsSeen`, `<CurrentPurchaseMode>k__BackingField`).
+- Everything below the wrapper is unchanged: the runtime wrapper class
+  is still `AwsInventoryServiceWrapper` with `m_inventory` (`0x40`) and
+  `<Cards>k__BackingField` (`0x48`), and `ClientPlayerInventory` is
+  intact.
+
+The walker resolves both moved fields via
+`find_field_by_name_in_chain` (parent-chain walk) and tries the
+candidate names in `chain::WRAPPER_FIELD_NAMES` — current name first,
+pre-June-2026 name second. This break presented as
+`WalkError::ChainFailed` on the collection walk only, with every other
+walk healthy (they never touch `InventoryManager`).
 
 **`ClientPlayerInventory` instance fields** (16 total; verified
 2026-05-02 via `inventory-field-spike` —
