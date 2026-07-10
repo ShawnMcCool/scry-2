@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.52.1 — 2026-07-10
+
 ### Fixed
 
 - **Windows builds are back.** Version 0.52.0 could not be built for Windows because of the library behind the new database compression; this release swaps it for one that works on every platform. Your data is unchanged — everything already compressed reads back exactly the same. If you're updating on Windows, this release also brings you everything listed under v0.52.0.
