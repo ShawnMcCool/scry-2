@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.52.0 — 2026-07-10
+
 ### Improved
 
 - Scry2's database now takes a fraction of the disk space it used to — game event history and collection snapshots are stored compressed. Existing data is converted automatically in the background; nothing is lost.
