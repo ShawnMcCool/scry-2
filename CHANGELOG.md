@@ -11,6 +11,15 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- The **Netdecks page** now shows where each deck actually performed: pilot, event, date, and finish (placement, record, field size) appear under the archetype name on catalog tiles and the deck page — and you can browse the other variants of an archetype from its tile.
+- Importing netdecks is no longer paste-only or invisible. The import panel now has a **Browse** tab: pick a source and format, see its recent events (with dates, player counts, and markers for events you already imported), and import exactly the ones you want. The daily automatic fetch can be turned off in the same place.
+
+### Fixed
+
+- Fixed **collection syncing** running in a limited fallback mode since mid-June — an MTGA game update had changed how the game stores inventory internally. Wildcards, gold, gems, vault progress, and booster counts now sync directly from the game again.
+
 ## v0.52.1 — 2026-07-10
 
 ### Fixed
