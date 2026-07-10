@@ -22,6 +22,13 @@ defmodule Scry2.Events.RawCompression do
   the zstd magic bytes `0x28 0xB5 0x2F 0xFD`. MTGA `raw_json` always starts
   with `{` (`0x7B`) — never the zstd magic — so plaintext can never be
   mistaken for a frame, and a plaintext row is returned unchanged.
+
+  ## Implementation
+
+  Uses OTP 28's stdlib `:zstd` module — no NIF dependency, builds on every
+  platform. Rows written before v0.52.1 by the ezstd NIF are standard zstd
+  frames (RFC 8878) and decode identically; a pinned fixture test guards
+  that contract.
   """
 
   # zstd frame magic number (little-endian 0xFD2FB528), the first 4 bytes of
@@ -36,7 +43,9 @@ defmodule Scry2.Events.RawCompression do
   @doc "Compresses a raw JSON payload into a self-contained zstd frame."
   @spec compress(binary()) :: binary()
   def compress(payload) when is_binary(payload) do
-    :ezstd.compress(payload, @level)
+    payload
+    |> :zstd.compress(%{compressionLevel: @level})
+    |> IO.iodata_to_binary()
   end
 
   @doc """
@@ -55,7 +64,9 @@ defmodule Scry2.Events.RawCompression do
   plaintext through unchanged.
   """
   @spec decompress(binary()) :: binary()
-  def decompress(@zstd_magic <> _rest = frame), do: :ezstd.decompress(frame)
+  def decompress(@zstd_magic <> _rest = frame),
+    do: frame |> :zstd.decompress() |> IO.iodata_to_binary()
+
   def decompress(plaintext) when is_binary(plaintext), do: plaintext
 
   @doc "True when `data` is a zstd frame (vs legacy plaintext)."

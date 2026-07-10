@@ -48,6 +48,19 @@ defmodule Scry2.Events.RawCompressionTest do
     end
   end
 
+  describe "decompress/1 reads frames written by earlier releases" do
+    # Rows compressed before v0.52.1 were written by the ezstd NIF
+    # (dropped for the OTP 28 stdlib :zstd — ezstd could not build on
+    # Windows). This frame was produced by :ezstd.compress/2 at level 19
+    # and pins the on-disk contract: every historical row must stay
+    # decodable by whatever implementation the codec uses.
+    @ezstd_written_frame Base.decode16!("28B52FFD200F7900007B22726177223A226576656E74227D")
+
+    test "decompresses a frame produced by the ezstd-based codec" do
+      assert RawCompression.decompress(@ezstd_written_frame) == ~s({"raw":"event"})
+    end
+  end
+
   describe "decompress/1 legacy passthrough" do
     # The table holds a mix of legacy plaintext rows (pre-migration) and
     # compressed rows. MTGA raw_json always starts with '{' (0x7B), never the
