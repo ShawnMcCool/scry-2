@@ -70,6 +70,10 @@ defmodule Scry2Web.DeckRendering do
   attr :cached_ids, :any, default: nil
   attr :title, :string, default: nil, doc: "Optional kind_label heading inside the view."
 
+  attr :card_class, :any,
+    default: nil,
+    doc: "Optional `resolved_card -> class` function; tints text-view rows (e.g. missing cards)."
+
   slot :card_overlay, doc: "Per-card annotation replacing the default count badge."
 
   def deck_view(assigns) do
@@ -98,7 +102,16 @@ defmodule Scry2Web.DeckRendering do
   end
 
   defp view_assigns(assigns),
-    do: Map.take(assigns, [:id, :spec, :resolved_sections, :cached_ids, :title, :card_overlay])
+    do:
+      Map.take(assigns, [
+        :id,
+        :spec,
+        :resolved_sections,
+        :cached_ids,
+        :title,
+        :card_overlay,
+        :card_class
+      ])
 
   @doc """
   Wrapper carrying the `DeckView` JS hook that coordinates card sizing
@@ -131,6 +144,14 @@ defmodule Scry2Web.DeckRendering do
   attr :cards_by_arena_id, :map, required: true
   attr :cached_ids, :any, default: nil
 
+  attr :show_curve, :boolean,
+    default: true,
+    doc: "Set false when the page places `mana_curve_chart/1` elsewhere."
+
+  attr :card_class, :any,
+    default: nil,
+    doc: "Forwarded to the text view — see `deck_view/1`."
+
   slot :card_overlay, doc: "Forwarded to every image view — see `deck_view/1`."
 
   def standard_composition(assigns) do
@@ -146,18 +167,15 @@ defmodule Scry2Web.DeckRendering do
     ~H"""
     <div :if={not empty?(@main_deck, @sideboard)}>
       <%!-- Mana Curve — half width, space reserved for future chart --%>
-      <div class="w-1/2">
-        <div
+      <div :if={@show_curve} class="w-1/2">
+        <.mana_curve_chart
           id={"#{@id}-curve"}
-          phx-hook="Chart"
-          data-chart-type="curve"
-          data-series={curve_series(@main_deck, @cards_by_arena_id)}
-          class="w-full rounded-lg bg-base-200"
-          style="height: 5rem"
+          cards={@main_deck}
+          cards_by_arena_id={@cards_by_arena_id}
         />
       </div>
 
-      <div class="mt-8">
+      <div class={if @show_curve, do: "mt-8"}>
         <.deck_view
           id={"#{@id}-list"}
           spec={@text_spec}
@@ -165,6 +183,7 @@ defmodule Scry2Web.DeckRendering do
           sections={if @side_total > 0, do: [{"Sideboard", @sideboard}], else: []}
           cards_by_arena_id={@cards_by_arena_id}
           cached_ids={@cached_ids}
+          card_class={@card_class}
         />
       </div>
 
@@ -200,6 +219,30 @@ defmodule Scry2Web.DeckRendering do
     """
   end
 
+  @doc """
+  The mana curve as an ECharts bar chart (non-land mana values 0–7+).
+  Part of the standard composition; place it anywhere by rendering it
+  standalone and passing `show_curve={false}` to the composition.
+  """
+  attr :id, :string, required: true
+  attr :cards, :any, required: true
+  attr :cards_by_arena_id, :map, required: true
+  attr :class, :any, default: "w-full rounded-lg bg-base-200"
+  attr :height, :string, default: "5rem"
+
+  def mana_curve_chart(assigns) do
+    ~H"""
+    <div
+      id={@id}
+      phx-hook="Chart"
+      data-chart-type="curve"
+      data-series={curve_series(@cards, @cards_by_arena_id)}
+      class={@class}
+      style={"height: #{@height}"}
+    />
+    """
+  end
+
   # ── Display: text ───────────────────────────────────────────────────
 
   attr :id, :string, required: true
@@ -208,12 +251,13 @@ defmodule Scry2Web.DeckRendering do
   attr :cached_ids, :any, default: nil
   attr :title, :string, default: nil
   attr :card_overlay, :list, default: []
+  attr :card_class, :any, default: nil
 
   defp text_view(assigns) do
     ~H"""
     <div>
       <.kind_label :if={@title}>{@title}</.kind_label>
-      <div class="flex gap-8">
+      <div class="flex flex-wrap gap-8">
         <div :for={{{label, cards}, section_idx} <- Enum.with_index(@resolved_sections)}>
           <h3
             :if={label}
@@ -225,7 +269,10 @@ defmodule Scry2Web.DeckRendering do
             <div
               :for={{card, card_idx} <- Enum.with_index(cards)}
               id={"#{@id}-s#{section_idx}-#{card_idx}-#{card.arena_id}"}
-              class="flex items-baseline gap-2 text-sm py-0.5 cursor-default"
+              class={[
+                "flex items-baseline gap-2 text-sm py-0.5 cursor-default",
+                @card_class && @card_class.(card)
+              ]}
               phx-hook={if image_cached?(@cached_ids, card.arena_id), do: "CardHover"}
               data-card-src={ImageCache.url_for(card.arena_id)}
               data-card-alt={card.name}

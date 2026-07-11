@@ -110,6 +110,14 @@ defmodule Scry2Web.NetdecksHelpers do
     |> Map.new(fn row -> {row.arena_id, row} end)
   end
 
+  @doc """
+  Row tint for the text deck listing: warning tone when the player is
+  missing copies of the card, nil (default color) otherwise.
+  """
+  @spec missing_row_class(map() | nil) :: String.t() | nil
+  def missing_row_class(%{missing: missing}) when missing > 0, do: "text-warning"
+  def missing_row_class(_row), do: nil
+
   @doc "Tooltip text describing a decklist row's ownership, or nil without a row."
   @spec ownership_title(map() | nil) :: String.t() | nil
   def ownership_title(nil), do: nil

@@ -294,6 +294,9 @@ function cumulativeWinrateOption(data) {
 function curveOption(data) {
   const labels = data.map(([label]) => label)
   const counts = data.map(([, count]) => count)
+  // The chart is only ~5rem tall — a full label ladder overlaps into
+  // noise. Label just 0 and the max, with a single gridline at the top.
+  const maxCount = Math.max(1, ...counts)
 
   return {
     backgroundColor: "transparent",
@@ -308,7 +311,9 @@ function curveOption(data) {
     },
     yAxis: {
       type: "value",
-      minInterval: 1,
+      min: 0,
+      max: maxCount,
+      interval: maxCount,
       axisLabel: {color: "#9ca3af", fontSize: 11},
       axisLine: {lineStyle: {color: "#374151"}},
       splitLine: {lineStyle: {color: "#1f2937"}},

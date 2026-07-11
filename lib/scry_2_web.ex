@@ -84,7 +84,7 @@ defmodule Scry2Web do
       import Scry2Web.CardComponents
 
       import Scry2Web.DeckRendering,
-        only: [deck_view: 1, deck_view_group: 1, standard_composition: 1]
+        only: [deck_view: 1, deck_view_group: 1, mana_curve_chart: 1, standard_composition: 1]
 
       import Scry2Web.OpponentComponents
       import Scry2Web.SettingsTabs

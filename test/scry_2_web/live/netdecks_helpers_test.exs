@@ -74,6 +74,12 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.rows_by_arena_id(main_rows, []) == %{}
   end
 
+  test "missing_row_class tints rows with unowned copies" do
+    assert NetdecksHelpers.missing_row_class(%{missing: 2}) == "text-warning"
+    assert NetdecksHelpers.missing_row_class(%{missing: 0}) == nil
+    assert NetdecksHelpers.missing_row_class(nil) == nil
+  end
+
   test "ownership_title describes a row's ownership for tooltips" do
     assert NetdecksHelpers.ownership_title(nil) == nil
 
