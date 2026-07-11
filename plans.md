@@ -112,6 +112,16 @@ All gated on walker phase 6 producing a stream of currency/progression rows.
 - Sideboard awareness per deck — **reader+**
 - Brew-in-progress capture for real-time companion UI — **reader+** + **live**
 
+## UI: deck rendering engine (UIDR-012)
+
+`Scry2Web.DeckRendering` renders every deck-shaped card list. **Converged
+(2026-07-11):** deck/match/netdeck compositions, draft pool, draft pick
+packs (picked-card overlay), revealed-cards card (per-zone views in
+memory order), and deck version diffs (added/removed overlays).
+
+Pending: UI controls that let the user pick a `ViewSpec` per page
+(grouping, text/images, splay depth) persisted via `Settings.Entry`.
+
 ## H. Composed capabilities
 
 - Personal draft database (every pack seen, every card passed) — **D + storage**
