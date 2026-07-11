@@ -620,7 +620,9 @@ defmodule Scry2Web.NetdecksLive do
       assign(assigns,
         meta: NetdecksHelpers.status_meta(assigns.detail.result.status),
         unresolved: NetdecksHelpers.unresolved_count(assigns.detail.deck),
-        provenance_line: NetdecksHelpers.detail_provenance(assigns.detail)
+        provenance_line: NetdecksHelpers.detail_provenance(assigns.detail),
+        rows_by_arena_id:
+          NetdecksHelpers.rows_by_arena_id(assigns.detail.main_rows, assigns.detail.side_rows)
       )
 
     ~H"""
@@ -729,8 +731,10 @@ defmodule Scry2Web.NetdecksLive do
         </button>
       </div>
 
-      <%!-- Decklist --%>
-      <div class="space-y-6">
+      <%!-- Decklist. min-w-0 keeps the 1fr track from growing to the splay's
+           intrinsic width — without it the DeckView hook and the track feed
+           each other and the layout blows out. --%>
+      <div class="space-y-6 min-w-0">
         <div
           :if={@unresolved > 0}
           class="flex items-start gap-2 text-sm bg-warning/10 text-warning rounded-lg p-3"
@@ -742,19 +746,17 @@ defmodule Scry2Web.NetdecksLive do
           </span>
         </div>
 
-        <.card_list
-          title="Maindeck"
-          section="main"
-          rows={@detail.main_rows}
+        <.standard_composition
+          id="netdeck"
+          main_deck={@detail.deck.main_deck}
+          sideboard={@detail.deck.sideboard}
+          cards_by_arena_id={@detail.cards_by_arena_id}
           cached_ids={@cached_ids}
-        />
-        <.card_list
-          :if={@detail.side_rows != []}
-          title="Sideboard"
-          section="side"
-          rows={@detail.side_rows}
-          cached_ids={@cached_ids}
-        />
+        >
+          <:card_overlay :let={card}>
+            <.ownership_marker row={Map.get(@rows_by_arena_id, card.arena_id)} count={card.count} />
+          </:card_overlay>
+        </.standard_composition>
 
         <.variants_list
           :if={length(@detail.variants) > 1}
@@ -816,44 +818,31 @@ defmodule Scry2Web.NetdecksLive do
     """
   end
 
-  attr :title, :string, required: true
-  attr :section, :string, required: true
-  attr :rows, :list, required: true
-  attr :cached_ids, :any, required: true
+  # Ownership annotation rendered over every card in the standard deck
+  # composition: unowned copies dim the card and the count badge takes the
+  # ownership tone (owned / partial / missing / basic land).
+  attr :row, :map, default: nil
+  attr :count, :integer, required: true
 
-  defp card_list(assigns) do
+  defp ownership_marker(assigns) do
     ~H"""
-    <div>
-      <h3 class="text-xs font-semibold text-base-content/40 uppercase tracking-widest mb-2">
-        {@title}
-      </h3>
-      <div class="flex flex-wrap gap-2">
-        <div
-          :for={row <- @rows}
-          class="relative w-[4.5rem] sm:w-20"
-          title={"#{row.name} — #{if row.free?, do: "basic land", else: "#{row.owned}/#{row.needed} owned"}"}
-        >
-          <% state = NetdecksHelpers.card_row_state(row) %>
-          <.card_image
-            id={"netdeck-#{@section}-#{row.arena_id}"}
-            arena_id={row.arena_id}
-            name={row.name}
-            class={if row.missing > 0, do: "w-full opacity-40", else: "w-full"}
-            cached_ids={@cached_ids}
-          />
-          <span class={[
-            "absolute top-1 right-1 rounded bg-black/75 px-1 text-[0.7rem] font-bold tabular-nums pointer-events-none",
-            NetdecksHelpers.card_row_tone(state)
-          ]}>
-            <%= if row.free? do %>
-              basic
-            <% else %>
-              {row.needed}
-            <% end %>
-          </span>
-        </div>
-      </div>
-    </div>
+    <div
+      :if={@row && @row.missing > 0}
+      class="absolute inset-0 rounded-sm bg-base-100/60 pointer-events-none"
+    />
+    <span
+      class={[
+        "absolute top-1 right-1 min-w-5 text-center rounded bg-black/75 px-1 text-xs font-bold tabular-nums",
+        NetdecksHelpers.card_row_tone(NetdecksHelpers.card_row_state(@row))
+      ]}
+      title={NetdecksHelpers.ownership_title(@row)}
+    >
+      <%= if @row && @row.free? do %>
+        basic
+      <% else %>
+        {@count}
+      <% end %>
+    </span>
     """
   end
 

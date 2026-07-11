@@ -3,17 +3,15 @@ defmodule Scry2Web.DraftsHelpers do
   Pure helper functions for `Scry2Web.DraftsLive`. Extracted per ADR-013.
   """
 
-  require Logger
-
-  @type_groups [
-    {"Creatures", ~w(Creature)},
-    {"Instants & Sorceries", ~w(Instant Sorcery)},
-    {"Artifacts & Enchantments", ~w(Artifact Enchantment)},
-    {"Lands", ~w(Land)},
-    # Empty keywords list is intentional — classify_type/1 catches all unrecognized
-    # type lines and returns "Other" directly, so no keyword matching is needed here.
-    {"Other", []}
-  ]
+  @doc """
+  The arena_ids a pick's pack section should display: the pack contents
+  when the log captured them, otherwise just the picked card (older logs
+  lack pack contents), otherwise nothing.
+  """
+  @spec pack_display_ids(map()) :: [integer()]
+  def pack_display_ids(%{pack_arena_ids: %{"cards" => [_ | _] = ids}}), do: ids
+  def pack_display_ids(%{picked_arena_id: picked}) when is_integer(picked), do: [picked]
+  def pack_display_ids(_pick), do: []
 
   @doc "True when the draft has the maximum wins (trophy run)."
   @spec trophy?(map()) :: boolean()
@@ -38,42 +36,6 @@ defmodule Scry2Web.DraftsHelpers do
 
   def format_label(other),
     do: other |> String.split("_") |> Enum.map(&String.capitalize/1) |> Enum.join(" ")
-
-  @doc """
-  Groups a list of arena_ids by card type using a lookup map of
-  `%{arena_id => %Cards.Card{}}` (or any map whose values expose a
-  `:types` field). Returns `[{label, [arena_id]}]` in canonical order,
-  omitting empty groups.
-  """
-  @spec group_pool_by_type([integer()], map()) :: [{String.t(), [integer()]}]
-  def group_pool_by_type(arena_ids, cards_by_arena_id) do
-    classified =
-      arena_ids
-      |> Enum.flat_map(fn arena_id ->
-        case Map.get(cards_by_arena_id, arena_id) do
-          nil ->
-            Logger.warning(
-              "DraftsHelpers.group_pool_by_type: no card found for arena_id=#{arena_id}"
-            )
-
-            []
-
-          card ->
-            [{arena_id, classify_type(card.types)}]
-        end
-      end)
-
-    @type_groups
-    |> Enum.map(fn {label, _keywords} ->
-      cards =
-        classified
-        |> Enum.filter(fn {_id, group} -> group == label end)
-        |> Enum.map(&elem(&1, 0))
-
-      {label, cards}
-    end)
-    |> Enum.reject(fn {_label, cards} -> cards == [] end)
-  end
 
   @doc "Tailwind CSS color class based on win rate."
   @spec record_color_class(map()) :: String.t()
@@ -100,25 +62,4 @@ defmodule Scry2Web.DraftsHelpers do
   def draft_status_label(_draft), do: "Complete"
 
   # Private
-
-  defp classify_type(type_line) when is_binary(type_line) do
-    cond do
-      String.contains?(type_line, "Creature") ->
-        "Creatures"
-
-      String.contains?(type_line, "Instant") or String.contains?(type_line, "Sorcery") ->
-        "Instants & Sorceries"
-
-      String.contains?(type_line, "Artifact") or String.contains?(type_line, "Enchantment") ->
-        "Artifacts & Enchantments"
-
-      String.contains?(type_line, "Land") ->
-        "Lands"
-
-      true ->
-        "Other"
-    end
-  end
-
-  defp classify_type(_), do: "Other"
 end

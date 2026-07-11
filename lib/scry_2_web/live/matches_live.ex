@@ -15,6 +15,7 @@ defmodule Scry2Web.MatchesLive do
   alias Scry2.{Cards, LiveState, MatchEconomy, Matches}
   alias Scry2.Topics
   alias Scry2Web.CardImages
+  alias Scry2Web.DeckRendering
   alias Scry2Web.Components.{RankBadge, RevealedCardsCard}
   alias Scry2Web.Live.MatchBoardView
   alias Scry2Web.MatchesHelpers
@@ -308,7 +309,7 @@ defmodule Scry2Web.MatchesLive do
       revealed_groups: revealed_groups,
       match_economy_summary: MatchEconomy.get_summary(match.mtga_match_id)
     )
-    |> CardImages.request(revealed_arena_ids)
+    |> CardImages.request(Enum.uniq(deck_arena_ids ++ revealed_arena_ids))
   end
 
   defp assign_revealed_cards(socket, mtga_match_id) do
@@ -463,12 +464,13 @@ defmodule Scry2Web.MatchesLive do
         :if={@deck_submission}
         deck_submission={@deck_submission}
         cards_by_arena_id={@cards_by_arena_id}
+        cached_ids={@cached_card_ids}
       />
 
       <%!-- Revealed cards from in-process memory (Chain-2) --%>
       <RevealedCardsCard.card
         groups={@revealed_groups}
-        card_names_by_arena_id={card_names_from(@cards_by_arena_id)}
+        cards_by_arena_id={@cards_by_arena_id}
         cached_ids={@cached_card_ids}
       />
 
@@ -482,21 +484,6 @@ defmodule Scry2Web.MatchesLive do
       />
     </Layouts.app>
     """
-  end
-
-  # Extracts arena_id => name from the cards_by_arena_id map populated by
-  # `Cards.list_by_arena_ids/1`. Values may be either `%Card{}` structs (with
-  # a `:name` field) or plain maps from the MtgaCard fallback path.
-  defp card_names_from(cards_by_arena_id) when is_map(cards_by_arena_id) do
-    Map.new(cards_by_arena_id, fn {arena_id, card} ->
-      name =
-        case card do
-          %{name: n} when is_binary(n) -> n
-          _ -> "Card ##{arena_id}"
-        end
-
-      {arena_id, name}
-    end)
   end
 
   # ── Dashboard component ──────────────────────────────────────────────
@@ -936,33 +923,17 @@ defmodule Scry2Web.MatchesLive do
   end
 
   defp deck_list(assigns) do
-    main_deck = parse_deck_cards(assigns.deck_submission.main_deck, assigns.cards_by_arena_id)
-    sideboard = parse_deck_cards(assigns.deck_submission.sideboard, assigns.cards_by_arena_id)
-    assigns = assign(assigns, main_deck: main_deck, sideboard: sideboard)
-
     ~H"""
     <section class="mb-8">
       <.kind_label class="mb-1">your deck</.kind_label>
       <h2 class="text-lg font-beleren mb-3 text-base-content">Submitted list</h2>
-      <div class="bg-base-200 rounded-box p-4">
-        <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-0.5 text-sm">
-          <div :for={{count, name} <- @main_deck} class="flex gap-2">
-            <span class="text-base-content/40 tabular-nums w-4 text-right shrink-0">{count}</span>
-            <span class="truncate">{name}</span>
-          </div>
-        </div>
-        <div :if={@sideboard != []} class="mt-4 pt-3 border-t border-base-content/10">
-          <h3 class="text-xs text-base-content/40 uppercase tracking-wider mb-2">Sideboard</h3>
-          <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-0.5 text-sm">
-            <div :for={{count, name} <- @sideboard} class="flex gap-2">
-              <span class="text-base-content/40 tabular-nums w-4 text-right shrink-0">
-                {count}
-              </span>
-              <span class="truncate">{name}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <.standard_composition
+        id="match-deck"
+        main_deck={@deck_submission.main_deck}
+        sideboard={@deck_submission.sideboard}
+        cards_by_arena_id={@cards_by_arena_id}
+        cached_ids={@cached_ids}
+      />
     </section>
     """
   end
@@ -1026,48 +997,9 @@ defmodule Scry2Web.MatchesLive do
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
   defp extract_arena_ids(deck_submission) do
-    main = extract_ids_from_deck_map(deck_submission.main_deck)
-    side = extract_ids_from_deck_map(deck_submission.sideboard)
-    Enum.uniq(main ++ side)
-  end
-
-  defp extract_ids_from_deck_map(nil), do: []
-
-  defp extract_ids_from_deck_map(cards) when is_list(cards) do
-    cards
-    |> Enum.map(fn card -> card["arena_id"] || card[:arena_id] end)
-    |> Enum.filter(&is_integer/1)
-  end
-
-  defp extract_ids_from_deck_map(%{"cards" => cards}) when is_list(cards) do
-    extract_ids_from_deck_map(cards)
-  end
-
-  defp extract_ids_from_deck_map(_), do: []
-
-  defp parse_deck_cards(nil, _cards_by_arena_id), do: []
-
-  defp parse_deck_cards(deck_map, cards_by_arena_id) do
-    cards =
-      case deck_map do
-        %{"cards" => card_list} when is_list(card_list) -> card_list
-        cards when is_list(cards) -> cards
-        _ -> []
-      end
-
-    cards
-    |> Enum.map(fn card ->
-      arena_id = card["arena_id"] || card[:arena_id]
-      count = card["count"] || card[:count] || 1
-
-      name =
-        case Map.get(cards_by_arena_id, arena_id) do
-          nil -> "#{arena_id}"
-          card_data -> card_data.name
-        end
-
-      {count, name}
-    end)
-    |> Enum.sort_by(fn {_count, name} -> name end)
+    Enum.uniq(
+      DeckRendering.arena_ids(deck_submission.main_deck) ++
+        DeckRendering.arena_ids(deck_submission.sideboard)
+    )
   end
 end

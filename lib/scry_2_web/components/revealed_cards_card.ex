@@ -3,9 +3,12 @@ defmodule Scry2Web.Components.RevealedCardsCard do
   Renders the per-match Chain-2 revealed-cards section on the match
   detail page.
 
-  Per-seat groups (You / Opponent / others), each with per-zone
-  rows (Battlefield first; followed by Hand, Graveyard, and Exile). Each card is rendered via `Scry2Web.CardComponents.card_image/1`
-  so the existing image cache + tooltip behaviour is reused.
+  Per-seat groups (You / Opponent / others), each with per-zone rows
+  (Battlefield first; followed by Hand, Graveyard, and Exile). The zone
+  headers are domain chrome; each zone's card row is a
+  `Scry2Web.DeckRendering.deck_view/1` in memory order (`order:
+  :natural` — the reader reports cards as they sit in MTGA's process
+  memory).
 
   Hidden when `groups` is empty.
 
@@ -15,14 +18,19 @@ defmodule Scry2Web.Components.RevealedCardsCard do
 
   use Phoenix.Component
 
-  alias Scry2Web.CardComponents
+  import Scry2Web.DeckRendering, only: [deck_view: 1]
+
+  alias Scry2Web.DeckRendering.ViewSpec
 
   attr :groups, :list, required: true, doc: "Output of `MatchBoardView.group_by_seat_and_zone/1`."
-  attr :card_names_by_arena_id, :map, default: %{}
+
+  attr :cards_by_arena_id, :map,
+    default: %{},
+    doc: "Card reference lookup — `Scry2.Cards.list_by_arena_ids/1`."
 
   attr :cached_ids, :any,
     default: nil,
-    doc: "MapSet of arena_ids with a cached image — see `CardComponents.card_image/1`."
+    doc: "`@cached_card_ids` from `Scry2Web.CardImages`."
 
   def card(assigns) do
     ~H"""
@@ -41,7 +49,7 @@ defmodule Scry2Web.Components.RevealedCardsCard do
             group_idx={group_idx}
             seat_label={group.label}
             zones={group.zones}
-            card_names_by_arena_id={@card_names_by_arena_id}
+            cards_by_arena_id={@cards_by_arena_id}
             cached_ids={@cached_ids}
           />
         </div>
@@ -53,7 +61,7 @@ defmodule Scry2Web.Components.RevealedCardsCard do
   attr :group_idx, :integer, required: true
   attr :seat_label, :string, required: true
   attr :zones, :list, required: true
-  attr :card_names_by_arena_id, :map, default: %{}
+  attr :cards_by_arena_id, :map, default: %{}
   attr :cached_ids, :any, default: nil
 
   defp seat_group(assigns) do
@@ -70,16 +78,13 @@ defmodule Scry2Web.Components.RevealedCardsCard do
           </span>
         </div>
 
-        <div class="flex flex-wrap gap-1">
-          <CardComponents.card_image
-            :for={{arena_id, idx} <- Enum.with_index(zone.arena_ids)}
-            id={"revealed-#{@group_idx}-#{zone.zone_id}-#{idx}-#{arena_id}"}
-            arena_id={arena_id}
-            name={Map.get(@card_names_by_arena_id, arena_id, "Card ##{arena_id}")}
-            cached_ids={@cached_ids}
-            class="w-[3.5rem]"
-          />
-        </div>
+        <.deck_view
+          id={"revealed-#{@group_idx}-#{zone.zone_id}"}
+          spec={%ViewSpec{piling: :spread, order: :natural, card_width: "3.5rem"}}
+          cards={zone.arena_ids}
+          cards_by_arena_id={@cards_by_arena_id}
+          cached_ids={@cached_ids}
+        />
       </div>
     </div>
     """

@@ -98,6 +98,24 @@ defmodule Scry2Web.NetdecksHelpers do
   def card_row_tone(:missing), do: "text-warning"
   def card_row_tone(:partial), do: "text-base-content/60"
 
+  @doc """
+  Indexes decklist rows (main + sideboard) by arena_id for the ownership
+  overlay on the standard deck composition. Rows without a resolved
+  arena_id are skipped — they can't be matched to a rendered card.
+  """
+  @spec rows_by_arena_id([map()], [map()]) :: %{integer() => map()}
+  def rows_by_arena_id(main_rows, side_rows) do
+    (main_rows ++ side_rows)
+    |> Enum.filter(&is_integer(&1.arena_id))
+    |> Map.new(fn row -> {row.arena_id, row} end)
+  end
+
+  @doc "Tooltip text describing a decklist row's ownership, or nil without a row."
+  @spec ownership_title(map() | nil) :: String.t() | nil
+  def ownership_title(nil), do: nil
+  def ownership_title(%{free?: true} = row), do: "#{row.name} — basic land"
+  def ownership_title(row), do: "#{row.name} — #{row.owned}/#{row.needed} owned"
+
   @doc "Count of references on a deck that did not resolve to an arena_id."
   @spec unresolved_count(map()) :: non_neg_integer()
   def unresolved_count(%{unresolved_cards: %{"cards" => cards}}) when is_list(cards),

@@ -15,6 +15,7 @@ defmodule Scry2Web.DraftsLive do
   alias Scry2.Matches
   alias Scry2.Topics
   alias Scry2Web.CardImages
+  alias Scry2Web.DeckRendering.ViewSpec
   alias Scry2Web.DraftsHelpers
 
   # ── Lifecycle ────────────────────────────────────────────────────────
@@ -103,7 +104,7 @@ defmodule Scry2Web.DraftsLive do
         draft: draft,
         active_tab: tab,
         cards_by_arena_id: %{},
-        card_pool_groups: [],
+        card_pool: [],
         submitted_decks: [],
         event_matches: []
       )
@@ -120,7 +121,6 @@ defmodule Scry2Web.DraftsLive do
       :deck ->
         pool_ids = pool_arena_ids(draft)
         cards_by_arena_id = Cards.list_by_arena_ids(pool_ids)
-        groups = DraftsHelpers.group_pool_by_type(pool_ids, cards_by_arena_id)
 
         decks =
           if draft,
@@ -129,7 +129,7 @@ defmodule Scry2Web.DraftsLive do
 
         base
         |> assign(
-          card_pool_groups: groups,
+          card_pool: pool_ids,
           cards_by_arena_id: cards_by_arena_id,
           submitted_decks: decks
         )
@@ -350,7 +350,7 @@ defmodule Scry2Web.DraftsLive do
       <.deck_tab
         :if={@active_tab == :deck}
         draft={@draft}
-        card_pool_groups={@card_pool_groups}
+        card_pool={@card_pool}
         cards_by_arena_id={@cards_by_arena_id}
         submitted_decks={@submitted_decks}
         cached_ids={@cached_card_ids}
@@ -412,54 +412,46 @@ defmodule Scry2Web.DraftsLive do
       >
         Pack contents unavailable for this pick.
       </p>
-      <div class="flex flex-wrap gap-2">
-        <div
-          :for={{arena_id, idx} <- Enum.with_index(pick.pack_arena_ids["cards"] || [])}
-          class="relative"
-        >
-          <.card_image
-            id={"pick-#{pick.draft_id}-#{pack_num}-#{pick_num}-#{idx}-#{arena_id}"}
-            arena_id={arena_id}
-            name={card_name(@cards_by_arena_id, arena_id)}
-            cached_ids={@cached_ids}
-            class={
-              if(arena_id == pick.picked_arena_id,
-                do: "w-[72px] ring-2 ring-primary rounded-[5px]",
-                else: "w-[72px] opacity-40"
-              )
-            }
-            data-picked={if arena_id == pick.picked_arena_id, do: to_string(arena_id)}
-          />
-          <div
-            :if={arena_id == pick.picked_arena_id}
-            class="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center pointer-events-none"
-          >
-            <.icon name="hero-check-micro" class="w-3 h-3 text-primary-content" />
-          </div>
-        </div>
-        <div
-          :if={(pick.pack_arena_ids["cards"] || []) == [] and not is_nil(pick.picked_arena_id)}
-          class="relative"
-        >
-          <.card_image
-            id={"pick-solo-#{pick.draft_id}-#{pack_num}-#{pick_num}"}
-            arena_id={pick.picked_arena_id}
-            name={card_name(@cards_by_arena_id, pick.picked_arena_id)}
-            cached_ids={@cached_ids}
-            class="w-[72px] ring-2 ring-primary rounded-[5px]"
-            data-picked={to_string(pick.picked_arena_id)}
-          />
-          <div class="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center pointer-events-none">
-            <.icon name="hero-check-micro" class="w-3 h-3 text-primary-content" />
-          </div>
-        </div>
-      </div>
+      <.deck_view
+        id={"pick-#{pick.draft_id}-#{pack_num}-#{pick_num}"}
+        spec={%ViewSpec{piling: :spread, order: :natural, card_width: "72px"}}
+        cards={DraftsHelpers.pack_display_ids(pick)}
+        cards_by_arena_id={@cards_by_arena_id}
+        cached_ids={@cached_ids}
+      >
+        <:card_overlay :let={card}>
+          <.picked_marker picked={card.arena_id == pick.picked_arena_id} arena_id={card.arena_id} />
+        </:card_overlay>
+      </.deck_view>
     </div>
     """
   end
 
+  # Marks the drafted card in a pack: primary ring + check on the pick,
+  # dim overlay on the cards passed.
+  attr :picked, :boolean, required: true
+  attr :arena_id, :integer, required: true
+
+  defp picked_marker(%{picked: true} = assigns) do
+    ~H"""
+    <div
+      class="absolute inset-0 ring-2 ring-primary rounded-[5px] pointer-events-none"
+      data-picked={to_string(@arena_id)}
+    />
+    <div class="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary flex items-center justify-center pointer-events-none">
+      <.icon name="hero-check-micro" class="w-3 h-3 text-primary-content" />
+    </div>
+    """
+  end
+
+  defp picked_marker(assigns) do
+    ~H"""
+    <div class="absolute inset-0 rounded-sm bg-base-100/60 pointer-events-none" />
+    """
+  end
+
   attr :draft, :map, required: true
-  attr :card_pool_groups, :list, required: true
+  attr :card_pool, :list, required: true
   attr :cards_by_arena_id, :map, required: true
   attr :submitted_decks, :list, required: true
   attr :cached_ids, :any, default: nil
@@ -494,26 +486,16 @@ defmodule Scry2Web.DraftsLive do
     </div>
     <div data-section="draft-pool">
       <.kind_label class="mb-3">full draft pool</.kind_label>
-      <.empty_state :if={@card_pool_groups == []}>
+      <.empty_state :if={@card_pool == []}>
         Pool available after the draft is complete.
       </.empty_state>
-      <div class="flex flex-wrap gap-8">
-        <div :for={{type_label, arena_ids} <- @card_pool_groups}>
-          <div class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-2">
-            {type_label} ({length(arena_ids)})
-          </div>
-          <div class="flex gap-1 flex-wrap">
-            <.card_image
-              :for={{arena_id, idx} <- Enum.with_index(arena_ids)}
-              id={"pool-#{@draft.id}-#{arena_id}-#{idx}"}
-              arena_id={arena_id}
-              name={card_name(@cards_by_arena_id, arena_id)}
-              class="w-[56px]"
-              cached_ids={@cached_ids}
-            />
-          </div>
-        </div>
-      </div>
+      <.deck_view
+        id={"pool-#{@draft.id}"}
+        spec={%ViewSpec{group_by: :broad_type, display: :images, piling: :spread, card_width: "56px"}}
+        cards={@card_pool}
+        cards_by_arena_id={@cards_by_arena_id}
+        cached_ids={@cached_ids}
+      />
     </div>
     """
   end
@@ -596,14 +578,6 @@ defmodule Scry2Web.DraftsLive do
   defp pool_arena_ids(nil), do: []
   defp pool_arena_ids(%{card_pool_arena_ids: %{"ids" => ids}}) when is_list(ids), do: ids
   defp pool_arena_ids(_), do: []
-
-  defp card_name(cards_by_arena_id, arena_id) do
-    case Map.get(cards_by_arena_id, arena_id) do
-      nil -> ""
-      %{name: name} -> name
-      card -> Map.get(card, :name, "")
-    end
-  end
 
   defp format_bar_color(nil), do: "bg-error"
   defp format_bar_color(rate), do: "bg-#{DraftsHelpers.win_rate_color(rate)}"

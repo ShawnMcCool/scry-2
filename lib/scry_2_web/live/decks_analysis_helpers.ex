@@ -6,6 +6,7 @@ defmodule Scry2Web.DecksAnalysisHelpers do
   and metric definitions for tooltips.
   """
 
+  alias Scry2Web.DeckRendering
   alias Scry2Web.DecksHelpers
 
   @doc """
@@ -17,7 +18,8 @@ defmodule Scry2Web.DecksAnalysisHelpers do
   """
   def arena_ids_for_page(deck, versions, card_performance) do
     deck_ids =
-      extract_card_ids(deck.current_main_deck) ++ extract_card_ids(deck.current_sideboard)
+      DeckRendering.arena_ids(deck.current_main_deck) ++
+        DeckRendering.arena_ids(deck.current_sideboard)
 
     version_ids =
       Enum.flat_map(versions, fn version ->
@@ -31,21 +33,14 @@ defmodule Scry2Web.DecksAnalysisHelpers do
     |> Enum.filter(&is_integer/1)
   end
 
-  defp extract_card_ids(%{"cards" => cards}), do: Enum.map(cards, &card_arena_id/1)
-  defp extract_card_ids(_), do: []
-
-  defp card_arena_id(%{"arena_id" => id}), do: id
-  defp card_arena_id(%{arena_id: id}), do: id
-  defp card_arena_id(_), do: nil
-
   @doc """
   Arena ids for the current main deck + sideboard only — what we need to
   format an MTGA clipboard export. Returns a deduplicated list of integers.
   """
   def arena_ids_for_export(deck) do
-    (extract_card_ids(deck.current_main_deck) ++ extract_card_ids(deck.current_sideboard))
+    (DeckRendering.arena_ids(deck.current_main_deck) ++
+       DeckRendering.arena_ids(deck.current_sideboard))
     |> Enum.uniq()
-    |> Enum.filter(&is_integer/1)
   end
 
   @doc """
@@ -117,7 +112,7 @@ defmodule Scry2Web.DecksAnalysisHelpers do
       card_performance
       |> Enum.map(fn card ->
         card_data = Map.get(cards_by_arena_id, card.card_arena_id)
-        Map.put(card, :type, card_type_label(card_data))
+        Map.put(card, :type, DeckRendering.type_label(card_data))
       end)
       |> Enum.split_with(&MapSet.member?(sideboard_ids, &1.card_arena_id))
 
@@ -125,9 +120,9 @@ defmodule Scry2Web.DecksAnalysisHelpers do
       case sort_mode do
         :type ->
           main_cards
-          |> Enum.sort_by(&{type_order(&1.type), -(&1.iwd || -999)})
+          |> Enum.sort_by(&{DeckRendering.type_order(&1.type), -(&1.iwd || -999)})
           |> Enum.group_by(& &1.type)
-          |> Enum.sort_by(fn {type, _} -> type_order(type) end)
+          |> Enum.sort_by(fn {type, _} -> DeckRendering.type_order(type) end)
 
         :name ->
           [{nil, Enum.sort_by(main_cards, &(&1.card_name || "zzz"))}]
@@ -153,32 +148,6 @@ defmodule Scry2Web.DecksAnalysisHelpers do
     cards = (deck.current_sideboard && deck.current_sideboard["cards"]) || []
     MapSet.new(cards, fn card -> card["arena_id"] || card[:arena_id] end)
   end
-
-  defp card_type_label(nil), do: "Unknown"
-
-  defp card_type_label(card) do
-    types = card.types || ""
-
-    cond do
-      String.contains?(types, "Creature") -> "Creatures"
-      String.contains?(types, "Planeswalker") -> "Planeswalkers"
-      String.contains?(types, "Instant") -> "Instants"
-      String.contains?(types, "Sorcery") -> "Sorceries"
-      String.contains?(types, "Enchantment") -> "Enchantments"
-      String.contains?(types, "Artifact") -> "Artifacts"
-      String.contains?(types, "Land") -> "Lands"
-      true -> "Other"
-    end
-  end
-
-  defp type_order("Creatures"), do: 0
-  defp type_order("Planeswalkers"), do: 1
-  defp type_order("Instants"), do: 2
-  defp type_order("Sorceries"), do: 3
-  defp type_order("Enchantments"), do: 4
-  defp type_order("Artifacts"), do: 5
-  defp type_order("Lands"), do: 6
-  defp type_order(_), do: 7
 
   @doc """
   Returns metric definitions for tooltips in the UI. Each metric has a short

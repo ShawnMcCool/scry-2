@@ -15,11 +15,12 @@ defmodule Scry2Web.DecksLive do
   use Scry2Web, :live_view
 
   alias Scry2.Cards
-  alias Scry2.Cards.ImageCache
   alias Scry2.Decks
   alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.Topics
   alias Scry2Web.CardImages
+  alias Scry2Web.DeckRendering
+  alias Scry2Web.DeckRendering.ViewSpec
   alias Scry2Web.DecksAnalysisHelpers
   alias Scry2Web.DecksHelpers
 
@@ -548,20 +549,11 @@ defmodule Scry2Web.DecksLive do
   attr :winrate_period, :string, required: true
 
   defp overview_tab(assigns) do
-    cmc_columns = DecksHelpers.group_cards_by_cmc(assigns.deck, assigns.cards_by_arena_id)
-
-    card_list_columns =
-      DecksHelpers.card_list_with_sideboard(assigns.deck, assigns.cards_by_arena_id)
-
-    sideboard = DecksHelpers.sideboard_cards(assigns.deck, assigns.cards_by_arena_id)
-    main_deck_total = Enum.sum(for {_, cards} <- cmc_columns, card <- cards, do: card.count)
-
     assigns =
-      assign(assigns,
-        cmc_columns: cmc_columns,
-        card_list_columns: card_list_columns,
-        sideboard: sideboard,
-        main_deck_total: main_deck_total
+      assign(
+        assigns,
+        :composition_empty?,
+        DeckRendering.empty?(assigns.deck.current_main_deck, assigns.deck.current_sideboard)
       )
 
     ~H"""
@@ -569,87 +561,16 @@ defmodule Scry2Web.DecksLive do
       <%!-- Performance --%>
       <.performance_section performance={@performance} winrate_period={@winrate_period} />
 
-      <div :if={@card_list_columns != []}>
-        <%!-- Mana Curve — half width, space reserved for future chart --%>
-        <div class="w-1/2">
-          <div
-            id="deck-curve-chart"
-            phx-hook="Chart"
-            data-chart-type="curve"
-            data-series={DecksHelpers.mana_curve_series(@deck, @cards_by_arena_id)}
-            class="w-full rounded-lg bg-base-200"
-            style="height: 5rem"
-          />
-        </div>
+      <.standard_composition
+        :if={!@composition_empty?}
+        id="deck-overview"
+        main_deck={@deck.current_main_deck}
+        sideboard={@deck.current_sideboard}
+        cards_by_arena_id={@cards_by_arena_id}
+        cached_ids={@cached_ids}
+      />
 
-        <%!-- Card List — columns by type + sideboard --%>
-        <div class="flex gap-8 mt-8">
-          <div :for={{{type_label, cards}, col_idx} <- Enum.with_index(@card_list_columns)}>
-            <h3 class="flex items-center gap-2 text-xs font-medium text-base-content/40 uppercase tracking-wide mb-1">
-              <span class="w-4 shrink-0" />{type_label} ({Enum.sum(Enum.map(cards, & &1.count))})
-            </h3>
-            <div class="space-y-0.5">
-              <div
-                :for={card <- cards}
-                id={"card-row-#{col_idx}-#{card.arena_id}"}
-                class="flex items-baseline gap-2 text-sm py-0.5 cursor-default"
-                phx-hook={if MapSet.member?(@cached_ids.full, card.arena_id), do: "CardHover"}
-                data-card-src={ImageCache.url_for(card.arena_id)}
-                data-card-alt={card.name}
-              >
-                <span class="text-base-content/50 w-4 text-right tabular-nums shrink-0">
-                  {card.count}
-                </span>
-                <span>{card.name}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <%!-- Deck View header --%>
-        <.kind_label class="mt-8">main deck ({@main_deck_total})</.kind_label>
-
-        <%!-- Compact deck grid — responsive, no wrapping --%>
-        <div id="deck-view-compact" phx-hook="DeckView" class="mt-3">
-          <div class="flex gap-3 items-start" data-deck-grid>
-            <div
-              :for={{cmc_label, cards} <- @cmc_columns}
-              class="flex-1 min-w-0 flex flex-col items-center"
-            >
-              <p class="text-xs text-base-content/30 mb-1">{cmc_label}</p>
-              <div
-                class="relative w-full"
-                style={"aspect-ratio: #{DecksHelpers.card_stack_aspect_ratio(length(cards))}"}
-              >
-                <div
-                  :for={{card, index} <- Enum.with_index(cards)}
-                  class="absolute w-full left-0"
-                  style={"top: #{DecksHelpers.card_top_percent(index, length(cards))}%; z-index: #{index}"}
-                >
-                  <.card_image
-                    id={"card-grid-#{card.arena_id}"}
-                    arena_id={card.arena_id}
-                    name={card.name}
-                    class="w-full"
-                    cached_ids={@cached_ids}
-                  />
-                  <span class="absolute top-1 right-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
-                    {card.count}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <.sideboard_splay
-            :if={@sideboard != []}
-            cards={@sideboard}
-            cached_ids={@cached_ids}
-          />
-        </div>
-      </div>
-
-      <.empty_state :if={@card_list_columns == []}>
+      <.empty_state :if={@composition_empty?}>
         No composition data available. A DeckUpdated event is needed to show the current list.
       </.empty_state>
     </div>
@@ -686,35 +607,6 @@ defmodule Scry2Web.DecksLive do
           cumulative_series={@performance.cumulative_win_rate.bo3}
           winrate_period={@winrate_period}
         />
-      </div>
-    </div>
-    """
-  end
-
-  attr :cards, :list, required: true
-  attr :mode, :atom, default: :compact
-  attr :cached_ids, :any, default: nil
-
-  defp sideboard_splay(assigns) do
-    total = Enum.sum(Enum.map(assigns.cards, & &1.count))
-    assigns = assign(assigns, total: total)
-
-    ~H"""
-    <div id="sideboard-splay" class="mt-8" data-sideboard-splay>
-      <.kind_label class="mb-3">sideboard ({@total})</.kind_label>
-      <div data-splay-container class="flex items-end pb-4">
-        <div :for={card <- @cards} class="relative flex-shrink-0" data-splay-card>
-          <.card_image
-            id={"sideboard-#{card.arena_id}"}
-            arena_id={card.arena_id}
-            name={card.name}
-            class={if @mode == :compact, do: "w-full", else: "w-28"}
-            cached_ids={@cached_ids}
-          />
-          <span class="absolute bottom-1 left-1 min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none">
-            {card.count}
-          </span>
-        </div>
       </div>
     </div>
     """
@@ -1418,12 +1310,12 @@ defmodule Scry2Web.DecksLive do
             :if={version.version_number > 1}
             version={version}
             cards_by_arena_id={@cards_by_arena_id}
-            cached_ids={@cached_card_ids}
+            cached_ids={@cached_ids}
           />
 
           <%!-- Initial version summary --%>
           <div :if={version.version_number == 1} class="text-xs text-base-content/50 mb-2">
-            {DecksHelpers.deck_card_count(version.main_deck)} cards · First version of this deck
+            {DeckRendering.card_count(version.main_deck)} cards · First version of this deck
           </div>
 
           <%!-- Mana curve comparison (skip for version 1 without previous) --%>
@@ -1455,65 +1347,97 @@ defmodule Scry2Web.DecksLive do
   attr :cached_ids, :any, required: true
 
   defp version_card_diffs(assigns) do
-    main_added = DecksHelpers.parse_diff_cards(assigns.version.main_deck_added)
-    main_removed = DecksHelpers.parse_diff_cards(assigns.version.main_deck_removed)
-    side_added = DecksHelpers.parse_diff_cards(assigns.version.sideboard_added)
-    side_removed = DecksHelpers.parse_diff_cards(assigns.version.sideboard_removed)
-
     assigns =
       assign(assigns,
-        main_added: main_added,
-        main_removed: main_removed,
-        side_added: side_added,
-        side_removed: side_removed
+        main_added: DeckRendering.card_count(assigns.version.main_deck_added),
+        main_removed: DeckRendering.card_count(assigns.version.main_deck_removed),
+        side_added: DeckRendering.card_count(assigns.version.sideboard_added),
+        side_removed: DeckRendering.card_count(assigns.version.sideboard_removed)
       )
 
     ~H"""
-    <div :if={@main_added != [] or @main_removed != []} class="flex gap-6 mb-2">
-      <div :if={@main_added != []}>
+    <div :if={@main_added > 0 or @main_removed > 0} class="flex gap-6 mb-2">
+      <div :if={@main_added > 0}>
         <div class="text-xs uppercase text-success tracking-wide mb-1 font-semibold">
-          +{total_diff_count(@main_added)} Added
+          +{@main_added} Added
         </div>
-        <div class="flex gap-1">
-          <.card_diff_image
-            :for={card <- @main_added}
-            id={"diff-v#{@version.id}-added-#{card.arena_id}"}
-            arena_id={card.arena_id}
-            name={DecksHelpers.card_name(card.arena_id, @cards_by_arena_id)}
-            count={card.count}
-            kind={:added}
-            cached_ids={@cached_ids}
-          />
-        </div>
+        <.diff_view
+          id={"diff-v#{@version.id}-added"}
+          kind={:added}
+          cards={@version.main_deck_added}
+          cards_by_arena_id={@cards_by_arena_id}
+          cached_ids={@cached_ids}
+        />
       </div>
 
-      <div :if={@main_removed != []}>
+      <div :if={@main_removed > 0}>
         <div class="text-xs uppercase text-error tracking-wide mb-1 font-semibold">
-          −{total_diff_count(@main_removed)} Removed
+          −{@main_removed} Removed
         </div>
-        <div class="flex gap-1">
-          <.card_diff_image
-            :for={card <- @main_removed}
-            id={"diff-v#{@version.id}-removed-#{card.arena_id}"}
-            arena_id={card.arena_id}
-            name={DecksHelpers.card_name(card.arena_id, @cards_by_arena_id)}
-            count={card.count}
-            kind={:removed}
-            cached_ids={@cached_ids}
-          />
-        </div>
+        <.diff_view
+          id={"diff-v#{@version.id}-removed"}
+          kind={:removed}
+          cards={@version.main_deck_removed}
+          cards_by_arena_id={@cards_by_arena_id}
+          cached_ids={@cached_ids}
+        />
       </div>
     </div>
 
-    <div :if={@side_added != [] or @side_removed != []} class="flex gap-4 mb-2 text-xs">
+    <div :if={@side_added > 0 or @side_removed > 0} class="flex gap-4 mb-2 text-xs">
       <span class="text-base-content/40 uppercase tracking-wide">Sideboard</span>
-      <span :if={@side_added != []} class="text-success">
-        +{total_diff_count(@side_added)} card{if total_diff_count(@side_added) != 1, do: "s"}
+      <span :if={@side_added > 0} class="text-success">
+        +{@side_added} card{if @side_added != 1, do: "s"}
       </span>
-      <span :if={@side_removed != []} class="text-error">
-        −{total_diff_count(@side_removed)} card{if total_diff_count(@side_removed) != 1, do: "s"}
+      <span :if={@side_removed > 0} class="text-error">
+        −{@side_removed} card{if @side_removed != 1, do: "s"}
       </span>
     </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :kind, :atom, values: [:added, :removed], required: true
+  attr :cards, :any, required: true
+  attr :cards_by_arena_id, :map, required: true
+  attr :cached_ids, :any, required: true
+
+  defp diff_view(assigns) do
+    ~H"""
+    <.deck_view
+      id={@id}
+      spec={%ViewSpec{card_width: "5rem"}}
+      cards={@cards}
+      cards_by_arena_id={@cards_by_arena_id}
+      cached_ids={@cached_ids}
+    >
+      <:card_overlay :let={card}>
+        <.diff_marker kind={@kind} count={card.count} />
+      </:card_overlay>
+    </.deck_view>
+    """
+  end
+
+  # Diff annotation over a card image: colored ring + signed count badge;
+  # removed cards are additionally dimmed.
+  attr :kind, :atom, values: [:added, :removed], required: true
+  attr :count, :integer, required: true
+
+  defp diff_marker(%{kind: :added} = assigns) do
+    ~H"""
+    <div class="absolute inset-0 rounded-md ring-2 ring-success pointer-events-none" />
+    <span class="absolute top-1 right-1 rounded px-1 text-xs font-bold bg-success text-success-content pointer-events-none">
+      +{@count}
+    </span>
+    """
+  end
+
+  defp diff_marker(assigns) do
+    ~H"""
+    <div class="absolute inset-0 rounded-md ring-2 ring-error bg-base-100/40 pointer-events-none" />
+    <span class="absolute top-1 right-1 rounded px-1 text-xs font-bold bg-error text-error-content pointer-events-none">
+      −{@count}
+    </span>
     """
   end
 
@@ -1723,8 +1647,6 @@ defmodule Scry2Web.DecksLive do
       export_text: export_text
     )
   end
-
-  defp total_diff_count(cards), do: Enum.sum(Enum.map(cards, & &1.count))
 
   defp bar_height(_count, 0), do: 2
   defp bar_height(count, max_val), do: max(2, round(count / max_val * 24))

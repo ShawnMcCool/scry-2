@@ -51,6 +51,47 @@ defmodule Scry2Web.NetdecksHelpersTest do
     refute NetdecksHelpers.any_cost?(%{common: 0, uncommon: 0, rare: 0, mythic: 0})
   end
 
+  test "rows_by_arena_id indexes main and sideboard rows by arena_id" do
+    main_rows = [
+      %{arena_id: 1, name: "Lightning Bolt", needed: 4, owned: 4, missing: 0, free?: false},
+      %{arena_id: 2, name: "Mountain", needed: 20, owned: 0, missing: 0, free?: true}
+    ]
+
+    side_rows = [
+      %{arena_id: 3, name: "Negate", needed: 2, owned: 0, missing: 2, free?: false}
+    ]
+
+    lookup = NetdecksHelpers.rows_by_arena_id(main_rows, side_rows)
+
+    assert map_size(lookup) == 3
+    assert lookup[1].name == "Lightning Bolt"
+    assert lookup[3].missing == 2
+  end
+
+  test "rows_by_arena_id skips rows without a resolved arena_id" do
+    main_rows = [%{arena_id: nil, name: "Unknown", needed: 1, owned: 0, missing: 1, free?: false}]
+
+    assert NetdecksHelpers.rows_by_arena_id(main_rows, []) == %{}
+  end
+
+  test "ownership_title describes a row's ownership for tooltips" do
+    assert NetdecksHelpers.ownership_title(nil) == nil
+
+    assert NetdecksHelpers.ownership_title(%{
+             name: "Mountain",
+             free?: true,
+             owned: 0,
+             needed: 20
+           }) == "Mountain — basic land"
+
+    assert NetdecksHelpers.ownership_title(%{
+             name: "Lightning Bolt",
+             free?: false,
+             owned: 2,
+             needed: 4
+           }) == "Lightning Bolt — 2/4 owned"
+  end
+
   test "card_row_state classifies a decklist row" do
     assert NetdecksHelpers.card_row_state(%{free?: true, owned: 0, missing: 0}) == :free
     assert NetdecksHelpers.card_row_state(%{free?: false, owned: 4, missing: 0}) == :owned
