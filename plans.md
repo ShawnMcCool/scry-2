@@ -122,6 +122,17 @@ memory order), and deck version diffs (added/removed overlays).
 Pending: UI controls that let the user pick a `ViewSpec` per page
 (grouping, text/images, splay depth) persisted via `Settings.Entry`.
 
+## UI: netdeck variant matrix (UIDR-014)
+
+A "Variant matrix" section on `/netdecks/:id` below the Variants list:
+contested nonland cards (rows, most-contested first) × every other
+cluster member (columns, best finish first), cells `+N`/`−N` vs the
+viewed deck, blank = same. Frozen card-name + `you ×N` pane; horizontal
+scroll for the field; `Manabase ±N` / `Sideboard ±N` / `Total Δ` footer
+rows. Pilot names must stay searchable DOM text. Name-identity diffing;
+re-anchors on navigation. Supersedes the UIDR-013 per-row delta lines
+(never built); design and degenerate cases in UIDR-014.
+
 ## H. Composed capabilities
 
 - Personal draft database (every pack seen, every card passed) — **D + storage**
