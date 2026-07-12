@@ -27,6 +27,7 @@ defmodule Scry2.NetDecking do
   alias Scry2.NetDecking.IngestDecklist
   alias Scry2.NetDecking.OwnedIdentity
   alias Scry2.NetDecking.Provenance
+  alias Scry2.NetDecking.VariantMatrix
   alias Scry2.NetDecking.Sources.{LocalJsonSource, MtgoSource}
   alias Scry2.Repo
   alias Scry2.Settings
@@ -173,14 +174,15 @@ defmodule Scry2.NetDecking do
   Detailed view model for a single deck, scored against the current snapshot.
 
   Returns `%{deck, result, wildcards, main_rows, side_rows, export_text,
-  label, variants, cards_by_arena_id}` where each row is `%{arena_id, name,
-  rarity, needed, owned, missing, free?}`. `wildcards` are the player's
-  current owned balances; `export_text` is the MTGA clipboard-import string;
-  `label` is the archetype label (matches the catalog tile); `variants`
-  lists every deck in this deck's cluster — `%{deck, finish, record,
-  wildcard_cost, total_cost}`, best finish first (UIDR-010);
-  `cards_by_arena_id` is the card reference lookup for rendering the deck
-  composition.
+  label, variants, matrix, cards_by_arena_id}` where each row is
+  `%{arena_id, name, rarity, needed, owned, missing, free?}`. `wildcards`
+  are the player's current owned balances; `export_text` is the MTGA
+  clipboard-import string; `label` is the archetype label (matches the
+  catalog tile); `variants` lists every deck in this deck's cluster —
+  `%{deck, finish, record, wildcard_cost, total_cost}`, best finish first
+  (UIDR-010); `matrix` is the `VariantMatrix` view model over the same
+  cluster in the same order (UIDR-014); `cards_by_arena_id` is the card
+  reference lookup for rendering the deck composition.
   """
   @spec deck_detail(Deck.t()) :: map()
   def deck_detail(%Deck{} = deck) do
@@ -204,6 +206,9 @@ defmodule Scry2.NetDecking do
     signature =
       DeckQualities.signature_arena_ids(entries, cards_by_arena_id, @cluster_signature_cards)
 
+    cluster_variants =
+      variants(deck, decks, cards_by_arena_id, owned, wildcards, rarities, free_ids)
+
     %{
       deck: deck,
       result: score_deck(deck, owned, wildcards, rarities, free_ids),
@@ -215,7 +220,13 @@ defmodule Scry2.NetDecking do
       label: archetype_label(colors, signature, cards_by_arena_id),
       finish: Provenance.finish_label(deck),
       record: Provenance.record_label(deck),
-      variants: variants(deck, decks, cards_by_arena_id, owned, wildcards, rarities, free_ids),
+      variants: cluster_variants,
+      matrix:
+        VariantMatrix.build(
+          deck,
+          Enum.map(cluster_variants, & &1.deck),
+          cards_by_arena_id
+        ),
       cards_by_arena_id: cards_by_arena_id
     }
   end

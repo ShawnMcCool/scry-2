@@ -68,6 +68,20 @@ defmodule Scry2.NetDecking.ProvenanceTest do
     end
   end
 
+  describe "compact_finish_label/1" do
+    test "placement renders as a bare #rank" do
+      assert Provenance.compact_finish_label(%Deck{placement: 5, field_size: 43}) == "#5"
+    end
+
+    test "swiss rank is the fallback" do
+      assert Provenance.compact_finish_label(%Deck{swiss_rank: 12, field_size: 45}) == "#12"
+    end
+
+    test "nil when the deck carries no rank data" do
+      assert Provenance.compact_finish_label(%Deck{}) == nil
+    end
+  end
+
   describe "sort_by_finish/1" do
     test "orders placement first, then swiss, then unranked" do
       placed = %Deck{id: 1, placement: 3}

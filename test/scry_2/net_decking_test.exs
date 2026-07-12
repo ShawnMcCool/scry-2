@@ -85,6 +85,35 @@ defmodule Scry2.NetDeckingTest do
     assert detail.export_text =~ "Lightning Bolt"
   end
 
+  test "deck_detail includes the variant matrix for the deck's cluster" do
+    _bolt = create_card(name: "Lightning Bolt", rarity: "rare")
+    _shock = create_card(name: "Shock", rarity: "common")
+    _mountain = create_card(name: "Mountain", rarity: "common", is_land: true, types: "Land")
+
+    {:ok, viewed} =
+      NetDecking.import_decklist(%{
+        name: "Mono-Red A",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Shock\n16 Mountain\n"
+      })
+
+    {:ok, _variant} =
+      NetDecking.import_decklist(%{
+        name: "Mono-Red B",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n3 Shock\n17 Mountain\n"
+      })
+
+    detail = NetDecking.deck_detail(viewed)
+
+    assert [%{name: "Shock", you_count: 4, contested_count: 1}] = detail.matrix.rows
+    assert [column] = detail.matrix.columns
+    assert column.deck.name == "Mono-Red B"
+    assert column.deltas == %{"Shock" => -1}
+    assert column.lands_changed == 1
+    assert column.total_changed == 2
+  end
+
   test "deck_detail counts a card owned under a different printing as owned" do
     # Two printings of one card share a name; the deck resolves to one, the
     # player owns the other. Name-identity ownership must still count it.

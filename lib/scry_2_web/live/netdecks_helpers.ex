@@ -281,4 +281,14 @@ defmodule Scry2Web.NetdecksHelpers do
 
   defp pluralize(1, noun), do: "1 #{noun}"
   defp pluralize(count, noun), do: "#{count} #{noun}s"
+
+  @doc ~s(Matrix cell text for a nonzero copy delta: "+2", "−1" [U+2212].)
+  @spec matrix_delta_label(integer()) :: String.t()
+  def matrix_delta_label(delta) when delta > 0, do: "+#{delta}"
+  def matrix_delta_label(delta) when delta < 0, do: "−#{-delta}"
+
+  @doc ~s(Matrix footer magnitude: "±14", or nil for zero so the cell stays empty.)
+  @spec matrix_magnitude_label(non_neg_integer()) :: String.t() | nil
+  def matrix_magnitude_label(0), do: nil
+  def matrix_magnitude_label(magnitude), do: "±#{magnitude}"
 end

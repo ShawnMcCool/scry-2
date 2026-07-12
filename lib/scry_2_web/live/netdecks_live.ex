@@ -21,6 +21,8 @@ defmodule Scry2Web.NetdecksLive do
   alias Scry2Web.DeckRendering
   alias Scry2Web.NetdecksHelpers
 
+  import Scry2Web.Components.VariantMatrix, only: [variant_matrix: 1]
+
   @empty_catalog %{buildable: [], craftable: [], short: []}
 
   @impl true
@@ -777,6 +779,8 @@ defmodule Scry2Web.NetdecksLive do
           variants={@detail.variants}
           current_deck_id={@detail.deck.id}
         />
+
+        <.variant_matrix matrix={@detail.matrix} />
       </div>
     </div>
     """

@@ -240,4 +240,24 @@ defmodule Scry2Web.NetdecksHelpersTest do
                "Couldn't import — 2 events failed."
     end
   end
+
+  describe "matrix_delta_label/1" do
+    test "positive deltas carry a plus sign" do
+      assert NetdecksHelpers.matrix_delta_label(2) == "+2"
+    end
+
+    test "negative deltas render a true minus sign" do
+      assert NetdecksHelpers.matrix_delta_label(-1) == "−1"
+    end
+  end
+
+  describe "matrix_magnitude_label/1" do
+    test "zero renders nothing" do
+      assert NetdecksHelpers.matrix_magnitude_label(0) == nil
+    end
+
+    test "nonzero renders a plus-minus magnitude" do
+      assert NetdecksHelpers.matrix_magnitude_label(14) == "±14"
+    end
+  end
 end

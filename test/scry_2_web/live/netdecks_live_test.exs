@@ -72,6 +72,41 @@ defmodule Scry2Web.NetdecksLiveTest do
     assert html =~ "Aggro"
   end
 
+  test "detail view renders the variant matrix when the cluster has variants", %{conn: conn} do
+    create_card(name: "Lightning Bolt", rarity: "rare")
+    create_card(name: "Shock", rarity: "common")
+    create_card(name: "Mountain", rarity: "common", is_land: true, types: "Land")
+
+    {:ok, viewed} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Mono-Red A",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Shock\n16 Mountain\n"
+      })
+
+    {:ok, _variant} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Mono-Red B",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n3 Shock\n17 Mountain\n"
+      })
+
+    {:ok, view, html} = live(conn, ~p"/netdecks/#{viewed.id}")
+
+    assert html =~ "Variant matrix"
+
+    # Column heads patch between variants; the matrix re-anchors in place.
+    variant_html =
+      view
+      |> element("#variant-matrix a", "Mono-Red B")
+      |> render_click()
+
+    assert variant_html =~ "Variant matrix"
+
+    variant = Enum.find(Scry2.NetDecking.list_decks(), &(&1.name == "Mono-Red B"))
+    assert_patch(view, ~p"/netdecks/#{variant.id}")
+  end
+
   test "unknown deck id redirects back to the catalog", %{conn: conn} do
     assert {:error, {:live_redirect, %{to: "/netdecks"}}} = live(conn, ~p"/netdecks/999999")
   end

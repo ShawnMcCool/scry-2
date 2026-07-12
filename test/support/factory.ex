@@ -1140,6 +1140,32 @@ defmodule Scry2.TestFactory do
 
   # ── NetDecking ───────────────────────────────────────────────────────────
 
+  @doc """
+  Builds a `Scry2.NetDecking.Deck` struct with sensible defaults (no DB).
+  `main_deck`/`sideboard` take the stored `{"cards" => [...]}` map shape;
+  pass entries via `netdeck_cards/1` for convenience.
+  """
+  def build_netdeck(attrs \\ %{}) do
+    defaults = %{
+      name: "Test Netdeck",
+      format: "Standard",
+      main_deck: %{"cards" => []},
+      sideboard: %{"cards" => []},
+      source_name: "manual",
+      fetched_at: DateTime.utc_now()
+    }
+
+    struct(Scry2.NetDecking.Deck, Map.merge(defaults, Map.new(attrs)))
+  end
+
+  @doc ~S(Wraps `[{arena_id, count}]` into the stored `{"cards" => [...]}` map shape.)
+  def netdeck_cards(entries) do
+    %{
+      "cards" =>
+        Enum.map(entries, fn {arena_id, count} -> %{"arena_id" => arena_id, "count" => count} end)
+    }
+  end
+
   def create_netdeck(attrs \\ %{}) do
     base = Map.new(attrs)
 

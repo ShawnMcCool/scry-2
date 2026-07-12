@@ -31,6 +31,16 @@ defmodule Scry2.NetDecking.Provenance do
 
   def finish_label(%Deck{}), do: nil
 
+  @doc ~s(Dense finish for matrix column heads: "#5" from placement or swiss rank, else nil.)
+  @spec compact_finish_label(Deck.t()) :: String.t() | nil
+  def compact_finish_label(%Deck{placement: placement}) when is_integer(placement),
+    do: "##{placement}"
+
+  def compact_finish_label(%Deck{swiss_rank: swiss_rank}) when is_integer(swiss_rank),
+    do: "##{swiss_rank}"
+
+  def compact_finish_label(%Deck{}), do: nil
+
   @doc ~s(W-L record: "7-2", or nil unless both sides are known.)
   @spec record_label(Deck.t()) :: String.t() | nil
   def record_label(%Deck{wins: wins, losses: losses})
