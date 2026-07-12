@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.52.3 — 2026-07-12
+
 ### New
 
 - The deck page for a netdeck now shows a **variant matrix** — every other list of the same archetype side by side, best finishes first, with each card the pilots disagree on as a row. Cells show how many more or fewer copies each list plays compared with the one you're viewing, so you can see at a glance where your list stands apart from the field, what the top finishers did differently, and how much the manabases and sideboards vary.
