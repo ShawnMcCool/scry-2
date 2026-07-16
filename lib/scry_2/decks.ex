@@ -909,6 +909,53 @@ defmodule Scry2.Decks do
   end
 
   @doc """
+  Re-stamp every deck's and deck version's classified archetype against
+  the current Metagame definitions. Returns the number of rows whose
+  stamp changed. Classifications are disposable projections — safe to
+  run any time.
+  """
+  @spec reclassify_archetypes!() :: non_neg_integer()
+  def reclassify_archetypes! do
+    decks = Repo.all(Deck)
+    format_by_deck_id = Map.new(decks, &{&1.mtga_deck_id, &1.format})
+
+    decks_changed =
+      Enum.count(decks, fn deck ->
+        Scry2.Metagame.classification_attrs(
+          deck.current_main_deck,
+          deck.current_sideboard,
+          deck.format
+        )
+        |> restamp(deck, &Deck.changeset/2)
+      end)
+
+    versions_changed =
+      DeckVersion
+      |> Repo.all()
+      |> Enum.count(fn version ->
+        Scry2.Metagame.classification_attrs(
+          version.main_deck,
+          version.sideboard,
+          Map.get(format_by_deck_id, version.mtga_deck_id)
+        )
+        |> restamp(version, &DeckVersion.changeset/2)
+      end)
+
+    decks_changed + versions_changed
+  end
+
+  defp restamp(stamp, row, changeset_fun) do
+    changeset = changeset_fun.(row, stamp)
+
+    if changeset.changes == %{} do
+      false
+    else
+      Repo.update!(changeset)
+      true
+    end
+  end
+
+  @doc """
   Upserts a deck version by `(mtga_deck_id, version_number)`. Idempotent for replay.
   """
   def upsert_deck_version!(attrs) do

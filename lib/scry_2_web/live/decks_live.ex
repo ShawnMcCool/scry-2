@@ -301,6 +301,9 @@ defmodule Scry2Web.DecksLive do
               <td>
                 <div class="flex items-center gap-2">
                   <span class="font-medium">{entry.deck.current_name || "Unnamed Deck"}</span>
+                  <span :if={entry.deck.archetype_name} class="badge badge-sm badge-ghost">
+                    {entry.deck.archetype_name}
+                  </span>
                   <span
                     :if={entry.deck.archived}
                     class="badge badge-sm badge-ghost text-base-content/60"
@@ -360,6 +363,9 @@ defmodule Scry2Web.DecksLive do
             <h1 class="text-2xl font-beleren leading-tight">
               {@deck.current_name || "Unnamed Deck"}
             </h1>
+            <span :if={@deck.archetype_name} class="badge badge-sm badge-ghost">
+              {@deck.archetype_name}
+            </span>
             <span
               :if={@deck.archived}
               class="badge badge-sm badge-ghost text-base-content/60"
@@ -448,6 +454,7 @@ defmodule Scry2Web.DecksLive do
             cards_by_arena_id={@cards_by_arena_id}
             cached_ids={@cached_card_ids}
             winrate_period={@winrate_period}
+            prefs={@deck_view_prefs}
           />
         <% :matches -> %>
           <.matches_tab
@@ -547,6 +554,7 @@ defmodule Scry2Web.DecksLive do
   attr :cards_by_arena_id, :map, required: true
   attr :cached_ids, :any, required: true
   attr :winrate_period, :string, required: true
+  attr :prefs, DeckRendering.CompositionPrefs, required: true
 
   defp overview_tab(assigns) do
     assigns =
@@ -568,6 +576,7 @@ defmodule Scry2Web.DecksLive do
         sideboard={@deck.current_sideboard}
         cards_by_arena_id={@cards_by_arena_id}
         cached_ids={@cached_ids}
+        prefs={@prefs}
       />
 
       <.empty_state :if={@composition_empty?}>

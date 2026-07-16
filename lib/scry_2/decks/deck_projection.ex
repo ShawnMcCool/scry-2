@@ -91,6 +91,14 @@ defmodule Scry2.Decks.DeckProjection do
 
   defp project(%DeckUpdated{} = event) do
     if event.deck_id do
+      main_deck = %{"cards" => event.main_deck || []}
+      sideboard = %{"cards" => event.sideboard || []}
+
+      # The event's format wins; a previously backfilled format (see
+      # DeckSubmitted) fills in when MTGA carried none.
+      effective_format = event.format || current_deck_format(event.deck_id)
+      stamp = Scry2.Metagame.classification_attrs(main_deck, sideboard, effective_format)
+
       # Omit format when MTGA carries none (it never tags Limited decks).
       # Writing nil here would clobber a format the DeckSubmitted backfill
       # inferred from match context for a deck re-saved after being played.
@@ -98,9 +106,12 @@ defmodule Scry2.Decks.DeckProjection do
         %{
           mtga_deck_id: event.deck_id,
           current_name: event.deck_name,
-          current_main_deck: %{"cards" => event.main_deck || []},
-          current_sideboard: %{"cards" => event.sideboard || []},
-          last_updated_at: event.occurred_at
+          current_main_deck: main_deck,
+          current_sideboard: sideboard,
+          last_updated_at: event.occurred_at,
+          archetype_name: stamp.archetype_name,
+          archetype_variant: stamp.archetype_variant,
+          archetype_fallback: stamp.archetype_fallback
         }
         |> maybe_put_format(event.format)
 
@@ -113,12 +124,15 @@ defmodule Scry2.Decks.DeckProjection do
         version_number: version_number,
         deck_name: event.deck_name,
         action_type: event.action_type,
-        main_deck: %{"cards" => event.main_deck || []},
-        sideboard: %{"cards" => event.sideboard || []},
+        main_deck: main_deck,
+        sideboard: sideboard,
         main_deck_added: %{"cards" => event.main_deck_added || []},
         main_deck_removed: %{"cards" => event.main_deck_removed || []},
         sideboard_added: %{"cards" => event.sideboard_added || []},
         sideboard_removed: %{"cards" => event.sideboard_removed || []},
+        archetype_name: stamp.archetype_name,
+        archetype_variant: stamp.archetype_variant,
+        archetype_fallback: stamp.archetype_fallback,
         occurred_at: event.occurred_at
       })
 
@@ -441,6 +455,13 @@ defmodule Scry2.Decks.DeckProjection do
   # format previously inferred from match context (see DeckSubmitted backfill).
   defp maybe_put_format(attrs, nil), do: attrs
   defp maybe_put_format(attrs, format), do: Map.put(attrs, :format, format)
+
+  defp current_deck_format(mtga_deck_id) do
+    case Decks.get_deck(mtga_deck_id) do
+      nil -> nil
+      deck -> deck.format
+    end
+  end
 
   # Queries the Events log for an already-persisted MatchCreated event so that
   # DeckSubmitted can retroactively populate format_type/event_name/player_rank

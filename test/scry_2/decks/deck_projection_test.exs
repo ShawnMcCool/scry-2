@@ -481,4 +481,96 @@ defmodule Scry2.Decks.DeckProjectionTest do
       refute Repo.get_by(Deck, mtga_deck_id: "unknown-deck")
     end
   end
+
+  describe "archetype stamping" do
+    defp install_burn_definition do
+      Scry2.Metagame.replace_definitions!("Standard", %{
+        definitions: [
+          %{
+            key: "Burn",
+            kind: "archetype",
+            name: "Burn",
+            include_color_in_name: true,
+            conditions: [%{"type" => "InMainboard", "cards" => ["Lightning Bolt"]}],
+            variants: [],
+            common_cards: []
+          }
+        ],
+        overrides: []
+      })
+    end
+
+    test "DeckUpdated stamps the classified archetype on the deck and its version" do
+      install_burn_definition()
+      bolt = create_card(name: "Lightning Bolt", color_identity: "R")
+      mountain = create_card(name: "Mountain", color_identity: "R", is_land: true)
+      player = create_player()
+      deck_id = "test-deck-#{System.unique_integer([:positive])}"
+
+      project_events(DeckProjection, [
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          format: "Standard",
+          main_deck: [
+            %{arena_id: bolt.arena_id, count: 4},
+            %{arena_id: mountain.arena_id, count: 16}
+          ],
+          sideboard: []
+        })
+      ])
+
+      deck = Scry2.Decks.get_deck(deck_id)
+      assert deck.archetype_name == "Mono-Red Burn"
+      assert deck.archetype_fallback == false
+
+      assert [version] = Scry2.Decks.get_deck_versions(deck_id)
+      assert version.archetype_name == "Mono-Red Burn"
+    end
+
+    test "non-Standard decks are not classified" do
+      install_burn_definition()
+      bolt = create_card(name: "Lightning Bolt", color_identity: "R")
+      player = create_player()
+      deck_id = "test-deck-#{System.unique_integer([:positive])}"
+
+      project_events(DeckProjection, [
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          format: "Historic",
+          main_deck: [%{arena_id: bolt.arena_id, count: 4}],
+          sideboard: []
+        })
+      ])
+
+      assert Scry2.Decks.get_deck(deck_id).archetype_name == nil
+    end
+
+    test "reclassify_archetypes! re-stamps decks and versions" do
+      bolt = create_card(name: "Lightning Bolt", color_identity: "R")
+      player = create_player()
+      deck_id = "test-deck-#{System.unique_integer([:positive])}"
+
+      project_events(DeckProjection, [
+        build_deck_updated(%{
+          player_id: player.id,
+          deck_id: deck_id,
+          format: "Standard",
+          main_deck: [%{arena_id: bolt.arena_id, count: 4}],
+          sideboard: []
+        })
+      ])
+
+      assert Scry2.Decks.get_deck(deck_id).archetype_name == nil
+
+      install_burn_definition()
+
+      assert Scry2.Decks.reclassify_archetypes!() == 2
+
+      assert Scry2.Decks.get_deck(deck_id).archetype_name == "Burn"
+      assert [version] = Scry2.Decks.get_deck_versions(deck_id)
+      assert version.archetype_name == "Burn"
+    end
+  end
 end

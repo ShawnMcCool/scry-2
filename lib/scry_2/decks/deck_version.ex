@@ -34,6 +34,9 @@ defmodule Scry2.Decks.DeckVersion do
     field :on_play_losses, :integer, default: 0
     field :on_draw_wins, :integer, default: 0
     field :on_draw_losses, :integer, default: 0
+    field :archetype_name, :string
+    field :archetype_variant, :string
+    field :archetype_fallback, :boolean, default: false
     field :occurred_at, :utc_datetime
 
     timestamps(type: :utc_datetime)
@@ -42,7 +45,8 @@ defmodule Scry2.Decks.DeckVersion do
   @required_fields ~w(mtga_deck_id version_number main_deck sideboard occurred_at)a
   @optional_fields ~w(deck_name action_type main_deck_added main_deck_removed
                       sideboard_added sideboard_removed match_wins match_losses
-                      on_play_wins on_play_losses on_draw_wins on_draw_losses)a
+                      on_play_wins on_play_losses on_draw_wins on_draw_losses
+                      archetype_name archetype_variant archetype_fallback)a
 
   def changeset(version, attrs) do
     version

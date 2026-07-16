@@ -21,6 +21,9 @@ defmodule Scry2.Decks.Deck do
     field :composition_hash, :integer
     field :starred, :boolean, default: false
     field :archived, :boolean, default: false
+    field :archetype_name, :string
+    field :archetype_variant, :string
+    field :archetype_fallback, :boolean, default: false
 
     timestamps(type: :utc_datetime)
   end
@@ -43,7 +46,10 @@ defmodule Scry2.Decks.Deck do
       :bo3_losses,
       :composition_hash,
       :starred,
-      :archived
+      :archived,
+      :archetype_name,
+      :archetype_variant,
+      :archetype_fallback
     ])
     |> validate_required([:mtga_deck_id])
     |> unique_constraint(:mtga_deck_id)

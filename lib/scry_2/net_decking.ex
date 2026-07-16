@@ -19,7 +19,7 @@ defmodule Scry2.NetDecking do
   alias Scry2.Config
   alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.Economy
-  alias Scry2.NetDecking.ArchetypeStamp
+  alias Scry2.Metagame
   alias Scry2.NetDecking.Buildability
   alias Scry2.NetDecking.Buildability.Inputs
   alias Scry2.NetDecking.Deck
@@ -81,7 +81,7 @@ defmodule Scry2.NetDecking do
   def reclassify_archetypes! do
     list_decks()
     |> Enum.count(fn deck ->
-      stamp = ArchetypeStamp.attrs(deck.main_deck, deck.sideboard, deck.format)
+      stamp = Metagame.classification_attrs(deck.main_deck, deck.sideboard, deck.format)
       changeset = Deck.changeset(deck, stamp)
 
       if changeset.changes == %{} do
