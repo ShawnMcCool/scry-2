@@ -21,6 +21,13 @@ defmodule Scry2.Metagame.ClassifyDeck do
      nonlands (kills splash-land false positives), with per-card
      overrides applied. `IncludeColorInName` prepends the
      `ColorName` ("Izzet Prowess").
+
+  `observed/2` is the partial-information mode (our extension, for
+  opponent decks): inclusion conditions count toward a match when
+  satisfied by the observed cards and are undecided otherwise;
+  exclusions disqualify only when the excluded card was actually seen.
+  Results grade as `:confirmed`/`:likely` instead of `:exact` — see
+  `Classification`.
   """
 
   alias Scry2.Metagame.{Classification, ColorName, Definitions}
@@ -55,6 +62,119 @@ defmodule Scry2.Metagame.ClassifyDeck do
       [] -> best_fallback(mainboard ++ sideboard, definitions, color)
       matches -> matches |> Enum.min_by(&complexity/1) |> to_classification(color, :exact)
     end
+  end
+
+  @observed_fallback_min_distinct 4
+  @observed_fallback_min_overlap 0.25
+
+  @doc """
+  Classify from partial information — the cards observed from an
+  opponent during a match, with no main/side split.
+  """
+  @spec observed([entry()], Definitions.t()) :: Classification.t() | :unknown
+  def observed([], _definitions), do: :unknown
+
+  def observed(entries, %Definitions{} = definitions) do
+    color = observed_color(entries, definitions)
+    names = MapSet.new(entries, & &1.name)
+
+    candidates =
+      definitions.archetypes
+      |> Enum.map(&score_candidate(&1, names))
+      |> Enum.reject(&is_nil/1)
+
+    case best_candidate(candidates) do
+      {rule, satisfied, total_inclusions} ->
+        confidence = if satisfied == total_inclusions, do: :confirmed, else: :likely
+        to_classification({rule, nil}, color, confidence)
+
+      :ambiguous ->
+        :unknown
+
+      :none ->
+        observed_fallback(entries, definitions, color)
+    end
+  end
+
+  # ── Partial-information scoring ─────────────────────────────────────
+
+  # nil when disqualified by an observed exclusion or nothing satisfied;
+  # otherwise {rule, satisfied_inclusions, total_inclusions}.
+  defp score_candidate(rule, names) do
+    {inclusions, exclusions} = Enum.split_with(rule.conditions, &inclusion?/1)
+
+    if Enum.any?(exclusions, &exclusion_violated?(&1, names)) do
+      nil
+    else
+      case Enum.count(inclusions, &inclusion_satisfied?(&1, names)) do
+        0 -> nil
+        satisfied -> {rule, satisfied, length(inclusions)}
+      end
+    end
+  end
+
+  defp inclusion?(%{"type" => type}), do: not String.starts_with?(type, "DoesNotContain")
+
+  defp exclusion_violated?(%{"cards" => [card | _]}, names), do: MapSet.member?(names, card)
+
+  # Board designations collapse for observed cards: a card seen on the
+  # battlefield satisfies both mainboard and sideboard conditions.
+  defp inclusion_satisfied?(%{"type" => type, "cards" => cards}, names) do
+    cond do
+      String.starts_with?(type, "TwoOrMore") -> distinct_matches(cards, names) >= 2
+      String.starts_with?(type, "OneOrMore") -> Enum.any?(cards, &MapSet.member?(names, &1))
+      true -> MapSet.member?(names, hd(cards))
+    end
+  end
+
+  defp best_candidate([]), do: :none
+
+  defp best_candidate(candidates) do
+    case Enum.sort_by(candidates, &candidate_rank/1) do
+      [best] ->
+        best
+
+      [best, runner_up | _rest] ->
+        if candidate_rank(best) == candidate_rank(runner_up), do: :ambiguous, else: best
+    end
+  end
+
+  defp candidate_rank({rule, satisfied, _total_inclusions}),
+    do: {-satisfied, length(rule.conditions)}
+
+  defp observed_fallback(entries, %Definitions{fallbacks: fallbacks}, color) do
+    observed_nonlands = entries |> Enum.reject(& &1.land?) |> Enum.uniq_by(& &1.name)
+
+    scored =
+      fallbacks
+      |> Enum.map(fn rule ->
+        common = MapSet.new(rule.common_cards)
+        {rule, Enum.count(observed_nonlands, &MapSet.member?(common, &1.name))}
+      end)
+      |> Enum.reject(fn {_rule, matched} -> matched == 0 end)
+
+    with true <- length(observed_nonlands) >= @observed_fallback_min_distinct,
+         [_ | _] <- scored,
+         {rule, matched} = best_scored(scored),
+         true <- matched / length(observed_nonlands) >= @observed_fallback_min_overlap do
+      to_classification({rule, nil}, color, :likely, fallback?: true)
+    else
+      _below_threshold -> :unknown
+    end
+  end
+
+  defp observed_color(entries, definitions) do
+    land_colors = colors_seen(entries, definitions.land_overrides, & &1.land?)
+    nonland_colors = colors_seen(entries, definitions.nonland_overrides, &(not &1.land?))
+
+    seen =
+      if MapSet.size(land_colors) == 0 do
+        nonland_colors
+      else
+        MapSet.intersection(land_colors, nonland_colors)
+      end
+
+    @wubrg |> Enum.filter(&MapSet.member?(seen, &1)) |> Enum.join()
   end
 
   # ── Condition evaluation ────────────────────────────────────────────
