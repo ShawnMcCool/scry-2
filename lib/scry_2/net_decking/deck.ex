@@ -21,6 +21,9 @@ defmodule Scry2.NetDecking.Deck do
   schema "netdecking_decks" do
     field :name, :string
     field :archetype, :string
+    field :archetype_name, :string
+    field :archetype_variant, :string
+    field :archetype_fallback, :boolean, default: false
     field :format, :string, default: "Standard"
     field :main_deck, :map
     field :sideboard, :map
@@ -44,6 +47,9 @@ defmodule Scry2.NetDecking.Deck do
   @required [:name, :format, :main_deck, :sideboard, :source_name, :fetched_at]
   @optional [
     :archetype,
+    :archetype_name,
+    :archetype_variant,
+    :archetype_fallback,
     :composition_hash,
     :source_url,
     :unresolved_cards,

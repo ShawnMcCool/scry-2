@@ -15,11 +15,31 @@ defmodule Scry2Web.NetdecksHelpersTest do
   end
 
   test "match_search? matches name and archetype case-insensitively" do
-    entry = %{deck: %{name: "Mono-Red Aggro", archetype: "Aggro"}}
+    entry = %{deck: %{name: "Mono-Red Aggro", archetype: "Aggro", archetype_name: nil}}
     assert NetdecksHelpers.match_search?(entry, "mono")
     assert NetdecksHelpers.match_search?(entry, "aggro")
     refute NetdecksHelpers.match_search?(entry, "control")
     assert NetdecksHelpers.match_search?(entry, "")
+  end
+
+  test "source_archetype_note shows the source string only when it differs from the title" do
+    assert NetdecksHelpers.source_archetype_note(%{archetype: "Prowess"}, "Izzet Prowess") ==
+             "Prowess"
+
+    assert NetdecksHelpers.source_archetype_note(%{archetype: "Izzet Prowess"}, "Izzet Prowess") ==
+             nil
+
+    assert NetdecksHelpers.source_archetype_note(%{archetype: nil}, "Izzet Prowess") == nil
+  end
+
+  test "match_search? matches the classified archetype name" do
+    entry = %{
+      deck: %{name: "Standard Challenge — pilot", archetype: nil, archetype_name: "Izzet Prowess"}
+    }
+
+    assert NetdecksHelpers.match_search?(entry, "prowess")
+    assert NetdecksHelpers.match_search?(entry, "izzet")
+    refute NetdecksHelpers.match_search?(entry, "domain")
   end
 
   test "status_order leads with buildable, then craftable, then short" do

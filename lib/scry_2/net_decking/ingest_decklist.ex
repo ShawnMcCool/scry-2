@@ -6,6 +6,7 @@ defmodule Scry2.NetDecking.IngestDecklist do
       Parse    (MtgaClipboardParser: text → refs)
       Resolve  (Cards.resolve_references: refs → {resolved, unresolved})
       Dedup    (Decks.composition_hash: idempotent key over maindeck)
+      Classify (ArchetypeStamp: card lists → archetype columns)
       Persist  (upsert netdecking_decks by composition_hash)
 
   Buildability is NOT computed here — ingestion produces only
@@ -16,6 +17,7 @@ defmodule Scry2.NetDecking.IngestDecklist do
   alias Scry2.Cards
   alias Scry2.Decks
   alias Scry2.Decks.MtgaClipboardParser
+  alias Scry2.NetDecking.ArchetypeStamp
   alias Scry2.NetDecking.Deck
   alias Scry2.Repo
 
@@ -73,12 +75,19 @@ defmodule Scry2.NetDecking.IngestDecklist do
 
   defp persist(attrs, main_cards, side_cards, unresolved, composition_hash) do
     row = existing(composition_hash)
+    format = attrs[:format] || "Standard"
+
+    stamp =
+      ArchetypeStamp.attrs(%{"cards" => main_cards}, %{"cards" => side_cards}, format)
 
     changeset =
       Deck.changeset(row || %Deck{}, %{
         name: attrs.name,
         archetype: attrs[:archetype],
-        format: attrs[:format] || "Standard",
+        archetype_name: stamp.archetype_name,
+        archetype_variant: stamp.archetype_variant,
+        archetype_fallback: stamp.archetype_fallback,
+        format: format,
         main_deck: %{"cards" => main_cards},
         sideboard: %{"cards" => side_cards},
         composition_hash: composition_hash,

@@ -113,4 +113,89 @@ defmodule Scry2.NetDecking.IngestDecklistTest do
     assert deck.placement == nil
     assert deck.event_date == nil
   end
+
+  describe "archetype stamping" do
+    defp install_burn_definition do
+      Scry2.Metagame.replace_definitions!("Standard", %{
+        definitions: [
+          %{
+            key: "Burn",
+            kind: "archetype",
+            name: "Burn",
+            include_color_in_name: true,
+            conditions: [%{"type" => "InMainboard", "cards" => ["Lightning Bolt"]}],
+            variants: [],
+            common_cards: []
+          }
+        ],
+        overrides: []
+      })
+    end
+
+    test "stamps the classified archetype at ingest" do
+      install_burn_definition()
+      create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+      create_card(name: "Mountain", rarity: "common", color_identity: "R", is_land: true)
+
+      {:ok, deck} =
+        IngestDecklist.run(%{
+          name: "Standard Challenge — pilot",
+          source_name: "mtgo",
+          decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+        })
+
+      assert deck.archetype_name == "Mono-Red Burn"
+      assert deck.archetype_variant == nil
+      assert deck.archetype_fallback == false
+    end
+
+    test "leaves the stamp nil when classification is unknown" do
+      Scry2.Metagame.replace_definitions!("Standard", %{
+        definitions: [
+          %{
+            key: "Never",
+            kind: "archetype",
+            name: "Never",
+            include_color_in_name: false,
+            conditions: [%{"type" => "InMainboard", "cards" => ["Nonexistent Card"]}],
+            variants: [],
+            common_cards: []
+          }
+        ],
+        overrides: []
+      })
+
+      create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+      {:ok, deck} =
+        IngestDecklist.run(%{
+          name: "Unmatched",
+          source_name: "manual",
+          decklist_text: "Deck\n4 Lightning Bolt\n"
+        })
+
+      assert deck.archetype_name == nil
+      assert deck.archetype_fallback == false
+    end
+
+    test "re-ingesting refreshes the stamp" do
+      create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+      attrs = %{
+        name: "Restamped",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n"
+      }
+
+      {:ok, first} = IngestDecklist.run(attrs)
+      assert first.archetype_name == nil
+
+      install_burn_definition()
+
+      # No lands in this list, so no color prefix — just the bare name.
+      {:ok, second} = IngestDecklist.run(attrs)
+      assert second.id == first.id
+      assert second.archetype_name == "Burn"
+    end
+  end
 end

@@ -131,17 +131,34 @@ defmodule Scry2Web.NetdecksHelpers do
 
   def unresolved_count(_deck), do: 0
 
-  @doc "True if the entry's deck name or archetype contains `query` (case-insensitive). Empty query matches all."
+  @doc """
+  True if the entry's deck name, source-provided archetype, or classified
+  archetype name contains `query` (case-insensitive). Empty query matches all.
+  """
   @spec match_search?(map(), String.t()) :: boolean()
   def match_search?(_entry, ""), do: true
 
   def match_search?(%{deck: deck}, query) do
     query_lower = String.downcase(query)
-    contains?(deck.name, query_lower) or contains?(deck.archetype, query_lower)
+
+    contains?(deck.name, query_lower) or contains?(deck.archetype, query_lower) or
+      contains?(deck.archetype_name, query_lower)
   end
 
   defp contains?(nil, _query_lower), do: false
   defp contains?(value, query_lower), do: String.contains?(String.downcase(value), query_lower)
+
+  @doc """
+  The source-provided archetype string, shown as a small badge only when
+  it adds information — i.e. it exists and differs from the classified
+  title already displayed.
+  """
+  @spec source_archetype_note(map(), String.t()) :: String.t() | nil
+  def source_archetype_note(%{archetype: nil}, _label), do: nil
+
+  def source_archetype_note(%{archetype: archetype}, label) do
+    if String.downcase(archetype) == String.downcase(label), do: nil, else: archetype
+  end
 
   @doc """
   Tile provenance subtitle: "1st · Standard Challenge 32 · Jun 26".

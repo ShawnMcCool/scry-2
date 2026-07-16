@@ -19,6 +19,7 @@ defmodule Scry2.NetDecking do
   alias Scry2.Config
   alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.Economy
+  alias Scry2.NetDecking.ArchetypeStamp
   alias Scry2.NetDecking.Buildability
   alias Scry2.NetDecking.Buildability.Inputs
   alias Scry2.NetDecking.Deck
@@ -70,6 +71,27 @@ defmodule Scry2.NetDecking do
 
   @spec import_decklist(map()) :: {:ok, Deck.t()} | {:error, Ecto.Changeset.t()}
   defdelegate import_decklist(attrs), to: IngestDecklist, as: :run
+
+  @doc """
+  Re-stamp every corpus deck's classified archetype against the current
+  Metagame definitions. Returns the number of decks whose stamp changed.
+  Classifications are disposable projections — safe to run any time.
+  """
+  @spec reclassify_archetypes!() :: non_neg_integer()
+  def reclassify_archetypes! do
+    list_decks()
+    |> Enum.count(fn deck ->
+      stamp = ArchetypeStamp.attrs(deck.main_deck, deck.sideboard, deck.format)
+      changeset = Deck.changeset(deck, stamp)
+
+      if changeset.changes == %{} do
+        false
+      else
+        Repo.update!(changeset)
+        true
+      end
+    end)
+  end
 
   # ── Reads ───────────────────────────────────────────────────────────
 
@@ -217,7 +239,13 @@ defmodule Scry2.NetDecking do
       side_rows: card_rows(deck.sideboard, cards_by_arena_id, owned, rarities, free_ids),
       export_text:
         MtgaClipboardFormat.format_card_lists(deck.main_deck, deck.sideboard, cards_by_arena_id),
-      label: archetype_label(colors, signature, cards_by_arena_id),
+      label:
+        cluster_label(
+          Enum.map(cluster_variants, & &1.deck),
+          colors,
+          signature,
+          cards_by_arena_id
+        ),
       finish: Provenance.finish_label(deck),
       record: Provenance.record_label(deck),
       variants: cluster_variants,
@@ -243,17 +271,31 @@ defmodule Scry2.NetDecking do
       result: result,
       color_identity: colors,
       signature_arena_ids: signature,
-      label: archetype_label(colors, signature, cards),
+      label: cluster_label(member_decks, colors, signature, cards),
       set_code: DeckQualities.newest_set_code(entries, cards, sets),
       variant_count: length(member_decks),
       provenance: tile_provenance(member_decks)
     }
   end
 
-  # The cluster title: the only fact true of every member. Never derived
-  # from one variant's pilot/event — those mutate as the representative
-  # changes with the collection (UIDR-010).
-  defp archetype_label(colors, signature, cards) do
+  # The cluster title: the classified archetype name the community uses
+  # ("Izzet Prowess"), by majority over the cluster's members. Falls back
+  # to the synthetic color · hero label for unclassified decks. Never
+  # derived from one variant's pilot/event — those mutate as the
+  # representative changes with the collection (UIDR-010).
+  defp cluster_label(member_decks, colors, signature, cards) do
+    member_decks
+    |> Enum.map(& &1.archetype_name)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.frequencies()
+    |> Enum.max_by(fn {_name, frequency} -> frequency end, fn -> nil end)
+    |> case do
+      {name, _frequency} -> name
+      nil -> synthetic_label(colors, signature, cards)
+    end
+  end
+
+  defp synthetic_label(colors, signature, cards) do
     hero_name = signature |> List.first() |> card_name_or(cards)
     "#{DeckQualities.color_combo_name(colors)} · #{hero_name}"
   end

@@ -250,7 +250,12 @@ defmodule Scry2Web.NetdecksLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <.detail :if={@detail} detail={@detail} cached_ids={@cached_card_ids} />
+      <.detail
+        :if={@detail}
+        detail={@detail}
+        cached_ids={@cached_card_ids}
+        prefs={@deck_view_prefs}
+      />
       <.catalog
         :if={is_nil(@detail)}
         catalog={@catalog}
@@ -617,6 +622,7 @@ defmodule Scry2Web.NetdecksLive do
 
   attr :detail, :map, required: true
   attr :cached_ids, :any, required: true
+  attr :prefs, DeckRendering.CompositionPrefs, required: true
 
   defp detail(assigns) do
     assigns =
@@ -658,8 +664,11 @@ defmodule Scry2Web.NetdecksLive do
         </a>
       </div>
       <div class="flex items-center gap-3 mt-2 text-xs text-base-content/55">
-        <span :if={@detail.deck.archetype} class="badge badge-sm badge-ghost">
-          {@detail.deck.archetype}
+        <span
+          :if={NetdecksHelpers.source_archetype_note(@detail.deck, @detail.label)}
+          class="badge badge-sm badge-ghost"
+        >
+          {NetdecksHelpers.source_archetype_note(@detail.deck, @detail.label)}
         </span>
         <span>via {@detail.deck.source_name}</span>
         <span :if={@detail.deck.fetched_at}>
@@ -767,6 +776,7 @@ defmodule Scry2Web.NetdecksLive do
           cards_by_arena_id={@detail.cards_by_arena_id}
           cached_ids={@cached_ids}
           show_curve={false}
+          prefs={@prefs}
           card_class={missing_card_tint(@rows_by_arena_id)}
         >
           <:card_overlay :let={card}>

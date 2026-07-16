@@ -365,6 +365,75 @@ defmodule Scry2.NetDeckingTest do
     assert variant_id == deck.id
   end
 
+  describe "archetype classification" do
+    defp install_burn_definition do
+      Scry2.Metagame.replace_definitions!("Standard", %{
+        definitions: [
+          %{
+            key: "Burn",
+            kind: "archetype",
+            name: "Burn",
+            include_color_in_name: true,
+            conditions: [%{"type" => "InMainboard", "cards" => ["Lightning Bolt"]}],
+            variants: [],
+            common_cards: []
+          }
+        ],
+        overrides: []
+      })
+    end
+
+    test "catalog entries and deck_detail title by the classified archetype name" do
+      install_burn_definition()
+      create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+      create_card(name: "Mountain", rarity: "common", color_identity: "R", is_land: true)
+
+      {:ok, deck} =
+        NetDecking.import_decklist(%{
+          name: "Standard Challenge 32 — pilot",
+          source_name: "mtgo",
+          decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+        })
+
+      catalog = NetDecking.catalog()
+      entries = catalog.buildable ++ catalog.craftable ++ catalog.short
+      assert [%{label: "Mono-Red Burn"}] = entries
+
+      assert NetDecking.deck_detail(deck).label == "Mono-Red Burn"
+    end
+
+    test "unclassified decks keep the synthetic color · hero label" do
+      create_card(name: "Grizzly Bear", rarity: "rare", color_identity: "G")
+
+      {:ok, deck} =
+        NetDecking.import_decklist(%{
+          name: "Bears",
+          source_name: "manual",
+          decklist_text: "Deck\n4 Grizzly Bear\n"
+        })
+
+      assert NetDecking.deck_detail(deck).label =~ "Grizzly Bear"
+    end
+
+    test "reclassify_archetypes! re-stamps the corpus against current definitions" do
+      create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+      {:ok, deck} =
+        NetDecking.import_decklist(%{
+          name: "Pre-definitions",
+          source_name: "manual",
+          decklist_text: "Deck\n4 Lightning Bolt\n"
+        })
+
+      assert deck.archetype_name == nil
+
+      install_burn_definition()
+
+      assert NetDecking.reclassify_archetypes!() == 1
+      assert NetDecking.get_deck(deck.id).archetype_name == "Burn"
+    end
+  end
+
   describe "browsable_sources/1" do
     defmodule Browsable do
       @behaviour Scry2.NetDecking.Source
