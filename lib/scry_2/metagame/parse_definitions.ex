@@ -142,6 +142,20 @@ defmodule Scry2.Metagame.ParseDefinitions do
   defp with_result({:error, reason}), do: {:error, reason}
 
   defp decode(json) do
+    case strict_decode(json) do
+      {:ok, data} ->
+        {:ok, data}
+
+      {:error, _reason} ->
+        # Upstream validates with Newtonsoft, which tolerates trailing
+        # commas — several live files carry them. Strip and retry.
+        json
+        |> String.replace(~r/,\s*([\]}])/, "\\1")
+        |> strict_decode()
+    end
+  end
+
+  defp strict_decode(json) do
     case JSON.decode(json) do
       {:ok, data} when is_map(data) -> {:ok, data}
       {:ok, other} -> {:error, {:unexpected_json, other}}

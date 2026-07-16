@@ -19,12 +19,64 @@ defmodule Scry2.Metagame do
 
   import Ecto.Query
 
-  alias Scry2.Metagame.{ArchetypeDefinition, ColorOverride, Definitions, ParseDefinitions}
+  alias Scry2.Cards
+
+  alias Scry2.Metagame.{
+    ArchetypeDefinition,
+    Classification,
+    ClassifyDeck,
+    ColorOverride,
+    Definitions,
+    ParseDefinitions
+  }
+
   alias Scry2.Repo
 
   require Scry2.Log, as: Log
 
   @seed_dir Path.join(:code.priv_dir(:scry_2), "metagame/Formats")
+
+  @doc """
+  Classify a complete decklist given as `%{"cards" => [%{"arena_id",
+  "count"}]}` card maps (the shape `decks_decks` and `netdecking_decks`
+  store). Resolves cards via the Cards public API; unresolvable
+  arena_ids are ignored.
+  """
+  @spec classify(map() | nil, map() | nil, String.t()) :: Classification.t() | :unknown
+  def classify(main_deck, sideboard, format \\ "Standard") do
+    main_refs = card_refs(main_deck)
+    side_refs = card_refs(sideboard)
+
+    case main_refs ++ side_refs do
+      [] ->
+        :unknown
+
+      all_refs ->
+        cards_by_arena_id = Cards.list_by_arena_ids(Enum.map(all_refs, & &1.arena_id))
+
+        ClassifyDeck.run(
+          entries(main_refs, cards_by_arena_id),
+          entries(side_refs, cards_by_arena_id),
+          definitions(format)
+        )
+    end
+  end
+
+  @doc """
+  Classify from partial information — the opponent cards observed
+  during a match, as `[%{arena_id, count}]`.
+  """
+  @spec classify_observed([%{arena_id: integer(), count: pos_integer()}], String.t()) ::
+          Classification.t() | :unknown
+  def classify_observed(observed, format \\ "Standard")
+
+  def classify_observed([], _format), do: :unknown
+
+  def classify_observed(observed, format) when is_list(observed) do
+    refs = Enum.map(observed, &to_ref/1)
+    cards_by_arena_id = Cards.list_by_arena_ids(Enum.map(refs, & &1.arena_id))
+    ClassifyDeck.observed(entries(refs, cards_by_arena_id), definitions(format))
+  end
 
   @doc """
   The loaded archetype vocabulary for `format`, lazily seeded from the
@@ -63,6 +115,38 @@ defmodule Scry2.Metagame do
 
       :updated
     end
+  end
+
+  # ── Card resolution ─────────────────────────────────────────────────
+
+  defp card_refs(%{"cards" => cards}) when is_list(cards), do: Enum.map(cards, &to_ref/1)
+  defp card_refs(%{cards: cards}) when is_list(cards), do: Enum.map(cards, &to_ref/1)
+  defp card_refs(_deck), do: []
+
+  defp to_ref(%{"arena_id" => arena_id} = card),
+    do: %{arena_id: arena_id, count: card["count"] || 1}
+
+  defp to_ref(%{arena_id: arena_id} = card),
+    do: %{arena_id: arena_id, count: Map.get(card, :count) || 1}
+
+  defp entries(refs, cards_by_arena_id) do
+    Enum.flat_map(refs, fn ref ->
+      case Map.get(cards_by_arena_id, ref.arena_id) do
+        nil ->
+          []
+
+        card ->
+          [
+            %{
+              name: Map.get(card, :name) || "",
+              count: ref.count,
+              colors: Map.get(card, :color_identity) || "",
+              land?: Map.get(card, :is_land) == true
+            }
+          ]
+      end
+    end)
+    |> Enum.reject(&(&1.name == ""))
   end
 
   # ── Loading ─────────────────────────────────────────────────────────

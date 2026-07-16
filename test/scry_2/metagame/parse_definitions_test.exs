@@ -61,6 +61,30 @@ defmodule Scry2.Metagame.ParseDefinitionsTest do
     test "rejects malformed JSON" do
       assert {:error, _reason} = ParseDefinitions.archetype("{nope", "X")
     end
+
+    test "tolerates trailing commas (upstream validates with Newtonsoft, which allows them)" do
+      json = ~s({"Name": "X", "IncludeColorInName": false,
+                 "Conditions": [{"Type": "InMainboard", "Cards": ["A"],}],})
+
+      assert {:ok, %{name: "X"}} = ParseDefinitions.archetype(json, "X")
+    end
+
+    test "parses every vendored seed file" do
+      seed_dir = Path.expand("../../../priv/metagame/Formats/Standard", __DIR__)
+
+      for subdir <- ["Archetypes", "Fallbacks"],
+          file <- File.ls!(Path.join(seed_dir, subdir)) do
+        json = File.read!(Path.join([seed_dir, subdir, file]))
+
+        parse =
+          if subdir == "Archetypes",
+            do: &ParseDefinitions.archetype/2,
+            else: &ParseDefinitions.fallback/2
+
+        assert {:ok, _definition} = parse.(json, Path.rootname(file)),
+               "failed to parse #{subdir}/#{file}"
+      end
+    end
   end
 
   describe "fallback/2" do
