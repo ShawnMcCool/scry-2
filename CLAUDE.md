@@ -100,19 +100,19 @@ The `Scry2.Collection` context (ADR 034) links a Rustler NIF crate under
 
 ### Local instance (always-on)
 
-`scripts/install-dev` installs the systemd user service `scry-2-dev`, which runs the working-tree (dev) code as the everyday local instance on **port 6015 against the real database** (`~/.local/share/scry_2/scry_2.db`). It applies pending migrations on start (`mix ecto.migrate`), so a restart picks up new code and schema together. This replaces the old split of a separate dev server (4444) plus a packaged release (6015) — one always-current instance now serves real gameplay data.
+`scripts/install-dev` installs the systemd user service `scry-2`, which runs the working-tree code as the everyday local instance on **port 6015 against the real database** (`~/.local/share/scry_2/scry_2.db`). It applies pending migrations on start (`mix ecto.migrate`), so a restart picks up new code and schema together. This replaces the old split of a separate dev server (4444) plus a packaged release (6015) — one always-current instance now serves real gameplay data. (The `scry-2` name is the single per-machine service; a dev machine installs it from the working tree via `scripts/install-dev`, an end user from a built release via `scripts/install-linux` — never both on one machine.)
 
 ```bash
 scripts/install-dev                    # install/refresh the unit, start, health-check
-systemctl --user restart scry-2-dev    # after code changes that the instance must pick up
+systemctl --user restart scry-2        # after code changes that the instance must pick up
 scripts/healthcheck                    # GET /health: 200 only when DB + migrations are ready
-journalctl --user -u scry-2-dev -f     # logs
+journalctl --user -u scry-2 -f         # logs
 iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1   # REPL (Ctrl+\ to detach)
 ```
 
 A bare `mix phx.server` (no `PORT`/`DATABASE_PATH`) still uses the throwaway dev defaults — port 4444 + `scry_2_dev.db` — for isolated development.
 
-**After changing code the running instance must pick up — migrations, deps, config, or supervised processes — restart `scry-2-dev` and run `scripts/healthcheck`.** The probe (`GET /health`) returns 200 only when the database is reachable and every migration is applied, so "up but migrations pending" is caught rather than read as healthy. (Because this instance runs `MIX_ENV=dev`, the in-app self-updater is inert — update via `git pull` + restart.)
+**After changing code the running instance must pick up — migrations, deps, config, or supervised processes — restart `scry-2` and run `scripts/healthcheck`.** The probe (`GET /health`) returns 200 only when the database is reachable and every migration is applied, so "up but migrations pending" is caught rather than read as healthy. (Because this instance runs `MIX_ENV=dev`, the in-app self-updater is inert — update via `git pull` + restart.)
 
 ### Install (end users)
 
@@ -313,6 +313,7 @@ Each context owns its tables and communicates only via PubSub events. No context
 | **Collection** | `collection_` | memory-read collection snapshots (ADR 034) — public API TBD Phase 6. Includes `ReaderHealth` verdict helper (pure) for the always-visible reader-health pill and `BuildChange.verification_state/2` for one-click post-MTGA-update verification. `Scry2.MtgaMemory.SelfTest` runs every reader walk and reports which work/break (surfaced on `/operations/mtga-memory` + `Scry2.Diagnostics.reader_self_test/0`); `Scry2.MtgaMemory.WalkError` is the shared walk-failure→player-language translation point | Broadcasts `collection:snapshots` (TBD) |
 | **Crafts** | `crafts` | wildcard craft attribution (ADR-037), one row per detected wildcard spend derived from snapshot pairs | Subscribes `collection:diffs` via `Crafts.IngestCollectionDiffs`; broadcasts `crafts:updates` |
 | **MatchEconomy** | `match_economy_` | per-match economy delta + log reconciliation projection (ADR-036) | Driven by `MatchEconomy.Trigger` (subscribes to match completion); broadcasts `match_economy:updates` |
+| **Metagame** | `metagame_` | archetype vocabulary (definitions fetched daily from MTGOFormatData, vendored seed in `priv/metagame`) + pure classifier (`ClassifyDeck`: full-list and partial-information modes). Consumers stamp classifications onto their own rows (netdecks, player decks/versions, match `opponent_archetype`); `Workers.ReclassifyArchetypes` re-stamps all three when definitions change. See ADR-043 | Broadcasts `metagame:updates` (`{:definitions_updated, format}`) |
 | **NetDecking** | `netdecking_` | catalog of external Standard decks scored against the collection (buildable/craftable/wildcards-short). Manual paste + automated sources (`Sources.LocalJsonSource`, `Sources.MtgoSource`) feed one `IngestDecklist` funnel via the `Source` behaviour; `Workers.PeriodicallyFetchNetdecks` schedules them daily. Ownership matched by card-name identity across printings (`OwnedIdentity`). See ADR-040 | Consumes `Cards` + `Collection`; no broadcast |
 
 **Key rule:** Only `Scry2.Events.IngestRawEvents` subscribes to `mtga_logs:events`. Every other consumer subscribes to `domain:events` and works with typed `%Scry2.Events.*{}` structs. See ADR-018 for the anti-corruption boundary.

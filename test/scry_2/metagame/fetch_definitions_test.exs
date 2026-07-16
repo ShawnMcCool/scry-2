@@ -1,5 +1,6 @@
 defmodule Scry2.Metagame.FetchDefinitionsTest do
   use Scry2.DataCase, async: false
+  use Oban.Testing, repo: Scry2.Repo
 
   @moduletag :capture_log
 
@@ -34,6 +35,19 @@ defmodule Scry2.Metagame.FetchDefinitionsTest do
              FetchDefinitions.run(req_options: [plug: {Req.Test, FetchDefinitions}])
 
     refute_receive {:definitions_updated, "Standard"}
+  end
+
+  @tag :tmp_dir
+  test "an update enqueues the reclassify worker", %{tmp_dir: tmp_dir} do
+    tarball = tarball(tmp_dir, archetypes: %{"Test.json" => @archetype_json})
+    stub_download(tarball)
+
+    Oban.Testing.with_testing_mode(:manual, fn ->
+      assert {:ok, :updated} =
+               FetchDefinitions.run(req_options: [plug: {Req.Test, FetchDefinitions}])
+
+      assert_enqueued(worker: Scry2.Workers.ReclassifyArchetypes)
+    end)
   end
 
   @tag :tmp_dir

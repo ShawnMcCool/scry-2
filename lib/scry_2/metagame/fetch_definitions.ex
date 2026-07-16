@@ -74,6 +74,11 @@ defmodule Scry2.Metagame.FetchDefinitions do
         "metagame: #{@format} definitions #{result} (#{length(parsed.definitions)} rules)"
       )
 
+      if result == :updated do
+        # New vocabulary → every stored classification may be stale.
+        Oban.insert(Scry2.Workers.ReclassifyArchetypes.new(%{}))
+      end
+
       {:ok, result}
     end
   end
