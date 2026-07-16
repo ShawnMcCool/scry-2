@@ -59,7 +59,8 @@ config :scry_2, Oban,
        # Daily 06:30 UTC — refresh the NetDecking catalog from enabled sources
        # (local JSON feed + mtgo.com Standard). Offset after card synthesis
        # (05:30) so arena_id resolution sees fresh reference data.
-       {"30 6 * * *", Scry2.Workers.PeriodicallyFetchNetdecks}
+       {"30 6 * * *", Scry2.Workers.PeriodicallyFetchNetdecks},
+       {"45 6 * * *", Scry2.Workers.PeriodicallyFetchArchetypeDefinitions}
      ]}
   ]
 

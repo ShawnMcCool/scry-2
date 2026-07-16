@@ -104,6 +104,16 @@ defmodule Scry2.Topics do
   """
   def crafts_updates, do: "crafts:updates"
 
+  # ── Metagame ─────────────────────────────────────────────────────────────
+  @doc """
+  Archetype vocabulary changes. Subscribers receive:
+
+    * `{:definitions_updated, format}` — the format's archetype
+      definitions were replaced with new upstream content; stamped
+      classifications may be stale until reclassified.
+  """
+  def metagame_updates, do: "metagame:updates"
+
   # ── Insights ─────────────────────────────────────────────────────────────
   @doc """
   Insights subsystem updates. Subscribers (e.g. `HomeLive`, `InsightsLive`)

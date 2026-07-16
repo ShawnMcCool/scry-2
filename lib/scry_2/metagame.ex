@@ -95,7 +95,8 @@ defmodule Scry2.Metagame do
 
   Compares against the current rows first: returns `:unchanged` when the
   parsed content matches what is stored, `:updated` after a
-  delete-and-insert in one transaction otherwise.
+  delete-and-insert in one transaction otherwise. An update broadcasts
+  `{:definitions_updated, format}` on `metagame:updates`.
   """
   @spec replace_definitions!(String.t(), %{
           definitions: [ParseDefinitions.definition_attrs()],
@@ -113,6 +114,7 @@ defmodule Scry2.Metagame do
           :updated
         end)
 
+      Scry2.Topics.broadcast(Scry2.Topics.metagame_updates(), {:definitions_updated, format})
       :updated
     end
   end
