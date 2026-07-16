@@ -1,0 +1,14 @@
+{
+  "Name": "Discard",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Tersa Lightshatter"]
+    },
+    {
+      "Type": "InMainboard",
+      "Cards": ["Practiced Offense"]
+    }
+  ]
+}

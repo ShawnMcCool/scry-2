@@ -1,0 +1,42 @@
+{
+  "Name": "Midrange",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Archenemy's Charm"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Kaito, Bane of Nightmares"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Nurturing Pixie"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Doomsday Excruciator"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Relic of Legends"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Archfiend of the Dross"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Bloodletter of Aclazotz"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Herd Migration"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Iridescent Vinelasher"]
+    }
+  ]
+}

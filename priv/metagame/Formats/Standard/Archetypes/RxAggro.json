@@ -1,0 +1,26 @@
+{
+  "Name": "Aggro",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Emberheart Challenger"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Optimistic Scavenger"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Elusive Otter"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Warleader's Call"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Imodane's Recruiter"]
+    }
+  ]
+}

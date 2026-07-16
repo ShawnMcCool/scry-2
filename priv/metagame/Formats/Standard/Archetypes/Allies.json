@@ -1,0 +1,11 @@
+{
+  "Name": "Allies",
+  "IncludeColorInName": false,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Earth Kingdom Protectors"]
+    }
+  ]
+}
+

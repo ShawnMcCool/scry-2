@@ -1,0 +1,20 @@
+{
+  "Name": "AirbendingCombo",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Aang, Swift Savior"]
+    },
+    {
+      "Type": "InMainboard",
+      "Cards": ["Doc Aurlock, Grizzled Genius"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Enduring Vitality"]
+    }
+  ]
+}
+
+

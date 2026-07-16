@@ -1,0 +1,68 @@
+{
+  "Name": "Prowess",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "OneOrMoreInMainboard",
+      "Cards": [
+        "Elusive Otter", 
+        "Drake Hatcher", 
+        "Slickshot Show-Off", 
+        "Valley Floodcaller"
+      ]
+    },
+    {
+      "Type": "InMainboard",
+      "Cards": ["Boomerang Basics"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Tiger-Seal"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Splash Portal"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Doomsday Excruciator"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Enduring Vitality"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Temur Battlecrier"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Nurturing Pixie"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Relic of Legends"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Archfiend of the Dross"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Ouroboroid"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Bloodletter of Aclazotz"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Herd Migration"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Iridescent Vinelasher"]
+    }
+  ]
+}
+

@@ -1,0 +1,32 @@
+{
+  "Name": "Momo",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Momo, Friendly Flier"]
+    },
+    {
+      "Type": "OneorMoreInMainboard",
+      "Cards": ["Haliya, Guided by Light", "Abandoned Air Temple"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Sarkhan, Dragon Ascendant"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Doc Aurlock, Grizzled Genius"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Jeskai Revelation"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Enduring Vitality"]
+    }
+  ]
+}
+
+

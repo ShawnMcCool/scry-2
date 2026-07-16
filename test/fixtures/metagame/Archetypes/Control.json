@@ -1,0 +1,14 @@
+{
+  "Name": "Jeskai Control",
+  "IncludeColorInName": false,
+  "Conditions": [
+    {
+      "Type": "OneOrMoreInMainboard",
+      "Cards": ["Shiko, Paragon of the Way", "Jeskai Revelation"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Accumulate Wisdom"]
+    }
+  ]
+}

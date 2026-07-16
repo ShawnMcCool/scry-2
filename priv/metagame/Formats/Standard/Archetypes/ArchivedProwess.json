@@ -1,0 +1,52 @@
+{
+  "Name": "Midrange",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Vivi Ornitier"]
+    },
+    {
+      "Type": "DoesNotContainMainboard",
+      "Cards": ["Abhorrent Oculus"]
+    }
+  ],
+  "Variants": [
+    {
+      "Name": "Cauldron",
+      "IncludeColorInName": true,
+      "Conditions": [
+        {
+          "Type": "InMainboard",
+          "Cards": ["Agatha's Soul Cauldron"]
+        },
+        {
+          "Type": "InMainboard",
+          "Cards": ["Proft's Eidetic Memory"]
+        },
+        {
+          "Type": "DoesNotContainMainboard",
+          "Cards": ["Artist's Talent"]
+        }
+      ],
+    },
+    {
+      "Name": "Talent",
+      "IncludeColorInName": true,
+      "Conditions": [
+        {
+          "Type": "InMainboard",
+          "Cards": ["Agatha's Soul Cauldron"]
+        },
+        {
+          "Type": "InMainboard",
+          "Cards": ["Proft's Eidetic Memory"]
+        },
+        {
+          "Type": "InMainboard",
+          "Cards": ["Artist's Talent"]
+        }
+      ],
+    }
+  ]
+}

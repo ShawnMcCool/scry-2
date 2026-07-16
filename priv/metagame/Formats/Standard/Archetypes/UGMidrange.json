@@ -1,0 +1,46 @@
+{
+  "Name": "Ouroboroid",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Ouroboroid"]
+    },
+    {
+      "Type": "InMainboard",
+      "Cards": ["Badgermole Cub"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Aang, Swift Savior"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Sazh's Chocobo"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Rubblebelt Maverick"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Insidious Roots"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Aftermath Analyst"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Rubblebelt Maverick"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Earthbender Ascension"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Patchwork Beastie"]
+    }
+  ]
+}

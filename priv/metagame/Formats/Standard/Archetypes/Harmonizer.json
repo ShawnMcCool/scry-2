@@ -1,0 +1,24 @@
+{
+  "Name": "Harmonizer",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Mightform Harmonizer"]
+    },
+    {
+      "Type": "InMainboard",
+      "Cards": ["Stock Up"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Earthbender Ascension"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Sazh's Chocobo"]
+    }
+  ]
+}
+
+

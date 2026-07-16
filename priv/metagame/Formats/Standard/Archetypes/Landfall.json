@@ -1,0 +1,23 @@
+{
+  "Name": "Landfall",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "OneOrMoreInMainboard",
+      "Cards": ["Sazh's Chocobo", "Earthbender Ascension"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Duress"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Temur Battlecrier"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Deep-Cavern Bat"]
+    }
+  ]
+}
+

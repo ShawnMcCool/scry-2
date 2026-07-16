@@ -1,0 +1,30 @@
+{
+  "Name": "Reanimator",
+  "IncludeColorInName": false,
+  "Conditions": [
+    {
+      "Type": "OneOrMoreInMainboard",
+      "Cards": ["Zombify", "Bringer of the Last Gift"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Badgermole Cub"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Sultai Rhythm"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Doomsday Excruciator"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Yuna, Hope of Spira"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Omniscience"]
+    }
+  ]
+}

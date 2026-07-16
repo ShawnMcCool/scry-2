@@ -1,0 +1,11 @@
+{
+  "Name": "Excruciator",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Doomsday Excruciator"]
+    }
+  ]
+}
+

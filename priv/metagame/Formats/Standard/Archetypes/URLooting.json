@@ -1,0 +1,87 @@
+{
+  "Name": "Looting",
+  "IncludeColorInName": true,
+  "Conditions": [
+    {
+      "Type": "InMainboard",
+      "Cards": ["Quantum Riddler"]
+    },
+    {
+      "Type": "OneOrMoreInMainboard",
+      "Cards": ["Winternight Stories", "Tiger-Seal"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Eddymurk Crab"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Kaito, Bane of Nightmares"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Slickshot Show-Off"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Elusive Otter"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Splash Portal"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Shiko, Paragon of the Way"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Jeskai Revelation"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Monument to Endurance"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Doomsday Excruciator"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Enduring Vitality"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Temur Battlecrier"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Nurturing Pixie"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Relic of Legends"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Archfiend of the Dross"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Ouroboroid"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Bloodletter of Aclazotz"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Herd Migration"]
+    },
+    {
+      "Type": "DoesNotContain",
+      "Cards": ["Iridescent Vinelasher"]
+    }
+  ]
+}
+

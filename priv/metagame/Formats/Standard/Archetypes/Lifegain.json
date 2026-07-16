@@ -1,0 +1,10 @@
+{
+  "Name": "Lifegain",
+  "IncludeColorInName": false,
+  "Conditions": [
+    {
+      "Type": "OneOrMoreInMainboard",
+      "Cards": ["Ajani's Pridemate", "Hinterland Sanctifier"]
+    }
+  ]
+}
