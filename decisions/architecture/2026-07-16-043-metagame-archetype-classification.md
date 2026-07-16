@@ -64,6 +64,25 @@ Chosen option: **community rules data + own engine**, in a new
 
 Standard-only for now; Limited matches are never classified.
 
+### Deck naming policy
+
+The classified archetype name is the **display name** for any deck that
+has one, everywhere decks are titled:
+
+- Netdeck catalog tiles and detail pages title by archetype
+  ("Izzet Prowess"); the stored `name` (event — pilot) and the
+  source-provided `archetype` string are provenance, shown subordinate
+  (UIDR-010). The source archetype badge renders only when it differs
+  from the classified title.
+- Cluster tiles title by the majority classification over members —
+  never by one variant's metadata.
+- Unclassified decks fall back to the synthetic `color · hero card`
+  label. The synthetic label is a fallback only; it must never override
+  a classification.
+- Player decks keep their user-chosen MTGA name as the title; the
+  archetype renders as a badge beside it. We name what we classified —
+  we don't rename what the player named.
+
 ### Consequences
 
 - Good: archetype names players recognize, kept current by the
@@ -76,3 +95,32 @@ Standard-only for now; Limited matches are never classified.
   keeping prior rows on fetch failure).
 - Bad: partial-information confidence thresholds are heuristic and will
   need tuning against real match data.
+
+## Known Limitation: dual-name (Universes Within) cards
+
+Discovered 2026-07-16. Universes Beyond cards with Universes Within
+twins exist on Arena as **two printings with two names** — e.g.
+"Spider-Sense" (SPM #46, arena 97862) and its Omenpaths twin
+"Detect Intrusion" (OM1 #28, arena 104694). The naming authorities
+disagree per printing:
+
+- **Scryfall** names OM1 printings by their oracle (Marvel) name and
+  carries the Within name only in `flavor_name` — a field our Scryfall
+  mirror does not store.
+- **The MTGA client DB** names the OM1 printings by their Within name.
+- **mtgo.com decklists** publish the Within names (MTGO has no Marvel
+  license).
+
+Synthesis prefers Scryfall's name, so the Within names
+("Detect Intrusion", "Ademi of the Silkchutes", …) exist nowhere in
+`cards_cards` — `Cards.resolve_references/1` cannot resolve them
+(netdecks report them as unrecognised), and archetype conditions
+written against Within names can never match.
+
+Planned fix (not yet implemented): treat the two names as **aliases of
+one printing** — mirror Scryfall `flavor_name`, stamp it into
+`cards_cards`, extend name resolution to fall back to alias and
+MTGA-mirror names, alias-expand names during classification, and
+re-resolve stored netdecks' `unresolved_cards` (noting that resolving
+previously-unresolved cards changes `composition_hash`, so the
+re-resolve pass must update rows in place rather than re-ingest).
