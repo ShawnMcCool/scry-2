@@ -15,6 +15,7 @@ defmodule Scry2.Matches do
   import Ecto.Query
 
   alias Scry2.Analytics.RollingWindow
+  alias Scry2.LiveState
   alias Scry2.LiveState.{RankClass, Snapshot}
   alias Scry2.Matches.{DeckSubmission, Game, Match}
   alias Scry2.Ranks.Format, as: RankFormat
@@ -174,6 +175,95 @@ defmodule Scry2.Matches do
                 error
             end
         end
+    end
+  end
+
+  @doc """
+  Classify the opponent's deck for a match from the cards they revealed
+  (memory-read board snapshots) and stamp `opponent_archetype` +
+  `opponent_archetype_confidence` on the match row.
+
+  No-ops for Limited matches (archetype vocabulary doesn't apply), when
+  no match row exists yet (same race as `merge_opponent_observation/1`),
+  or when there is no live-state snapshot for the match. An `:unknown`
+  classification clears any stale stamp.
+  """
+  @spec classify_opponent_archetype(String.t()) :: :ok
+  def classify_opponent_archetype(mtga_match_id) when is_binary(mtga_match_id) do
+    with %Match{} = match <- Repo.get_by(Match, mtga_match_id: mtga_match_id),
+         false <- match.format_type == "Limited",
+         %Snapshot{opponent_seat_id: opponent_seat_id} when is_integer(opponent_seat_id) <-
+           LiveState.get_by_match_id(mtga_match_id) do
+      observed = observed_opponent_cards(mtga_match_id, opponent_seat_id)
+      stamp_opponent_archetype(match, Scry2.Metagame.classify_observed(observed))
+    else
+      _not_classifiable -> :ok
+    end
+  end
+
+  @doc """
+  Re-stamp the opponent archetype of every constructed match that has
+  revealed cards. Returns the number of matches whose stamp changed.
+  """
+  @spec reclassify_opponent_archetypes!() :: non_neg_integer()
+  def reclassify_opponent_archetypes! do
+    match_ids =
+      Repo.all(
+        from match in Match,
+          where: not is_nil(match.mtga_match_id),
+          where: is_nil(match.format_type) or match.format_type != "Limited",
+          select: {match.id, match.mtga_match_id}
+      )
+
+    Enum.count(match_ids, fn {match_id, mtga_match_id} ->
+      before = Repo.get(Match, match_id)
+      classify_opponent_archetype(mtga_match_id)
+      after_update = Repo.get(Match, match_id)
+
+      before.opponent_archetype != after_update.opponent_archetype or
+        before.opponent_archetype_confidence != after_update.opponent_archetype_confidence
+    end)
+  end
+
+  defp observed_opponent_cards(mtga_match_id, opponent_seat_id) do
+    mtga_match_id
+    |> LiveState.get_revealed_cards_by_match_id()
+    |> Enum.filter(&(&1.seat_id == opponent_seat_id))
+    |> Enum.frequencies_by(& &1.arena_id)
+    |> Enum.map(fn {arena_id, count} -> %{arena_id: arena_id, count: count} end)
+  end
+
+  defp stamp_opponent_archetype(%Match{} = match, classification) do
+    attrs =
+      case classification do
+        %Scry2.Metagame.Classification{} = classification ->
+          %{
+            opponent_archetype: classification.name,
+            opponent_archetype_confidence: Atom.to_string(classification.confidence)
+          }
+
+        :unknown ->
+          %{opponent_archetype: nil, opponent_archetype_confidence: nil}
+      end
+
+    changeset = Match.changeset(match, attrs)
+
+    if changeset.changes == %{} do
+      :ok
+    else
+      case Repo.update(changeset) do
+        {:ok, updated} ->
+          broadcast_update(updated.id)
+          :ok
+
+        {:error, changeset} ->
+          Log.error(
+            :ingester,
+            "classify_opponent_archetype: changeset error: #{inspect(changeset.errors)}"
+          )
+
+          :ok
+      end
     end
   end
 

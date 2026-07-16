@@ -37,4 +37,20 @@ defmodule Scry2Web.MatchesHelpersTest do
       assert H.on_play_label(nil) == "—"
     end
   end
+
+  describe "opponent_archetype_label/1" do
+    test "shows confirmed classifications bare and likely ones with a question mark" do
+      confirmed = %{
+        opponent_archetype: "Izzet Prowess",
+        opponent_archetype_confidence: "confirmed"
+      }
+
+      likely = %{opponent_archetype: "Domain", opponent_archetype_confidence: "likely"}
+      unclassified = %{opponent_archetype: nil, opponent_archetype_confidence: nil}
+
+      assert H.opponent_archetype_label(confirmed) == "Izzet Prowess"
+      assert H.opponent_archetype_label(likely) == "Domain?"
+      assert H.opponent_archetype_label(unclassified) == nil
+    end
+  end
 end

@@ -465,6 +465,7 @@ defmodule Scry2Web.MatchesLive do
         deck_submission={@deck_submission}
         cards_by_arena_id={@cards_by_arena_id}
         cached_ids={@cached_card_ids}
+        prefs={@deck_view_prefs}
       />
 
       <%!-- Revealed cards from in-process memory (Chain-2) --%>
@@ -745,6 +746,12 @@ defmodule Scry2Web.MatchesLive do
             format_type={@match.format_type || "Limited"}
             class="h-4"
           />
+          <span
+            :if={MatchesHelpers.opponent_archetype_label(@match)}
+            class="badge badge-xs badge-ghost whitespace-nowrap"
+          >
+            {MatchesHelpers.opponent_archetype_label(@match)}
+          </span>
         </div>
       </td>
       <td class="align-top">
@@ -852,6 +859,12 @@ defmodule Scry2Web.MatchesLive do
             mythic_placement={@match.opponent_rank_mythic_placement}
             mythic_percentile={@match.opponent_rank_mythic_percentile}
           />
+          <span
+            :if={MatchesHelpers.opponent_archetype_label(@match)}
+            class="badge badge-sm badge-ghost"
+          >
+            {MatchesHelpers.opponent_archetype_label(@match)}
+          </span>
         </div>
 
         <div class="flex items-center gap-3 text-sm text-base-content/60 mt-1 flex-wrap">
@@ -933,6 +946,7 @@ defmodule Scry2Web.MatchesLive do
         sideboard={@deck_submission.sideboard}
         cards_by_arena_id={@cards_by_arena_id}
         cached_ids={@cached_ids}
+        prefs={@prefs}
       />
     </section>
     """

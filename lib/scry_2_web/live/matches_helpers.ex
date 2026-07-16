@@ -16,6 +16,22 @@ defmodule Scry2Web.MatchesHelpers do
   def result_letter(nil), do: "—"
 
   @doc """
+  The opponent's classified archetype for display, or nil when
+  unclassified. A "likely" classification (partial information, best
+  unique candidate) is marked with a trailing "?"; "confirmed" shows
+  bare.
+  """
+  @spec opponent_archetype_label(map()) :: String.t() | nil
+  def opponent_archetype_label(%{opponent_archetype: nil}), do: nil
+
+  def opponent_archetype_label(%{
+        opponent_archetype: name,
+        opponent_archetype_confidence: confidence
+      }) do
+    if confidence == "likely", do: name <> "?", else: name
+  end
+
+  @doc """
   Returns a Tailwind text-color class for the result letter.
   Green for win, red for loss, muted for unknown.
   """

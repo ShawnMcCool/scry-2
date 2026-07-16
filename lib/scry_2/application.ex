@@ -246,6 +246,10 @@ defmodule Scry2.Application do
           # memory-observed gap-filler fields (opponent screen name, rank with
           # mythic percentile/placement) into matches_matches rows.
           Scry2.Matches.MergeOpponentObservation,
+          # Opponent archetype classification: subscribes to
+          # live_match:board_final and classifies the opponent's deck from
+          # their revealed cards (Metagame vocabulary).
+          Scry2.Matches.ClassifyOpponentArchetype,
           # Match-result enrichment: same memory observation, applied to
           # decks_match_results rows.
           Scry2.Decks.MergeMatchResultObservation,

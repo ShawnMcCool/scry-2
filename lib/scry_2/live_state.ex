@@ -196,6 +196,20 @@ defmodule Scry2.LiveState do
   end
 
   @doc """
+  The MTGA match id a board snapshot belongs to, via its parent
+  `live_state_snapshots` row — for consumers of `{:final_board, board}`
+  broadcasts that need to key downstream work by match.
+  """
+  @spec match_id_for_board(BoardSnapshot.t()) :: String.t() | nil
+  def match_id_for_board(%BoardSnapshot{live_state_snapshot_id: parent_id}) do
+    Repo.one(
+      from snapshot in Snapshot,
+        where: snapshot.id == ^parent_id,
+        select: snapshot.mtga_match_id
+    )
+  end
+
+  @doc """
   Look up a board snapshot by its MTGA match id (join via the
   parent `live_state_snapshots` row). `revealed_cards` are NOT
   preloaded — use `get_revealed_cards_by_match_id/1` for the cards.

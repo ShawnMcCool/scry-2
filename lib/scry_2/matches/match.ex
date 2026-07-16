@@ -29,6 +29,8 @@ defmodule Scry2.Matches.Match do
     field :set_code, :string
     field :game_results, :map
     field :raw_event_ids, :map
+    field :opponent_archetype, :string
+    field :opponent_archetype_confidence, :string
 
     has_many :games, Scry2.Matches.Game
     has_many :deck_submissions, Scry2.Matches.DeckSubmission
@@ -62,7 +64,9 @@ defmodule Scry2.Matches.Match do
       :format_type,
       :set_code,
       :game_results,
-      :raw_event_ids
+      :raw_event_ids,
+      :opponent_archetype,
+      :opponent_archetype_confidence
     ])
     |> validate_required([:mtga_match_id])
     |> unique_constraint([:player_id, :mtga_match_id])
