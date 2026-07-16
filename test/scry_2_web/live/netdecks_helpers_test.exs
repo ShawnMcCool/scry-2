@@ -22,6 +22,12 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.match_search?(entry, "")
   end
 
+  test "source_site_url links browsable sources and nothing else" do
+    assert NetdecksHelpers.source_site_url("mtgo") == "https://www.mtgo.com/decklists"
+    assert NetdecksHelpers.source_site_url("manual") == nil
+    assert NetdecksHelpers.source_site_url("local_json") == nil
+  end
+
   test "source_archetype_note shows the source string only when it differs from the title" do
     assert NetdecksHelpers.source_archetype_note(%{archetype: "Prowess"}, "Izzet Prowess") ==
              "Prowess"

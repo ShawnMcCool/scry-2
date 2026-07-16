@@ -149,6 +149,15 @@ defmodule Scry2Web.NetdecksHelpers do
   defp contains?(value, query_lower), do: String.contains?(String.downcase(value), query_lower)
 
   @doc """
+  The browsable website behind an automated source's badge in the
+  catalog strip, or nil for sources with nothing to visit (manual
+  paste, local JSON). Lets the badge link through for manual browsing.
+  """
+  @spec source_site_url(String.t()) :: String.t() | nil
+  def source_site_url("mtgo"), do: "https://www.mtgo.com/decklists"
+  def source_site_url(_source_name), do: nil
+
+  @doc """
   The source-provided archetype string, shown as a small badge only when
   it adds information — i.e. it exists and differs from the classified
   title already displayed.

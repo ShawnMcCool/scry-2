@@ -297,9 +297,25 @@ defmodule Scry2Web.NetdecksLive do
     </div>
 
     <div class="flex flex-wrap items-center gap-2 mb-6 text-xs text-base-content/55">
-      <span :for={source <- @sources} class="badge badge-sm badge-ghost gap-1">
-        {source.source_name} · {source.count}
-      </span>
+      <%= for source <- @sources do %>
+        <a
+          :if={NetdecksHelpers.source_site_url(source.source_name)}
+          href={NetdecksHelpers.source_site_url(source.source_name)}
+          target="_blank"
+          rel="noopener"
+          class="badge badge-sm badge-ghost gap-1 link-hover"
+          title={"Browse #{source.source_name} decklists"}
+        >
+          {source.source_name} · {source.count}
+          <.icon name="hero-arrow-top-right-on-square" class="size-3 opacity-60" />
+        </a>
+        <span
+          :if={is_nil(NetdecksHelpers.source_site_url(source.source_name))}
+          class="badge badge-sm badge-ghost gap-1"
+        >
+          {source.source_name} · {source.count}
+        </span>
+      <% end %>
     </div>
 
     <div class="bg-base-200 rounded-xl mb-6">
