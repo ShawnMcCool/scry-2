@@ -66,7 +66,8 @@ defmodule Scry2.Metagame.FetchDefinitions do
     if not Enum.any?(parsed.definitions, &(&1.kind == "archetype")) do
       {:error, :no_definitions}
     else
-      result = Metagame.replace_definitions!(@format, parsed)
+      result =
+        Metagame.replace_definitions!(@format, Map.take(parsed, [:definitions, :overrides]))
 
       Log.info(
         :importer,
