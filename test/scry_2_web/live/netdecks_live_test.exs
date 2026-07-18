@@ -6,7 +6,7 @@ defmodule Scry2Web.NetdecksLiveTest do
 
   test "renders the catalog grouped by status", %{conn: conn} do
     bolt = create_card(name: "Lightning Bolt", rarity: "rare")
-    create_card(name: "Mountain", rarity: "common")
+    create_card(name: "Mountain", rarity: "common", is_land: true, types: "Land")
     create_collection_snapshot(entries: [{bolt.arena_id, 4}])
 
     {:ok, _} =
@@ -21,9 +21,17 @@ defmodule Scry2Web.NetdecksLiveTest do
     assert render(view) =~ "Buildable now"
   end
 
-  test "catalog renders clustered deck tiles with labels", %{conn: conn} do
+  test "catalog renders archetype rows with labels", %{conn: conn} do
     bolt = create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
-    create_card(name: "Mountain", rarity: "common", color_identity: "")
+
+    create_card(
+      name: "Mountain",
+      rarity: "common",
+      color_identity: "",
+      is_land: true,
+      types: "Land"
+    )
+
     create_collection_snapshot(entries: [{bolt.arena_id, 4}])
 
     {:ok, _} =
@@ -109,6 +117,133 @@ defmodule Scry2Web.NetdecksLiveTest do
 
   test "unknown deck id redirects back to the catalog", %{conn: conn} do
     assert {:error, {:live_redirect, %{to: "/netdecks"}}} = live(conn, ~p"/netdecks/999999")
+  end
+
+  test "tier headers state their ordering rule", %{conn: conn} do
+    create_card(name: "Lightning Bolt", rarity: "rare")
+
+    {:ok, _} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Burn",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n"
+      })
+
+    {:ok, _view, html} = live(conn, ~p"/netdecks")
+    assert html =~ "ordered by best finish"
+    assert html =~ "ordered by cheapest build"
+  end
+
+  test "a single-build archetype row links straight to that build's deck page", %{conn: conn} do
+    bolt = create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    create_collection_snapshot(entries: [{bolt.arena_id, 4}])
+
+    {:ok, deck} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Challenge — winner",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n",
+        pilot: "winner",
+        event_name: "Standard Challenge 32",
+        event_date: ~D[2026-07-05],
+        placement: 1,
+        field_size: 32,
+        wins: 7,
+        losses: 1
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/netdecks")
+
+    # One build → the tile skips the archetype screen and links to the deck.
+    view
+    |> element(~s{a[href="/netdecks/#{deck.id}"]}, "Mono-Red")
+    |> render_click()
+
+    assert_patch(view, ~p"/netdecks/#{deck.id}")
+    assert render(view) =~ "Copy to MTGA"
+  end
+
+  test "an archetype variant row opens that list's deck detail", %{conn: conn} do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+    {:ok, deck} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Burn",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n"
+      })
+
+    catalog = Scry2.NetDecking.catalog()
+    [group] = catalog.buildable ++ catalog.craftable ++ catalog.short
+
+    {:ok, view, html} = live(conn, ~p"/netdecks/archetype/#{group.slug}")
+    assert html =~ group.label
+
+    view
+    |> element(~s{a[href="/netdecks/#{deck.id}"]})
+    |> render_click()
+
+    assert_patch(view, ~p"/netdecks/#{deck.id}")
+    assert render(view) =~ "Copy to MTGA"
+  end
+
+  test "the archetype screen shows the core summary and a variant's deltas", %{conn: conn} do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    create_card(name: "Goblin Raider", rarity: "common", color_identity: "R")
+    create_card(name: "Shock Bolt", rarity: "common", color_identity: "R")
+    create_card(name: "Grizzly Bear", rarity: "rare", color_identity: "G")
+
+    {:ok, _} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Red A",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n"
+      })
+
+    {:ok, _} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Red B",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n1 Grizzly Bear\n"
+      })
+
+    catalog = Scry2.NetDecking.catalog()
+    [group] = catalog.buildable ++ catalog.craftable ++ catalog.short
+
+    {:ok, _view, html} = live(conn, ~p"/netdecks/archetype/#{group.slug}")
+
+    assert html =~ "core — in most lists"
+    # The representative (Bear-less) list cuts the core's Bear: −1 chip.
+    assert html =~ "Grizzly Bear −1 vs. the core"
+  end
+
+  test "the archetype core renders through the standard composition controls", %{conn: conn} do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+    {:ok, _} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Red A",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n"
+      })
+
+    catalog = Scry2.NetDecking.catalog()
+    [group] = catalog.buildable ++ catalog.craftable ++ catalog.short
+
+    {:ok, view, _html} = live(conn, ~p"/netdecks/archetype/#{group.slug}")
+
+    # The composition's display-mode control is present; switching to the
+    # text list re-renders the core through the text section.
+    view
+    |> element(~s{button[phx-value-field="display_mode"][phx-value-to="text"]}, "Text")
+    |> render_click()
+
+    assert render(view) =~ "Lightning Bolt"
+  end
+
+  test "unknown archetype slug redirects back to the catalog", %{conn: conn} do
+    assert {:error, {:live_redirect, %{to: "/netdecks"}}} =
+             live(conn, ~p"/netdecks/archetype/never-heard-of-it")
   end
 
   defmodule BrowseStub do

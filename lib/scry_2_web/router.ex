@@ -65,6 +65,7 @@ defmodule Scry2Web.Router do
       live "/decks", DecksLive, :index
       live "/decks/:deck_id", DecksLive, :show
       live "/netdecks", NetdecksLive, :index
+      live "/netdecks/archetype/:slug", NetdecksLive, :archetype
       live "/netdecks/:id", NetdecksLive, :show
       live "/drafts", DraftsLive, :index
       live "/drafts/:id", DraftsLive, :show

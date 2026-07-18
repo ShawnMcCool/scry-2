@@ -25,10 +25,43 @@ defmodule Scry2.NetDeckingTest do
 
     catalog = NetDecking.catalog()
 
-    assert [%{deck: deck, result: %{status: :buildable}}] = catalog.buildable
+    assert [group] = catalog.buildable
+    assert group.status == :buildable
+    assert [%{deck: deck, result: %{status: :buildable}, count: 1}] = group.variants
     assert deck.name == "Mono-Red"
     assert catalog.craftable == []
     assert catalog.short == []
+    assert catalog.wildcards == %{common: 0, uncommon: 0, rare: 0, mythic: 0}
+  end
+
+  test "two synthetic groups with the same label get distinct slugs" do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    create_card(name: "Goblin Raider", rarity: "common", color_identity: "R")
+    create_card(name: "Shock Bolt", rarity: "common", color_identity: "R")
+
+    # Two unclassified brews that share only their rare (Jaccard 1/3 < 0.7):
+    # both label "Mono-Red · Lightning Bolt", but each must stay routable.
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Brew A",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n2 Goblin Raider\n"
+      })
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Brew B",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n2 Shock Bolt\n"
+      })
+
+    catalog = NetDecking.catalog()
+    groups = catalog.buildable ++ catalog.craftable ++ catalog.short
+
+    assert length(groups) == 2
+    assert [label] = groups |> Enum.map(& &1.label) |> Enum.uniq()
+    assert label == "Mono-Red · Lightning Bolt"
+    assert groups |> Enum.map(& &1.slug) |> Enum.uniq() |> length() == 2
   end
 
   test "catalog with no snapshot returns decks as fully short" do
@@ -42,7 +75,7 @@ defmodule Scry2.NetDeckingTest do
       })
 
     catalog = NetDecking.catalog()
-    assert [%{result: %{status: :short}}] = catalog.short
+    assert [%{status: :short, variants: [%{result: %{status: :short}}]}] = catalog.short
   end
 
   test "deck_detail returns per-card owned/missing rows, balances, and export text" do
@@ -201,14 +234,83 @@ defmodule Scry2.NetDeckingTest do
       })
 
     catalog = NetDecking.catalog()
-    entries = catalog.buildable ++ catalog.craftable ++ catalog.short
+    groups = catalog.buildable ++ catalog.craftable ++ catalog.short
 
-    # Red A + Red B share 3/4 nonland cards (Jaccard 0.75 >= 0.7) -> one entry, count 2.
-    red = Enum.find(entries, &(&1.variant_count == 2))
+    # Red A + Red B share 3/4 nonland cards (Jaccard 0.75 >= 0.7) -> one
+    # unclassified group holding one variant with count 2.
+    red = Enum.find(groups, &(&1.list_count == 2))
     assert red
+    assert [%{count: 2}] = red.variants
     assert red.color_identity == "R"
     assert red.label =~ "Mono-Red"
-    assert Enum.any?(entries, &(&1.variant_count == 1))
+    assert Enum.any?(groups, &(&1.list_count == 1))
+  end
+
+  test "archetype_detail returns the core, ownership rows, and per-variant deltas" do
+    bolt = create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    create_card(name: "Goblin Raider", rarity: "common", color_identity: "R")
+    create_card(name: "Shock Bolt", rarity: "common", color_identity: "R")
+    bear = create_card(name: "Grizzly Bear", rarity: "rare", color_identity: "G")
+    create_collection_snapshot(entries: [{bolt.arena_id, 4}])
+
+    # Near-duplicates (Jaccard 3/4 = 0.75): one cluster, B swaps in a Bear.
+    {:ok, deck_a} =
+      NetDecking.import_decklist(%{
+        name: "Red A",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n"
+      })
+
+    {:ok, _deck_b} =
+      NetDecking.import_decklist(%{
+        name: "Red B",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n1 Grizzly Bear\n"
+      })
+
+    catalog = NetDecking.catalog()
+    [group] = catalog.buildable ++ catalog.craftable ++ catalog.short
+
+    detail = NetDecking.archetype_detail(group)
+
+    # Bolt in 2/2 lists at 4x; Bear in 1/2 lists (exactly the presence bar) at 1x.
+    assert %{count: 4} = Enum.find(detail.core, &(&1.arena_id == bolt.arena_id))
+    assert %{count: 1} = Enum.find(detail.core, &(&1.arena_id == bear.arena_id))
+
+    # The player owns the Bolts; the core rows carry that.
+    assert %{owned: 4, missing: 0} = detail.core_rows_by_arena_id[bolt.arena_id]
+    assert %{owned: 0, missing: 1} = detail.core_rows_by_arena_id[bear.arena_id]
+
+    # One clustered variant, represented by the cheaper Bear-less list —
+    # its only difference from the core is the missing Bear.
+    assert [%{deck: %{id: representative_id}}] = group.variants
+    assert representative_id == deck_a.id
+
+    assert detail.deltas_by_deck_id[deck_a.id] == [%{arena_id: bear.arena_id, delta: -1}]
+
+    assert detail.cards_by_arena_id[bolt.arena_id].name == "Lightning Bolt"
+  end
+
+  test "archetype_detail exposes per-variant craft counts — copies short of the variant list" do
+    bolt = create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    goblin = create_card(name: "Goblin Raider", rarity: "common", color_identity: "R")
+    # Owns all four Bolts, no Goblins.
+    create_collection_snapshot(entries: [{bolt.arena_id, 4}])
+
+    {:ok, deck} =
+      NetDecking.import_decklist(%{
+        name: "Red",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n"
+      })
+
+    catalog = NetDecking.catalog()
+    [group] = catalog.buildable ++ catalog.craftable ++ catalog.short
+    detail = NetDecking.archetype_detail(group)
+
+    craft = detail.craft_by_deck_id[deck.id]
+    assert craft[bolt.arena_id] == 0
+    assert craft[goblin.arena_id] == 4
   end
 
   test "deck_detail falls back to the economy inventory when the collection snapshot has no wildcards" do
@@ -291,14 +393,17 @@ defmodule Scry2.NetDeckingTest do
       })
 
     catalog = NetDecking.catalog()
-    entries = catalog.buildable ++ catalog.craftable ++ catalog.short
+    groups = catalog.buildable ++ catalog.craftable ++ catalog.short
 
-    red = Enum.find(entries, &(&1.variant_count == 2))
+    red = Enum.find(groups, &(&1.list_count == 2))
     assert red.provenance.finish == "1st"
     assert red.provenance.event_name == "Standard Challenge 32"
     assert red.provenance.event_date == ~D[2026-06-26]
 
-    bears = Enum.find(entries, &(&1.variant_count == 1))
+    # The clustered variant row carries its best member's provenance too.
+    assert [%{count: 2, finish: "1st", pilot: "winner"}] = red.variants
+
+    bears = Enum.find(groups, &(&1.list_count == 1))
     assert bears.provenance == nil
   end
 
@@ -396,8 +501,8 @@ defmodule Scry2.NetDeckingTest do
         })
 
       catalog = NetDecking.catalog()
-      entries = catalog.buildable ++ catalog.craftable ++ catalog.short
-      assert [%{label: "Mono-Red Burn"}] = entries
+      groups = catalog.buildable ++ catalog.craftable ++ catalog.short
+      assert [%{label: "Mono-Red Burn", slug: "mono-red-burn"}] = groups
 
       assert NetDecking.deck_detail(deck).label == "Mono-Red Burn"
     end

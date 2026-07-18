@@ -1,32 +1,45 @@
 defmodule Scry2Web.NetdecksHelpers do
   @moduledoc "Pure helpers for `Scry2Web.NetdecksLive` (ADR-013)."
 
+  alias Scry2Web.DeckRendering
+
   @order [common: "c", uncommon: "u", rare: "r", mythic: "m"]
   @rarity_order [:common, :uncommon, :rare, :mythic]
 
-  # Presentation metadata per buildability status. `section` is the group
-  # heading in the catalog; `label` is the compact per-deck badge text.
+  # Presentation metadata per buildability status. `section` is the tier
+  # heading in the catalog; `label` is the compact per-variant badge text;
+  # `definition` and `ordering` are the tier subtitle — the ordering rule is
+  # stated on the page (UIDR-017).
   @statuses %{
     buildable: %{
       label: "Buildable",
       section: "Buildable now",
+      definition: "at least one list fully owned",
+      ordering: "ordered by best finish",
       badge: "badge-soft badge-success",
       icon: "hero-check-circle",
-      tone: "text-success"
+      tone: "text-success",
+      tone_dot: "bg-success"
     },
     craftable: %{
       label: "Craftable",
       section: "Craftable now",
+      definition: "at least one list within current wildcards",
+      ordering: "ordered by cheapest build",
       badge: "badge-soft badge-info",
       icon: "hero-sparkles",
-      tone: "text-info"
+      tone: "text-info",
+      tone_dot: "bg-info"
     },
     short: %{
       label: "Short",
       section: "Within reach",
+      definition: "missing wildcards",
+      ordering: "ordered by cheapest build",
       badge: "badge-ghost",
       icon: "hero-arrow-trending-up",
-      tone: "text-base-content/40"
+      tone: "text-base-content/40",
+      tone_dot: "bg-base-content/40"
     }
   }
 
@@ -99,6 +112,49 @@ defmodule Scry2Web.NetdecksHelpers do
   def card_row_tone(:partial), do: "text-base-content/60"
 
   @doc """
+  The deck view's `count_entry` function for a netdeck's ownership overlay
+  (UIDR-015/017): counts render in the gutter rail (or splay badge), toned
+  by ownership, with the ownership tooltip. Blank means one fully-owned
+  copy; cards with missing copies always show their count. Cards without
+  an ownership row fall back to the plain count.
+  """
+  @spec ownership_count_entry(%{optional(integer()) => map()}) :: (map() -> map() | nil)
+  def ownership_count_entry(rows_by_arena_id) do
+    fn card ->
+      case Map.get(rows_by_arena_id, card.arena_id) do
+        nil ->
+          case count_label(card.count) do
+            nil -> nil
+            label -> %{label: label, class: nil, title: nil}
+          end
+
+        %{free?: true} = row ->
+          %{
+            label: to_string(card.count),
+            class: "text-base-content/30",
+            title: ownership_title(row)
+          }
+
+        %{missing: missing} = row when missing > 0 ->
+          %{
+            label: to_string(card.count),
+            class: row |> card_row_state() |> card_row_tone(),
+            title: ownership_title(row)
+          }
+
+        row ->
+          case count_label(card.count) do
+            nil -> nil
+            label -> %{label: label, class: "text-success", title: ownership_title(row)}
+          end
+      end
+    end
+  end
+
+  defp count_label(count) when is_integer(count) and count > 1, do: to_string(count)
+  defp count_label(_count), do: nil
+
+  @doc """
   Indexes decklist rows (main + sideboard) by arena_id for the ownership
   overlay on the standard deck composition. Rows without a resolved
   arena_id are skipped — they can't be matched to a rendered card.
@@ -132,21 +188,116 @@ defmodule Scry2Web.NetdecksHelpers do
   def unresolved_count(_deck), do: 0
 
   @doc """
-  True if the entry's deck name, source-provided archetype, or classified
-  archetype name contains `query` (case-insensitive). Empty query matches all.
+  True if the archetype group's label, or any variant's deck name or
+  source-provided archetype, contains `query` (case-insensitive). Empty
+  query matches all.
   """
   @spec match_search?(map(), String.t()) :: boolean()
-  def match_search?(_entry, ""), do: true
+  def match_search?(_group, ""), do: true
 
-  def match_search?(%{deck: deck}, query) do
+  def match_search?(group, query) do
     query_lower = String.downcase(query)
 
-    contains?(deck.name, query_lower) or contains?(deck.archetype, query_lower) or
-      contains?(deck.archetype_name, query_lower)
+    contains?(group.label, query_lower) or
+      Enum.any?(group.variants, fn variant ->
+        contains?(variant.deck.name, query_lower) or
+          contains?(variant.deck.archetype, query_lower)
+      end)
   end
 
   defp contains?(nil, _query_lower), do: false
   defp contains?(value, query_lower), do: String.contains?(String.downcase(value), query_lower)
+
+  @doc "The archetype group with this slug, across all tiers; nil when absent."
+  @spec find_group(map(), String.t()) :: map() | nil
+  def find_group(catalog, slug) do
+    [catalog.buildable, catalog.craftable, catalog.short]
+    |> Enum.concat()
+    |> Enum.find(fn group -> group.slug == slug end)
+  end
+
+  @doc "Non-zero tally entries as {status, count} in buildable → craftable → short order."
+  @spec tally_parts(map()) :: [{atom(), pos_integer()}]
+  def tally_parts(tally) do
+    for status <- status_order(), (count = Map.get(tally, status, 0)) > 0, do: {status, count}
+  end
+
+  @doc "The player's wildcard pool as {rarity, count} in common → mythic order."
+  @spec wildcard_balances(map()) :: [{atom(), integer()}]
+  def wildcard_balances(wildcards) do
+    Enum.map(@rarity_order, fn rarity -> {rarity, Map.get(wildcards, rarity, 0)} end)
+  end
+
+  @doc "The group's cheapest variant — the build the tile's cost line quotes."
+  @spec cheapest_variant(map()) :: map()
+  def cheapest_variant(%{variants: variants}) do
+    Enum.min_by(variants, fn variant -> variant.result.sort_key end)
+  end
+
+  @doc """
+  Medal tone for a finish label: gold for 1st, silver for the rest of the
+  podium, neutral for any other rank; nil finish carries no medal.
+  Playoff finishes render as bare ordinals ("2nd"), so exact matches suffice.
+  """
+  @spec medal_tone(String.t() | nil) :: :gold | :silver | :neutral | nil
+  def medal_tone(nil), do: nil
+  def medal_tone("1st"), do: :gold
+  def medal_tone(finish) when finish in ["2nd", "3rd"], do: :silver
+  def medal_tone(_finish), do: :neutral
+
+  @doc ~s(Compact medal text: the finish's ordinal — "14th of 42" → "14th".)
+  @spec medal_text(String.t() | nil) :: String.t() | nil
+  def medal_text(nil), do: nil
+  def medal_text(finish), do: finish |> String.split(" ") |> hd()
+
+  @doc """
+  The deck id to jump straight to when an archetype has exactly one variant —
+  an archetype page with a single build is redundant, so the catalog links
+  through to that build's detail page instead. Returns nil otherwise.
+  """
+  @spec sole_variant_deck_id(map()) :: integer() | nil
+  def sole_variant_deck_id(%{variants: [%{deck: %{id: id}}]}), do: id
+  def sole_variant_deck_id(_group), do: nil
+
+  @doc """
+  A variant's core deltas grouped for the chip strip (UIDR-017):
+  `[{broad_type_label, [%{arena_id, delta, name, rarity, missing}]}]` in the
+  canonical broad-type order, additions before cuts inside each section.
+
+  `craft_by_arena_id` maps a card's `arena_id` to the copies the player is
+  short of the variant's list (`needed − owned`); it drives the corner
+  craft-a-wildcard pip on added chips. Cards absent from it default to 0.
+  """
+  @spec delta_sections([map()], %{optional(integer()) => map()}, %{
+          optional(integer()) => integer()
+        }) :: [{String.t(), [map()]}]
+  def delta_sections(deltas, cards_by_arena_id, craft_by_arena_id) do
+    deltas
+    |> Enum.map(fn %{arena_id: arena_id, delta: delta} ->
+      card = Map.get(cards_by_arena_id, arena_id)
+
+      %{
+        arena_id: arena_id,
+        delta: delta,
+        name: card_display_name(card, arena_id),
+        rarity: card_rarity(card),
+        missing: Map.get(craft_by_arena_id, arena_id, 0),
+        section: card |> DeckRendering.type_label() |> DeckRendering.broad_type_label()
+      }
+    end)
+    |> Enum.group_by(& &1.section)
+    |> Enum.sort_by(fn {section, _entries} -> DeckRendering.broad_type_order(section) end)
+    |> Enum.map(fn {section, entries} ->
+      ordered = Enum.sort_by(entries, fn entry -> {-entry.delta, entry.name} end)
+      {section, Enum.map(ordered, &Map.take(&1, [:arena_id, :delta, :name, :rarity, :missing]))}
+    end)
+  end
+
+  defp card_display_name(%{name: name}, _arena_id) when is_binary(name), do: name
+  defp card_display_name(_card, arena_id), do: "#" <> Integer.to_string(arena_id)
+
+  defp card_rarity(%{rarity: rarity}) when is_binary(rarity), do: rarity
+  defp card_rarity(_card), do: nil
 
   @doc """
   The browsable website behind an automated source's badge in the

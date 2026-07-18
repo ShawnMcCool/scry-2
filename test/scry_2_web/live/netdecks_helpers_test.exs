@@ -14,12 +14,17 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.format_owned_pct(0.82) == "82%"
   end
 
-  test "match_search? matches name and archetype case-insensitively" do
-    entry = %{deck: %{name: "Mono-Red Aggro", archetype: "Aggro", archetype_name: nil}}
-    assert NetdecksHelpers.match_search?(entry, "mono")
-    assert NetdecksHelpers.match_search?(entry, "aggro")
-    refute NetdecksHelpers.match_search?(entry, "control")
-    assert NetdecksHelpers.match_search?(entry, "")
+  test "match_search? matches the group label and variant deck fields case-insensitively" do
+    group = %{
+      label: "Izzet Prowess",
+      variants: [%{deck: %{name: "Challenge 32 — pilot", archetype: "UR Prowess"}}]
+    }
+
+    assert NetdecksHelpers.match_search?(group, "izzet")
+    assert NetdecksHelpers.match_search?(group, "challenge")
+    assert NetdecksHelpers.match_search?(group, "ur prowess")
+    refute NetdecksHelpers.match_search?(group, "domain")
+    assert NetdecksHelpers.match_search?(group, "")
   end
 
   test "source_site_url links browsable sources and nothing else" do
@@ -38,14 +43,182 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.source_archetype_note(%{archetype: nil}, "Izzet Prowess") == nil
   end
 
-  test "match_search? matches the classified archetype name" do
-    entry = %{
-      deck: %{name: "Standard Challenge — pilot", archetype: nil, archetype_name: "Izzet Prowess"}
-    }
+  test "find_group locates an archetype group by slug across tiers" do
+    prowess = %{slug: "izzet-prowess"}
+    domain = %{slug: "domain-overlords"}
+    catalog = %{buildable: [prowess], craftable: [], short: [domain]}
 
-    assert NetdecksHelpers.match_search?(entry, "prowess")
-    assert NetdecksHelpers.match_search?(entry, "izzet")
-    refute NetdecksHelpers.match_search?(entry, "domain")
+    assert NetdecksHelpers.find_group(catalog, "domain-overlords") == domain
+    assert NetdecksHelpers.find_group(catalog, "izzet-prowess") == prowess
+    assert NetdecksHelpers.find_group(catalog, "unknown") == nil
+  end
+
+  test "tally_parts lists non-zero statuses in buildable → craftable → short order" do
+    assert NetdecksHelpers.tally_parts(%{buildable: 1, craftable: 0, short: 3}) ==
+             [{:buildable, 1}, {:short, 3}]
+
+    assert NetdecksHelpers.tally_parts(%{buildable: 0, craftable: 0, short: 0}) == []
+  end
+
+  test "wildcard_balances orders the pool common → mythic" do
+    assert NetdecksHelpers.wildcard_balances(%{common: 214, uncommon: 180, rare: 12, mythic: 3}) ==
+             [{:common, 214}, {:uncommon, 180}, {:rare, 12}, {:mythic, 3}]
+  end
+
+  test "cheapest_variant is the variant with the lowest wildcard sort key" do
+    cheap = %{result: %{sort_key: {0, 1, 0, 0, 1}}}
+    dear = %{result: %{sort_key: {2, 4, 0, 0, 6}}}
+
+    assert NetdecksHelpers.cheapest_variant(%{variants: [dear, cheap]}) == cheap
+  end
+
+  test "medal_tone crowns 1st gold, podium silver, everything ranked neutral" do
+    assert NetdecksHelpers.medal_tone("1st") == :gold
+    assert NetdecksHelpers.medal_tone("2nd") == :silver
+    assert NetdecksHelpers.medal_tone("3rd") == :silver
+    assert NetdecksHelpers.medal_tone("8th") == :neutral
+    assert NetdecksHelpers.medal_tone("14th of 42") == :neutral
+    assert NetdecksHelpers.medal_tone(nil) == nil
+  end
+
+  describe "ownership_count_entry/1" do
+    # The count entry feeding the deck view's gutter rail / badge pill
+    # (UIDR-015): counts never cover the card; ownership carries the tone.
+
+    defp entry_for(rows, card), do: NetdecksHelpers.ownership_count_entry(rows).(card)
+
+    test "fully-owned single copies render nothing — blank means one" do
+      rows = %{1 => %{name: "Opt", free?: false, needed: 1, owned: 1, missing: 0}}
+
+      assert entry_for(rows, %{arena_id: 1, count: 1}) == nil
+    end
+
+    test "fully-owned piles render the count in the owned tone" do
+      rows = %{1 => %{name: "Opt", free?: false, needed: 4, owned: 4, missing: 0}}
+
+      assert %{label: "4", class: "text-success"} = entry_for(rows, %{arena_id: 1, count: 4})
+    end
+
+    test "missing cards always show their count, warning-toned, with the ownership tooltip" do
+      rows = %{1 => %{name: "Namor", free?: false, needed: 1, owned: 0, missing: 1}}
+
+      assert %{label: "1", class: "text-warning", title: "Namor — 0/1 owned"} =
+               entry_for(rows, %{arena_id: 1, count: 1})
+    end
+
+    test "partially-owned piles show the count in the partial tone" do
+      rows = %{1 => %{name: "Bolt", free?: false, needed: 4, owned: 2, missing: 2}}
+
+      assert %{label: "4", class: "text-base-content/60"} =
+               entry_for(rows, %{arena_id: 1, count: 4})
+    end
+
+    test "basic lands render dimmed with the basic-land tooltip" do
+      rows = %{1 => %{name: "Mountain", free?: true, needed: 18, owned: 0, missing: 0}}
+
+      assert %{label: "18", class: "text-base-content/30", title: "Mountain — basic land"} =
+               entry_for(rows, %{arena_id: 1, count: 18})
+    end
+
+    test "cards without an ownership row fall back to the plain count" do
+      assert entry_for(%{}, %{arena_id: 9, count: 1}) == nil
+      assert %{label: "3", class: nil, title: nil} = entry_for(%{}, %{arena_id: 9, count: 3})
+    end
+  end
+
+  describe "sole_variant_deck_id/1" do
+    test "returns the deck id when the archetype has exactly one variant" do
+      group = %{variants: [%{deck: %{id: 42}}]}
+      assert NetdecksHelpers.sole_variant_deck_id(group) == 42
+    end
+
+    test "returns nil when the archetype has multiple variants" do
+      group = %{variants: [%{deck: %{id: 1}}, %{deck: %{id: 2}}]}
+      assert NetdecksHelpers.sole_variant_deck_id(group) == nil
+    end
+
+    test "returns nil when there are no variants" do
+      assert NetdecksHelpers.sole_variant_deck_id(%{variants: []}) == nil
+    end
+  end
+
+  describe "delta_sections/3" do
+    test "groups deltas by broad card type in canonical order, additions before cuts" do
+      cards = %{
+        1 => %{name: "Eddymurk Crab", types: "Creature"},
+        2 => %{name: "Opt", types: "Instant"},
+        3 => %{name: "Island", types: "Basic Land"},
+        4 => %{name: "Stormchaser's Talent", types: "Enchantment"}
+      }
+
+      deltas = [
+        %{arena_id: 3, delta: 1},
+        %{arena_id: 2, delta: -2},
+        %{arena_id: 1, delta: 2},
+        %{arena_id: 4, delta: 3}
+      ]
+
+      assert NetdecksHelpers.delta_sections(deltas, cards, %{}) == [
+               {"Creatures",
+                [%{arena_id: 1, delta: 2, name: "Eddymurk Crab", rarity: nil, missing: 0}]},
+               {"Instants & Sorceries",
+                [%{arena_id: 2, delta: -2, name: "Opt", rarity: nil, missing: 0}]},
+               {"Artifacts & Enchantments",
+                [%{arena_id: 4, delta: 3, name: "Stormchaser's Talent", rarity: nil, missing: 0}]},
+               {"Lands", [%{arena_id: 3, delta: 1, name: "Island", rarity: nil, missing: 0}]}
+             ]
+    end
+
+    test "orders additions before cuts inside a section" do
+      cards = %{
+        1 => %{name: "Alpha", types: "Creature"},
+        2 => %{name: "Beta", types: "Creature"},
+        3 => %{name: "Gamma", types: "Creature"}
+      }
+
+      deltas = [
+        %{arena_id: 1, delta: -1},
+        %{arena_id: 2, delta: 2},
+        %{arena_id: 3, delta: 1}
+      ]
+
+      assert [{"Creatures", entries}] = NetdecksHelpers.delta_sections(deltas, cards, %{})
+      assert Enum.map(entries, & &1.delta) == [2, 1, -1]
+    end
+
+    test "carries each card's rarity and its craft-missing count" do
+      cards = %{
+        1 => %{name: "Bolt", types: "Instant", rarity: "rare"},
+        2 => %{name: "Bear", types: "Creature", rarity: "uncommon"}
+      }
+
+      deltas = [%{arena_id: 1, delta: 2}, %{arena_id: 2, delta: 1}]
+      # Short two Bolts; the Bear is fully owned (absent from the craft map).
+      craft = %{1 => 2}
+
+      entries =
+        deltas
+        |> NetdecksHelpers.delta_sections(cards, craft)
+        |> Enum.flat_map(&elem(&1, 1))
+
+      bolt = Enum.find(entries, &(&1.arena_id == 1))
+      bear = Enum.find(entries, &(&1.arena_id == 2))
+
+      assert bolt.rarity == "rare"
+      assert bolt.missing == 2
+      assert bear.rarity == "uncommon"
+      assert bear.missing == 0
+    end
+
+    test "empty deltas yield no sections" do
+      assert NetdecksHelpers.delta_sections([], %{}, %{}) == []
+    end
+  end
+
+  test "medal_text compacts a finish to its ordinal" do
+    assert NetdecksHelpers.medal_text("1st") == "1st"
+    assert NetdecksHelpers.medal_text("14th of 42") == "14th"
+    assert NetdecksHelpers.medal_text(nil) == nil
   end
 
   test "status_order leads with buildable, then craftable, then short" do
@@ -63,6 +236,13 @@ defmodule Scry2Web.NetdecksHelpersTest do
 
     assert NetdecksHelpers.status_meta(:buildable).section == "Buildable now"
     assert NetdecksHelpers.status_meta(:short).section == "Within reach"
+  end
+
+  test "status_meta states each tier's definition and ordering rule (UIDR-017)" do
+    assert NetdecksHelpers.status_meta(:buildable).definition =~ "fully owned"
+    assert NetdecksHelpers.status_meta(:buildable).ordering == "ordered by best finish"
+    assert NetdecksHelpers.status_meta(:craftable).ordering == "ordered by cheapest build"
+    assert NetdecksHelpers.status_meta(:short).ordering == "ordered by cheapest build"
   end
 
   test "cost_pips returns non-zero rarities as {rarity, count} in common→mythic order" do

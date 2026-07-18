@@ -20,6 +20,7 @@ defmodule Scry2.NetDecking do
   alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.Economy
   alias Scry2.Metagame
+  alias Scry2.NetDecking.ArchetypeCatalog
   alias Scry2.NetDecking.Buildability
   alias Scry2.NetDecking.Buildability.Inputs
   alias Scry2.NetDecking.Deck
@@ -134,19 +135,29 @@ defmodule Scry2.NetDecking do
   end
 
   @doc """
-  Scores all corpus decks against the current collection snapshot, clusters
-  near-duplicate decks (read-time only — every deck row stays in the DB), and
-  groups by buildability status:
-  `%{buildable: [entry], craftable: [entry], short: [entry]}`, sorted
-  cheapest-first.
+  The tiered archetype catalog (UIDR-017). Scores every corpus deck against
+  the current collection snapshot, groups decks by classified archetype,
+  clusters near-duplicate lists inside each group (read-time only — every
+  deck row stays in the DB), and tiers each group by its best variant's
+  status:
 
-  Each entry is the cluster representative decorated for display:
-  `%{deck, result, color_identity, signature_arena_ids, label, set_code,
-  variant_count, provenance}` — `provenance` is the cluster's best finish
-  (`%{finish, event_name, event_date}`) or nil when no member carries
-  competitive metadata (UIDR-010).
+      %{buildable: [group], craftable: [group], short: [group], wildcards: rarity_map}
+
+  A group is the `ArchetypeCatalog` group decorated for display: `label`
+  (the archetype name, or the synthetic color · hero label for unclassified
+  clusters), `slug` (archetype detail route segment), `color_identity`,
+  `signature_arena_ids` (the archetype's distinctive cards, hero first),
+  `set_code`, `provenance` (the group's best finish, UIDR-010), and variants
+  decorated with `finish`/`record`/`pilot`/`event_name`/`event_date` from
+  each variant's best-finished member. `wildcards` is the player's current
+  pool, for the catalog's balance readout.
   """
-  @spec catalog() :: %{buildable: [map()], craftable: [map()], short: [map()]}
+  @spec catalog() :: %{
+          buildable: [map()],
+          craftable: [map()],
+          short: [map()],
+          wildcards: map()
+        }
   def catalog do
     decks = list_decks()
     snapshot = Collection.current()
@@ -159,37 +170,104 @@ defmodule Scry2.NetDecking do
     sets = sets_by_id()
 
     scored =
-      Map.new(decks, fn deck ->
-        {deck.id, %{deck: deck, result: score_deck(deck, owned, wildcards, rarities, free_ids)}}
-      end)
-
-    items =
       Enum.map(decks, fn deck ->
         %{
-          id: deck.id,
-          set: nonland_signature(deck, cards_by_arena_id, free_ids),
-          weight: total_wildcard_cost(scored[deck.id].result)
+          deck: deck,
+          result: score_deck(deck, owned, wildcards, rarities, free_ids),
+          signature_set: nonland_signature(deck, cards_by_arena_id, free_ids)
         }
       end)
 
     threshold = Config.get(:netdecking_cluster_threshold) || 0.7
+    tiers = ArchetypeCatalog.build(scored, threshold)
+    groups_playing = groups_playing_counts(tiers)
 
-    items
-    |> DeckClusters.group(threshold)
-    |> Enum.map(fn cluster ->
-      %{deck: deck, result: result} = scored[cluster.representative_id]
-      member_decks = Enum.map(cluster.member_ids, fn member_id -> scored[member_id].deck end)
-      decorate(deck, result, member_decks, cards_by_arena_id, sets)
-    end)
-    |> Enum.sort_by(& &1.result.sort_key)
-    |> Enum.group_by(& &1.result.status)
-    |> then(fn grouped ->
-      %{
-        buildable: Map.get(grouped, :buildable, []),
-        craftable: Map.get(grouped, :craftable, []),
-        short: Map.get(grouped, :short, [])
-      }
-    end)
+    %{
+      buildable: decorate_groups(tiers.buildable, cards_by_arena_id, sets, groups_playing),
+      craftable: decorate_groups(tiers.craftable, cards_by_arena_id, sets, groups_playing),
+      short: decorate_groups(tiers.short, cards_by_arena_id, sets, groups_playing),
+      wildcards: wildcards
+    }
+    |> disambiguate_slugs()
+  end
+
+  # Two unclassified clusters can share a synthetic label ("5-color ·
+  # Celestial Reunion") and therefore a slug — only the first would be
+  # routable. Repeats get a deterministic ordinal suffix in tier order.
+  defp disambiguate_slugs(catalog) do
+    {catalog, _seen} =
+      Enum.reduce([:buildable, :craftable, :short], {catalog, %{}}, fn tier_key,
+                                                                       {catalog, seen} ->
+        {groups, seen} =
+          Enum.map_reduce(catalog[tier_key], seen, fn group, seen ->
+            occurrence = Map.get(seen, group.slug, 0) + 1
+            seen = Map.put(seen, group.slug, occurrence)
+            slug = if occurrence == 1, do: group.slug, else: "#{group.slug}-#{occurrence}"
+            {%{group | slug: slug}, seen}
+          end)
+
+        {Map.put(catalog, tier_key, groups), seen}
+      end)
+
+    catalog
+  end
+
+  @doc """
+  Display extras for one archetype group's detail screen (UIDR-017):
+
+      %{core, core_rows_by_arena_id, deltas_by_deck_id, craft_by_deck_id,
+        cards_by_arena_id}
+
+  `core` is the archetype's typical list — every card in at least half the
+  group's member lists, at its modal copy count — as `[%{arena_id, count}]`.
+  `core_rows_by_arena_id` overlays the player's ownership onto the core
+  (same row shape as `deck_detail`). `deltas_by_deck_id` maps each variant
+  representative's deck id to its differences from the core
+  (`[%{arena_id, delta}]`, additions first). `craft_by_deck_id` maps each
+  variant's deck id to `%{arena_id => missing}` — the copies short of that
+  variant's list (`needed − owned`, free lands excluded), driving the chip
+  strip's craft pip. `cards_by_arena_id` is the card reference lookup for
+  rendering. Takes a group from `catalog/0`.
+  """
+  @core_presence_threshold 0.5
+
+  @spec archetype_detail(map()) :: map()
+  def archetype_detail(group) do
+    snapshot = Collection.current()
+    {raw_owned, _wildcards} = collection_context(snapshot)
+
+    cards_by_arena_id = cards_for(group.member_decks)
+    owned = owned_by_identity(raw_owned, cards_by_arena_id)
+    rarities = Map.new(cards_by_arena_id, fn {id, card} -> {id, card_rarity(card)} end)
+    free_ids = Buildability.default_free_ids(cards_by_arena_id)
+
+    member_entries = Enum.map(group.member_decks, &card_entries(&1.main_deck))
+    core = DeckQualities.archetype_core(member_entries, @core_presence_threshold)
+    core_rows = card_rows(%{"cards" => core}, cards_by_arena_id, owned, rarities, free_ids)
+
+    %{
+      core: core,
+      core_rows_by_arena_id: Map.new(core_rows, fn row -> {row.arena_id, row} end),
+      deltas_by_deck_id:
+        Map.new(group.variants, fn variant ->
+          {variant.deck.id, DeckQualities.core_deltas(card_entries(variant.deck.main_deck), core)}
+        end),
+      craft_by_deck_id:
+        Map.new(group.variants, fn variant ->
+          rows = card_rows(variant.deck.main_deck, cards_by_arena_id, owned, rarities, free_ids)
+          {variant.deck.id, Map.new(rows, fn row -> {row.arena_id, row.missing} end)}
+        end),
+      cards_by_arena_id: cards_by_arena_id
+    }
+  end
+
+  @doc ~s(URL segment for an archetype label: "Izzet Prowess" → "izzet-prowess".)
+  @spec slugify(String.t()) :: String.t()
+  def slugify(label) do
+    label
+    |> String.downcase()
+    |> String.replace(~r/[^a-z0-9]+/, "-")
+    |> String.trim("-")
   end
 
   @doc """
@@ -261,21 +339,61 @@ defmodule Scry2.NetDecking do
 
   # ── Helpers ─────────────────────────────────────────────────────────
 
-  defp decorate(deck, result, member_decks, cards, sets) do
-    entries = card_entries(deck.main_deck)
-    colors = DeckQualities.deck_color_identity(entries, cards)
-    signature = DeckQualities.signature_arena_ids(entries, cards, @cluster_signature_cards)
+  # How many archetype groups play each card — the discount input for the
+  # distinctive-signature ranking (`DeckQualities.archetype_signature_ids/4`).
+  defp groups_playing_counts(tiers) do
+    [tiers.buildable, tiers.craftable, tiers.short]
+    |> Enum.concat()
+    |> Enum.flat_map(fn group ->
+      group.member_decks
+      |> Enum.flat_map(fn deck -> Enum.map(card_entries(deck.main_deck), & &1.arena_id) end)
+      |> Enum.uniq()
+    end)
+    |> Enum.frequencies()
+  end
 
-    %{
-      deck: deck,
-      result: result,
+  defp decorate_groups(groups, cards, sets, groups_playing) do
+    Enum.map(groups, &decorate_group(&1, cards, sets, groups_playing))
+  end
+
+  defp decorate_group(group, cards, sets, groups_playing) do
+    member_entries = Enum.map(group.member_decks, &card_entries(&1.main_deck))
+
+    signature =
+      DeckQualities.archetype_signature_ids(
+        member_entries,
+        cards,
+        groups_playing,
+        @cluster_signature_cards
+      )
+
+    representative_entries = card_entries(hd(group.variants).deck.main_deck)
+    colors = DeckQualities.deck_color_identity(representative_entries, cards)
+    label = group.archetype_name || synthetic_label(colors, signature, cards)
+
+    Map.merge(group, %{
+      label: label,
+      slug: slugify(label),
       color_identity: colors,
       signature_arena_ids: signature,
-      label: cluster_label(member_decks, colors, signature, cards),
-      set_code: DeckQualities.newest_set_code(entries, cards, sets),
-      variant_count: length(member_decks),
-      provenance: tile_provenance(member_decks)
-    }
+      set_code: DeckQualities.newest_set_code(representative_entries, cards, sets),
+      provenance: tile_provenance(group.member_decks),
+      variants: Enum.map(group.variants, &decorate_variant/1)
+    })
+  end
+
+  # A clustered variant row displays its best-finished member's provenance;
+  # the representative (cheapest member) stays the row's deck and cost.
+  defp decorate_variant(variant) do
+    provenance_deck = Provenance.best_finish_deck(variant.member_decks) || variant.deck
+
+    Map.merge(variant, %{
+      finish: Provenance.finish_label(provenance_deck),
+      record: Provenance.record_label(provenance_deck),
+      pilot: provenance_deck.pilot,
+      event_name: provenance_deck.event_name,
+      event_date: provenance_deck.event_date
+    })
   end
 
   # The cluster title: the classified archetype name the community uses

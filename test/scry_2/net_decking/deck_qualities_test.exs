@@ -54,6 +54,168 @@ defmodule Scry2.NetDecking.DeckQualitiesTest do
     end
   end
 
+  describe "archetype_signature_ids/4" do
+    # "The card this archetype plays that others don't" (UIDR-017):
+    # within-group play (avg copies per list) discounted by how many other
+    # archetype groups play the card; rarity, then arena_id break ties.
+
+    test "a distinctive card outranks a format staple played everywhere" do
+      cards = %{
+        # Stormchaser's Talent stand-in: rare, only this archetype plays it
+        1 => %{rarity: "rare", is_land: false},
+        # Into the Flood Maw stand-in: rare, five other archetypes play it
+        2 => %{rarity: "rare", is_land: false}
+      }
+
+      member_entries = [
+        [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 4}],
+        [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 4}]
+      ]
+
+      groups_playing = %{1 => 1, 2 => 6}
+
+      assert DeckQualities.archetype_signature_ids(member_entries, cards, groups_playing, 2) ==
+               [1, 2]
+    end
+
+    test "rarity breaks a distinctiveness tie" do
+      cards = %{
+        # Monastery Swiftspear stand-in: common, exclusive, 4x
+        1 => %{rarity: "common", is_land: false},
+        # Stormchaser's Talent stand-in: rare, exclusive, 4x
+        2 => %{rarity: "rare", is_land: false}
+      }
+
+      member_entries = [[%{arena_id: 1, count: 4}, %{arena_id: 2, count: 4}]]
+      groups_playing = %{1 => 1, 2 => 1}
+
+      assert DeckQualities.archetype_signature_ids(member_entries, cards, groups_playing, 2) ==
+               [2, 1]
+    end
+
+    test "more copies beat fewer when both are exclusive and same rarity" do
+      cards = %{
+        # Talent stand-in: 4x in both lists
+        1 => %{rarity: "rare", is_land: false},
+        # Cori-Steel Cutter stand-in: 3x in both lists
+        2 => %{rarity: "rare", is_land: false}
+      }
+
+      member_entries = [
+        [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 3}],
+        [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 3}]
+      ]
+
+      groups_playing = %{1 => 1, 2 => 1}
+
+      assert DeckQualities.archetype_signature_ids(member_entries, cards, groups_playing, 2) ==
+               [1, 2]
+    end
+
+    test "a flashy exclusive 1-of mythic loses to the exclusive 4-of rare" do
+      cards = %{
+        1 => %{rarity: "mythic", is_land: false},
+        2 => %{rarity: "rare", is_land: false}
+      }
+
+      member_entries = [[%{arena_id: 1, count: 1}, %{arena_id: 2, count: 4}]]
+      groups_playing = %{1 => 1, 2 => 1}
+
+      assert DeckQualities.archetype_signature_ids(member_entries, cards, groups_playing, 2) ==
+               [2, 1]
+    end
+
+    test "lands and unknown cards are excluded; n caps the result" do
+      cards = %{
+        1 => %{rarity: "rare", is_land: false},
+        2 => %{rarity: "rare", is_land: true}
+      }
+
+      member_entries = [
+        [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 4}, %{arena_id: 99, count: 4}]
+      ]
+
+      groups_playing = %{1 => 1, 2 => 1, 99 => 1}
+
+      assert DeckQualities.archetype_signature_ids(member_entries, cards, groups_playing, 4) ==
+               [1]
+    end
+
+    test "no member decks yields no signature" do
+      assert DeckQualities.archetype_signature_ids([], %{}, %{}, 4) == []
+    end
+  end
+
+  describe "archetype_core/2" do
+    # The archetype's typical list (UIDR-017): cards in at least half the
+    # member lists, at their most common copy count.
+
+    test "keeps cards played in at least half the lists at their modal count" do
+      member_entries = [
+        [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 2}],
+        [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 3}, %{arena_id: 3, count: 1}],
+        [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 3}, %{arena_id: 9, count: 1}],
+        [%{arena_id: 1, count: 3}, %{arena_id: 2, count: 3}]
+      ]
+
+      core = DeckQualities.archetype_core(member_entries, 0.5)
+
+      # Card 1 in 4/4 lists, modal 4x; card 2 in 4/4 lists, modal 3x;
+      # cards 3 and 9 in 1/4 lists each — below the presence bar.
+      assert Enum.sort_by(core, & &1.arena_id) == [
+               %{arena_id: 1, count: 4},
+               %{arena_id: 2, count: 3}
+             ]
+    end
+
+    test "a modal-count tie resolves to the higher count" do
+      member_entries = [
+        [%{arena_id: 1, count: 2}],
+        [%{arena_id: 1, count: 3}]
+      ]
+
+      assert DeckQualities.archetype_core(member_entries, 0.5) == [%{arena_id: 1, count: 3}]
+    end
+
+    test "a single-list group's core is that list" do
+      member_entries = [[%{arena_id: 1, count: 4}, %{arena_id: 2, count: 18}]]
+
+      assert DeckQualities.archetype_core(member_entries, 0.5) |> Enum.sort_by(& &1.arena_id) ==
+               [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 18}]
+    end
+
+    test "no member lists yields an empty core" do
+      assert DeckQualities.archetype_core([], 0.5) == []
+    end
+  end
+
+  describe "core_deltas/2" do
+    test "reports the variant's differences from the core, additions first" do
+      core = [%{arena_id: 1, count: 4}, %{arena_id: 2, count: 3}, %{arena_id: 3, count: 2}]
+
+      variant = [
+        # unchanged
+        %{arena_id: 1, count: 4},
+        # one fewer than core
+        %{arena_id: 2, count: 2},
+        # not in the core at all
+        %{arena_id: 7, count: 2}
+        # card 3 cut entirely
+      ]
+
+      assert DeckQualities.core_deltas(variant, core) == [
+               %{arena_id: 7, delta: 2},
+               %{arena_id: 2, delta: -1},
+               %{arena_id: 3, delta: -2}
+             ]
+    end
+
+    test "a variant identical to the core has no deltas" do
+      core = [%{arena_id: 1, count: 4}]
+      assert DeckQualities.core_deltas([%{arena_id: 1, count: 4}], core) == []
+    end
+  end
+
   describe "newest_set_code/3" do
     test "newest set (by released_at) among sets with >=2 cards" do
       cards = %{

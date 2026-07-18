@@ -548,30 +548,94 @@ defmodule Scry2Web.CoreComponents do
   """
   attr :rarity, :string, values: ~w(common uncommon rare mythic), required: true
   attr :class, :string, default: "size-4 inline-block"
+  attr :id, :string, default: nil
 
-  @wildcard_colors %{
-    "common" => "#9ca3af",
-    "uncommon" => "#3b82f6",
-    "rare" => "#f59e0b",
-    "mythic" => "#dc2626"
+  # Per-rarity fill ramp for the lily leaves: {light, mid, dark, stroke}. The
+  # Planeswalker flame on top is always the same white/silver.
+  @wildcard_ramp %{
+    "common" => {"#f6f9fb", "#c8d0d8", "#8b95a1", "#3f4750"},
+    "uncommon" => {"#cfe4ff", "#5b9bf6", "#2563eb", "#153070"},
+    "rare" => {"#ffe79c", "#f9b12e", "#dd8306", "#7c4404"},
+    "mythic" => {"#ffbe86", "#f2591f", "#cf1e0e", "#6f140a"}
   }
 
+  # Planeswalker symbol: five pointed flame-petals fanning from a narrow base
+  # at the flower centre, outer petals splaying outward.
+  @wildcard_flame """
+  M 12 11.6
+  Q 8.5 10.6 5.0 6.6 Q 6.8 6.7 7.6 7.3
+  Q 7.9 5.0 8.6 2.8 Q 9.6 5.0 10.4 6.7
+  Q 11.0 3.4 12 0.8 Q 13.0 3.4 13.6 6.7
+  Q 14.4 5.0 15.4 2.8 Q 16.1 5.0 16.4 7.3
+  Q 17.2 6.7 19.0 6.6 Q 15.5 10.6 12 11.6 Z
+  """
+
+  # The lotus is drawn in two layers so petal edges never cross: the plump
+  # upper pair (curling up-and-out beside the flame) is drawn first, then the
+  # lower pair is painted on top, fully obscuring the upper pair's base.
+  @wildcard_upper """
+  M 12 10.8 C 15.6 10.2 17.6 8.4 18.5 6.6 Q 19.7 6.3 19.2 7.7 C 18.8 10.9 17.0 13.6 15.6 14.6 C 14.2 15.1 12.9 13.8 12 10.8 Z
+  M 12 10.8 C 8.4 10.2 6.4 8.4 5.5 6.6 Q 4.3 6.3 4.8 7.7 C 5.2 10.9 7.0 13.6 8.4 14.6 C 9.8 15.1 11.1 13.8 12 10.8 Z
+  """
+
+  @wildcard_lower """
+  M 12 12.0 C 14.8 12.2 18.0 13.2 19.6 14.6 Q 20.7 15.2 19.8 15.9 C 18.0 16.9 15.2 16.9 13.1 15.5 C 12.4 15.1 12.1 13.1 12 12.0 Z
+  M 12 12.0 C 9.2 12.2 6.0 13.2 4.4 14.6 Q 3.3 15.2 4.2 15.9 C 6.0 16.9 8.8 16.9 10.9 15.5 C 11.6 15.1 11.9 13.1 12 12.0 Z
+  """
+
   def wildcard_icon(assigns) do
-    assigns = assign(assigns, :color, @wildcard_colors[assigns.rarity])
+    {light, mid, dark, stroke} = @wildcard_ramp[assigns.rarity]
+
+    # Gradient ids must be unique per rendered instance — several icons of the
+    # same rarity commonly appear on one page. Callers may pass a stable `id`;
+    # otherwise a fresh token is minted so no two icons collide.
+    uid = assigns[:id] || "wc#{System.unique_integer([:positive])}"
+
+    assigns =
+      assign(assigns,
+        uid: uid,
+        light: light,
+        mid: mid,
+        dark: dark,
+        stroke: stroke,
+        flame: @wildcard_flame,
+        upper: @wildcard_upper,
+        lower: @wildcard_lower
+      )
 
     ~H"""
-    <svg viewBox="0 0 24 24" fill={@color} class={@class} aria-label={"#{@rarity} wildcard"}>
-      <path d="M12 2C12 2 9 6 9 9C9 11 10.5 12.5 12 13C13.5 12.5 15 11 15 9C15 6 12 2 12 2Z" />
-      <path d="M7 8C7 8 3 10 3 13C3 15.5 5.5 16.5 7.5 16C6 14.5 6 12 7 8Z" opacity="0.85" />
-      <path d="M17 8C17 8 21 10 21 13C21 15.5 18.5 16.5 16.5 16C18 14.5 18 12 17 8Z" opacity="0.85" />
-      <path d="M5 14C5 14 2 17 3.5 20C4.5 22 7 21.5 8.5 20C6.5 19.5 5.5 17 5 14Z" opacity="0.7" />
+    <svg viewBox="0 -3.2 24 24" class={@class} aria-label={"#{@rarity} wildcard"}>
+      <defs>
+        <linearGradient id={"#{@uid}-leaf"} x1="0" y1="0.2" x2="0" y2="1">
+          <stop offset="0" stop-color={@light} />
+          <stop offset="0.5" stop-color={@mid} />
+          <stop offset="1" stop-color={@dark} />
+        </linearGradient>
+        <linearGradient id={"#{@uid}-flame"} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color={@light} />
+          <stop offset="1" stop-color={@mid} />
+        </linearGradient>
+      </defs>
       <path
-        d="M19 14C19 14 22 17 20.5 20C19.5 22 17 21.5 15.5 20C17.5 19.5 18.5 17 19 14Z"
-        opacity="0.7"
+        d={@upper}
+        fill={"url(##{@uid}-leaf)"}
+        stroke={@stroke}
+        stroke-width="0.55"
+        stroke-linejoin="round"
       />
       <path
-        d="M12 13C12 13 10 17 10 20C10 22 12 23 12 23C12 23 14 22 14 20C14 17 12 13 12 13Z"
-        opacity="0.9"
+        d={@lower}
+        fill={"url(##{@uid}-leaf)"}
+        stroke={@stroke}
+        stroke-width="0.55"
+        stroke-linejoin="round"
+      />
+      <path
+        d={@flame}
+        fill={"url(##{@uid}-flame)"}
+        stroke={@stroke}
+        stroke-width="0.4"
+        stroke-linejoin="round"
       />
     </svg>
     """
