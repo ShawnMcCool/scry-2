@@ -50,8 +50,8 @@ defmodule Scry2Web.CollectionLive do
   alias Scry2.Collection.Holding
   alias Scry2.Collection.ReaderHealth
   alias Scry2.Collection.Snapshot
+  alias Scry2Web.BuildChangeVerifyFlow
   alias Scry2Web.CardImages
-  alias Scry2Web.Collection.BuildChangeBanner
   alias Scry2.Topics
   alias Scry2Web.CardsHelpers
 
@@ -71,9 +71,7 @@ defmodule Scry2Web.CollectionLive do
       |> assign(:refreshing, false)
       |> assign(:last_error, nil)
       |> assign(:build_change_status, :unknown)
-      |> assign(:verify_state, :idle)
-      |> assign(:verify_detail, nil)
-      |> assign(:verify_attempt_hint, nil)
+      |> assign(BuildChangeVerifyFlow.idle())
       |> assign(:reader_health, initial_reader_health())
       |> assign(:search, "")
       |> assign(:filter_rarities, MapSet.new())
@@ -187,9 +185,7 @@ defmodule Scry2Web.CollectionLive do
 
         socket =
           socket
-          |> assign(:verify_state, :running)
-          |> assign(:verify_detail, nil)
-          |> assign(:verify_attempt_hint, current_hint(socket.assigns.build_change_status))
+          |> assign(BuildChangeVerifyFlow.start(socket.assigns.build_change_status))
           # Inline-Oban (tests) ran the job synchronously above — reload snapshot
           # state now and classify so the test can observe the post-verify state
           # without round-tripping through PubSub.
@@ -199,10 +195,7 @@ defmodule Scry2Web.CollectionLive do
         {:noreply, classify_verify_result(socket)}
 
       {:error, reason} ->
-        {:noreply,
-         socket
-         |> assign(:verify_state, :failed)
-         |> assign(:verify_detail, BuildChangeBanner.translate_error(reason))}
+        {:noreply, assign(socket, BuildChangeVerifyFlow.failed(reason))}
     end
   end
 
@@ -262,19 +255,7 @@ defmodule Scry2Web.CollectionLive do
   end
 
   def handle_info(:verify_timeout, socket) do
-    case socket.assigns.verify_state do
-      :running ->
-        {:noreply,
-         socket
-         |> assign(:verify_state, :failed)
-         |> assign(
-           :verify_detail,
-           "Verification took longer than expected — check Diagnostics for details"
-         )}
-
-      _ ->
-        {:noreply, socket}
-    end
+    {:noreply, assign(socket, BuildChangeVerifyFlow.timeout(verify_assigns(socket)))}
   end
 
   def handle_info({:cards_refreshed, _}, socket) do
@@ -489,76 +470,28 @@ defmodule Scry2Web.CollectionLive do
            socket.assigns[:snapshot],
            socket.assigns[:build_change_status]
          ) do
-      :already_verified ->
-        socket
-        |> assign(:verify_state, :ok)
-        |> assign(:verify_detail, nil)
-
-      :unverified ->
-        socket
+      :already_verified -> assign(socket, BuildChangeVerifyFlow.verified())
+      :unverified -> socket
     end
   end
 
-  defp reset_verify_state(socket) do
-    socket
-    |> assign(:verify_state, :idle)
-    |> assign(:verify_detail, nil)
-    |> assign(:verify_attempt_hint, nil)
-  end
+  defp reset_verify_state(socket), do: assign(socket, BuildChangeVerifyFlow.idle())
 
-  defp current_hint({:changed, _prev, current}), do: current
-  defp current_hint(_), do: nil
-
-  # Classify the post-refresh state when a verify attempt is in flight.
-  # Inspects the latest snapshot's reader_confidence + mtga_build_hint and
-  # promotes :running → :ok | :fallback. Failures arrive via :refresh_failed.
+  # Promote a running verify attempt from the freshly-loaded snapshot
+  # (BuildChangeVerifyFlow). Failures arrive via :refresh_failed.
   defp classify_verify_result(socket) do
-    case socket.assigns[:verify_state] do
-      :running -> classify_running_verify(socket)
-      _ -> socket
-    end
-  end
-
-  defp classify_running_verify(socket) do
-    snapshot = socket.assigns[:snapshot]
-    attempt_hint = socket.assigns[:verify_attempt_hint]
-
-    cond do
-      is_nil(snapshot) ->
-        socket
-
-      snapshot.reader_confidence == "walker" and
-          (is_nil(attempt_hint) or snapshot.mtga_build_hint == attempt_hint) ->
-        socket
-        |> assign(:verify_state, :ok)
-        |> assign(:verify_detail, nil)
-
-      snapshot.reader_confidence == "fallback_scan" ->
-        socket
-        |> assign(:verify_state, :fallback)
-        |> assign(:verify_detail, nil)
-
-      true ->
-        socket
-    end
+    assign(
+      socket,
+      BuildChangeVerifyFlow.classify_snapshot(verify_assigns(socket), socket.assigns[:snapshot])
+    )
   end
 
   defp maybe_classify_verify_failure(socket, reason) do
-    case socket.assigns[:verify_state] do
-      :running ->
-        state =
-          case reason do
-            :mtga_not_running -> :mtga_not_running
-            _ -> :failed
-          end
+    assign(socket, BuildChangeVerifyFlow.classify_failure(verify_assigns(socket), reason))
+  end
 
-        socket
-        |> assign(:verify_state, state)
-        |> assign(:verify_detail, BuildChangeBanner.translate_error(reason))
-
-      _ ->
-        socket
-    end
+  defp verify_assigns(socket) do
+    Map.take(socket.assigns, [:verify_state, :verify_detail, :verify_attempt_hint])
   end
 
   # ── Render ---------------------------------------------------------------
