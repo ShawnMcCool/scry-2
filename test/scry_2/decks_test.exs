@@ -896,4 +896,385 @@ defmodule Scry2.DecksTest do
       refute "d-plain-1" in deck_ids
     end
   end
+
+  describe "group_member_ids/1 (decklist grouping)" do
+    setup do
+      TestFactory.create_card(arena_id: 105_175, name: "Island")
+      TestFactory.create_card(arena_id: 102_727, name: "Island")
+      TestFactory.create_card(arena_id: 95_072, name: "Mountain")
+      :ok
+    end
+
+    defp deck_of(id, arena_id, count) do
+      TestFactory.create_deck(%{
+        mtga_deck_id: id,
+        current_main_deck: %{"cards" => [%{"arena_id" => arena_id, "count" => count}]}
+      })
+    end
+
+    test "groups constructed decks that share a decklist across printings" do
+      deck_of("a", 105_175, 60)
+      deck_of("b", 102_727, 60)
+      deck_of("c", 95_072, 60)
+
+      assert Enum.sort(Decks.group_member_ids("a")) == ["a", "b"]
+      assert Enum.sort(Decks.group_member_ids("b")) == ["a", "b"]
+      assert Decks.group_member_ids("c") == ["c"]
+    end
+
+    test "a below-threshold (limited-size) deck is its own group" do
+      deck_of("small1", 105_175, 40)
+      deck_of("small2", 102_727, 40)
+
+      assert Decks.group_member_ids("small1") == ["small1"]
+    end
+
+    test "a draft deck is never grouped" do
+      TestFactory.create_deck(%{
+        mtga_deck_id: "draft:QuickDraft_SOS",
+        current_main_deck: %{"cards" => [%{"arena_id" => 105_175, "count" => 60}]}
+      })
+
+      deck_of("constructed", 102_727, 60)
+
+      assert Decks.group_member_ids("draft:QuickDraft_SOS") == ["draft:QuickDraft_SOS"]
+    end
+
+    test "an unknown id returns itself" do
+      assert Decks.group_member_ids("nope") == ["nope"]
+    end
+  end
+
+  describe "deck-detail reads aggregate across a decklist group" do
+    # Two decks that are the SAME 60-card list under different Island printings
+    # (arena_ids 105175 and 102727, both "Island") group together at the ≥55
+    # threshold. Every per-deck detail read must aggregate across both ids no
+    # matter which member id it is queried by.
+    setup do
+      TestFactory.create_card(arena_id: 105_175, name: "Island")
+      TestFactory.create_card(arena_id: 102_727, name: "Island")
+
+      grouped_list = %{"cards" => [%{"arena_id" => 105_175, "count" => 60}]}
+      grouped_list_b = %{"cards" => [%{"arena_id" => 102_727, "count" => 60}]}
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "grp-a",
+        current_main_deck: grouped_list,
+        last_played_at: ~U[2026-01-05 00:00:00Z]
+      })
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "grp-b",
+        current_main_deck: grouped_list_b,
+        last_played_at: ~U[2026-01-06 00:00:00Z]
+      })
+
+      # Confidence check: the two decks really do group.
+      assert Enum.sort(Decks.group_member_ids("grp-a")) == ["grp-a", "grp-b"]
+
+      # Match results: 2 BO1 on member A (1W/1L), 1 BO1 win on member B → group total 3.
+      TestFactory.create_deck_match_result(%{
+        deck: %{mtga_deck_id: "grp-a"},
+        mtga_match_id: "mr-a1",
+        format_type: "Standard",
+        won: true,
+        started_at: ~U[2026-01-01 00:00:00Z]
+      })
+
+      TestFactory.create_deck_match_result(%{
+        deck: %{mtga_deck_id: "grp-a"},
+        mtga_match_id: "mr-a2",
+        format_type: "Standard",
+        won: false,
+        started_at: ~U[2026-01-02 00:00:00Z]
+      })
+
+      TestFactory.create_deck_match_result(%{
+        deck: %{mtga_deck_id: "grp-b"},
+        mtga_match_id: "mr-b1",
+        format_type: "Standard",
+        won: true,
+        started_at: ~U[2026-01-03 00:00:00Z]
+      })
+
+      # Mulligan hands (kept, Island in opener) on both members → card 105175
+      # sample count of 2 across the group.
+      Decks.upsert_mulligan_hand!(%{
+        mtga_deck_id: "grp-a",
+        mtga_match_id: "mull-a",
+        seat_id: 1,
+        hand_size: 7,
+        hand_arena_ids: %{"cards" => [105_175]},
+        decision: "kept",
+        match_won: true,
+        occurred_at: ~U[2026-01-01 00:00:00Z]
+      })
+
+      Decks.upsert_mulligan_hand!(%{
+        mtga_deck_id: "grp-b",
+        mtga_match_id: "mull-b",
+        seat_id: 1,
+        hand_size: 7,
+        hand_arena_ids: %{"cards" => [105_175]},
+        decision: "kept",
+        match_won: true,
+        occurred_at: ~U[2026-01-02 00:00:00Z]
+      })
+
+      # Cards drawn (self draws) on both members for the same Island.
+      Decks.upsert_game_draw!(%{
+        mtga_deck_id: "grp-a",
+        mtga_match_id: "draw-a",
+        game_number: 1,
+        card_arena_id: 105_175,
+        match_won: true,
+        is_self_draw: true,
+        occurred_at: ~U[2026-01-01 00:00:00Z]
+      })
+
+      Decks.upsert_game_draw!(%{
+        mtga_deck_id: "grp-b",
+        mtga_match_id: "draw-b",
+        game_number: 1,
+        card_arena_id: 105_175,
+        match_won: true,
+        is_self_draw: true,
+        occurred_at: ~U[2026-01-02 00:00:00Z]
+      })
+
+      # One deck version per member (version_number collides across ids).
+      Decks.upsert_deck_version!(%{
+        mtga_deck_id: "grp-a",
+        version_number: 1,
+        main_deck: grouped_list,
+        sideboard: %{"cards" => []},
+        occurred_at: ~U[2026-01-01 00:00:00Z]
+      })
+
+      Decks.upsert_deck_version!(%{
+        mtga_deck_id: "grp-b",
+        version_number: 1,
+        main_deck: grouped_list_b,
+        sideboard: %{"cards" => []},
+        occurred_at: ~U[2026-01-02 00:00:00Z]
+      })
+
+      :ok
+    end
+
+    for member_id <- ["grp-a", "grp-b"] do
+      test "list_matches_for_deck aggregates the group via #{member_id}" do
+        {matches, total} = Decks.list_matches_for_deck(unquote(member_id))
+        assert total == 3
+        assert length(matches) == 3
+      end
+
+      test "match_counts_by_format aggregates the group via #{member_id}" do
+        assert Decks.match_counts_by_format(unquote(member_id)) == %{bo1: 3, bo3: 0}
+      end
+
+      test "get_deck_performance bo1 total aggregates the group via #{member_id}" do
+        perf = Decks.get_deck_performance(unquote(member_id))
+        assert perf.bo1.total == 3
+        assert perf.bo1.wins == 2
+        assert perf.bo1.losses == 1
+      end
+
+      test "card_performance reflects both ids' samples via #{member_id}" do
+        island =
+          Enum.find(Decks.card_performance(unquote(member_id)), &(&1.card_arena_id == 105_175))
+
+        assert island
+        # Opening hands from both members (mull-a, mull-b).
+        assert island.oh_games == 2
+        # Self-draws from both members (draw-a, draw-b).
+        assert island.gd_games == 2
+        # GIH = openers + draws across all four distinct matches in the group.
+        assert island.gih_games == 4
+      end
+
+      test "mulligan_analytics counts hands across the group via #{member_id}" do
+        assert Decks.mulligan_analytics(unquote(member_id)).total_hands == 2
+      end
+
+      test "count_versions counts versions across the group via #{member_id}" do
+        assert Decks.count_versions(unquote(member_id)) == 2
+      end
+
+      test "get_deck_versions returns all member versions via #{member_id}" do
+        assert length(Decks.get_deck_versions(unquote(member_id))) == 2
+      end
+    end
+  end
+
+  describe "list_decks_with_stats/2 — decklist grouping" do
+    # grp-a and grp-b are the same 60-card list under Island printings
+    # 105175/102727, so they collapse into ONE summary. solo is a distinct
+    # decklist and stays on its own.
+    setup do
+      TestFactory.create_card(arena_id: 105_175, name: "Island")
+      TestFactory.create_card(arena_id: 102_727, name: "Island")
+      TestFactory.create_card(arena_id: 95_072, name: "Mountain")
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "grp-a",
+        current_main_deck: %{"cards" => [%{"arena_id" => 105_175, "count" => 60}]},
+        last_played_at: ~U[2026-01-05 00:00:00Z]
+      })
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "grp-b",
+        current_main_deck: %{"cards" => [%{"arena_id" => 102_727, "count" => 60}]},
+        last_played_at: ~U[2026-01-06 00:00:00Z]
+      })
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "solo",
+        current_main_deck: %{"cards" => [%{"arena_id" => 95_072, "count" => 60}]},
+        last_played_at: ~U[2026-01-04 00:00:00Z]
+      })
+
+      :ok
+    end
+
+    test "collapses a group into one summary with summed stats and the most-recently-played canonical" do
+      # grp-a: 1W/1L BO1 · grp-b: 1W BO1 + 1W BO3 · solo: 1W BO1
+      TestFactory.create_deck_match_result(%{
+        deck: %{mtga_deck_id: "grp-a"},
+        format_type: "Standard",
+        won: true
+      })
+
+      TestFactory.create_deck_match_result(%{
+        deck: %{mtga_deck_id: "grp-a"},
+        format_type: "Standard",
+        won: false
+      })
+
+      TestFactory.create_deck_match_result(%{
+        deck: %{mtga_deck_id: "grp-b"},
+        format_type: "Standard",
+        won: true
+      })
+
+      TestFactory.create_deck_match_result(%{
+        deck: %{mtga_deck_id: "grp-b"},
+        format_type: "Traditional",
+        won: true
+      })
+
+      TestFactory.create_deck_match_result(%{
+        deck: %{mtga_deck_id: "solo"},
+        format_type: "Standard",
+        won: true
+      })
+
+      summaries = Decks.list_decks_with_stats()
+      ids = Enum.map(summaries, & &1.deck.mtga_deck_id)
+
+      # One entry stands in for the group, and it is the most-recently-played member.
+      assert length(summaries) == 2
+      assert "grp-b" in ids
+      refute "grp-a" in ids
+      assert "solo" in ids
+
+      group = Enum.find(summaries, &(&1.deck.mtga_deck_id == "grp-b"))
+      assert group.bo1.total == 3
+      assert group.bo1.wins == 2
+      assert group.bo1.losses == 1
+      assert group.bo3.total == 1
+      assert group.bo3.wins == 1
+    end
+
+    test "unplayed groups are excluded by default, included with only_played: false" do
+      TestFactory.create_deck_match_result(%{deck: %{mtga_deck_id: "solo"}, won: true})
+
+      default_ids = Enum.map(Decks.list_decks_with_stats(), & &1.deck.mtga_deck_id)
+      refute "grp-a" in default_ids
+      refute "grp-b" in default_ids
+      assert "solo" in default_ids
+
+      all_ids =
+        Enum.map(Decks.list_decks_with_stats(nil, only_played: false), & &1.deck.mtga_deck_id)
+
+      assert "grp-b" in all_ids
+      refute "grp-a" in all_ids
+    end
+
+    test "starred_only matches a group when ANY member is starred" do
+      TestFactory.create_deck_match_result(%{deck: %{mtga_deck_id: "grp-a"}, won: true})
+
+      # Star only the NON-canonical member.
+      Decks.toggle_starred!("grp-a")
+
+      [entry] = Decks.list_decks_with_stats(nil, starred_only: true)
+      assert entry.deck.mtga_deck_id == "grp-b"
+      assert entry.deck.starred == true
+    end
+
+    test "status uses group-level archived (ALL members) semantics" do
+      TestFactory.create_deck_match_result(%{deck: %{mtga_deck_id: "grp-a"}, won: true})
+
+      # Archive only ONE member → group is NOT archived yet.
+      Decks.toggle_archived!("grp-a")
+
+      active_ids =
+        Enum.map(Decks.list_decks_with_stats(nil, status: :active), & &1.deck.mtga_deck_id)
+
+      assert "grp-b" in active_ids
+
+      archived_ids =
+        Enum.map(Decks.list_decks_with_stats(nil, status: :archived), & &1.deck.mtga_deck_id)
+
+      refute "grp-b" in archived_ids
+
+      # Archive the other member too → whole group counts as archived.
+      Decks.toggle_archived!("grp-b")
+
+      archived_after =
+        Enum.map(Decks.list_decks_with_stats(nil, status: :archived), & &1.deck.mtga_deck_id)
+
+      assert "grp-b" in archived_after
+
+      active_after =
+        Enum.map(Decks.list_decks_with_stats(nil, status: :active), & &1.deck.mtga_deck_id)
+
+      refute "grp-b" in active_after
+    end
+  end
+
+  describe "canonical_deck/1" do
+    setup do
+      TestFactory.create_card(arena_id: 105_175, name: "Island")
+      TestFactory.create_card(arena_id: 102_727, name: "Island")
+      :ok
+    end
+
+    test "resolves any split-off id to the most-recently-played member" do
+      main = %{"cards" => [%{"arena_id" => 105_175, "count" => 60}]}
+      main2 = %{"cards" => [%{"arena_id" => 102_727, "count" => 60}]}
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "old",
+        current_name: "Week 3 MSH",
+        current_main_deck: main,
+        last_played_at: ~U[2026-07-14 00:00:00Z]
+      })
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "new",
+        current_name: "Dragonstorm",
+        current_main_deck: main2,
+        last_played_at: ~U[2026-07-18 00:00:00Z]
+      })
+
+      assert Decks.canonical_deck("old").mtga_deck_id == "new"
+      assert Decks.canonical_deck("new").mtga_deck_id == "new"
+      assert Decks.canonical_deck("new").current_name == "Dragonstorm"
+    end
+
+    test "returns nil for an unknown id" do
+      assert Decks.canonical_deck("nope") == nil
+    end
+  end
 end

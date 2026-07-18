@@ -58,7 +58,9 @@ defmodule Scry2Web.DecksLive do
 
   @impl true
   def handle_params(%{"deck_id" => deck_id} = params, _uri, socket) do
-    deck = Decks.get_deck(deck_id)
+    # Resolve to the decklist's canonical deck so a split-off / old printing id
+    # shows the unified deck (name, current list) with aggregated history.
+    deck = Decks.canonical_deck(deck_id)
 
     if is_nil(deck) do
       {:noreply, push_navigate(socket, to: ~p"/decks")}

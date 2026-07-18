@@ -18,6 +18,7 @@ defmodule Scry2.Decks do
   alias Scry2.Analytics.RollingWindow
 
   alias Scry2.Decks.{
+    CompositionIdentity,
     Deck,
     DeckSummary,
     DeckVersion,
@@ -40,19 +41,24 @@ defmodule Scry2.Decks do
   # ── Reads ─────────────────────────────────────────────────────────────────
 
   @doc """
-  Returns decks with aggregated BO1 and BO3 stats.
+  Returns one summary per DECKLIST GROUP with aggregated BO1 and BO3 stats.
 
-  Options:
-    * `:only_played` — when `true` (default), only returns decks with at least
-      one completed match. When `false`, returns all decks including unplayed ones.
-    * `:status` — `:active` (only `archived=false`), `:archived` (only
-      `archived=true`), or `:all` (default). Used by the deck-collection
-      view to separate active decks from those deleted in MTGA.
-    * `:starred_only` — when `true`, returns only decks with `starred=true`.
-      Default `false`.
+  Decks that are the same decklist under different printings (see
+  `group_member_ids/1`) collapse into a single entry. Each group's stats are
+  the sum of its members' counters; the represented deck is the group's
+  most-recently-played member (its name, colors, and current list); the group
+  is starred when ANY member is starred and archived only when ALL members are.
 
-  Played decks sort by `last_played_at` descending; unplayed decks follow,
-  sorted by `last_updated_at` descending.
+  Options (applied at the group level):
+    * `:only_played` — when `true` (default), only returns groups with at least
+      one completed match. When `false`, returns all groups including unplayed ones.
+    * `:status` — `:active` (group not archived), `:archived` (group archived),
+      or `:all` (default). Used by the deck-collection view to separate active
+      decks from those deleted in MTGA.
+    * `:starred_only` — when `true`, returns only starred groups. Default `false`.
+
+  Played groups sort by `last_played_at` descending (nulls last); unplayed
+  groups follow, sorted by `last_updated_at` descending.
 
   Each entry is a `%Scry2.Decks.DeckSummary{}` struct with `:deck`, `:bo1`,
   and `:bo3` (the latter two are `%Scry2.Decks.FormatStats{}`).
@@ -63,20 +69,70 @@ defmodule Scry2.Decks do
     status = Keyword.get(opts, :status, :all)
     starred_only = Keyword.get(opts, :starred_only, false)
 
-    Deck
-    |> maybe_filter_by_player(player_id)
-    |> maybe_filter_played_in_sql(only_played)
-    |> filter_by_status(status)
-    |> maybe_filter_starred(starred_only)
-    |> order_by([d], desc_nulls_last: d.last_played_at, desc: d.last_updated_at)
-    |> Repo.all()
-    |> Enum.map(fn deck ->
-      %DeckSummary{
-        deck: deck,
-        bo1: format_stats(deck.bo1_wins, deck.bo1_losses),
-        bo3: format_stats(deck.bo3_wins, deck.bo3_losses)
-      }
-    end)
+    decks =
+      Deck
+      |> maybe_filter_by_player(player_id)
+      |> Repo.all()
+
+    keys = deck_keys_for(decks)
+
+    decks
+    |> Enum.group_by(fn deck -> Map.fetch!(keys, deck.mtga_deck_id) end)
+    |> Enum.map(fn {_key, members} -> summarize_group(members) end)
+    |> Enum.filter(&keep_group?(&1, status, starred_only, only_played))
+    |> Enum.sort_by(& &1.deck, &deck_sort_before?/2)
+  end
+
+  # Collapses a group's members into a single summary: stats are the sum of
+  # members' counters, the represented deck is the canonical (most-recently-
+  # played) member, and the group flags are ANY-starred / ALL-archived stamped
+  # onto that deck so the display and the group-level filters agree.
+  defp summarize_group(members) do
+    canonical = %{
+      canonical_member(members)
+      | starred: Enum.any?(members, & &1.starred),
+        archived: Enum.all?(members, & &1.archived)
+    }
+
+    %DeckSummary{
+      deck: canonical,
+      bo1: format_stats(sum_field(members, :bo1_wins), sum_field(members, :bo1_losses)),
+      bo3: format_stats(sum_field(members, :bo3_wins), sum_field(members, :bo3_losses))
+    }
+  end
+
+  defp sum_field(members, field), do: Enum.reduce(members, 0, &(Map.fetch!(&1, field) + &2))
+
+  # The canonical member is the most-recently-played one (nulls last), breaking
+  # ties (or an all-null group) by most-recently-updated.
+  defp canonical_member(members) do
+    Enum.max_by(members, &{recency_key(&1.last_played_at), recency_key(&1.last_updated_at)})
+  end
+
+  # Sortable recency key where a missing timestamp ranks below every real one.
+  defp recency_key(nil), do: {0, 0}
+  defp recency_key(%DateTime{} = at), do: {1, DateTime.to_unix(at, :microsecond)}
+
+  defp keep_group?(summary, status, starred_only, only_played) do
+    keep_status?(summary, status) and keep_starred?(summary, starred_only) and
+      keep_played?(summary, only_played)
+  end
+
+  defp keep_status?(_summary, :all), do: true
+  defp keep_status?(%DeckSummary{deck: %{archived: archived}}, :active), do: not archived
+  defp keep_status?(%DeckSummary{deck: %{archived: archived}}, :archived), do: archived
+
+  defp keep_starred?(_summary, false), do: true
+  defp keep_starred?(%DeckSummary{deck: %{starred: starred}}, true), do: starred
+
+  defp keep_played?(_summary, false), do: true
+  defp keep_played?(%DeckSummary{bo1: bo1, bo3: bo3}, true), do: bo1.total + bo3.total > 0
+
+  # In-memory equivalent of `desc_nulls_last: last_played_at, desc: last_updated_at`.
+  # Returns true when deck `a` should sort at or before deck `b`.
+  defp deck_sort_before?(a, b) do
+    key = fn deck -> {recency_key(deck.last_played_at), recency_key(deck.last_updated_at)} end
+    key.(a) >= key.(b)
   end
 
   defp format_stats(wins, losses) do
@@ -93,10 +149,117 @@ defmodule Scry2.Decks do
     Repo.get_by(Deck, mtga_deck_id: mtga_deck_id)
   end
 
-  @doc "Returns the number of deck versions for a deck."
+  # A decklist is grouped only when its current main deck is constructed-sized —
+  # below this, 40-card limited pools would over-group by coincidence.
+  @min_grouped_deck_size 55
+
+  @doc """
+  Returns every `mtga_deck_id` that is the SAME decklist as the given deck —
+  i.e. shares its current main-deck composition, ignoring printing/art (a card
+  restyle, clone, or re-import mints a new id for an identical list). Constructed
+  decks group by printing-insensitive composition; draft decks and below-size
+  decks are always their own group. Returns `[mtga_deck_id]` for an unknown id.
+
+  This is the read-time identity used to reunite a decklist whose history is
+  fragmented across several MTGA ids — no data is mutated.
+  """
+  @spec group_member_ids(String.t()) :: [String.t()]
+  def group_member_ids(mtga_deck_id) when is_binary(mtga_deck_id) do
+    case get_deck(mtga_deck_id) do
+      nil ->
+        [mtga_deck_id]
+
+      deck ->
+        keys = deck_keys_for(group_candidates(deck))
+        target_key = Map.fetch!(keys, deck.mtga_deck_id)
+
+        if groupable_key?(target_key) do
+          for {id, key} <- keys, key == target_key, do: id
+        else
+          [mtga_deck_id]
+        end
+    end
+  end
+
+  @doc """
+  Returns the canonical `%Deck{}` for the decklist group containing the given id
+  — the most-recently-played member. Gives a decklist split across several MTGA
+  ids one stable identity (name, current list) regardless of which member id is
+  requested. Returns nil for an unknown id.
+  """
+  @spec canonical_deck(String.t()) :: Deck.t() | nil
+  def canonical_deck(mtga_deck_id) when is_binary(mtga_deck_id) do
+    member_ids = group_member_ids(mtga_deck_id)
+
+    case Repo.all(from(d in Deck, where: d.mtga_deck_id in ^member_ids)) do
+      [] -> nil
+      members -> canonical_member(members)
+    end
+  end
+
+  # The candidate set a decklist group is drawn from: every constructed deck
+  # (those carrying a `composition_hash`) plus the target itself.
+  defp group_candidates(target) do
+    candidates =
+      Deck
+      |> where([d], not is_nil(d.composition_hash))
+      |> Repo.all()
+
+    if Enum.any?(candidates, &(&1.mtga_deck_id == target.mtga_deck_id)),
+      do: candidates,
+      else: [target | candidates]
+  end
+
+  # Computes the printing-insensitive decklist key for a LIST of Deck structs in
+  # a single batched `representative_arena_ids` lookup. Returns
+  # `%{mtga_deck_id => deck_key}`.
+  defp deck_keys_for(decks) do
+    representatives =
+      decks
+      |> Enum.flat_map(fn deck -> main_deck_arena_ids(deck.current_main_deck) end)
+      |> Enum.uniq()
+      |> Scry2.Cards.representative_arena_ids()
+
+    Map.new(decks, fn deck ->
+      {deck.mtga_deck_id, deck_key(deck.mtga_deck_id, deck.current_main_deck, representatives)}
+    end)
+  end
+
+  # A stable identity for a deck's current decklist. Constructed-sized lists key
+  # by printing-insensitive composition ("comp:<hash>"); everything else keys by
+  # its own id so it never groups.
+  defp deck_key(mtga_deck_id, main_deck, representatives) do
+    cards = main_deck_cards(main_deck)
+    pairs = CompositionIdentity.canonical_pairs(cards, representatives)
+    size = Enum.reduce(pairs, 0, fn {_rep, count}, acc -> acc + count end)
+
+    if size >= @min_grouped_deck_size and not String.starts_with?(mtga_deck_id, "draft:") do
+      "comp:" <> Integer.to_string(:erlang.phash2(pairs))
+    else
+      "id:" <> mtga_deck_id
+    end
+  end
+
+  defp groupable_key?("comp:" <> _), do: true
+  defp groupable_key?(_), do: false
+
+  defp main_deck_cards(%{"cards" => cards}) when is_list(cards), do: cards
+  defp main_deck_cards(%{cards: cards}) when is_list(cards), do: cards
+  defp main_deck_cards(_), do: []
+
+  defp main_deck_arena_ids(main_deck) do
+    main_deck
+    |> main_deck_cards()
+    |> Enum.map(fn card -> card["arena_id"] || card[:arena_id] end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  @doc "Returns the number of deck versions across the deck's decklist group."
   def count_versions(mtga_deck_id) when is_binary(mtga_deck_id) do
+    member_ids = group_member_ids(mtga_deck_id)
+
     DeckVersion
-    |> where([dv], dv.mtga_deck_id == ^mtga_deck_id)
+    |> where([dv], dv.mtga_deck_id in ^member_ids)
     |> select([dv], count(dv.id))
     |> Repo.one()
   end
@@ -119,13 +282,14 @@ defmodule Scry2.Decks do
   def get_deck_performance(mtga_deck_id, opts \\ []) when is_binary(mtga_deck_id) do
     days = Keyword.get(opts, :days)
     now = Keyword.get(opts, :now, DateTime.utc_now())
+    member_ids = group_member_ids(mtga_deck_id)
 
     %{
-      bo1: aggregate_deck_format_stats(mtga_deck_id, :bo1),
-      bo3: aggregate_deck_bo3_stats(mtga_deck_id),
+      bo1: aggregate_deck_format_stats(member_ids, :bo1),
+      bo3: aggregate_deck_bo3_stats(member_ids),
       cumulative_win_rate: %{
-        bo1: deck_rolling_win_rate(mtga_deck_id, :bo1, days, now),
-        bo3: deck_rolling_win_rate(mtga_deck_id, :bo3, days, now)
+        bo1: deck_rolling_win_rate(member_ids, :bo1, days, now),
+        bo3: deck_rolling_win_rate(member_ids, :bo3, days, now)
       }
     }
   end
@@ -142,15 +306,17 @@ defmodule Scry2.Decks do
     * `:changes` — `%{added: [...], removed: [...]}` from game 1 to game 2/3
   """
   def get_deck_sideboard_diff(mtga_deck_id) when is_binary(mtga_deck_id) do
+    member_ids = group_member_ids(mtga_deck_id)
+
     submissions =
       GameSubmission
-      |> where([gs], gs.mtga_deck_id == ^mtga_deck_id)
+      |> where([gs], gs.mtga_deck_id in ^member_ids)
       |> order_by([gs], asc: gs.mtga_match_id, asc: gs.game_number)
       |> Repo.all()
 
     results =
       MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> where([mr], mr.mtga_deck_id in ^member_ids and not is_nil(mr.won))
       |> select([mr], {mr.mtga_match_id, mr.won, mr.started_at})
       |> Repo.all()
       |> Map.new(fn {mtga_match_id, won, started_at} ->
@@ -182,13 +348,18 @@ defmodule Scry2.Decks do
   end
 
   @doc """
-  Returns all deck versions for a deck, newest first.
+  Returns all deck versions across the decklist group, newest first.
   Each version includes pre-computed diffs and match stats.
+
+  Ordered by `occurred_at` descending rather than `version_number`, since
+  a merged group's version numbers collide across member ids.
   """
   def get_deck_versions(mtga_deck_id) when is_binary(mtga_deck_id) do
+    member_ids = group_member_ids(mtga_deck_id)
+
     DeckVersion
-    |> where([dv], dv.mtga_deck_id == ^mtga_deck_id)
-    |> order_by([dv], desc: dv.version_number)
+    |> where([dv], dv.mtga_deck_id in ^member_ids)
+    |> order_by([dv], desc: dv.occurred_at)
     |> Repo.all()
   end
 
@@ -225,16 +396,20 @@ defmodule Scry2.Decks do
   Returns `%{version_number => [%MatchResult{}]}`.
   """
   def get_matches_by_version(mtga_deck_id) when is_binary(mtga_deck_id) do
+    member_ids = group_member_ids(mtga_deck_id)
+
+    # Merge every member's versions into one occurred_at-ordered timeline, so
+    # matches bucket by whichever member version was active at match start.
     versions =
       DeckVersion
-      |> where([dv], dv.mtga_deck_id == ^mtga_deck_id)
-      |> order_by([dv], asc: dv.version_number)
+      |> where([dv], dv.mtga_deck_id in ^member_ids)
+      |> order_by([dv], asc: dv.occurred_at)
       |> select([dv], {dv.version_number, dv.occurred_at})
       |> Repo.all()
 
     matches =
       MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> where([mr], mr.mtga_deck_id in ^member_ids and not is_nil(mr.won))
       |> order_by([mr], desc: mr.started_at)
       |> Repo.all()
 
@@ -256,10 +431,11 @@ defmodule Scry2.Decks do
     limit = Keyword.get(opts, :limit, 20)
     offset = Keyword.get(opts, :offset, 0)
     format = Keyword.get(opts, :format)
+    member_ids = group_member_ids(mtga_deck_id)
 
     base =
       MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> where([mr], mr.mtga_deck_id in ^member_ids and not is_nil(mr.won))
       |> apply_format_filter(format)
 
     total = Repo.aggregate(base, :count)
@@ -279,9 +455,11 @@ defmodule Scry2.Decks do
   Returns `:bo3` if no matches exist.
   """
   def latest_format(mtga_deck_id) when is_binary(mtga_deck_id) do
+    member_ids = group_member_ids(mtga_deck_id)
+
     latest =
       MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> where([mr], mr.mtga_deck_id in ^member_ids and not is_nil(mr.won))
       |> order_by([mr], desc: mr.started_at)
       |> limit(1)
       |> Repo.one()
@@ -297,9 +475,11 @@ defmodule Scry2.Decks do
   which format tabs should be enabled.
   """
   def match_counts_by_format(mtga_deck_id) when is_binary(mtga_deck_id) do
+    member_ids = group_member_ids(mtga_deck_id)
+
     %{bo1: bo1_count, bo3: bo3_count} =
       MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> where([mr], mr.mtga_deck_id in ^member_ids and not is_nil(mr.won))
       |> select([mr], %{
         bo3:
           sum(
@@ -352,7 +532,8 @@ defmodule Scry2.Decks do
     * `:by_land_count` — win rate when keeping with N lands
   """
   def mulligan_analytics(mtga_deck_id) when is_binary(mtga_deck_id) do
-    base = where(MulliganHand, [m], m.mtga_deck_id == ^mtga_deck_id)
+    member_ids = group_member_ids(mtga_deck_id)
+    base = where(MulliganHand, [m], m.mtga_deck_id in ^member_ids)
 
     %{total_hands: total_hands, total_keeps: total_keeps} =
       base
@@ -411,10 +592,12 @@ defmodule Scry2.Decks do
   Each entry: `%{hand_size, land_count, count, wins, win_rate}`.
   """
   def mulligan_heatmap(mtga_deck_id) when is_binary(mtga_deck_id) do
+    member_ids = group_member_ids(mtga_deck_id)
+
     MulliganHand
     |> where(
       [m],
-      m.mtga_deck_id == ^mtga_deck_id and
+      m.mtga_deck_id in ^member_ids and
         m.decision == "kept" and
         not is_nil(m.land_count) and
         not is_nil(m.match_won)
@@ -440,9 +623,10 @@ defmodule Scry2.Decks do
   Each entry includes OH WR, GIH WR, GD WR, GND WR, and IWD.
   """
   def card_performance(mtga_deck_id) when is_binary(mtga_deck_id) do
-    {total_matches, total_wins} = deck_match_totals(mtga_deck_id)
-    raw_aggregates = card_match_aggregates(mtga_deck_id)
-    deck = get_deck(mtga_deck_id)
+    member_ids = group_member_ids(mtga_deck_id)
+    {total_matches, total_wins} = deck_match_totals(member_ids)
+    raw_aggregates = card_match_aggregates(member_ids)
+    deck = canonical_group_deck(member_ids)
     deck_cards = deck_card_counts(deck)
 
     aggregates = exclude_token_rows(raw_aggregates)
@@ -456,10 +640,20 @@ defmodule Scry2.Decks do
     |> Enum.reject(&is_nil(&1.card_name))
   end
 
-  defp deck_match_totals(mtga_deck_id) do
+  # The canonical deck for a group is its most-recently-played member — its
+  # current card list is the one whose per-card copy counts we display.
+  defp canonical_group_deck(member_ids) do
+    Deck
+    |> where([d], d.mtga_deck_id in ^member_ids)
+    |> order_by([d], desc_nulls_last: d.last_played_at)
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  defp deck_match_totals(member_ids) do
     %{total: total, wins: wins} =
       MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> where([mr], mr.mtga_deck_id in ^member_ids and not is_nil(mr.won))
       |> select([mr], %{
         total: count(),
         wins: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", mr.won))
@@ -1116,25 +1310,12 @@ defmodule Scry2.Decks do
   # decks_decks has no player_id — the context is single-player by design.
   defp maybe_filter_by_player(query, _player_id), do: query
 
-  defp maybe_filter_played_in_sql(query, false), do: query
-
-  defp maybe_filter_played_in_sql(query, true) do
-    where(query, [d], d.bo1_wins + d.bo1_losses + d.bo3_wins + d.bo3_losses > 0)
-  end
-
-  defp filter_by_status(query, :all), do: query
-  defp filter_by_status(query, :active), do: where(query, [d], d.archived == false)
-  defp filter_by_status(query, :archived), do: where(query, [d], d.archived == true)
-
-  defp maybe_filter_starred(query, false), do: query
-  defp maybe_filter_starred(query, true), do: where(query, [d], d.starred == true)
-
   # SQL aggregate for bo1 or bo3 base stats — one query, no full-row load.
   # on_play = nil is treated as on_draw (matches Enum.reject behaviour).
-  defp aggregate_deck_format_stats(mtga_deck_id, format) do
+  defp aggregate_deck_format_stats(member_ids, format) do
     row =
       MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> where([mr], mr.mtga_deck_id in ^member_ids and not is_nil(mr.won))
       |> apply_format_filter(format)
       |> select([mr], %{
         total: count(),
@@ -1169,12 +1350,12 @@ defmodule Scry2.Decks do
   # Bo3 stats extend the base aggregate with game1 vs games-2/3 win rates.
   # Those require per-match game_results JSON, so a lean row query is still
   # needed — but it only selects the two fields used by bo3_game_split/1.
-  defp aggregate_deck_bo3_stats(mtga_deck_id) do
-    base = aggregate_deck_format_stats(mtga_deck_id, :bo3)
+  defp aggregate_deck_bo3_stats(member_ids) do
+    base = aggregate_deck_format_stats(member_ids, :bo3)
 
     game_rows =
       MatchResult
-      |> where([mr], mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won))
+      |> where([mr], mr.mtga_deck_id in ^member_ids and not is_nil(mr.won))
       |> apply_format_filter(:bo3)
       |> select([mr], %{game_results: mr.game_results})
       |> Repo.all()
@@ -1207,12 +1388,12 @@ defmodule Scry2.Decks do
     end)
   end
 
-  defp deck_rolling_win_rate(mtga_deck_id, format, days, now) do
+  defp deck_rolling_win_rate(member_ids, format, days, now) do
     rows =
       MatchResult
       |> where(
         [mr],
-        mr.mtga_deck_id == ^mtga_deck_id and not is_nil(mr.won) and not is_nil(mr.started_at)
+        mr.mtga_deck_id in ^member_ids and not is_nil(mr.won) and not is_nil(mr.started_at)
       )
       |> apply_format_filter(format)
       |> order_by([mr], asc: mr.started_at)
@@ -1254,7 +1435,12 @@ defmodule Scry2.Decks do
   #   4. Aggregates per `arena_id` into oh/gd/gih game and win counts.
   #
   # Returns `[%{arena_id, oh_games, oh_wins, gd_games, gd_wins, gih_games, gih_wins}, ...]`.
-  defp card_match_aggregates(mtga_deck_id) do
+  defp card_match_aggregates(member_ids) do
+    # One `?` placeholder per member id, reused for both the mulligan-hands and
+    # cards-drawn subqueries. Positional params bind in appearance order, so the
+    # bind list is `member_ids ++ member_ids` (mulligan subquery, then draws).
+    placeholders = Enum.map_join(member_ids, ",", fn _ -> "?" end)
+
     sql = """
     WITH per_match AS (
       SELECT arena_id, mtga_match_id,
@@ -1269,7 +1455,7 @@ defmodule Scry2.Decks do
                CASE WHEN mh.match_won THEN 1 ELSE 0 END AS won
         FROM decks_mulligan_hands AS mh,
              json_each(json_extract(mh.hand_arena_ids, '$.cards')) AS je
-        WHERE mh.mtga_deck_id = ?1
+        WHERE mh.mtga_deck_id IN (#{placeholders})
           AND mh.decision = 'kept'
           AND mh.match_won IS NOT NULL
 
@@ -1281,7 +1467,7 @@ defmodule Scry2.Decks do
                1 AS drawn,
                CASE WHEN match_won THEN 1 ELSE 0 END AS won
         FROM decks_cards_drawn
-        WHERE mtga_deck_id = ?1
+        WHERE mtga_deck_id IN (#{placeholders})
           AND match_won IS NOT NULL
           AND is_self_draw = 1
       )
@@ -1298,7 +1484,7 @@ defmodule Scry2.Decks do
     GROUP BY arena_id
     """
 
-    {:ok, %{rows: rows}} = Repo.query(sql, [mtga_deck_id])
+    {:ok, %{rows: rows}} = Repo.query(sql, member_ids ++ member_ids)
 
     Enum.map(rows, fn [arena_id, oh_games, oh_wins, gd_games, gd_wins, gih_games, gih_wins] ->
       %{

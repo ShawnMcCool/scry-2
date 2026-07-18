@@ -720,4 +720,36 @@ defmodule Scry2.CardsTest do
       assert arena_id == split.arena_id
     end
   end
+
+  describe "representative_arena_ids/1" do
+    test "maps every printing of a card name onto one stable representative" do
+      island_a = TestFactory.create_card(arena_id: 105_175, name: "Island")
+      island_b = TestFactory.create_card(arena_id: 102_727, name: "Island")
+
+      reps = Cards.representative_arena_ids([island_a.arena_id, island_b.arena_id])
+
+      # Both printings collapse to the same representative...
+      assert reps[105_175] == reps[102_727]
+      # ...and that representative is stable (the lowest printing arena_id).
+      assert reps[105_175] == 102_727
+    end
+
+    test "distinct card names keep distinct representatives" do
+      island = TestFactory.create_card(arena_id: 105_175, name: "Island")
+      mountain = TestFactory.create_card(arena_id: 95_072, name: "Mountain")
+
+      reps = Cards.representative_arena_ids([island.arena_id, mountain.arena_id])
+
+      refute reps[105_175] == reps[95_072]
+    end
+
+    test "arena_ids with no card row fall back to themselves" do
+      reps = Cards.representative_arena_ids([999_999])
+      assert reps[999_999] == 999_999
+    end
+
+    test "returns an empty map for an empty input" do
+      assert Cards.representative_arena_ids([]) == %{}
+    end
+  end
 end

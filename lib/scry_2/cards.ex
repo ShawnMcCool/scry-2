@@ -604,6 +604,44 @@ defmodule Scry2.Cards do
   end
 
   @doc """
+  Maps each given `arena_id` onto a stable representative `arena_id` for its card
+  name — the lowest printing `arena_id` across every printing that shares the
+  name. Arena_ids with no card row map to themselves.
+
+  This collapses printing-only differences (card styles, alternate art, re-imports)
+  so a decklist has one identity regardless of which printing MTGA recorded. See
+  `Scry2.Decks.CompositionIdentity`.
+  """
+  @spec representative_arena_ids([integer()]) :: %{optional(integer()) => integer()}
+  def representative_arena_ids([]), do: %{}
+
+  def representative_arena_ids(arena_ids) when is_list(arena_ids) do
+    id_to_name =
+      Card
+      |> where([c], c.arena_id in ^arena_ids)
+      |> select([c], {c.arena_id, fragment("lower(?)", c.name)})
+      |> Repo.all()
+      |> Map.new()
+
+    representative_by_name =
+      id_to_name
+      |> Map.values()
+      |> Enum.uniq()
+      |> printings_by_name()
+      |> Map.new(fn {name, printing_ids} -> {name, Enum.min(printing_ids)} end)
+
+    Map.new(arena_ids, fn arena_id ->
+      representative =
+        case Map.get(id_to_name, arena_id) do
+          nil -> arena_id
+          name -> Map.get(representative_by_name, name, arena_id)
+        end
+
+      {arena_id, representative}
+    end)
+  end
+
+  @doc """
   Resolves parsed card references to `%{arena_id, count}` entries.
 
   Each ref is `%{name, set_code, collector_number, count}`. Matches on
