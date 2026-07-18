@@ -133,12 +133,17 @@ defmodule Scry2.CardsTest do
     end
   end
 
+  # Display-art lookups read the columns Synthesize stamps onto
+  # cards_cards (the name's most basic printing — Scry2.Cards.BasicPrinting).
+  # The old multi-path Scryfall-join scenarios (flavor-name demotion,
+  # canonical-printing preference) moved to BasicPrintingTest and the
+  # SynthesizeTest stamping tests.
   describe "get_art_url_for_arena_id/1" do
-    test "returns the scryfall art_crop url for an arena_id" do
-      TestFactory.create_scryfall_card(%{
+    test "returns the stamped art_crop url" do
+      Cards.synthesize_card!(%{
         arena_id: 700_010,
         name: "Art Test",
-        image_uris: %{"normal" => "http://x/normal.jpg", "art_crop" => "http://x/art.jpg"}
+        art_crop_url: "http://x/art.jpg"
       })
 
       assert Cards.get_art_url_for_arena_id(700_010) == "http://x/art.jpg"
@@ -146,91 +151,21 @@ defmodule Scry2.CardsTest do
   end
 
   describe "get_image_url_for_arena_id/1" do
-    test "direct arena_id match returns that row's image" do
-      TestFactory.create_scryfall_card(%{
-        arena_id: 700_001,
-        name: "Image Direct",
-        image_uris: %{"normal" => "https://example.com/direct.jpg"}
-      })
-
-      assert Cards.get_image_url_for_arena_id(700_001) == "https://example.com/direct.jpg"
-    end
-
-    test "mtga→scryfall join picks the canonical printing over a flavor-name row at the same (set, number)" do
-      # MTGA has one arena_id pointing at SOS/168. Scryfall has two rows
-      # at SOS/168: the canonical "Wildgrowth Archaic" and a stale flavor-
-      # name parody overlay (quoted name) left over from a previous bulk
-      # snapshot. The image lookup must prefer the canonical row.
-      TestFactory.create_mtga_card(%{
-        arena_id: 700_002,
-        name: "Wildgrowth Archaic",
-        expansion_code: "SOS",
-        collector_number: "168"
-      })
-
-      TestFactory.create_scryfall_card(%{
-        name: ~s("The Very Hungry Archaic"),
-        set_code: "SOS",
-        collector_number: "168",
-        image_uris: %{"normal" => "https://example.com/parody.jpg"}
-      })
-
-      TestFactory.create_scryfall_card(%{
-        name: "Wildgrowth Archaic",
-        set_code: "SOS",
-        collector_number: "168",
-        image_uris: %{"normal" => "https://example.com/canonical.jpg"}
-      })
-
-      assert Cards.get_image_url_for_arena_id(700_002) == "https://example.com/canonical.jpg"
-    end
-
-    test "falls back to the flavor-name row only when nothing canonical exists" do
-      # If Scryfall ever publishes a card that exists *only* as a flavor-
-      # name treatment, we'd rather show that than nothing. The tiebreaker
-      # demotes flavor-named rows, but does not exclude them outright.
-      TestFactory.create_mtga_card(%{
-        arena_id: 700_003,
-        name: "Lonely Flavor",
-        expansion_code: "TST",
-        collector_number: "9"
-      })
-
-      TestFactory.create_scryfall_card(%{
-        name: ~s("Lonely Flavor Parody"),
-        set_code: "TST",
-        collector_number: "9",
-        image_uris: %{"normal" => "https://example.com/lonely-parody.jpg"}
-      })
-
-      assert Cards.get_image_url_for_arena_id(700_003) == "https://example.com/lonely-parody.jpg"
-    end
-
-    test "name-join fallback prefers the canonical printing over a flavor-named row" do
-      # If MTGA has no expansion+collector match for the arena_id, the
-      # third query joins cards_cards → cards_scryfall_cards by name.
-      # When two Scryfall rows share the same `name` (rare but it happens
-      # for parody overlays that re-use the canonical card's display
-      # name), the canonical row should still win.
-      mtga = TestFactory.create_mtga_card(%{arena_id: 700_004, name: "Name Join Card"})
-
+    test "returns the stamped image url" do
       Cards.synthesize_card!(%{
-        arena_id: 700_004,
-        name: mtga.name,
-        rarity: "common"
+        arena_id: 700_001,
+        name: "Image Test",
+        image_url: "https://example.com/basic.jpg"
       })
 
-      TestFactory.create_scryfall_card(%{
-        name: ~s("Name Join Card"),
-        image_uris: %{"normal" => "https://example.com/name-parody.jpg"}
-      })
+      assert Cards.get_image_url_for_arena_id(700_001) == "https://example.com/basic.jpg"
+    end
 
-      TestFactory.create_scryfall_card(%{
-        name: "Name Join Card",
-        image_uris: %{"normal" => "https://example.com/name-canonical.jpg"}
-      })
+    test "returns nil for unstamped or unknown rows so ImageCache can fall back to the live API" do
+      Cards.synthesize_card!(%{arena_id: 700_002, name: "Unstamped"})
 
-      assert Cards.get_image_url_for_arena_id(700_004) == "https://example.com/name-canonical.jpg"
+      assert Cards.get_image_url_for_arena_id(700_002) == nil
+      assert Cards.get_image_url_for_arena_id(799_999) == nil
     end
   end
 

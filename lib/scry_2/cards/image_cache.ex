@@ -20,6 +20,24 @@ defmodule Scry2.Cards.ImageCache do
   `Scry2.Config` key `:image_cache_dir`).
 
   The entire directory can be deleted — images re-download on demand.
+
+  ## Cache versioning
+
+  A `cache-version` marker file records which display-art semantics the
+  cached files were downloaded under. When the semantics change (e.g.
+  v2: every image is the name's most basic printing, per
+  `Scry2.Cards.BasicPrinting`), bumping `@cache_version` clears the
+  directory and images re-download on demand — no manual step for
+  installs carrying art from the old rules.
+
+  The turnover is deferred until the read model actually carries
+  stamped display art (`Cards.display_art_stamped?/0`): clearing before
+  synthesis stamps would re-download literal printings through the API
+  fallback and cache the wrong art under the new version. The check
+  runs at the top of `ensure_cached/2` — the read path that depends on
+  the semantics, in caller processes that always have DB access — so
+  the clear fires exactly once, on the first image use after the new
+  semantics are in force.
   """
 
   use GenServer
@@ -38,6 +56,53 @@ defmodule Scry2.Cards.ImageCache do
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
+  end
+
+  # v2: images are the canonical basic printing's art (BasicPrinting),
+  # not the arena_id's literal printing.
+  @cache_version "2"
+
+  @doc "The display-art semantics version the cache dir must match."
+  @spec cache_version() :: String.t()
+  def cache_version, do: @cache_version
+
+  @doc """
+  Ensures the cache dir holds images downloaded under the current
+  display-art semantics: on a version mismatch (or an unversioned dir),
+  deletes every cached image and stamps the current version. Images
+  re-download on demand.
+  """
+  @spec ensure_version!(String.t()) :: :ok
+  def ensure_version!(cache_dir) do
+    File.mkdir_p!(cache_dir)
+    marker = Path.join(cache_dir, "cache-version")
+
+    if File.read(marker) != {:ok, @cache_version} do
+      stale = Path.wildcard(Path.join(cache_dir, "*.jpg"))
+      # Non-bang rm: concurrent ensure_cached callers may race the clear.
+      Enum.each(stale, &File.rm/1)
+
+      if stale != [] do
+        Log.info(:importer, "image cache: cleared #{length(stale)} images for v#{@cache_version}")
+      end
+
+      File.write!(marker, @cache_version)
+    end
+
+    :ok
+  end
+
+  # Runs the version turnover only once the read model carries stamped
+  # display art — see "Cache versioning" in the moduledoc. The marker
+  # read keeps the steady-state cost to one file read per call.
+  defp maybe_turn_over_cache(cache_dir) do
+    marker = Path.join(cache_dir, "cache-version")
+
+    if File.read(marker) != {:ok, @cache_version} and Cards.display_art_stamped?() do
+      ensure_version!(cache_dir)
+    end
+
+    :ok
   end
 
   @spec url_for(integer(), :full | :art) :: String.t()
@@ -68,6 +133,7 @@ defmodule Scry2.Cards.ImageCache do
     variant = Keyword.get(opts, :variant, :full)
 
     File.mkdir_p!(cache_dir)
+    maybe_turn_over_cache(cache_dir)
 
     stats =
       Enum.reduce(arena_ids, %{cached: 0, downloaded: 0, failed: 0}, fn arena_id, stats ->

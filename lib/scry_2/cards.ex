@@ -441,64 +441,39 @@ defmodule Scry2.Cards do
   end
 
   @doc """
-  Returns the Scryfall "normal" image URL for an arena_id, or nil if not found.
+  Returns the canonical display image URL for an arena_id, or nil.
 
-  Tries two join paths (in order):
-  1. Direct: `cards_scryfall_cards.arena_id` — works for any card Scryfall tags
-     with an arena_id, regardless of set code naming differences.
-  2. Fallback: `cards_mtga_cards` → `cards_scryfall_cards` via `(expansion_code,
-     collector_number)` — catches cards where Scryfall lacks the arena_id field
-     but the set codes match.
-
-  Used by `ImageCache` to avoid redundant Scryfall API calls.
+  Reads the `image_url` that `Synthesize` stamps onto `cards_cards` —
+  the most basic printing of the card's name (`Scry2.Cards.BasicPrinting`).
+  Nil for unstamped rows; `ImageCache` then falls back to the live
+  Scryfall API by `(set, collector_number)`.
   """
   def get_image_url_for_arena_id(arena_id) when is_integer(arena_id) do
-    image_uri_for_arena_id(arena_id, "$.normal")
+    display_art_column(arena_id, :image_url)
   end
 
-  @doc "Returns the Scryfall `art_crop` (illustration-only) URL for an arena_id, or nil."
+  @doc "Returns the canonical display `art_crop` (illustration-only) URL for an arena_id, or nil."
   def get_art_url_for_arena_id(arena_id) when is_integer(arena_id) do
-    image_uri_for_arena_id(arena_id, "$.art_crop")
+    display_art_column(arena_id, :art_crop_url)
   end
 
-  # Two Scryfall rows can share the same (set, collector_number) when
-  # a printing has a "flavor name" treatment overlay — Scryfall stores
-  # the parody / Universes-Beyond name in `name` wrapped in literal
-  # double quotes (e.g. `"The Very Hungry Archaic"` for the Wildgrowth
-  # Archaic SOS overlay). Rank quoted-name rows as `1` and canonical
-  # rows as `0`, then ORDER BY rank so `limit: 1` always picks the
-  # canonical row when one exists. Mirrors
-  # `MergeFields.prefer_canonical_printing/2`.
-  defp image_uri_for_arena_id(arena_id, json_path) do
+  defp display_art_column(arena_id, column) do
     Repo.one(
-      from sc in "cards_scryfall_cards",
-        where: sc.arena_id == ^arena_id,
-        order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
-        select: fragment("json_extract(?, ?)", sc.image_uris, ^json_path),
-        limit: 1
-    ) ||
-      Repo.one(
-        from mc in "cards_mtga_cards",
-          join: sc in "cards_scryfall_cards",
-          on:
-            sc.set_code == mc.expansion_code and
-              sc.collector_number == mc.collector_number,
-          where: mc.arena_id == ^arena_id,
-          order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
-          select: fragment("json_extract(?, ?)", sc.image_uris, ^json_path),
-          limit: 1
-      ) ||
-      Repo.one(
-        from cc in "cards_cards",
-          join: sc in "cards_scryfall_cards",
-          on: sc.name == cc.name,
-          where:
-            cc.arena_id == ^arena_id and
-              not is_nil(fragment("json_extract(?, ?)", sc.image_uris, ^json_path)),
-          order_by: [asc: fragment("CASE WHEN substr(?, 1, 1) = '\"' THEN 1 ELSE 0 END", sc.name)],
-          select: fragment("json_extract(?, ?)", sc.image_uris, ^json_path),
-          limit: 1
-      )
+      from card in Card,
+        where: card.arena_id == ^arena_id,
+        select: field(card, ^column)
+    )
+  end
+
+  @doc """
+  Whether synthesis has stamped canonical display art onto the read
+  model yet. False on databases that predate the art-complete schema —
+  `Cards.Bootstrap` re-synthesises and `ImageCache` defers its cache
+  turnover until this flips true.
+  """
+  @spec display_art_stamped?() :: boolean()
+  def display_art_stamped? do
+    Repo.exists?(from card in Card, where: not is_nil(card.image_url))
   end
 
   @doc """

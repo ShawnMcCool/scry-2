@@ -28,6 +28,8 @@ defmodule Scry2.Cards.Card do
     field :is_planeswalker, :boolean, default: false
     field :is_land, :boolean, default: false
     field :is_battle, :boolean, default: false
+    field :image_url, :string
+    field :art_crop_url, :string
 
     belongs_to :set, Scry2.Cards.Set
 
@@ -56,6 +58,8 @@ defmodule Scry2.Cards.Card do
       :is_planeswalker,
       :is_land,
       :is_battle,
+      :image_url,
+      :art_crop_url,
       :set_id
     ])
     |> validate_required([:arena_id, :name])

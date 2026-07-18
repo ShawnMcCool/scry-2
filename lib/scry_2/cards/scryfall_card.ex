@@ -50,6 +50,11 @@ defmodule Scry2.Cards.ScryfallCard do
     field :layout, :string
     field :booster, :boolean
     field :image_uris, :map
+    field :promo, :boolean, default: false
+    field :full_art, :boolean, default: false
+    field :variation, :boolean, default: false
+    field :frame_effects, :string, default: ""
+    field :border_color, :string
 
     timestamps(type: :utc_datetime)
   end
@@ -77,7 +82,12 @@ defmodule Scry2.Cards.ScryfallCard do
       :rarity,
       :layout,
       :booster,
-      :image_uris
+      :image_uris,
+      :promo,
+      :full_art,
+      :variation,
+      :frame_effects,
+      :border_color
     ])
     |> validate_required([:scryfall_id, :name, :set_code])
     |> unique_constraint(:scryfall_id)

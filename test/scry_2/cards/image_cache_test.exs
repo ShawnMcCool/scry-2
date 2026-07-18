@@ -26,6 +26,71 @@ defmodule Scry2.Cards.ImageCacheTest do
     end
   end
 
+  describe "ensure_version!/1" do
+    test "clears an unversioned cache and stamps the current version", %{cache_dir: cache_dir} do
+      # Pre-versioning caches hold art keyed to whatever printing the old
+      # lookup resolved — stale once display art became canonical.
+      File.write!(Path.join(cache_dir, "91001.jpg"), "stale special art")
+      File.write!(Path.join(cache_dir, "91001-art.jpg"), "stale art crop")
+
+      ImageCache.ensure_version!(cache_dir)
+
+      refute File.exists?(Path.join(cache_dir, "91001.jpg"))
+      refute File.exists?(Path.join(cache_dir, "91001-art.jpg"))
+      assert File.read!(Path.join(cache_dir, "cache-version")) == ImageCache.cache_version()
+    end
+
+    test "leaves a current-version cache untouched", %{cache_dir: cache_dir} do
+      File.write!(Path.join(cache_dir, "cache-version"), ImageCache.cache_version())
+      File.write!(Path.join(cache_dir, "91001.jpg"), "current art")
+
+      ImageCache.ensure_version!(cache_dir)
+
+      assert File.read!(Path.join(cache_dir, "91001.jpg")) == "current art"
+    end
+
+    test "creates the marker in a fresh cache dir", %{cache_dir: cache_dir} do
+      fresh = Path.join(cache_dir, "fresh")
+
+      ImageCache.ensure_version!(fresh)
+
+      assert File.read!(Path.join(fresh, "cache-version")) == ImageCache.cache_version()
+    end
+  end
+
+  describe "ensure_cached/2 — deferred version turnover" do
+    test "leaves an old-version cache alone while display art is unstamped", %{
+      cache_dir: cache_dir
+    } do
+      # Clearing before synthesis stamps would re-cache literal-printing
+      # art from the API fallback under the new version.
+      Scry2.Cards.synthesize_card!(%{arena_id: 93_001, name: "Unstamped"})
+      File.write!(Path.join(cache_dir, "93001.jpg"), "old art")
+
+      ImageCache.ensure_cached([], cache_dir: cache_dir)
+
+      assert File.read!(Path.join(cache_dir, "93001.jpg")) == "old art"
+      refute File.exists?(Path.join(cache_dir, "cache-version"))
+    end
+
+    test "turns the cache over on first use once display art is stamped", %{
+      cache_dir: cache_dir
+    } do
+      Scry2.Cards.synthesize_card!(%{
+        arena_id: 93_002,
+        name: "Stamped",
+        image_url: "http://x/basic.jpg"
+      })
+
+      File.write!(Path.join(cache_dir, "93001.jpg"), "old art")
+
+      ImageCache.ensure_cached([], cache_dir: cache_dir)
+
+      refute File.exists?(Path.join(cache_dir, "93001.jpg"))
+      assert File.read!(Path.join(cache_dir, "cache-version")) == ImageCache.cache_version()
+    end
+  end
+
   describe "ensure_cached/2" do
     test "returns immediately for empty list", %{cache_dir: cache_dir} do
       assert {:ok, %{cached: 0, downloaded: 0, failed: 0}} =
@@ -39,21 +104,13 @@ defmodule Scry2.Cards.ImageCacheTest do
                ImageCache.ensure_cached([91001], cache_dir: cache_dir)
     end
 
-    test "downloads image from stored scryfall URL without hitting the API", %{
+    test "downloads image from the stamped display-art URL without hitting the API", %{
       cache_dir: cache_dir
     } do
-      TestFactory.create_mtga_card(%{
+      Scry2.Cards.synthesize_card!(%{
         arena_id: 91_005,
         name: "DB Card",
-        expansion_code: "TST",
-        collector_number: "77"
-      })
-
-      TestFactory.create_scryfall_card(%{
-        name: "DB Card",
-        set_code: "tst",
-        collector_number: "77",
-        image_uris: %{"normal" => "http://stub.test/image.jpg"}
+        image_url: "http://stub.test/image.jpg"
       })
 
       Req.Test.stub(ImageCache, fn conn ->
@@ -122,10 +179,11 @@ defmodule Scry2.Cards.ImageCacheTest do
     end
 
     test "ensure_cached :art downloads art_crop to {id}-art.jpg", %{cache_dir: cache_dir} do
-      TestFactory.create_scryfall_card(%{
+      Scry2.Cards.synthesize_card!(%{
         arena_id: 92_001,
         name: "Art Var",
-        image_uris: %{"normal" => "http://x/n.jpg", "art_crop" => "http://x/a.jpg"}
+        image_url: "http://x/n.jpg",
+        art_crop_url: "http://x/a.jpg"
       })
 
       Req.Test.stub(ImageCache, fn conn -> Plug.Conn.send_resp(conn, 200, "ARTBYTES") end)

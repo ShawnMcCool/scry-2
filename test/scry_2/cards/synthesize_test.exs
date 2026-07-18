@@ -36,6 +36,136 @@ defmodule Scry2.Cards.SynthesizeTest do
       assert card.collector_number == "001"
     end
 
+    test "stamps every printing's display art from the name's most basic printing" do
+      # Two Arena printings of one name: the plain original and a
+      # borderless reprint. Both cards_cards rows must carry the plain
+      # printing's art — Scry2 renders cards, not printings.
+      Scry2.TestFactory.create_mtga_card(%{
+        arena_id: 80_101,
+        name: "Spirebluff Canal",
+        expansion_code: "KLR",
+        collector_number: "286"
+      })
+
+      Scry2.TestFactory.create_mtga_card(%{
+        arena_id: 80_102,
+        name: "Spirebluff Canal",
+        expansion_code: "OM1",
+        collector_number: "377"
+      })
+
+      Scry2.TestFactory.create_scryfall_card(%{
+        scryfall_id: "syn-basic",
+        arena_id: 80_101,
+        name: "Spirebluff Canal",
+        set_code: "klr",
+        collector_number: "286",
+        border_color: "black",
+        image_uris: %{
+          "normal" => "https://img/plain.jpg",
+          "art_crop" => "https://img/plain-art.jpg"
+        }
+      })
+
+      Scry2.TestFactory.create_scryfall_card(%{
+        scryfall_id: "syn-borderless",
+        arena_id: 80_102,
+        name: "Spirebluff Canal",
+        set_code: "om1",
+        collector_number: "377",
+        border_color: "borderless",
+        frame_effects: "showcase",
+        image_uris: %{
+          "normal" => "https://img/showcase.jpg",
+          "art_crop" => "https://img/showcase-art.jpg"
+        }
+      })
+
+      assert {:ok, _} = Synthesize.run([])
+
+      plain = Cards.get_by_arena_id(80_101)
+      showcase = Cards.get_by_arena_id(80_102)
+
+      assert plain.image_url == "https://img/plain.jpg"
+      assert plain.art_crop_url == "https://img/plain-art.jpg"
+      assert showcase.image_url == "https://img/plain.jpg"
+      assert showcase.art_crop_url == "https://img/plain-art.jpg"
+    end
+
+    test "excludes art-series printings from the display-art candidate pool" do
+      # An "art series" printing (a hand-drawn art card, no arena_id) shares
+      # the card's name and has a lower collector number, so it would win the
+      # most-basic tiebreak — but it is not real card art and must never be
+      # chosen. Regression for the Wan Shi Tong sketch-art bug.
+      Scry2.TestFactory.create_mtga_card(%{
+        arena_id: 80_301,
+        name: "Wan Shi Tong, Librarian",
+        expansion_code: "TLA",
+        collector_number: "78"
+      })
+
+      Scry2.TestFactory.create_scryfall_card(%{
+        scryfall_id: "syn-normal-78",
+        arena_id: 80_301,
+        name: "Wan Shi Tong, Librarian",
+        set_code: "tla",
+        collector_number: "78",
+        border_color: "black",
+        layout: "normal",
+        image_uris: %{
+          "normal" => "https://img/wan-normal.jpg",
+          "art_crop" => "https://img/wan-normal-art.jpg"
+        }
+      })
+
+      Scry2.TestFactory.create_scryfall_card(%{
+        scryfall_id: "syn-artseries-33",
+        name: "Wan Shi Tong, Librarian",
+        set_code: "atla",
+        collector_number: "33",
+        border_color: "black",
+        layout: "art_series",
+        image_uris: %{
+          "normal" => "https://img/wan-sketch.jpg",
+          "art_crop" => "https://img/wan-sketch-art.jpg"
+        }
+      })
+
+      assert {:ok, _} = Synthesize.run([])
+
+      card = Cards.get_by_arena_id(80_301)
+      assert card.image_url == "https://img/wan-normal.jpg"
+      assert card.art_crop_url == "https://img/wan-normal-art.jpg"
+    end
+
+    test "display art falls back to a printing that actually has an image" do
+      # The most basic printing lacks image_uris (Scryfall gap) — the
+      # stamp comes from the most basic printing that has one.
+      Scry2.TestFactory.create_scryfall_card(%{
+        scryfall_id: "syn-no-image",
+        arena_id: 80_103,
+        name: "Gapped Card",
+        set_code: "one",
+        collector_number: "10",
+        image_uris: nil
+      })
+
+      Scry2.TestFactory.create_scryfall_card(%{
+        scryfall_id: "syn-promo-image",
+        arena_id: 80_104,
+        name: "Gapped Card",
+        set_code: "pone",
+        collector_number: "10p",
+        promo: true,
+        image_uris: %{"normal" => "https://img/promo.jpg"}
+      })
+
+      assert {:ok, _} = Synthesize.run([])
+
+      assert Cards.get_by_arena_id(80_103).image_url == "https://img/promo.jpg"
+      assert Cards.get_by_arena_id(80_104).image_url == "https://img/promo.jpg"
+    end
+
     test "synthesises a row via the rotated pass for a Scryfall-only arena_id" do
       Scry2.TestFactory.create_scryfall_card(%{
         scryfall_id: "syn-sf-only",

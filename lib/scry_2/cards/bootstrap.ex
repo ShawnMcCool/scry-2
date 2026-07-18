@@ -61,7 +61,8 @@ defmodule Scry2.Cards.Bootstrap do
       counts = %{
         mtga_client: Cards.mtga_client_count(),
         scryfall: Cards.scryfall_count(),
-        synthesized: Cards.count()
+        synthesized: Cards.count(),
+        art_stamped: Cards.display_art_stamped?()
       }
 
       to_enqueue = decide(counts, Cards.import_timestamps(), DateTime.utc_now())
@@ -85,7 +86,8 @@ defmodule Scry2.Cards.Bootstrap do
           %{
             mtga_client: non_neg_integer(),
             scryfall: non_neg_integer(),
-            synthesized: non_neg_integer()
+            synthesized: non_neg_integer(),
+            art_stamped: boolean()
           },
           %{
             mtga_client_updated_at: DateTime.t() | nil,
@@ -98,7 +100,8 @@ defmodule Scry2.Cards.Bootstrap do
     %{
       mtga_client: mtga_client_count,
       scryfall: scryfall_count,
-      synthesized: synthesized_count
+      synthesized: synthesized_count,
+      art_stamped: art_stamped
     } = counts
 
     %{
@@ -107,9 +110,16 @@ defmodule Scry2.Cards.Bootstrap do
       synthesized_updated_at: synthesized_at
     } = timestamps
 
+    # A synthesised model with no stamped display art predates the
+    # art-complete schema — re-synthesise even when fresh, provided
+    # there is Scryfall data to stamp from.
+    art_incomplete = synthesized_count > 0 and scryfall_count > 0 and not art_stamped
+
     mtga_client = if needs?(mtga_client_count, mtga_client_at, now), do: :mtga_client
     scryfall = if needs?(scryfall_count, scryfall_at, now), do: :scryfall
-    synthesize = if needs?(synthesized_count, synthesized_at, now), do: :synthesize
+
+    synthesize =
+      if needs?(synthesized_count, synthesized_at, now) or art_incomplete, do: :synthesize
 
     [mtga_client, scryfall, synthesize] |> Enum.reject(&is_nil/1)
   end

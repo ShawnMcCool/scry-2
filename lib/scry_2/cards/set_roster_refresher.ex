@@ -38,6 +38,11 @@ defmodule Scry2.Cards.SetRosterRefresher do
     # always have ownership (via the Oban worker / supervisor tree), so the
     # rescue is a no-op outside of test harnesses.
     DBConnection.OwnershipError -> {:noreply, state}
+  catch
+    # Same test-harness race, other timing: the sandbox owner exits while
+    # the refresh query is in flight, and DBConnection exits the client
+    # instead of raising.
+    :exit, {_reason, %DBConnection.ConnectionError{}} -> {:noreply, state}
   end
 
   def handle_info(_other, state), do: {:noreply, state}

@@ -45,7 +45,7 @@ defmodule Scry2.Cards.BootstrapTest do
   end
 
   describe "decide/3" do
-    @empty_counts %{mtga_client: 0, scryfall: 0, synthesized: 0}
+    @empty_counts %{mtga_client: 0, scryfall: 0, synthesized: 0, art_stamped: false}
     @fresh_timestamps %{
       mtga_client_updated_at: @fresh,
       scryfall_updated_at: @fresh,
@@ -64,8 +64,28 @@ defmodule Scry2.Cards.BootstrapTest do
     end
 
     test "enqueues nothing when all sources are fresh" do
-      counts = %{mtga_client: 100, scryfall: 100, synthesized: 100}
+      counts = %{mtga_client: 100, scryfall: 100, synthesized: 100, art_stamped: true}
       assert Bootstrap.decide(counts, @fresh_timestamps, @now) == []
+    end
+
+    test "enqueues synthesis when the model is fresh but no row carries display art" do
+      # A read model without stamped display art predates the art-complete
+      # schema (or synthesis has never run since it) — re-synthesise even
+      # though the timestamps look fresh, so images converge at boot
+      # instead of waiting for the daily cron.
+      counts = %{mtga_client: 100, scryfall: 100, synthesized: 100, art_stamped: false}
+      assert Bootstrap.decide(counts, @fresh_timestamps, @now) == [:synthesize]
+    end
+
+    test "unstamped art alone does not trigger synthesis when there is no Scryfall data to stamp from" do
+      timestamps = %{
+        mtga_client_updated_at: @fresh,
+        scryfall_updated_at: nil,
+        synthesized_updated_at: @fresh
+      }
+
+      counts = %{mtga_client: 100, scryfall: 0, synthesized: 100, art_stamped: false}
+      assert Bootstrap.decide(counts, timestamps, @now) == [:scryfall]
     end
 
     test "enqueues only MTGA client when only its source is missing" do
@@ -75,7 +95,7 @@ defmodule Scry2.Cards.BootstrapTest do
         synthesized_updated_at: @fresh
       }
 
-      counts = %{mtga_client: 0, scryfall: 100, synthesized: 100}
+      counts = %{mtga_client: 0, scryfall: 100, synthesized: 100, art_stamped: true}
       assert Bootstrap.decide(counts, timestamps, @now) == [:mtga_client]
     end
 
@@ -86,7 +106,7 @@ defmodule Scry2.Cards.BootstrapTest do
         synthesized_updated_at: @fresh
       }
 
-      counts = %{mtga_client: 100, scryfall: 0, synthesized: 100}
+      counts = %{mtga_client: 100, scryfall: 0, synthesized: 100, art_stamped: true}
       assert Bootstrap.decide(counts, timestamps, @now) == [:scryfall]
     end
 
@@ -97,7 +117,7 @@ defmodule Scry2.Cards.BootstrapTest do
         synthesized_updated_at: nil
       }
 
-      counts = %{mtga_client: 100, scryfall: 100, synthesized: 0}
+      counts = %{mtga_client: 100, scryfall: 100, synthesized: 0, art_stamped: true}
       assert Bootstrap.decide(counts, timestamps, @now) == [:synthesize]
     end
 
@@ -108,7 +128,7 @@ defmodule Scry2.Cards.BootstrapTest do
         synthesized_updated_at: @old
       }
 
-      counts = %{mtga_client: 100, scryfall: 100, synthesized: 100}
+      counts = %{mtga_client: 100, scryfall: 100, synthesized: 100, art_stamped: true}
 
       assert Bootstrap.decide(counts, timestamps, @now) ==
                [:mtga_client, :scryfall, :synthesize]
@@ -121,7 +141,7 @@ defmodule Scry2.Cards.BootstrapTest do
         synthesized_updated_at: @fresh
       }
 
-      counts = %{mtga_client: 100, scryfall: 100, synthesized: 100}
+      counts = %{mtga_client: 100, scryfall: 100, synthesized: 100, art_stamped: true}
       assert Bootstrap.decide(counts, timestamps, @now) == [:mtga_client]
     end
   end

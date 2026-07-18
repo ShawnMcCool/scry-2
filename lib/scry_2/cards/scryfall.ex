@@ -89,7 +89,12 @@ defmodule Scry2.Cards.Scryfall do
       rarity: card["rarity"],
       layout: card["layout"],
       booster: card["booster"],
-      image_uris: card["image_uris"]
+      image_uris: resolve_image_uris(card),
+      promo: card["promo"] == true,
+      full_art: card["full_art"] == true,
+      variation: card["variation"] == true,
+      frame_effects: join_words(card["frame_effects"]),
+      border_color: card["border_color"]
     }
   end
 
@@ -115,6 +120,19 @@ defmodule Scry2.Cards.Scryfall do
   defp join_list(nil), do: ""
   defp join_list(list) when is_list(list), do: Enum.join(list)
   defp join_list(value) when is_binary(value), do: value
+
+  defp join_words(nil), do: ""
+  defp join_words(list) when is_list(list), do: Enum.join(list, " ")
+  defp join_words(value) when is_binary(value), do: value
+
+  # Double-faced layouts publish images per face, not at the top level —
+  # the front face's art stands in for the card.
+  defp resolve_image_uris(%{"image_uris" => uris}) when is_map(uris), do: uris
+
+  defp resolve_image_uris(%{"card_faces" => [%{"image_uris" => uris} | _]}) when is_map(uris),
+    do: uris
+
+  defp resolve_image_uris(_), do: nil
 
   @scryfall_headers [
     {"user-agent", "Scry2/0.1.0 (personal project; no bulk scraping)"},
