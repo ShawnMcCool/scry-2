@@ -182,6 +182,63 @@ defmodule Scry2.Decks do
   end
 
   @doc """
+  Maps every deck id to its decklist group's canonical (most-recently-played)
+  deck id, in a single pass. `%{mtga_deck_id => canonical_deck_id}`. The one place
+  that resolves "which deck row represents this decklist" in bulk.
+  """
+  @spec canonical_deck_id_map() :: %{optional(String.t()) => String.t()}
+  def canonical_deck_id_map do
+    decks = Repo.all(Deck)
+    keys = deck_keys_for(decks)
+
+    decks
+    |> Enum.group_by(&Map.fetch!(keys, &1.mtga_deck_id))
+    |> Enum.reduce(%{}, fn {_key, members}, acc ->
+      canonical_id = canonical_member(members).mtga_deck_id
+
+      Enum.reduce(members, acc, fn member, inner ->
+        Map.put(inner, member.mtga_deck_id, canonical_id)
+      end)
+    end)
+  end
+
+  @doc """
+  Resolves each `mtga_match_id` to the canonical deck id of the decklist it was
+  played with — `%{mtga_match_id => canonical_deck_id}`. Deck identity for a match
+  is owned by the Decks context (`decks_match_results` holds the real,
+  composition-resolved deck id); Matches-context consumers resolve through here
+  rather than the per-match synthetic id `matches_matches` carries. Matches with
+  no deck attribution are omitted.
+  """
+  @spec canonical_deck_ids_for_matches([String.t()]) :: %{optional(String.t()) => String.t()}
+  def canonical_deck_ids_for_matches(mtga_match_ids) when is_list(mtga_match_ids) do
+    match_to_deck =
+      MatchResult
+      |> where([mr], mr.mtga_match_id in ^mtga_match_ids)
+      |> select([mr], {mr.mtga_match_id, mr.mtga_deck_id})
+      |> Repo.all()
+
+    if match_to_deck == [] do
+      %{}
+    else
+      canonical = canonical_deck_id_map()
+
+      Map.new(match_to_deck, fn {match_id, deck_id} ->
+        {match_id, Map.get(canonical, deck_id, deck_id)}
+      end)
+    end
+  end
+
+  @doc """
+  Resolves a single `mtga_match_id` to its decklist's canonical deck id, or nil.
+  See `canonical_deck_ids_for_matches/1`.
+  """
+  @spec canonical_deck_id_for_match(String.t()) :: String.t() | nil
+  def canonical_deck_id_for_match(mtga_match_id) when is_binary(mtga_match_id) do
+    canonical_deck_ids_for_matches([mtga_match_id])[mtga_match_id]
+  end
+
+  @doc """
   Returns the canonical `%Deck{}` for the decklist group containing the given id
   — the most-recently-played member. Gives a decklist split across several MTGA
   ids one stable identity (name, current list) regardless of which member id is

@@ -221,7 +221,7 @@ defmodule Scry2Web.MatchesLive do
     assign(socket,
       match: nil,
       winrate_period: winrate_period,
-      matches: matches,
+      matches: enrich_deck_links(matches),
       stats: stats,
       cumulative_series: cumulative_series,
       category_counts: category_counts,
@@ -240,6 +240,21 @@ defmodule Scry2Web.MatchesLive do
       active_bo: bo,
       active_result: result
     )
+  end
+
+  # Resolve each match to its decklist's canonical deck id (owned by the Decks
+  # context) so rows link to the unified deck page, not the per-match synthetic id.
+  defp enrich_deck_links(matches) when is_list(matches) do
+    links =
+      matches |> Enum.map(& &1.mtga_match_id) |> Scry2.Decks.canonical_deck_ids_for_matches()
+
+    Enum.map(matches, fn match ->
+      %{match | canonical_deck_id: Map.get(links, match.mtga_match_id)}
+    end)
+  end
+
+  defp enrich_deck_link(match) do
+    %{match | canonical_deck_id: Scry2.Decks.canonical_deck_id_for_match(match.mtga_match_id)}
   end
 
   defp assign_detail(socket, match) do
@@ -272,7 +287,7 @@ defmodule Scry2Web.MatchesLive do
 
     socket
     |> assign(
-      match: match,
+      match: enrich_deck_link(match),
       matches: [],
       opponent_history: opponent_history,
       deck_submission: deck_submission,
@@ -741,13 +756,13 @@ defmodule Scry2Web.MatchesLive do
             class="flex items-center gap-1.5 text-sm text-base-content"
           >
             <.link
-              :if={@match.mtga_deck_id}
-              navigate={~p"/decks/#{@match.mtga_deck_id}"}
+              :if={@match.canonical_deck_id}
+              navigate={~p"/decks/#{@match.canonical_deck_id}"}
               class="hover:text-primary transition-colors"
             >
               {@match.deck_name}
             </.link>
-            <span :if={!@match.mtga_deck_id}>{@match.deck_name}</span>
+            <span :if={!@match.canonical_deck_id}>{@match.deck_name}</span>
             <.mana_pips
               :if={@match.deck_colors && @match.deck_colors != ""}
               colors={@match.deck_colors}
@@ -845,13 +860,13 @@ defmodule Scry2Web.MatchesLive do
           </span>
           <span :if={@match.deck_name} class="flex items-center gap-1">
             <.link
-              :if={@match.mtga_deck_id}
-              navigate={~p"/decks/#{@match.mtga_deck_id}"}
+              :if={@match.canonical_deck_id}
+              navigate={~p"/decks/#{@match.canonical_deck_id}"}
               class="hover:text-primary transition-colors"
             >
               {@match.deck_name}
             </.link>
-            <span :if={!@match.mtga_deck_id}>{@match.deck_name}</span>
+            <span :if={!@match.canonical_deck_id}>{@match.deck_name}</span>
             <.mana_pips
               :if={@match.deck_colors && @match.deck_colors != ""}
               colors={@match.deck_colors}

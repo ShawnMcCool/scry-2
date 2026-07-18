@@ -24,6 +24,10 @@ defmodule Scry2.Matches.Match do
     field :deck_colors, :string, default: ""
     field :deck_name, :string
     field :mtga_deck_id, :string
+    # Resolved by consumers (never persisted): the canonical deck id of the
+    # decklist this match was played with, so match rows link to the unified
+    # deck page rather than the per-match synthetic `mtga_deck_id`.
+    field :canonical_deck_id, :string, virtual: true
     field :duration_seconds, :integer
     field :format_type, :string
     field :set_code, :string

@@ -57,25 +57,42 @@ defmodule Scry2.Insights.Detectors.DeckHeater do
     if n < @min_baseline, do: nil, else: {w / n, n}
   end
 
+  # Groups recent matches by DECKLIST, not by the per-match synthetic id
+  # `matches_matches` carries. Deck identity for a match is owned by the Decks
+  # context (`decks_match_results`); we resolve each match to its decklist's
+  # canonical deck so a deck's matches count together across restyles/renames.
   defp per_deck_stats(cutoff) do
-    Match
-    |> where(
-      [m],
-      not is_nil(m.won) and not is_nil(m.mtga_deck_id) and m.started_at >= ^cutoff
-    )
-    |> group_by([m], [m.mtga_deck_id, m.deck_name])
-    |> select([m], %{
-      mtga_deck_id: m.mtga_deck_id,
-      deck_name: m.deck_name,
-      n: count(m.id),
-      w: sum(fragment("CASE WHEN ? THEN 1 ELSE 0 END", m.won))
-    })
-    |> Repo.all()
-    |> Enum.map(fn row ->
-      n = row.n || 0
-      w = to_int(row.w)
-      Map.merge(row, %{n: n, w: w, wr: if(n > 0, do: w / n, else: 0.0)})
+    matches =
+      Match
+      |> where([m], not is_nil(m.won) and m.started_at >= ^cutoff)
+      |> select([m], %{mtga_match_id: m.mtga_match_id, won: m.won})
+      |> Repo.all()
+
+    canonical_by_match =
+      matches |> Enum.map(& &1.mtga_match_id) |> Scry2.Decks.canonical_deck_ids_for_matches()
+
+    matches
+    |> Enum.filter(&Map.has_key?(canonical_by_match, &1.mtga_match_id))
+    |> Enum.group_by(&Map.fetch!(canonical_by_match, &1.mtga_match_id))
+    |> Enum.map(fn {canonical_deck_id, group} ->
+      n = length(group)
+      w = Enum.count(group, & &1.won)
+
+      %{
+        mtga_deck_id: canonical_deck_id,
+        deck_name: deck_display_name(canonical_deck_id),
+        n: n,
+        w: w,
+        wr: if(n > 0, do: w / n, else: 0.0)
+      }
     end)
+  end
+
+  defp deck_display_name(canonical_deck_id) do
+    case Scry2.Decks.get_deck(canonical_deck_id) do
+      nil -> nil
+      deck -> deck.current_name
+    end
   end
 
   defp annotate_with_significance(rows, baseline_wr, baseline_n) do

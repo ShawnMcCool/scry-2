@@ -1321,4 +1321,37 @@ defmodule Scry2.DecksTest do
       assert hd(islands).copies == 4
     end
   end
+
+  describe "canonical_deck_ids_for_matches/1 (match → decklist identity)" do
+    test "resolves each match to its decklist's canonical deck across a split" do
+      TestFactory.create_card(arena_id: 105_175, name: "Island")
+      TestFactory.create_card(arena_id: 102_727, name: "Island")
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "grp-a",
+        current_main_deck: %{"cards" => [%{"arena_id" => 105_175, "count" => 60}]},
+        last_played_at: ~U[2026-07-14 00:00:00Z]
+      })
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "grp-b",
+        current_main_deck: %{"cards" => [%{"arena_id" => 102_727, "count" => 60}]},
+        last_played_at: ~U[2026-07-18 00:00:00Z]
+      })
+
+      # A match played under each split id.
+      Decks.upsert_match_result!(%{mtga_deck_id: "grp-a", mtga_match_id: "mA", won: true})
+      Decks.upsert_match_result!(%{mtga_deck_id: "grp-b", mtga_match_id: "mB", won: false})
+
+      # Both resolve to the group's canonical (most-recently-played = grp-b).
+      assert Decks.canonical_deck_ids_for_matches(["mA", "mB"]) == %{
+               "mA" => "grp-b",
+               "mB" => "grp-b"
+             }
+    end
+
+    test "omits matches with no deck attribution" do
+      assert Decks.canonical_deck_ids_for_matches(["unknown-match"]) == %{}
+    end
+  end
 end
