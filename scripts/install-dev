@@ -3,11 +3,11 @@ set -euo pipefail
 
 # Install the always-on local systemd user service for scry_2.
 #
-# This runs the working-tree (dev) code as the user's everyday instance on
-# port 6015 against the real production database. It deliberately does NOT
-# start while the packaged release service (scry-2.service) is active — two
-# processes writing the same SQLite database risks corruption. Retire the
-# release first (the cutover), then re-run this.
+# This runs the working-tree code as the user's everyday instance on port
+# 6015 against the real production database. It installs as `scry-2.service`
+# — the single per-machine service name. (The packaged release path,
+# scripts/install-linux, installs a `scry-2.service` of the same name from a
+# built release; a machine uses one or the other, never both.)
 #
 # Usage: scripts/install-dev
 
@@ -17,8 +17,8 @@ banner() { echo "==> $1"; }
 
 source_dir="$(pwd)"
 unit_src="defaults/scry-2-dev.service"
-unit_dst="$HOME/.config/systemd/user/scry-2-dev.service"
-service_name="scry-2-dev"
+unit_dst="$HOME/.config/systemd/user/scry-2.service"
+service_name="scry-2"
 
 # 1. Install patched systemd unit
 banner "Installing systemd unit to $unit_dst"
@@ -32,18 +32,7 @@ banner "Reloading systemd"
 systemctl --user daemon-reload
 systemctl --user enable "$service_name"
 
-# 3. Safety: refuse to start alongside the packaged release on the same port/DB
-if systemctl --user is-active --quiet scry-2.service; then
-  banner "Release service scry-2.service is still active — NOT starting"
-  echo "  The packaged release is running on the same port + database."
-  echo "  Retire it first, then start this instance:"
-  echo "    systemctl --user disable --now scry-2.service"
-  echo "    systemctl --user start $service_name"
-  echo "  (Back up the database before the first start — migrations run on boot.)"
-  exit 0
-fi
-
-# 4. Start or restart the unified instance
+# 3. Start or restart the instance
 if systemctl --user is-active --quiet "$service_name"; then
   banner "Restarting service"
   systemctl --user restart "$service_name"
@@ -52,7 +41,7 @@ else
   systemctl --user start "$service_name"
 fi
 
-# 5. Validate readiness (waits out migrations on first/large boots)
+# 4. Validate readiness (waits out migrations on first/large boots)
 banner "Health check"
 if scripts/healthcheck; then
   health="healthy"
@@ -60,7 +49,7 @@ else
   health="NOT READY — see output above and journalctl"
 fi
 
-# 6. Status summary
+# 5. Status summary
 banner "Install complete"
 echo "  Source:  $source_dir"
 echo "  Unit:    $unit_dst"
