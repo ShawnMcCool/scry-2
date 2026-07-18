@@ -629,7 +629,12 @@ defmodule Scry2.Decks do
     deck = canonical_group_deck(member_ids)
     deck_cards = deck_card_counts(deck)
 
-    aggregates = exclude_token_rows(raw_aggregates)
+    # Collapse printings of the same card (a restyle/re-import records draws under
+    # a different arena_id for an identical card) onto one representative, so each
+    # card shows one row with combined data and its true copy count.
+    {aggregates, deck_cards} =
+      collapse_cards_by_identity(exclude_token_rows(raw_aggregates), deck_cards)
+
     card_names = Scry2.Cards.names_by_arena_ids(Enum.map(aggregates, & &1.arena_id))
 
     aggregates
@@ -649,6 +654,45 @@ defmodule Scry2.Decks do
     |> limit(1)
     |> Repo.one()
   end
+
+  # Groups per-card aggregate rows and deck copy-counts by card-name identity:
+  # every printing of a card collapses onto one representative arena_id, its
+  # game/win counters summed and its copy counts summed. A match only ever uses
+  # one printing of a card, so summing across printings never double-counts a game.
+  defp collapse_cards_by_identity(aggregates, deck_cards) do
+    arena_ids =
+      (Enum.map(aggregates, & &1.arena_id) ++ Map.keys(deck_cards)) |> Enum.uniq()
+
+    representatives = Scry2.Cards.representative_arena_ids(arena_ids)
+    rep = fn arena_id -> Map.get(representatives, arena_id, arena_id) end
+
+    collapsed_aggregates =
+      aggregates
+      |> Enum.group_by(&rep.(&1.arena_id))
+      |> Enum.map(fn {representative, rows} ->
+        %{
+          arena_id: representative,
+          oh_games: sum_rows(rows, :oh_games),
+          oh_wins: sum_rows(rows, :oh_wins),
+          gd_games: sum_rows(rows, :gd_games),
+          gd_wins: sum_rows(rows, :gd_wins),
+          gih_games: sum_rows(rows, :gih_games),
+          gih_wins: sum_rows(rows, :gih_wins)
+        }
+      end)
+
+    collapsed_deck_cards =
+      deck_cards
+      |> Enum.group_by(fn {arena_id, _count} -> rep.(arena_id) end)
+      |> Map.new(fn {representative, pairs} ->
+        {representative, Enum.sum(Enum.map(pairs, fn {_id, count} -> count end))}
+      end)
+
+    {collapsed_aggregates, collapsed_deck_cards}
+  end
+
+  defp sum_rows(rows, key),
+    do: Enum.reduce(rows, 0, fn row, acc -> acc + Map.get(row, key, 0) end)
 
   defp deck_match_totals(member_ids) do
     %{total: total, wins: wins} =

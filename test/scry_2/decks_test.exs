@@ -1081,8 +1081,9 @@ defmodule Scry2.DecksTest do
       end
 
       test "card_performance reflects both ids' samples via #{member_id}" do
+        # Printings collapse onto one representative arena_id, so match by name.
         island =
-          Enum.find(Decks.card_performance(unquote(member_id)), &(&1.card_arena_id == 105_175))
+          Enum.find(Decks.card_performance(unquote(member_id)), &(&1.card_name == "Island"))
 
         assert island
         # Opening hands from both members (mull-a, mull-b).
@@ -1275,6 +1276,49 @@ defmodule Scry2.DecksTest do
 
     test "returns nil for an unknown id" do
       assert Decks.canonical_deck("nope") == nil
+    end
+  end
+
+  describe "card_performance/1 — printing-insensitive per card" do
+    test "collapses printings of one card into a single row with combined data and copies" do
+      TestFactory.create_card(arena_id: 105_175, name: "Island")
+      TestFactory.create_card(arena_id: 102_727, name: "Island")
+
+      # Current list runs the new Island printing (102727) as a 4-of.
+      deck =
+        TestFactory.create_deck(%{
+          mtga_deck_id: "d",
+          current_main_deck: %{"cards" => [%{"arena_id" => 102_727, "count" => 4}]}
+        })
+
+      # Two completed matches; each kept an opening hand containing a DIFFERENT
+      # Island printing (an old-art match and a new-art match).
+      for {match_id, island, won} <- [{"m1", 105_175, true}, {"m2", 102_727, false}] do
+        Decks.upsert_match_result!(%{
+          mtga_deck_id: deck.mtga_deck_id,
+          mtga_match_id: match_id,
+          won: won,
+          format_type: "Standard"
+        })
+
+        Decks.upsert_mulligan_hand!(%{
+          mtga_deck_id: deck.mtga_deck_id,
+          mtga_match_id: match_id,
+          hand_size: 7,
+          hand_arena_ids: %{"cards" => [island]},
+          decision: "kept",
+          match_won: won,
+          occurred_at: DateTime.utc_now(:second)
+        })
+      end
+
+      islands = Enum.filter(Decks.card_performance("d"), &(&1.card_name == "Island"))
+
+      # One Island row, not two; opening-hand games combined across printings;
+      # copies reflects the current list (4), not 0 for the old printing.
+      assert length(islands) == 1
+      assert hd(islands).oh_games == 2
+      assert hd(islands).copies == 4
     end
   end
 end
