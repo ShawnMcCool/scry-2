@@ -228,6 +228,18 @@ defmodule Scry2.Decks do
   # A stable identity for a deck's current decklist. Constructed-sized lists key
   # by printing-insensitive composition ("comp:<hash>"); everything else keys by
   # its own id so it never groups.
+  #
+  # NOTE (deliberate, scheduled convergence): this is the READ-side deck identity
+  # and it is normalized (printing-insensitive). The WRITE side — the projection's
+  # match attribution via `composition_hash`/`find_mtga_deck_id_by_composition` —
+  # still keys by EXACT arena_id, so a restyle fragments a deck at ingest time and
+  # this read-time grouping reunites it. Two identity notions coexist by design:
+  # the projection cannot be changed to normalize without a full rebuild, and that
+  # rebuild redistributes compositionally-evolving decks (see the deck-split
+  # incident, memory `feedback_projection_mutation_not_durable`). CONVERGENCE
+  # POINT: the next time a deck-projection rebuild is intentionally performed,
+  # normalize `composition_hash` too so attribution consolidates at write time and
+  # this grouping becomes a thin safety net.
   defp deck_key(mtga_deck_id, main_deck, representatives) do
     cards = main_deck_cards(main_deck)
     pairs = CompositionIdentity.canonical_pairs(cards, representatives)
@@ -648,11 +660,10 @@ defmodule Scry2.Decks do
   # The canonical deck for a group is its most-recently-played member — its
   # current card list is the one whose per-card copy counts we display.
   defp canonical_group_deck(member_ids) do
-    Deck
-    |> where([d], d.mtga_deck_id in ^member_ids)
-    |> order_by([d], desc_nulls_last: d.last_played_at)
-    |> limit(1)
-    |> Repo.one()
+    case Repo.all(from(d in Deck, where: d.mtga_deck_id in ^member_ids)) do
+      [] -> nil
+      members -> canonical_member(members)
+    end
   end
 
   # Groups per-card aggregate rows and deck copy-counts by card-name identity:
