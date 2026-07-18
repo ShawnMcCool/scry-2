@@ -48,7 +48,6 @@ defmodule Scry2Web.SidebarNavTest do
                "/player",
                "/ranks",
                "/economy",
-               "/match-economy",
                "/collection"
              ]
     end

@@ -292,7 +292,7 @@ defmodule Scry2Web.Layouts do
     """
   end
 
-  # DOM-id-safe slug for a nav path: "/match-economy" -> "match-economy".
+  # DOM-id-safe slug for a nav path: "/collection" -> "collection".
   defp rail_slug(path) do
     path
     |> String.trim_leading("/")

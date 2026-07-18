@@ -14,7 +14,6 @@ defmodule Scry2Web.NavHelpers do
     %{path: "/player", label: "Player"},
     %{path: "/ranks", label: "Ranks"},
     %{path: "/economy", label: "Economy"},
-    %{path: "/match-economy", label: "Match economy"},
     %{path: "/collection", label: "Collection"}
   ]
 

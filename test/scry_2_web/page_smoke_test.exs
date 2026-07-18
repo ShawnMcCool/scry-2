@@ -62,7 +62,6 @@ defmodule Scry2Web.PageSmokeTest do
         {"/player", "player"},
         {"/ranks", "ranks"},
         {"/economy", "economy"},
-        {"/match-economy", "match economy"},
         {"/collection", "collection"},
         {"/collection/diagnostics", "collection diagnostics"},
         {"/matches", "matches list"},

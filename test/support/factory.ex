@@ -80,7 +80,6 @@ defmodule Scry2.TestFactory do
   alias Scry2.Collection
   alias Scry2.Collection.Snapshot
   alias Scry2.Economy.EventEntry
-  alias Scry2.MatchEconomy.Summary, as: MeSummary
   alias Scry2.Players
   alias Scry2.Players.Player
   alias Scry2.Ranks.Snapshot, as: RanksSnapshot
@@ -1178,43 +1177,6 @@ defmodule Scry2.TestFactory do
       })
 
     deck
-  end
-
-  # ── MatchEconomy summaries ───────────────────────────────────────────────
-
-  def build_match_economy_summary(attrs \\ %{}) do
-    attrs = Map.new(attrs)
-
-    defaults = %{
-      mtga_match_id: "test-match-#{random_suffix()}",
-      started_at: DateTime.utc_now(),
-      ended_at: DateTime.utc_now(),
-      reconciliation_state: "complete",
-      memory_gold_delta: 0,
-      memory_gems_delta: 0,
-      log_gold_delta: 0,
-      log_gems_delta: 0,
-      diff_gold: 0,
-      diff_gems: 0
-    }
-
-    struct(MeSummary, Map.merge(defaults, attrs))
-  end
-
-  def create_match_economy_summary(attrs \\ %{}) do
-    attrs = Map.new(attrs)
-
-    full =
-      attrs
-      |> Map.put_new(:mtga_match_id, "test-match-#{random_suffix()}")
-      |> Map.put_new(:reconciliation_state, "complete")
-
-    {:ok, row} =
-      %MeSummary{}
-      |> MeSummary.changeset(full)
-      |> Scry2.Repo.insert()
-
-    row
   end
 
   # ── Crafts (ADR 037) ─────────────────────────────────────────────────────

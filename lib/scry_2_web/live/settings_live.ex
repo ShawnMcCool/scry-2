@@ -21,6 +21,8 @@ defmodule Scry2Web.SettingsLive do
   alias Scry2.MtgaLogIngestion.LocateLogFile
   alias Scry2.MtgaLogIngestion.Watcher
   alias Scry2.Settings
+  alias Scry2.Topics
+  alias Scry2Web.BuildChangeVerifyFlow
   alias Scry2Web.SettingsLive.Form
 
   require Scry2.Log, as: Log
@@ -33,16 +35,19 @@ defmodule Scry2Web.SettingsLive do
   @poll_interval_key "mtga_logs_poll_interval_ms"
   @live_polling_key "live_match_polling_enabled"
   @verbose_diagnostics_key "live_state_verbose_diagnostics"
-  @economy_capture_key "match_economy_capture_enabled"
 
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Process.send_after(self(), :refresh_diagnostics, @diagnostics_refresh_interval)
+      # The build-change banner's verify flow classifies its outcome from
+      # snapshot broadcasts (BuildChangeVerifyFlow).
+      Topics.subscribe(Topics.collection_snapshots())
     end
 
     {:ok,
      socket
+     |> assign(BuildChangeVerifyFlow.idle())
      |> assign(:resolved_path, nil)
      |> assign(:candidates, [])
      |> assign(:config_path, Config.config_path())
@@ -75,8 +80,7 @@ defmodule Scry2Web.SettingsLive do
       refresh_cron: current_value(@refresh_cron_key, :cards_refresh_cron),
       poll_interval_ms: current_value(@poll_interval_key, :mtga_logs_poll_interval_ms),
       live_polling_enabled: Scry2.LiveState.enabled?(),
-      live_state_verbose_diagnostics: Scry2.LiveState.verbose_diagnostics?(),
-      economy_capture_enabled: Scry2.MatchEconomy.capture_enabled?()
+      live_state_verbose_diagnostics: Scry2.LiveState.verbose_diagnostics?()
     }
 
     {:noreply,
@@ -95,6 +99,22 @@ defmodule Scry2Web.SettingsLive do
   def handle_info(:refresh_diagnostics, socket) do
     Process.send_after(self(), :refresh_diagnostics, @diagnostics_refresh_interval)
     {:noreply, assign(socket, :diagnostics, Events.inspect_ingestion_state())}
+  end
+
+  def handle_info({:snapshot_saved, _snapshot}, socket) do
+    {:noreply,
+     socket
+     |> assign(:build_change_status, Collection.build_change_status())
+     |> classify_verify_result()}
+  end
+
+  def handle_info({:refresh_failed, reason}, socket) do
+    {:noreply,
+     assign(socket, BuildChangeVerifyFlow.classify_failure(verify_assigns(socket), reason))}
+  end
+
+  def handle_info(:verify_timeout, socket) do
+    {:noreply, assign(socket, BuildChangeVerifyFlow.timeout(verify_assigns(socket)))}
   end
 
   @impl true
@@ -268,6 +288,7 @@ defmodule Scry2Web.SettingsLive do
         {:noreply,
          socket
          |> assign(:build_change_status, Collection.build_change_status())
+         |> assign(BuildChangeVerifyFlow.idle())
          |> put_flash(:info, "MTGA build acknowledged. We'll alert you again on the next change.")}
 
       :no_data ->
@@ -280,21 +301,23 @@ defmodule Scry2Web.SettingsLive do
     end
   end
 
-  def handle_event("toggle_economy_capture", _params, socket) do
-    next = not socket.assigns.field_values.economy_capture_enabled
-    Settings.put!(@economy_capture_key, next)
+  def handle_event("verify_build_change", _params, socket) do
+    case Collection.refresh(trigger: "verify_build_change") do
+      {:ok, _job} ->
+        Process.send_after(self(), :verify_timeout, 30_000)
 
-    flash_message =
-      if next do
-        "Match-economy capture enabled — Scry 2 will tag pre/post-match memory snapshots and reconcile them against log events."
-      else
-        "Match-economy capture disabled — no new per-match economy summaries will be created."
-      end
+        socket =
+          socket
+          |> assign(BuildChangeVerifyFlow.start(socket.assigns.build_change_status))
+          # Inline-Oban (tests) ran the job synchronously above — classify now
+          # so the outcome shows without round-tripping through PubSub.
+          |> classify_verify_result()
 
-    {:noreply,
-     socket
-     |> put_field_value(:economy_capture_enabled, next)
-     |> put_flash(:info, flash_message)}
+        {:noreply, socket}
+
+      {:error, reason} ->
+        {:noreply, assign(socket, BuildChangeVerifyFlow.failed(reason))}
+    end
   end
 
   def handle_event("save_refresh_cron", %{"value" => value}, socket) do
@@ -318,6 +341,21 @@ defmodule Scry2Web.SettingsLive do
          |> put_field_value(:refresh_cron, value)
          |> put_field_error(:refresh_cron, Form.error_message(:refresh_cron, reason))}
     end
+  end
+
+  # ── Build-change verify flow (shared machine: BuildChangeVerifyFlow) ────
+
+  # Promote a running verify attempt from the latest snapshot. The Settings
+  # page holds no snapshot assign; classification reads the current one.
+  defp classify_verify_result(socket) do
+    assign(
+      socket,
+      BuildChangeVerifyFlow.classify_snapshot(verify_assigns(socket), Collection.current())
+    )
+  end
+
+  defp verify_assigns(socket) do
+    Map.take(socket.assigns, [:verify_state, :verify_detail, :verify_attempt_hint])
   end
 
   defp empty_diagnostics do
@@ -388,7 +426,6 @@ defmodule Scry2Web.SettingsLive do
   defp parse_editable_field("live_state_verbose_diagnostics"),
     do: {:ok, :live_state_verbose_diagnostics}
 
-  defp parse_editable_field("economy_capture_enabled"), do: {:ok, :economy_capture_enabled}
   defp parse_editable_field(_), do: :error
 
   # One-shot walker probe for the "Run diagnostic capture now" button.
@@ -654,7 +691,11 @@ defmodule Scry2Web.SettingsLive do
               />
             </div>
 
-            <.build_change_banner status={@build_change_status} />
+            <.build_change_banner
+              status={@build_change_status}
+              verify_state={@verify_state}
+              verify_detail={@verify_detail}
+            />
             <.mtga_environment_strip info={@mtga_environment} />
 
             <div class="divider my-2"></div>
@@ -694,29 +735,6 @@ defmodule Scry2Web.SettingsLive do
               walker over time, inspect the per-pid discovery cache, and probe
               classes by name.
             </p>
-
-            <div class="divider my-2"></div>
-
-            <div class="flex items-start justify-between gap-4">
-              <div class="flex-1">
-                <h3 class="text-sm font-semibold">Match-economy capture</h3>
-                <p class="text-sm text-base-content/70 mt-1">
-                  At every match start and end, capture a memory snapshot of your
-                  gold, gems, wildcards, and vault progress. Cross-checks against
-                  log events to surface what each match earned you (and to flag
-                  categories of MTGA economy state not yet modelled in events).
-                  Requires "Memory reading" above to be on; disabling here turns
-                  off only the per-match capture, not the in-match memory polling.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                class="toggle toggle-primary mt-1"
-                checked={@field_values.economy_capture_enabled}
-                phx-click="toggle_economy_capture"
-                aria-label="Enable per-match economy capture"
-              />
-            </div>
           </div>
         </section>
 

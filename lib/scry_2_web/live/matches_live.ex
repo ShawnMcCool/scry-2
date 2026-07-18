@@ -12,7 +12,7 @@ defmodule Scry2Web.MatchesLive do
   """
   use Scry2Web, :live_view
 
-  alias Scry2.{Cards, LiveState, MatchEconomy, Matches}
+  alias Scry2.{Cards, LiveState, Matches}
   alias Scry2.Topics
   alias Scry2Web.CardImages
   alias Scry2Web.DeckRendering
@@ -28,7 +28,6 @@ defmodule Scry2Web.MatchesLive do
   def mount(_params, _session, socket) do
     if connected?(socket) do
       Topics.subscribe(Topics.matches_updates())
-      Topics.subscribe(Topics.match_economy_updates())
       Topics.subscribe(LiveState.updates_topic())
       Topics.subscribe(LiveState.final_topic())
       Topics.subscribe(Topics.live_match_board_final())
@@ -39,8 +38,7 @@ defmodule Scry2Web.MatchesLive do
        reload_timer: nil,
        show_all_formats: false,
        live_match_tick: nil,
-       live_match_commander_names: %{},
-       recent_match_economies: []
+       live_match_commander_names: %{}
      )}
   end
 
@@ -97,26 +95,6 @@ defmodule Scry2Web.MatchesLive do
     else
       {:noreply, assign_index(socket, socket.assigns.filter_params)}
     end
-  end
-
-  def handle_info({:match_economy_updated, summary}, socket) do
-    socket =
-      case socket.assigns[:match] do
-        %{mtga_match_id: id} when id == summary.mtga_match_id ->
-          assign(socket, :match_economy_summary, summary)
-
-        _ ->
-          socket
-      end
-
-    socket =
-      if Map.has_key?(socket.assigns, :recent_match_economies) do
-        assign(socket, :recent_match_economies, MatchEconomy.recent_summaries(limit: 10))
-      else
-        socket
-      end
-
-    {:noreply, socket}
   end
 
   def handle_info({:tick, payload}, socket) when is_map(payload) do
@@ -240,12 +218,6 @@ defmodule Scry2Web.MatchesLive do
 
     total_pages = max(1, ceil(stats.total / @per_page))
 
-    # recent_match_economies is filter-independent; cache it across
-    # chip clicks so we don't re-query on every push_patch.
-    recent_match_economies =
-      socket.assigns[:recent_match_economies] ||
-        MatchEconomy.recent_summaries(limit: 10)
-
     assign(socket,
       match: nil,
       winrate_period: winrate_period,
@@ -254,7 +226,6 @@ defmodule Scry2Web.MatchesLive do
       cumulative_series: cumulative_series,
       category_counts: category_counts,
       format_counts: format_counts,
-      recent_match_economies: recent_match_economies,
       page: page,
       total_pages: total_pages,
       filter_params: %{
@@ -306,8 +277,7 @@ defmodule Scry2Web.MatchesLive do
       opponent_history: opponent_history,
       deck_submission: deck_submission,
       cards_by_arena_id: cards_by_arena_id,
-      revealed_groups: revealed_groups,
-      match_economy_summary: MatchEconomy.get_summary(match.mtga_match_id)
+      revealed_groups: revealed_groups
     )
     |> CardImages.request(Enum.uniq(deck_arena_ids ++ revealed_arena_ids))
   end
@@ -367,12 +337,6 @@ defmodule Scry2Web.MatchesLive do
       <Scry2Web.Components.LiveMatchCard.card
         tick={@live_match_tick}
         commander_names_by_arena_id={@live_match_commander_names}
-      />
-
-      <%!-- Recent-match economy ticker --%>
-      <Scry2Web.Components.MatchEconomyTicker.ticker
-        :if={Map.has_key?(assigns, :recent_match_economies)}
-        summaries={@recent_match_economies}
       />
 
       <%!-- Filter bar --%>
@@ -449,12 +413,6 @@ defmodule Scry2Web.MatchesLive do
 
       <%!-- Rich match header --%>
       <.match_header match={@match} />
-
-      <%!-- Economy delta card --%>
-      <Scry2Web.Components.MatchEconomyCard.card
-        :if={@match_economy_summary}
-        summary={@match_economy_summary}
-      />
 
       <%!-- Game-by-game breakdown --%>
       <.game_breakdown :if={@match.games != []} games={@match.games} />

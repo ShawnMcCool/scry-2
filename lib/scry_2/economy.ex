@@ -119,8 +119,8 @@ defmodule Scry2.Economy do
 
   @doc """
   Sums gold and gems delta from `Transaction` rows whose `occurred_at`
-  falls in `[start_at, end_at]` (inclusive). Used by MatchEconomy to
-  reconcile a match window against memory observations.
+  falls in `[start_at, end_at]` (inclusive). Reconciles an economy time
+  window against memory-snapshot observations.
   """
   @spec sum_gold_gems_in_window(DateTime.t(), DateTime.t()) :: %{
           gold: integer(),

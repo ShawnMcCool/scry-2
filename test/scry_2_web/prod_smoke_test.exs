@@ -68,7 +68,6 @@ defmodule Scry2Web.ProdSmokeTest do
         "/player",
         "/ranks",
         "/economy",
-        "/match-economy",
         "/collection",
         "/collection/diagnostics",
         "/matches",

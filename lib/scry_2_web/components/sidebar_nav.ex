@@ -45,8 +45,7 @@ defmodule Scry2Web.SidebarNav do
     %{
       label: "Economy",
       items: [
-        %{path: "/economy", label: "Economy", icon: "hero-banknotes"},
-        %{path: "/match-economy", label: "Match economy", icon: "hero-arrows-right-left"}
+        %{path: "/economy", label: "Economy", icon: "hero-banknotes"}
       ]
     },
     %{

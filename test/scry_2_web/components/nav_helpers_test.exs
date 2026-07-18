@@ -4,8 +4,8 @@ defmodule Scry2Web.NavHelpersTest do
   alias Scry2Web.NavHelpers
 
   describe "items/0" do
-    test "returns 9 main-nav items" do
-      assert length(NavHelpers.items()) == 9
+    test "returns 8 main-nav items" do
+      assert length(NavHelpers.items()) == 8
     end
 
     test "every item has a path starting with /" do

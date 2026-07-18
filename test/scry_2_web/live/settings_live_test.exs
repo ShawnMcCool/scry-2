@@ -112,6 +112,51 @@ defmodule Scry2Web.SettingsLiveTest do
     end
   end
 
+  describe "build-change verification banner" do
+    setup do
+      Scry2.Collection.enable_reader!()
+      Settings.put!("collection.acknowledged_build_hint", "BUILD-OLD")
+
+      Scry2.TestFactory.create_collection_snapshot(
+        entries: [{30_001, 1}],
+        reader_confidence: "fallback_scan",
+        mtga_build_hint: "BUILD-NEW",
+        snapshot_ts: DateTime.utc_now()
+      )
+
+      :ok
+    end
+
+    test "run verification reports a state instead of crashing the LiveView", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      assert has_element?(view, "[data-role='build-change-banner'][data-verify-state='idle']")
+
+      view |> element("button", "Run verification") |> render_click()
+
+      # The click must be handled (the regression was a FunctionClauseError
+      # killing the LiveView) and land in a real verify state: running,
+      # or already classified when inline-Oban ran the refresh synchronously.
+      assert has_element?(
+               view,
+               "[data-role='build-change-banner'][data-verify-state='running'], " <>
+                 "[data-role='build-change-banner'][data-verify-state='fallback'], " <>
+                 "[data-role='build-change-banner'][data-verify-state='failed'], " <>
+                 "[data-role='build-change-banner'][data-verify-state='mtga_not_running']"
+             )
+    end
+
+    test "acknowledging clears the banner", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/settings")
+
+      assert has_element?(view, "[data-role='build-change-banner']")
+
+      view |> element("button", "Acknowledge") |> render_click()
+
+      refute has_element?(view, "[data-role='build-change-banner']")
+    end
+  end
+
   describe "memory reading toggle" do
     test "is on by default and persists off when clicked", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/settings")
@@ -136,33 +181,6 @@ defmodule Scry2Web.SettingsLiveTest do
 
       assert Settings.get("live_match_polling_enabled") == true
       assert Scry2.LiveState.enabled?()
-    end
-  end
-
-  describe "economy capture toggle" do
-    test "is on by default and persists off when clicked", %{conn: conn} do
-      {:ok, view, _html} = live(conn, ~p"/settings")
-
-      assert Scry2.MatchEconomy.capture_enabled?()
-
-      view
-      |> element("input[phx-click='toggle_economy_capture']")
-      |> render_click()
-
-      assert Settings.get("match_economy_capture_enabled") == false
-      refute Scry2.MatchEconomy.capture_enabled?()
-    end
-
-    test "toggles back on after a second click", %{conn: conn} do
-      Settings.put!("match_economy_capture_enabled", false)
-      {:ok, view, _html} = live(conn, ~p"/settings")
-
-      view
-      |> element("input[phx-click='toggle_economy_capture']")
-      |> render_click()
-
-      assert Settings.get("match_economy_capture_enabled") == true
-      assert Scry2.MatchEconomy.capture_enabled?()
     end
   end
 

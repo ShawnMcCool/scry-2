@@ -52,7 +52,6 @@ When two designs both work, pick the one that scales better, not the one that sh
 | Ecto, schemas, changesets, contexts, migrations | `ecto-thinking` |
 | GenServer, Supervisor, Task, ETS, concurrency | `otp-thinking` |
 | Oban, background jobs, workflows, scheduling | `oban-thinking` |
-| Writing tests — Elixir, JavaScript, or Playwright E2E | `automated-testing` |
 | General coding standards, naming, structure | `coding-guidelines` |
 | UI work — templates, components, CSS, styling, layout | `user-interface` |
 | Events, domain events, MTGA event types, anti-corruption layer | `events` |
@@ -312,7 +311,6 @@ Each context owns its tables and communicates only via PubSub events. No context
 | **Console** | — | in-memory log ring buffer (dev observability) | Broadcasts `console:logs` |
 | **Collection** | `collection_` | memory-read collection snapshots (ADR 034) — public API TBD Phase 6. Includes `ReaderHealth` verdict helper (pure) for the always-visible reader-health pill and `BuildChange.verification_state/2` for one-click post-MTGA-update verification. `Scry2.MtgaMemory.SelfTest` runs every reader walk and reports which work/break (surfaced on `/operations/mtga-memory` + `Scry2.Diagnostics.reader_self_test/0`); `Scry2.MtgaMemory.WalkError` is the shared walk-failure→player-language translation point | Broadcasts `collection:snapshots` (TBD) |
 | **Crafts** | `crafts` | wildcard craft attribution (ADR-037), one row per detected wildcard spend derived from snapshot pairs | Subscribes `collection:diffs` via `Crafts.IngestCollectionDiffs`; broadcasts `crafts:updates` |
-| **MatchEconomy** | `match_economy_` | per-match economy delta + log reconciliation projection (ADR-036) | Driven by `MatchEconomy.Trigger` (subscribes to match completion); broadcasts `match_economy:updates` |
 | **Metagame** | `metagame_` | archetype vocabulary (definitions fetched daily from MTGOFormatData, vendored seed in `priv/metagame`) + pure classifier (`ClassifyDeck`: full-list and partial-information modes). Consumers stamp classifications onto their own rows (netdecks, player decks/versions, match `opponent_archetype`); `Workers.ReclassifyArchetypes` re-stamps all three when definitions change. See ADR-043 | Broadcasts `metagame:updates` (`{:definitions_updated, format}`) |
 | **NetDecking** | `netdecking_` | catalog of external Standard decks scored against the collection (buildable/craftable/wildcards-short). Manual paste + automated sources (`Sources.LocalJsonSource`, `Sources.MtgoSource`) feed one `IngestDecklist` funnel via the `Source` behaviour; `Workers.PeriodicallyFetchNetdecks` schedules them daily. Ownership matched by card-name identity across printings (`OwnedIdentity`). See ADR-040 | Consumes `Cards` + `Collection`; no broadcast |
 
@@ -336,8 +334,6 @@ Decision records live in `decisions/` using [MADR 4.0](https://adr.github.io/mad
 The `defaults/` directory contains git-tracked defaults for every config key recognised by `Scry2.Config`, with inline comments. Override via `~/.config/scry_2/config.toml`. The file is a template — it is never loaded directly at runtime. Keep `defaults/scry_2.toml` complete and valid TOML.
 
 ## Testing Strategy
-
-Load the `automated-testing` skill before writing any test — Elixir, JavaScript, or Playwright E2E. It covers test-first workflow, factory patterns, stub strategies, E2E parameterization, and all project testing policies.
 
 **Test-first.** Write tests before implementation for all new features and bug fixes. Tests are the executable specification — if you can't write the test, the requirements aren't clear enough.
 

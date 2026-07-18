@@ -230,11 +230,6 @@ defmodule Scry2.Application do
           # callbacks. Must start after the ingester so the first
           # MatchCreated of the session lands in its mailbox.
           Scry2.LiveState.Server,
-          # Match-economy capture: subscribes to domain:events for
-          # MatchCreated/MatchCompleted, spawns Task.Supervisor tasks for
-          # synchronous Collection.Reader.read/1 calls.
-          {Task.Supervisor, name: Scry2.MatchEconomy.TaskSupervisor},
-          Scry2.MatchEconomy.Trigger,
           # Wildcard craft attribution: subscribes to collection:diffs and
           # writes to the `crafts` table. ADR-037.
           Scry2.Crafts.IngestCollectionDiffs,
