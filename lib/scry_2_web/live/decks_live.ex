@@ -1415,7 +1415,7 @@ defmodule Scry2Web.DecksLive do
     ~H"""
     <.deck_view
       id={@id}
-      spec={%ViewSpec{card_width: "5rem"}}
+      spec={%ViewSpec{card_width: "5rem", count_placement: :none}}
       cards={@cards}
       cards_by_arena_id={@cards_by_arena_id}
       cached_ids={@cached_ids}

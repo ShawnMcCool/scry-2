@@ -45,6 +45,7 @@ defmodule Scry2Web.Router do
         {Scry2Web.PlayerScope, :default},
         {Scry2Web.NavUpdateScope, :default},
         {Scry2Web.SidebarScope, :default},
+        {Scry2Web.DeckViewScope, :default},
         {Scry2Web.CatchUpScope, :default}
       ] do
       live "/", HomeLive, :index

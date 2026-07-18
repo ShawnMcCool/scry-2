@@ -38,18 +38,30 @@ defmodule Scry2Web.DeckRendering do
   `:columns` grid width). `:columns` and `:row` views must render
   inside a group.
 
-  The optional `card_overlay` slot replaces the default count badge on
-  every card image with caller-specific annotation (e.g. the netdeck
-  ownership markers). It receives the resolved card and renders inside
-  the card's relatively-positioned wrapper.
+  Piled counts render per `ViewSpec.count_placement`: a `:badge` pill
+  overlaid on the card image, (in `:columns` stacks) a `:gutter` rail
+  reserved beside the image so no printed card information is ever
+  covered, or `:none` for callers that draw their own counts — see
+  `count_presentation/1` and UIDR-015.
+
+  The optional `card_overlay` slot adds caller-specific annotation to
+  every card image (e.g. the netdeck ownership wash, draft pick rings).
+  It receives the resolved card, renders inside the card's
+  relatively-positioned wrapper, and never affects count presentation.
+
+  The optional `count_entry` function customizes how a card's count
+  renders wherever the spec places it (gutter rail or badge pill):
+  `resolved_card -> %{label, class, title} | nil` — nil hides the
+  count. Omit it for the default presentation.
   """
 
   use Phoenix.Component
 
   import Scry2Web.CardComponents
-  import Scry2Web.CoreComponents, only: [kind_label: 1]
+  import Scry2Web.CoreComponents, only: [kind_label: 1, icon: 1]
 
   alias Scry2.Cards.ImageCache
+  alias Scry2Web.DeckRendering.CompositionPrefs
   alias Scry2Web.DeckRendering.ViewSpec
 
   # ── Components ──────────────────────────────────────────────────────
@@ -74,7 +86,11 @@ defmodule Scry2Web.DeckRendering do
     default: nil,
     doc: "Optional `resolved_card -> class` function; tints text-view rows (e.g. missing cards)."
 
-  slot :card_overlay, doc: "Per-card annotation replacing the default count badge."
+  attr :count_entry, :any,
+    default: nil,
+    doc: "Optional `resolved_card -> %{label, class, title} | nil` function customizing counts."
+
+  slot :card_overlay, doc: "Additive per-card annotation (never affects count presentation)."
 
   def deck_view(assigns) do
     resolved_sections =
@@ -84,7 +100,11 @@ defmodule Scry2Web.DeckRendering do
         end)
 
     resolved_sections = Enum.reject(resolved_sections, fn {_, cards} -> cards == [] end)
-    assigns = assign(assigns, :resolved_sections, resolved_sections)
+
+    assigns =
+      assigns
+      |> assign(:resolved_sections, resolved_sections)
+      |> assign(:count_presentation, count_presentation(assigns.spec))
 
     ~H"""
     <%= case {@resolved_sections, @spec.display, @spec.layout} do %>
@@ -107,10 +127,12 @@ defmodule Scry2Web.DeckRendering do
         :id,
         :spec,
         :resolved_sections,
+        :count_presentation,
         :cached_ids,
         :title,
         :card_overlay,
-        :card_class
+        :card_class,
+        :count_entry
       ])
 
   @doc """
@@ -134,9 +156,15 @@ defmodule Scry2Web.DeckRendering do
 
   @doc """
   The standard deck composition — the app's default way to render a
-  deck, as established on the deck detail page: mana curve chart, text
-  card list in type columns (with a Sideboard column), main-deck image
-  stacks by mana value, and the sideboard as a splayed row.
+  deck, as established on the deck detail page: mana curve chart, a
+  text card list section (with a Sideboard column), and an image
+  section of main-deck stacks plus the sideboard as a splayed row.
+
+  A `CompositionPrefs` struct (the global preference owned by
+  `Scry2Web.DeckViewScope`) drives which sections render, their order,
+  and each section's grouping. Each section header carries its own
+  Type/Mana grouping toggle and — when both sections are visible — a
+  swap control flipping which is on top.
   """
   attr :id, :string, required: true
   attr :main_deck, :any, required: true
@@ -152,6 +180,21 @@ defmodule Scry2Web.DeckRendering do
     default: nil,
     doc: "Forwarded to the text view — see `deck_view/1`."
 
+  attr :prefs, CompositionPrefs,
+    default: %CompositionPrefs{},
+    doc: "The global composition preference — see `Scry2Web.DeckViewScope`."
+
+  attr :count_entry, :any,
+    default: nil,
+    doc: "Forwarded to every image view — see `deck_view/1`."
+
+  attr :main_label, :string,
+    default: "main deck",
+    doc: """
+    Heading of the image section's main grid. Override when the cards
+    aren't a literal deck — e.g. an archetype's shared core.
+    """
+
   slot :card_overlay, doc: "Forwarded to every image view — see `deck_view/1`."
 
   def standard_composition(assigns) do
@@ -159,13 +202,16 @@ defmodule Scry2Web.DeckRendering do
       assign(assigns,
         main_total: card_count(assigns.main_deck),
         side_total: card_count(assigns.sideboard),
-        text_spec: %ViewSpec{group_by: :type, display: :text},
-        grid_spec: %ViewSpec{group_by: :mana_value, display: :images, layout: :columns},
-        row_spec: %ViewSpec{display: :images, layout: :row}
+        section_order: CompositionPrefs.section_order(assigns.prefs),
+        show_swap: assigns.prefs.display_mode == :both
       )
 
     ~H"""
     <div :if={not empty?(@main_deck, @sideboard)}>
+      <div class="flex justify-end mb-2">
+        <.deck_display_mode_toggle mode={@prefs.display_mode} />
+      </div>
+
       <%!-- Mana Curve — half width, space reserved for future chart --%>
       <div :if={@show_curve} class="w-1/2">
         <.mana_curve_chart
@@ -175,19 +221,111 @@ defmodule Scry2Web.DeckRendering do
         />
       </div>
 
-      <div class={if @show_curve, do: "mt-8"}>
-        <.deck_view
-          id={"#{@id}-list"}
-          spec={@text_spec}
-          cards={@main_deck}
-          sections={if @side_total > 0, do: [{"Sideboard", @sideboard}], else: []}
-          cards_by_arena_id={@cards_by_arena_id}
-          cached_ids={@cached_ids}
-          card_class={@card_class}
-        />
+      <div class={["space-y-8", @show_curve && "mt-8"]}>
+        <%= for section <- @section_order do %>
+          <%= case section do %>
+            <% :text -> %>
+              <.text_section
+                id={@id}
+                prefs={@prefs}
+                show_swap={@show_swap}
+                main_deck={@main_deck}
+                sideboard={@sideboard}
+                side_total={@side_total}
+                cards_by_arena_id={@cards_by_arena_id}
+                cached_ids={@cached_ids}
+                card_class={@card_class}
+              />
+            <% :images -> %>
+              <.images_section
+                id={@id}
+                prefs={@prefs}
+                show_swap={@show_swap}
+                main_deck={@main_deck}
+                sideboard={@sideboard}
+                main_label={@main_label}
+                main_total={@main_total}
+                side_total={@side_total}
+                cards_by_arena_id={@cards_by_arena_id}
+                cached_ids={@cached_ids}
+                card_overlay={@card_overlay}
+                count_entry={@count_entry}
+              />
+          <% end %>
+        <% end %>
       </div>
+    </div>
+    """
+  end
 
-      <.kind_label class="mt-8">main deck ({@main_total})</.kind_label>
+  # The text card list section: header with its grouping toggle, then
+  # the text view (with a Sideboard column when the sideboard has cards).
+  attr :id, :string, required: true
+  attr :prefs, CompositionPrefs, required: true
+  attr :show_swap, :boolean, required: true
+  attr :main_deck, :any, required: true
+  attr :sideboard, :any, required: true
+  attr :side_total, :integer, required: true
+  attr :cards_by_arena_id, :map, required: true
+  attr :cached_ids, :any, required: true
+  attr :card_class, :any, required: true
+
+  defp text_section(assigns) do
+    assigns =
+      assign(assigns, :spec, %ViewSpec{group_by: assigns.prefs.text_group_by, display: :text})
+
+    ~H"""
+    <div>
+      <div class="flex items-center justify-between mb-3">
+        <.kind_label>card list</.kind_label>
+        <.section_controls field="text_group_by" prefs={@prefs} show_swap={@show_swap} />
+      </div>
+      <.deck_view
+        id={"#{@id}-list"}
+        spec={@spec}
+        cards={@main_deck}
+        sections={if @side_total > 0, do: [{"Sideboard", @sideboard}], else: []}
+        cards_by_arena_id={@cards_by_arena_id}
+        cached_ids={@cached_ids}
+        card_class={@card_class}
+      />
+    </div>
+    """
+  end
+
+  # The image section: header with its grouping toggle, then the
+  # main-deck stacks and the sideboard splay row inside one view group.
+  attr :id, :string, required: true
+  attr :prefs, CompositionPrefs, required: true
+  attr :show_swap, :boolean, required: true
+  attr :main_deck, :any, required: true
+  attr :sideboard, :any, required: true
+  attr :main_label, :string, required: true
+  attr :main_total, :integer, required: true
+  attr :side_total, :integer, required: true
+  attr :cards_by_arena_id, :map, required: true
+  attr :cached_ids, :any, required: true
+  attr :card_overlay, :list, required: true
+  attr :count_entry, :any, required: true
+
+  defp images_section(assigns) do
+    assigns =
+      assign(assigns,
+        grid_spec: %ViewSpec{
+          group_by: assigns.prefs.images_group_by,
+          display: :images,
+          layout: :columns,
+          count_placement: :gutter
+        },
+        row_spec: %ViewSpec{display: :images, layout: :row}
+      )
+
+    ~H"""
+    <div>
+      <div class="flex items-center justify-between">
+        <.kind_label>{@main_label} ({@main_total})</.kind_label>
+        <.section_controls field="images_group_by" prefs={@prefs} show_swap={@show_swap} />
+      </div>
 
       <.deck_view_group id={"#{@id}-view"} class="mt-3">
         <.deck_view
@@ -196,6 +334,7 @@ defmodule Scry2Web.DeckRendering do
           cards={@main_deck}
           cards_by_arena_id={@cards_by_arena_id}
           cached_ids={@cached_ids}
+          count_entry={@count_entry}
         >
           <:card_overlay :let={card} :if={@card_overlay != []}>
             {render_slot(@card_overlay, card)}
@@ -208,6 +347,7 @@ defmodule Scry2Web.DeckRendering do
           cards={@sideboard}
           cards_by_arena_id={@cards_by_arena_id}
           cached_ids={@cached_ids}
+          count_entry={@count_entry}
           title={"sideboard (#{@side_total})"}
         >
           <:card_overlay :let={card} :if={@card_overlay != []}>
@@ -215,6 +355,88 @@ defmodule Scry2Web.DeckRendering do
           </:card_overlay>
         </.deck_view>
       </.deck_view_group>
+    </div>
+    """
+  end
+
+  # One section header's control cluster: the Type/Mana grouping toggle
+  # for `field` (`"text_group_by"` or `"images_group_by"`) plus, when
+  # both sections are visible, the swap button flipping section order.
+  # All controls emit `set_deck_view_pref` with field + to, handled
+  # by `Scry2Web.DeckViewScope`. Styled per UIDR-008 — soft, never a
+  # solid fill.
+  attr :field, :string, required: true
+  attr :prefs, CompositionPrefs, required: true
+  attr :show_swap, :boolean, required: true
+
+  defp section_controls(assigns) do
+    assigns =
+      assign(assigns,
+        group_by: Map.fetch!(assigns.prefs, String.to_existing_atom(assigns.field)),
+        options: [{"type", "Type"}, {"mana_value", "Mana"}]
+      )
+
+    ~H"""
+    <div class="flex items-center gap-1">
+      <div class="join">
+        <button
+          :for={{value, label} <- @options}
+          type="button"
+          phx-click="set_deck_view_pref"
+          phx-value-field={@field}
+          phx-value-to={value}
+          class={[
+            "join-item btn btn-xs",
+            if(Atom.to_string(@group_by) == value, do: "btn-active", else: "btn-ghost")
+          ]}
+        >
+          {label}
+        </button>
+      </div>
+      <button
+        :if={@show_swap}
+        type="button"
+        title="Swap section order"
+        phx-click="set_deck_view_pref"
+        phx-value-field="top"
+        phx-value-to={Atom.to_string(CompositionPrefs.flipped_top(@prefs))}
+        class="btn btn-xs btn-ghost btn-square"
+      >
+        <.icon name="hero-arrows-up-down" class="size-3.5" />
+      </button>
+    </div>
+    """
+  end
+
+  @doc """
+  The 3-way segmented control selecting the composition's
+  `display_mode` (Text / Images / Both). Each segment emits
+  `set_deck_view_pref` with `field="display_mode"`; the `DeckViewScope`
+  hook persists the choice and re-assigns the prefs. Styled per
+  UIDR-008 — a soft `join` group, active segment subtle, never a solid
+  fill.
+  """
+  attr :mode, :atom, required: true
+
+  def deck_display_mode_toggle(assigns) do
+    assigns =
+      assign(assigns, :options, [{"text", "Text"}, {"images", "Images"}, {"both", "Both"}])
+
+    ~H"""
+    <div class="join">
+      <button
+        :for={{value, label} <- @options}
+        type="button"
+        phx-click="set_deck_view_pref"
+        phx-value-field="display_mode"
+        phx-value-to={value}
+        class={[
+          "join-item btn btn-xs",
+          if(to_string(@mode) == value, do: "btn-active", else: "btn-ghost")
+        ]}
+      >
+        {label}
+      </button>
     </div>
     """
   end
@@ -252,6 +474,7 @@ defmodule Scry2Web.DeckRendering do
   attr :title, :string, default: nil
   attr :card_overlay, :list, default: []
   attr :card_class, :any, default: nil
+  attr :count_entry, :any, default: nil
 
   defp text_view(assigns) do
     ~H"""
@@ -273,7 +496,7 @@ defmodule Scry2Web.DeckRendering do
                 "flex items-baseline gap-2 text-sm py-0.5 cursor-default",
                 @card_class && @card_class.(card)
               ]}
-              phx-hook={if image_cached?(@cached_ids, card.arena_id), do: "CardHover"}
+              phx-hook="CardHover"
               data-card-src={ImageCache.url_for(card.arena_id)}
               data-card-alt={card.name}
             >
@@ -297,6 +520,7 @@ defmodule Scry2Web.DeckRendering do
   attr :cached_ids, :any, default: nil
   attr :title, :string, default: nil
   attr :card_overlay, :list, default: []
+  attr :count_entry, :any, default: nil
 
   defp columns_view(assigns) do
     ~H"""
@@ -305,26 +529,52 @@ defmodule Scry2Web.DeckRendering do
       <div class="flex gap-3 items-start" data-deck-grid>
         <div
           :for={{{label, cards}, section_idx} <- Enum.with_index(@resolved_sections)}
-          class="flex-1 min-w-0 flex flex-col items-center"
+          class="flex-1 min-w-0 max-w-48 flex flex-col items-center"
         >
           <p :if={label} class="text-xs text-base-content/30 mb-1">{label}</p>
-          <div
-            class="relative w-full"
-            style={"aspect-ratio: #{stack_aspect_ratio(length(cards), @spec.splay_depth)}"}
-          >
+          <div class="flex w-full">
             <div
-              :for={{card, card_idx} <- Enum.with_index(cards)}
-              class="absolute w-full left-0"
-              style={"top: #{stack_top_percent(card_idx, length(cards), @spec.splay_depth)}%; z-index: #{card_idx}"}
+              class="relative flex-1 min-w-0"
+              data-card-stack
+              style={"aspect-ratio: #{stack_aspect_ratio(length(cards), @spec.splay_depth)}"}
             >
-              <.card_image
-                id={"#{@id}-s#{section_idx}-#{card_idx}-#{card.arena_id}"}
-                arena_id={card.arena_id}
-                name={card.name}
-                class="w-full"
-                cached_ids={@cached_ids}
-              />
-              <.count_badge card={card} spec={@spec} position="top-1 right-1" overlay={@card_overlay} />
+              <div
+                :for={{card, card_idx} <- Enum.with_index(cards)}
+                class="absolute w-full left-0"
+                style={"top: #{stack_top_percent(card_idx, length(cards), @spec.splay_depth)}%; z-index: #{card_idx}"}
+              >
+                <.card_image
+                  id={"#{@id}-s#{section_idx}-#{card_idx}-#{card.arena_id}"}
+                  arena_id={card.arena_id}
+                  name={card.name}
+                  class="w-full"
+                  cached_ids={@cached_ids}
+                />
+                {render_slot(@card_overlay, card)}
+                <.count_badge
+                  card={card}
+                  presentation={@count_presentation}
+                  position="top-1 right-1"
+                  entry_fun={@count_entry}
+                />
+              </div>
+            </div>
+            <%!-- Count rail: numbers aligned with each card's title strip,
+                  in space reserved beside the stack so nothing printed on
+                  the card is ever covered (UIDR-015). Blank means one. --%>
+            <div :if={@count_presentation == :gutter} class="relative w-5 shrink-0">
+              <%= for {card, card_idx} <- Enum.with_index(cards), entry = rail_entry(@count_entry, card), entry != nil do %>
+                <span
+                  class={[
+                    "absolute left-1.5 text-xs tabular-nums",
+                    entry[:class] || "text-base-content/50"
+                  ]}
+                  style={"top: calc(#{stack_top_percent(card_idx, length(cards), @spec.splay_depth)}% + 2px); z-index: #{card_idx}"}
+                  title={entry[:title]}
+                >
+                  {entry.label}
+                </span>
+              <% end %>
             </div>
           </div>
         </div>
@@ -341,6 +591,7 @@ defmodule Scry2Web.DeckRendering do
   attr :cached_ids, :any, default: nil
   attr :title, :string, default: nil
   attr :card_overlay, :list, default: []
+  attr :count_entry, :any, default: nil
 
   defp row_view(assigns) do
     assigns = assign(assigns, :cards, Enum.flat_map(assigns.resolved_sections, &elem(&1, 1)))
@@ -362,7 +613,13 @@ defmodule Scry2Web.DeckRendering do
             class="w-full"
             cached_ids={@cached_ids}
           />
-          <.count_badge card={card} spec={@spec} position="bottom-1 left-1" overlay={@card_overlay} />
+          {render_slot(@card_overlay, card)}
+          <.count_badge
+            card={card}
+            presentation={@count_presentation}
+            position="bottom-1 left-1"
+            entry_fun={@count_entry}
+          />
         </div>
       </div>
     </div>
@@ -377,6 +634,7 @@ defmodule Scry2Web.DeckRendering do
   attr :cached_ids, :any, default: nil
   attr :title, :string, default: nil
   attr :card_overlay, :list, default: []
+  attr :count_entry, :any, default: nil
 
   defp wrap_view(assigns) do
     ~H"""
@@ -403,7 +661,13 @@ defmodule Scry2Web.DeckRendering do
                 class="w-full"
                 cached_ids={@cached_ids}
               />
-              <.count_badge card={card} spec={@spec} position="top-1 right-1" overlay={@card_overlay} />
+              {render_slot(@card_overlay, card)}
+              <.count_badge
+                card={card}
+                presentation={@count_presentation}
+                position="bottom-1 right-1"
+                entry_fun={@count_entry}
+              />
             </div>
           </div>
         </div>
@@ -412,34 +676,80 @@ defmodule Scry2Web.DeckRendering do
     """
   end
 
-  # The default per-card annotation: a count badge for piled views. An
-  # overlay slot replaces it; spread views carry no badge (each copy is
-  # its own card).
+  # ── Count presentation ──────────────────────────────────────────────
+
+  @doc """
+  How a view presents piled card counts (UIDR-015):
+
+  - `:none` — spread piling (each copy is its own card), or an explicit
+    `count_placement: :none` for callers whose `card_overlay` draws its
+    own counts (e.g. the deck diff markers).
+  - `:gutter` — a rail reserved beside each `:columns` stack, counts
+    as dimmed numbers aligned with their card's title strip.
+  - `:badge` — the overlay pill on the card image. Also the fallback
+    for `count_placement: :gutter` outside `:columns`, whose cards
+    overlap or float so no rail can be reserved.
+
+  The `card_overlay` slot is additive annotation and does not participate.
+  """
+  @spec count_presentation(ViewSpec.t()) :: :none | :gutter | :badge
+  def count_presentation(%ViewSpec{piling: :spread}), do: :none
+  def count_presentation(%ViewSpec{count_placement: :none}), do: :none
+  def count_presentation(%ViewSpec{count_placement: :gutter, layout: :columns}), do: :gutter
+  def count_presentation(%ViewSpec{}), do: :badge
+
+  @doc """
+  A piled count as rendered in the gutter rail — `nil` for a single
+  copy, so the rail only carries information (blank means one).
+  """
+  @spec rail_count_label(pos_integer()) :: String.t() | nil
+  def rail_count_label(count) when is_integer(count) and count > 1, do: Integer.to_string(count)
+  def rail_count_label(_count), do: nil
+
+  # The card's count pill, rendered only for the `:badge` presentation
+  # (`:gutter`'s rail is drawn by `columns_view`; `:none` draws nothing).
+  # `entry` customizes label/tone/tooltip; nil hides the pill.
   attr :card, :map, required: true
-  attr :spec, ViewSpec, required: true
+  attr :presentation, :atom, required: true
   attr :position, :string, required: true
-  attr :overlay, :list, required: true
+  attr :entry_fun, :any, required: true
 
-  defp count_badge(%{overlay: [_ | _]} = assigns) do
+  defp count_badge(%{presentation: :badge} = assigns) do
+    assigns = assign(assigns, :entry, badge_entry(assigns.entry_fun, assigns.card))
+
     ~H"""
-    {render_slot(@overlay, @card)}
-    """
-  end
-
-  defp count_badge(%{spec: %ViewSpec{piling: :spread}} = assigns) do
-    ~H""
-  end
-
-  defp count_badge(assigns) do
-    ~H"""
-    <span class={[
-      "absolute min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold text-white pointer-events-none",
-      @position
-    ]}>
-      {@card.count}
+    <span
+      :if={@entry}
+      class={[
+        "absolute min-w-5 text-center rounded bg-black/70 px-1 text-xs font-bold pointer-events-none",
+        @entry[:class] || "text-white",
+        @position
+      ]}
+      title={@entry[:title]}
+    >
+      {@entry.label}
     </span>
     """
   end
+
+  defp count_badge(assigns) do
+    ~H""
+  end
+
+  # Count entries: the default badge always shows the count; the default
+  # rail shows `rail_count_label` (blank means one). A caller `count_entry`
+  # function overrides both.
+  defp badge_entry(nil, card), do: %{label: card.count, class: nil, title: nil}
+  defp badge_entry(entry_fun, card), do: entry_fun.(card)
+
+  defp rail_entry(nil, card) do
+    case rail_count_label(card.count) do
+      nil -> nil
+      label -> %{label: label, class: nil, title: nil}
+    end
+  end
+
+  defp rail_entry(entry_fun, card), do: entry_fun.(card)
 
   # ── Snapshot primitives ─────────────────────────────────────────────
 
@@ -736,9 +1046,4 @@ defmodule Scry2Web.DeckRendering do
   defp cmc_label(8), do: "Land"
   defp cmc_label(7), do: "7+"
   defp cmc_label(n), do: "#{n}"
-
-  # Mirrors CardComponents.resolve_cached/1 for the text-list hover rows,
-  # which attach CardHover directly rather than through <.card_image>.
-  defp image_cached?(%{full: full}, arena_id), do: MapSet.member?(full, arena_id)
-  defp image_cached?(_, arena_id), do: ImageCache.cached?(arena_id, :full)
 end

@@ -25,6 +25,56 @@ defmodule Scry2Web.DeckRenderingTest do
       assert spec.piling == :piled
       assert spec.layout == :wrap
       assert spec.splay_depth == 0.25
+      assert spec.count_placement == :badge
+    end
+  end
+
+  describe "count_presentation/1" do
+    # The card_overlay slot is additive annotation and never affects count
+    # presentation; callers that render their own counts (deck diff markers)
+    # declare `count_placement: :none` explicitly.
+
+    test "spread piling shows no counts regardless of placement" do
+      spec = %ViewSpec{piling: :spread, count_placement: :gutter, layout: :columns}
+
+      assert DeckRendering.count_presentation(spec) == :none
+    end
+
+    test ":none placement suppresses counts (caller draws its own)" do
+      spec = %ViewSpec{count_placement: :none, layout: :columns}
+
+      assert DeckRendering.count_presentation(spec) == :none
+    end
+
+    test "gutter placement applies to splayed column stacks" do
+      spec = %ViewSpec{count_placement: :gutter, layout: :columns}
+
+      assert DeckRendering.count_presentation(spec) == :gutter
+    end
+
+    test "gutter placement falls back to the badge outside :columns" do
+      assert DeckRendering.count_presentation(%ViewSpec{count_placement: :gutter, layout: :row}) ==
+               :badge
+
+      assert DeckRendering.count_presentation(%ViewSpec{count_placement: :gutter, layout: :wrap}) ==
+               :badge
+    end
+
+    test "badge placement keeps the overlay pill" do
+      spec = %ViewSpec{count_placement: :badge, layout: :columns}
+
+      assert DeckRendering.count_presentation(spec) == :badge
+    end
+  end
+
+  describe "rail_count_label/1" do
+    test "single copies render nothing — blank means one" do
+      assert DeckRendering.rail_count_label(1) == nil
+    end
+
+    test "multiple copies render the count" do
+      assert DeckRendering.rail_count_label(2) == "2"
+      assert DeckRendering.rail_count_label(24) == "24"
     end
   end
 

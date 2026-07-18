@@ -60,6 +60,40 @@ defmodule Scry2Web.DecksLiveTest do
     end
   end
 
+  describe "deck view preferences (DeckViewScope)" do
+    test "set_deck_view_pref persists the changed field", %{conn: conn} do
+      _deck = Factory.create_deck(%{mtga_deck_id: "live-prefs", current_name: "Prefs"})
+
+      {:ok, view, _html} = live(conn, "/decks?status=all")
+
+      render_click(view, "set_deck_view_pref", %{"field" => "top", "to" => "text"})
+
+      assert Settings.get("deck.view_prefs")["top"] == "text"
+      assert Settings.get("deck.view_prefs")["display_mode"] == "both"
+    end
+
+    test "a legacy deck.display_mode entry seeds the prefs and is removed on write", %{conn: conn} do
+      Settings.put!("deck.display_mode", "text")
+
+      {:ok, view, _html} = live(conn, "/decks?status=all")
+
+      render_click(view, "set_deck_view_pref", %{"field" => "images_group_by", "to" => "type"})
+
+      stored = Settings.get("deck.view_prefs")
+      assert stored["display_mode"] == "text"
+      assert stored["images_group_by"] == "type"
+      assert Settings.get("deck.display_mode") == nil
+    end
+
+    test "invalid fields and values leave the stored prefs untouched", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/decks?status=all")
+
+      render_click(view, "set_deck_view_pref", %{"field" => "top", "to" => "sideways"})
+
+      assert Settings.get("deck.view_prefs") == nil
+    end
+  end
+
   describe "/decks/:id — export" do
     test "exposes the MTGA clipboard text via data-copy-text", %{conn: conn} do
       deck =

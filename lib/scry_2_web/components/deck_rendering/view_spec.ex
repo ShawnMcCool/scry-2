@@ -15,7 +15,18 @@ defmodule Scry2Web.DeckRendering.ViewSpec do
     `:mana_value` (0–7+, Lands last).
   - `display` — `:text` (count + name rows) or `:images`.
   - `piling` — `:piled` merges same-name entries into one card with a
-    count badge; `:spread` renders every copy individually.
+    count (see `count_placement`); `:spread` renders every copy
+    individually.
+  - `count_placement` — where a piled card's count renders:
+    `:badge` overlays a pill on the card image (anchored to a bottom
+    corner in `:row`/`:wrap` layouts); `:gutter` reserves a narrow rail
+    to the right of the image where the count renders as a dimmed
+    number aligned with the card's title strip — blank for single
+    copies. `:gutter` is honored only by `:columns` stacks (the only
+    layout whose cards are fully edge-aligned); other layouts fall
+    back to `:badge`. `:none` suppresses counts entirely — declared by
+    callers whose `card_overlay` annotation carries its own count
+    (e.g. the deck diff markers). See UIDR-015.
   - `layout` — image arrangement: `:columns` (sections side by side,
     cards vertically splayed — the deck-page main grid), `:row` (one
     horizontally splayed row sized by the `DeckView` JS hook — the
@@ -35,6 +46,7 @@ defmodule Scry2Web.DeckRendering.ViewSpec do
   @type group_by :: :none | :type | :broad_type | :mana_value
   @type display :: :text | :images
   @type piling :: :piled | :spread
+  @type count_placement :: :badge | :gutter | :none
   @type layout :: :columns | :row | :wrap
   @type order :: :sorted | :natural
 
@@ -42,6 +54,7 @@ defmodule Scry2Web.DeckRendering.ViewSpec do
           group_by: group_by(),
           display: display(),
           piling: piling(),
+          count_placement: count_placement(),
           layout: layout(),
           order: order(),
           splay_depth: float(),
@@ -51,6 +64,7 @@ defmodule Scry2Web.DeckRendering.ViewSpec do
   defstruct group_by: :none,
             display: :images,
             piling: :piled,
+            count_placement: :badge,
             layout: :wrap,
             order: :sorted,
             splay_depth: 0.25,

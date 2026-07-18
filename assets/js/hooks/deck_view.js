@@ -32,13 +32,14 @@ export const DeckView = {
     this._layoutSideboard()
   },
 
-  // Returns the rendered width of one CMC column in the deck grid.
+  // Returns the rendered width of one card in the deck grid — the
+  // stack itself, not the column, which may also hold a count rail.
   _columnWidth() {
     const grid = this.el.querySelector("[data-deck-grid]")
     if (!grid) return null
-    const firstCol = grid.firstElementChild
-    if (!firstCol) return null
-    const width = firstCol.offsetWidth
+    const stack = grid.querySelector("[data-card-stack]") || grid.firstElementChild
+    if (!stack) return null
+    const width = stack.offsetWidth
     return width > 0 ? width : null
   },
 
