@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.52.4 — 2026-07-19
+
 ### New
 
 - **Archetype names, everywhere.** Your decks, your opponents (identified from the cards they reveal during a match), and the netdeck catalog now show archetype labels — Domain, Dimir Midrange, Mono-Red Aggro, and the rest. The definitions refresh automatically so new archetypes are recognised as the format shifts.
