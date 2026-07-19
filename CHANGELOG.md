@@ -11,6 +11,26 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Archetype names, everywhere.** Your decks, your opponents (identified from the cards they reveal during a match), and the netdeck catalog now show archetype labels — Domain, Dimir Midrange, Mono-Red Aggro, and the rest. The definitions refresh automatically so new archetypes are recognised as the format shifts.
+- **Netdeck archetype catalog.** Browse external Standard decks grouped by archetype, with chips highlighting how each variant differs from the baseline list.
+- **Deck display preferences.** Choose how deck cards are laid out and Scry2 remembers your choice.
+- **After-update check.** One click confirms your collection still reads correctly after MTGA installs an update.
+
+### Improved
+
+- Netdeck source badges now link out to the original decklist on **mtgo.com**.
+- Basic lands show a consistent, canonical art across the app.
+
+### Fixed
+
+- **Restyled or re-imported decks are recognised as one deck again.** Changing a card's art, cloning, or re-importing a deck in MTGA used to split its history across separate entries. The **deck page** now shows your full match record, win rate, versions, and per-card stats together, and the **deck list** shows a single entry instead of duplicates.
+- **Per-card win rates are accurate.** A card you've reskinned is counted once with the correct copy count — no more duplicate rows or a stray "0 copies" line in the per-card table.
+- **Clicking a deck from a match** now opens that deck's page instead of leading nowhere.
+- The home page's **hot-deck highlight** works again, spotting a deck on a winning streak across all of its printings.
+- Fixed the card preview popup occasionally appearing before its art finished loading.
+
 ## v0.52.3 — 2026-07-12
 
 ### New
