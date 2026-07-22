@@ -283,7 +283,7 @@ defmodule Scry2Web.DecksLive do
               class="cursor-pointer hover:bg-base-content/5 transition-colors"
               phx-click={JS.navigate(~p"/decks/#{entry.deck.mtga_deck_id}")}
             >
-              <td class="w-10" onclick="event.stopPropagation()">
+              <td class="w-10">
                 <button
                   type="button"
                   class="btn btn-ghost btn-xs"
