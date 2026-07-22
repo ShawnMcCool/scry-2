@@ -6,6 +6,13 @@
       "archetype": "Aggro",
       "source_url": "https://example.invalid/mono-red",
       "decklist_text": "Deck\n4 Roaring Furnace (DFT) 1\n20 Mountain\n"
+    },
+    {
+      "name": "Amulet Titan",
+      "archetype": "Ramp",
+      "format": "Modern",
+      "source_url": "https://example.invalid/amulet-titan",
+      "decklist_text": "Deck\n4 Amulet of Vigor (ELD) 108\n4 Primeval Titan (M20) 172\n"
     }
   ]
 }

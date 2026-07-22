@@ -8,7 +8,7 @@ defmodule Scry2.NetDecking.Sources.LocalJsonSource do
 
   File shape:
 
-      {"decks": [{"name", "archetype"?, "source_url"?, "decklist_text"}]}
+      {"decks": [{"name", "archetype"?, "format"?, "source_url"?, "decklist_text"}]}
 
   A missing or malformed file yields `[]` — the scheduler degrades gracefully
   rather than crashing.
@@ -55,5 +55,9 @@ defmodule Scry2.NetDecking.Sources.LocalJsonSource do
       archetype: deck["archetype"],
       source_url: deck["source_url"]
     }
+    |> put_format(deck["format"])
   end
+
+  defp put_format(raw_deck, nil), do: raw_deck
+  defp put_format(raw_deck, format), do: Map.put(raw_deck, :format, format)
 end

@@ -19,6 +19,18 @@ defmodule Scry2.NetDecking.Sources.LocalJsonSourceTest do
     refute Map.has_key?(deck, :source_name)
   end
 
+  test "carries an explicit per-deck format when the feed provides one" do
+    decks = LocalJsonSource.fetch(path: @fixture)
+    modern_deck = Enum.find(decks, &(&1.name != "Mono-Red Aggro"))
+
+    assert modern_deck.format == "Modern"
+  end
+
+  test "omits format when the feed doesn't provide one (IngestDecklist defaults it)" do
+    [deck | _] = LocalJsonSource.fetch(path: @fixture)
+    refute Map.has_key?(deck, :format)
+  end
+
   test "missing file yields an empty list (degrades, never crashes)" do
     assert LocalJsonSource.fetch(path: "/no/such/feed.json") == []
   end
