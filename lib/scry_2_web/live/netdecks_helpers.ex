@@ -180,12 +180,23 @@ defmodule Scry2Web.NetdecksHelpers do
   def ownership_title(%{free?: true} = row), do: "#{row.name} — basic land"
   def ownership_title(row), do: "#{row.name} — #{row.owned}/#{row.needed} owned"
 
+  @doc """
+  References on a deck that never resolved to an arena_id, as
+  `[%{name, count}]` — enough to render a placeholder tile, since
+  there's no `arena_id` to look up art or type by.
+  """
+  @spec unresolved_entries(map()) :: [%{name: String.t(), count: integer()}]
+  def unresolved_entries(%{unresolved_cards: %{"cards" => cards}}) when is_list(cards) do
+    # `||` is safe here — count is a numeric default, not a boolean field
+    # (unlike the `false || fallback` trap this codebase has hit before).
+    Enum.map(cards, fn card -> %{name: card["name"], count: card["count"] || 1} end)
+  end
+
+  def unresolved_entries(_deck), do: []
+
   @doc "Count of references on a deck that did not resolve to an arena_id."
   @spec unresolved_count(map()) :: non_neg_integer()
-  def unresolved_count(%{unresolved_cards: %{"cards" => cards}}) when is_list(cards),
-    do: length(cards)
-
-  def unresolved_count(_deck), do: 0
+  def unresolved_count(deck), do: length(unresolved_entries(deck))
 
   @doc """
   True if the archetype group's label, or any variant's deck name or

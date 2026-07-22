@@ -326,6 +326,46 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.unresolved_count(%{unresolved_cards: nil}) == 0
   end
 
+  describe "unresolved_entries/1" do
+    test "normalizes unresolved refs to name/count pairs" do
+      deck = %{
+        unresolved_cards: %{
+          "cards" => [
+            %{
+              "name" => "Wasteland",
+              "set_code" => "TE",
+              "collector_number" => "83",
+              "count" => 1
+            },
+            %{"name" => "Karakas", "set_code" => nil, "collector_number" => nil, "count" => 2}
+          ]
+        }
+      }
+
+      assert NetdecksHelpers.unresolved_entries(deck) == [
+               %{name: "Wasteland", count: 1},
+               %{name: "Karakas", count: 2}
+             ]
+    end
+
+    test "empty without unresolved cards" do
+      assert NetdecksHelpers.unresolved_entries(%{unresolved_cards: %{"cards" => []}}) == []
+      assert NetdecksHelpers.unresolved_entries(%{}) == []
+    end
+
+    test "defaults count to 1 when the reference has no count field" do
+      deck = %{unresolved_cards: %{"cards" => [%{"name" => "Bayou"}]}}
+      assert NetdecksHelpers.unresolved_entries(deck) == [%{name: "Bayou", count: 1}]
+    end
+  end
+
+  describe "unresolved_count/1 (still delegates correctly)" do
+    test "counts unresolved entries" do
+      deck = %{unresolved_cards: %{"cards" => [%{"name" => "X", "count" => 1}]}}
+      assert NetdecksHelpers.unresolved_count(deck) == 1
+    end
+  end
+
   test "tile_subtitle joins finish, event, and short date; nil without provenance" do
     provenance = %{
       finish: "1st",

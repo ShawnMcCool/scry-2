@@ -195,6 +195,15 @@ defmodule Scry2Web.DeckRendering do
     aren't a literal deck — e.g. an archetype's shared core.
     """
 
+  attr :unresolved, :list,
+    default: [],
+    doc: """
+    Card references that never resolved to an arena_id (`%{name, count}`,
+    from `Scry2Web.NetdecksHelpers.unresolved_entries/1`), rendered as
+    placeholder tiles flagged "Not on MTGA" — distinct from the ownership
+    wash, since these are never fixable by crafting.
+    """
+
   slot :card_overlay, doc: "Forwarded to every image view — see `deck_view/1`."
 
   def standard_composition(assigns) do
@@ -235,6 +244,7 @@ defmodule Scry2Web.DeckRendering do
                 cards_by_arena_id={@cards_by_arena_id}
                 cached_ids={@cached_ids}
                 card_class={@card_class}
+                unresolved={@unresolved}
               />
             <% :images -> %>
               <.images_section
@@ -250,6 +260,7 @@ defmodule Scry2Web.DeckRendering do
                 cached_ids={@cached_ids}
                 card_overlay={@card_overlay}
                 count_entry={@count_entry}
+                unresolved={@unresolved}
               />
           <% end %>
         <% end %>
@@ -269,6 +280,7 @@ defmodule Scry2Web.DeckRendering do
   attr :cards_by_arena_id, :map, required: true
   attr :cached_ids, :any, required: true
   attr :card_class, :any, required: true
+  attr :unresolved, :list, required: true
 
   defp text_section(assigns) do
     assigns =
@@ -289,6 +301,11 @@ defmodule Scry2Web.DeckRendering do
         cached_ids={@cached_ids}
         card_class={@card_class}
       />
+      <.unresolved_text_list
+        :if={@unresolved != []}
+        id={"#{@id}-unresolved"}
+        unresolved={@unresolved}
+      />
     </div>
     """
   end
@@ -307,6 +324,7 @@ defmodule Scry2Web.DeckRendering do
   attr :cached_ids, :any, required: true
   attr :card_overlay, :list, required: true
   attr :count_entry, :any, required: true
+  attr :unresolved, :list, required: true
 
   defp images_section(assigns) do
     assigns =
@@ -355,6 +373,65 @@ defmodule Scry2Web.DeckRendering do
           </:card_overlay>
         </.deck_view>
       </.deck_view_group>
+
+      <.unresolved_image_grid
+        :if={@unresolved != []}
+        id={"#{@id}-unresolved-grid"}
+        unresolved={@unresolved}
+      />
+    </div>
+    """
+  end
+
+  # Placeholder rows for card references that never resolved to an
+  # arena_id — no art, no type/mana data, just the name and a flag that
+  # this card doesn't exist on Arena at all. Never fixable by crafting,
+  # unlike the ownership wash the ordinary rows carry.
+  attr :id, :string, required: true
+  attr :unresolved, :list, required: true
+
+  defp unresolved_text_list(assigns) do
+    ~H"""
+    <div class="mt-4">
+      <h3 class="flex items-center gap-2 text-xs font-medium text-base-content/40 uppercase tracking-wide mb-1">
+        <span class="w-4 shrink-0" />Not on MTGA
+      </h3>
+      <div class="space-y-0.5">
+        <div
+          :for={{entry, index} <- Enum.with_index(@unresolved)}
+          id={"#{@id}-#{index}"}
+          class="flex items-baseline gap-2 text-sm py-0.5 text-base-content/40"
+        >
+          <span class="w-4 text-right tabular-nums shrink-0">{entry.count}</span>
+          <span class="italic">{entry.name}</span>
+          <span class="badge badge-xs badge-ghost">not on MTGA</span>
+        </div>
+      </div>
+    </div>
+    """
+  end
+
+  attr :id, :string, required: true
+  attr :unresolved, :list, required: true
+
+  defp unresolved_image_grid(assigns) do
+    ~H"""
+    <div class="mt-4">
+      <h3 class="text-xs font-medium text-base-content/40 uppercase tracking-wide mb-1">
+        Not on MTGA
+      </h3>
+      <div class="flex gap-3 flex-wrap mt-2">
+        <div
+          :for={{entry, index} <- Enum.with_index(@unresolved)}
+          id={"#{@id}-#{index}"}
+          class="w-24 aspect-[488/680] rounded border border-dashed border-base-content/20 bg-base-200/40 flex flex-col items-center justify-center p-2 text-center"
+        >
+          <span class="text-xs text-base-content/50 leading-tight">{entry.name}</span>
+          <span :if={entry.count > 1} class="text-[10px] text-base-content/35 tabular-nums mt-1">
+            ×{entry.count}
+          </span>
+        </div>
+      </div>
     </div>
     """
   end
