@@ -468,4 +468,31 @@ defmodule Scry2Web.NetdecksHelpers do
   @spec matrix_magnitude_label(non_neg_integer()) :: String.t() | nil
   def matrix_magnitude_label(0), do: nil
   def matrix_magnitude_label(magnitude), do: "±#{magnitude}"
+
+  @doc """
+  Truncated page-number list for pagination controls: first page, last
+  page, and the current page's immediate neighbours, with `:ellipsis`
+  marking any gap skipped in between. Below 8 pages every page is kept —
+  truncation is only worth the extra visual noise once the strip would
+  otherwise overflow.
+  """
+  @spec page_window(pos_integer(), pos_integer()) :: [pos_integer() | :ellipsis]
+  def page_window(_page, total_pages) when total_pages <= 7, do: Enum.to_list(1..total_pages)
+
+  def page_window(page, total_pages) do
+    [1, total_pages, max(page - 1, 1), page, min(page + 1, total_pages)]
+    |> Enum.uniq()
+    |> Enum.sort()
+    |> Enum.reduce([], fn
+      page_number, [] ->
+        [page_number]
+
+      page_number, [previous | _] = acc when page_number - previous > 1 ->
+        [page_number, :ellipsis | acc]
+
+      page_number, acc ->
+        [page_number | acc]
+    end)
+    |> Enum.reverse()
+  end
 end

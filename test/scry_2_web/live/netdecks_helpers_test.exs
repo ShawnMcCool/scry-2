@@ -466,4 +466,27 @@ defmodule Scry2Web.NetdecksHelpersTest do
       assert NetdecksHelpers.matrix_magnitude_label(14) == "±14"
     end
   end
+
+  describe "page_window/2" do
+    test "shows every page when the total fits without truncation" do
+      assert NetdecksHelpers.page_window(1, 5) == [1, 2, 3, 4, 5]
+      assert NetdecksHelpers.page_window(4, 7) == [1, 2, 3, 4, 5, 6, 7]
+    end
+
+    test "near the start, trims the tail behind one ellipsis" do
+      assert NetdecksHelpers.page_window(1, 34) == [1, 2, :ellipsis, 34]
+    end
+
+    test "near the end, trims the head behind one ellipsis" do
+      assert NetdecksHelpers.page_window(34, 34) == [1, :ellipsis, 33, 34]
+    end
+
+    test "in the middle, trims both sides behind their own ellipsis" do
+      assert NetdecksHelpers.page_window(17, 34) == [1, :ellipsis, 16, 17, 18, :ellipsis, 34]
+    end
+
+    test "a single page shows no ellipsis" do
+      assert NetdecksHelpers.page_window(1, 1) == [1]
+    end
+  end
 end

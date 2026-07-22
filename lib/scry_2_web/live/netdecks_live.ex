@@ -619,14 +619,38 @@ defmodule Scry2Web.NetdecksLive do
   attr :total_pages, :integer, required: true
 
   defp pagination(assigns) do
+    assigns =
+      assign(assigns, :window, NetdecksHelpers.page_window(assigns.page, assigns.total_pages))
+
     ~H"""
     <div class="flex items-center justify-center gap-1 mt-6">
       <.link
-        :for={p <- 1..@total_pages}
-        patch={netdecks_path("recent", p)}
-        class={["btn btn-xs", if(p == @page, do: "btn-active", else: "btn-ghost")]}
+        :if={@page > 1}
+        patch={netdecks_path("recent", @page - 1)}
+        class="btn btn-xs btn-ghost"
+        aria-label="Previous page"
       >
-        {p}
+        <.icon name="hero-chevron-left" class="size-3.5" />
+      </.link>
+
+      <span :for={item <- @window}>
+        <span :if={item == :ellipsis} class="px-1.5 text-base-content/30 select-none">…</span>
+        <.link
+          :if={item != :ellipsis}
+          patch={netdecks_path("recent", item)}
+          class={["btn btn-xs", if(item == @page, do: "btn-active", else: "btn-ghost")]}
+        >
+          {item}
+        </.link>
+      </span>
+
+      <.link
+        :if={@page < @total_pages}
+        patch={netdecks_path("recent", @page + 1)}
+        class="btn btn-xs btn-ghost"
+        aria-label="Next page"
+      >
+        <.icon name="hero-chevron-right" class="size-3.5" />
       </.link>
     </div>
     """
