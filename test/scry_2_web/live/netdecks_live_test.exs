@@ -677,5 +677,28 @@ defmodule Scry2Web.NetdecksLiveTest do
 
       assert has_element?(view, ~s{a[href="/netdecks/archetype/#{group.slug}?format=Modern"]})
     end
+
+    test "a fresh (cold) mount of a Modern deck's detail page keeps the Modern tab on the back link",
+         %{conn: conn} do
+      # Regression: handle_params(%{"id" => id}, ...) used to never assign
+      # `format`, so a fresh mount (bookmark, reload, shared link — anything
+      # that isn't an in-app patch from an already-mounted socket) fell back
+      # to the mount/3 default of "Standard" regardless of the deck's actual
+      # format. This must be a cold `live/2` call, not preceded by any other
+      # navigation in this test, or the bug doesn't reproduce.
+      create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+      {:ok, deck} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Modern Burn",
+          source_name: "manual",
+          format: "Modern",
+          decklist_text: "Deck\n4 Lightning Bolt\n"
+        })
+
+      {:ok, view, _html} = live(conn, ~p"/netdecks/#{deck.id}")
+
+      assert has_element?(view, ~s{a[href="/netdecks?format=Modern"]}, "all netdecks")
+    end
   end
 end

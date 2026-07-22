@@ -46,6 +46,38 @@ defmodule Scry2.NetDecking.Sources.MtgoSourceTest do
     refute Enum.any?(decks, &(&1.source_url =~ "vintage"))
   end
 
+  test "fetches the shared landing page exactly once per run, regardless of format count" do
+    # Regression: fetch/1 loops all four formats and used to call list_events/2
+    # per format, each doing its own GET of the identical /decklists landing
+    # page. That's four redundant hits to a first-party endpoint per run
+    # instead of one fetch + four regex scans of the same HTML.
+    {:ok, counter} = Agent.start_link(fn -> 0 end)
+
+    Req.Test.stub(MtgoSource, fn conn ->
+      cond do
+        conn.request_path == "/decklists" ->
+          Agent.update(counter, &(&1 + 1))
+
+          Plug.Conn.resp(
+            conn,
+            200,
+            ~s|<a href="/decklist/standard-challenge-32-2026-06-0812843830">a</a>| <>
+              ~s|<a href="/decklist/modern-challenge-32-2026-07-0112846483">b</a>| <>
+              ~s|<a href="/decklist/pioneer-challenge-32-2026-07-0212846484">c</a>| <>
+              ~s|<a href="/decklist/pauper-challenge-32-2026-07-0312846485">d</a>|
+          )
+
+        true ->
+          Plug.Conn.resp(conn, 200, @deck_html)
+      end
+    end)
+
+    decks = MtgoSource.fetch(req_options: [plug: {Req.Test, MtgoSource}], max_events: 1)
+
+    assert decks != []
+    assert Agent.get(counter, & &1) == 1
+  end
+
   test "declares four browsable formats" do
     assert MtgoSource.formats() == ["Standard", "Modern", "Pioneer", "Pauper"]
   end

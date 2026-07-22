@@ -49,29 +49,36 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
     req_options = Keyword.get(opts, :req_options, [])
     max_events = Keyword.get(opts, :max_events, @default_max_events)
 
-    Enum.flat_map(@formats, &fetch_format(&1, req_options, max_events))
-  end
-
-  defp fetch_format(format, req_options, max_events) do
-    case list_events(format, req_options: req_options) do
-      {:ok, events} ->
-        events
-        |> Enum.take(max_events)
-        |> Enum.flat_map(fn event ->
-          case fetch_event(event.url, req_options: req_options) do
-            {:ok, raw_decks} ->
-              raw_decks
-
-            {:error, reason} ->
-              Log.warning(:importer, "mtgo event #{event.url} failed: #{inspect(reason)}")
-              []
-          end
+    case get("#{@base}/decklists", req_options) do
+      {:ok, landing} ->
+        Enum.flat_map(@formats, fn format ->
+          fetch_format_events(
+            events_from_landing(landing, format),
+            req_options,
+            max_events,
+            format
+          )
         end)
 
       {:error, reason} ->
-        Log.warning(:importer, "mtgo landing fetch failed (#{format}): #{inspect(reason)}")
+        Log.warning(:importer, "mtgo landing fetch failed: #{inspect(reason)}")
         []
     end
+  end
+
+  defp fetch_format_events(events, req_options, max_events, format) do
+    events
+    |> Enum.take(max_events)
+    |> Enum.flat_map(fn event ->
+      case fetch_event(event.url, req_options: req_options) do
+        {:ok, raw_decks} ->
+          raw_decks
+
+        {:error, reason} ->
+          Log.warning(:importer, "mtgo event #{event.url} failed (#{format}): #{inspect(reason)}")
+          []
+      end
+    end)
   end
 
   @impl true
@@ -81,18 +88,24 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
           {:ok, [Scry2.NetDecking.Source.event()]} | {:error, term()}
   def list_events(format, opts) do
     req_options = Keyword.get(opts, :req_options, [])
-    slug = String.downcase(format)
 
     with {:ok, landing} <- get("#{@base}/decklists", req_options) do
-      events =
-        ~r{/decklist/#{slug}-[a-z0-9-]+}
-        |> Regex.scan(landing)
-        |> List.flatten()
-        |> Enum.uniq()
-        |> Enum.map(&parse_event_link(&1, slug))
-
-      {:ok, events}
+      {:ok, events_from_landing(landing, format)}
     end
+  end
+
+  # Pure: scans already-fetched landing-page HTML for one format's event
+  # links. Split out from `list_events/2` so `fetch/1` can fetch the shared
+  # landing page once per run and scan it four times (once per format)
+  # instead of fetching it once per format.
+  defp events_from_landing(landing, format) do
+    slug = String.downcase(format)
+
+    ~r{/decklist/#{slug}-[a-z0-9-]+}
+    |> Regex.scan(landing)
+    |> List.flatten()
+    |> Enum.uniq()
+    |> Enum.map(&parse_event_link(&1, slug))
   end
 
   @impl true

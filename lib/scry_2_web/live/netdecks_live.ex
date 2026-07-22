@@ -87,7 +87,9 @@ defmodule Scry2Web.NetdecksLive do
 
       deck ->
         {:noreply,
-         socket |> assign(archetype: nil) |> assign_detail(NetDecking.deck_detail(deck))}
+         socket
+         |> assign(archetype: nil, format: deck.format)
+         |> assign_detail(NetDecking.deck_detail(deck))}
     end
   end
 
