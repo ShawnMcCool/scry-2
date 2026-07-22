@@ -45,6 +45,7 @@ defmodule Scry2Web.NetdecksLive do
     {:ok,
      assign(socket,
        search: "",
+       format: "Standard",
        catalog: @empty_catalog,
        view: "status",
        page: 1,
@@ -63,15 +64,19 @@ defmodule Scry2Web.NetdecksLive do
   end
 
   @impl true
-  def handle_params(%{"slug" => slug}, _uri, socket) do
-    catalog = NetDecking.catalog()
+  def handle_params(%{"slug" => slug} = params, _uri, socket) do
+    format = format_from_params(params, socket.assigns.format)
+    catalog = NetDecking.catalog(format)
 
     case NetdecksHelpers.find_group(catalog, slug) do
       nil ->
-        {:noreply, push_navigate(socket, to: ~p"/netdecks")}
+        {:noreply, push_navigate(socket, to: netdecks_format_path(format))}
 
       group ->
-        {:noreply, socket |> assign(detail: nil, catalog: catalog) |> assign_archetype(group)}
+        {:noreply,
+         socket
+         |> assign(detail: nil, format: format, catalog: catalog)
+         |> assign_archetype(group)}
     end
   end
 
@@ -87,7 +92,8 @@ defmodule Scry2Web.NetdecksLive do
   end
 
   def handle_params(params, _uri, socket) do
-    catalog = NetDecking.catalog()
+    format = format_from_params(params)
+    catalog = NetDecking.catalog(format)
     view = view_from_params(params)
     page = parse_page(params["page"])
 
@@ -96,13 +102,14 @@ defmodule Scry2Web.NetdecksLive do
       |> assign(
         detail: nil,
         archetype: nil,
+        format: format,
         catalog: catalog,
         view: view,
         page: page,
         sources: NetDecking.source_status(),
         imported_urls: NetDecking.imported_source_urls()
       )
-      |> assign_view_content(view, page, catalog)
+      |> assign_view_content(view, page, format, catalog)
 
     {:noreply, socket}
   end
@@ -113,13 +120,14 @@ defmodule Scry2Web.NetdecksLive do
            name: params["name"],
            archetype: presence(params["archetype"]),
            source_name: "manual",
+           format: params["format"] || "Standard",
            decklist_text: params["decklist_text"] || ""
          }) do
       {:ok, deck} ->
         {:noreply,
          socket
          |> put_flash(:info, "Imported “#{deck.name}”.")
-         |> assign(catalog: NetDecking.catalog())}
+         |> assign(catalog: NetDecking.catalog(socket.assigns.format))}
 
       {:error, _changeset} ->
         {:noreply,
@@ -262,7 +270,7 @@ defmodule Scry2Web.NetdecksLive do
 
         group = socket.assigns.archetype ->
           # Re-score in place; the group may have shifted tier or vanished.
-          catalog = NetDecking.catalog()
+          catalog = NetDecking.catalog(socket.assigns.format)
           socket = assign(socket, catalog: catalog)
 
           case NetdecksHelpers.find_group(catalog, group.slug) do
@@ -271,14 +279,18 @@ defmodule Scry2Web.NetdecksLive do
           end
 
         true ->
-          socket = assign(socket, catalog: NetDecking.catalog())
+          socket = assign(socket, catalog: NetDecking.catalog(socket.assigns.format))
 
           if socket.assigns.view == "recent" do
             # Refreshes cost/status data only — row order comes from the
             # `fetched_at` DB query, never from score, so it can't shift here.
-            # TODO(Task 7): read the browsed format from assigns, not this literal.
             assign(socket,
-              recent: NetDecking.recent_decks("Standard", socket.assigns.page, @per_page)
+              recent:
+                NetDecking.recent_decks(
+                  socket.assigns.format,
+                  socket.assigns.page,
+                  @per_page
+                )
             )
           else
             socket
@@ -305,6 +317,7 @@ defmodule Scry2Web.NetdecksLive do
       <.detail
         :if={@detail}
         detail={@detail}
+        format={@format}
         cached_ids={@cached_card_ids}
         prefs={@deck_view_prefs}
       />
@@ -312,12 +325,14 @@ defmodule Scry2Web.NetdecksLive do
         :if={@archetype && is_nil(@detail)}
         group={@archetype}
         extras={@archetype_extras}
+        format={@format}
         cached_ids={@cached_card_ids}
         prefs={@deck_view_prefs}
       />
       <.catalog
         :if={is_nil(@detail) && is_nil(@archetype)}
         catalog={@catalog}
+        format={@format}
         search={@search}
         sources={@sources}
         cached_ids={@cached_card_ids}
@@ -346,6 +361,7 @@ defmodule Scry2Web.NetdecksLive do
   attr :imported_urls, :any, required: true
   attr :view, :string, required: true
   attr :recent, :map, default: nil
+  attr :format, :string, required: true
 
   defp catalog(assigns) do
     assigns = assign(assigns, :total, catalog_total(assigns.catalog))
@@ -353,10 +369,21 @@ defmodule Scry2Web.NetdecksLive do
     ~H"""
     <div class="mb-6 mt-4">
       <.kind_label class="mb-1">netdecks</.kind_label>
-      <h1 class="text-2xl font-beleren leading-tight">Standard Netdecks</h1>
+      <h1 class="text-2xl font-beleren leading-tight">{@format} Netdecks</h1>
       <p class="text-sm text-base-content/55 mt-1">
         Paste decks from anywhere — see what you can build now and what's a wildcard away.
       </p>
+    </div>
+
+    <div role="tablist" class="tabs tabs-border mb-4">
+      <.link
+        :for={format <- NetDecking.formats()}
+        patch={netdecks_format_path(format)}
+        role="tab"
+        class={["tab", format == @format && "tab-active"]}
+      >
+        {format}
+      </.link>
     </div>
 
     <div class="flex flex-wrap items-center gap-2 mb-6 text-xs text-base-content/55">
@@ -435,6 +462,9 @@ defmodule Scry2Web.NetdecksLive do
               placeholder="Archetype (optional)"
               class="input input-bordered input-sm flex-1"
             />
+            <select name="import[format]" class="select select-bordered select-sm">
+              <option :for={format <- NetDecking.formats()} value={format}>{format}</option>
+            </select>
           </div>
           <textarea
             name="import[decklist_text]"
@@ -513,7 +543,7 @@ defmodule Scry2Web.NetdecksLive do
 
       <ol class="divide-y divide-base-300/25">
         <li :for={{group, index} <- Enum.with_index(groups, 1)}>
-          <.archetype_row group={group} rank={index} cached_ids={@cached_ids} />
+          <.archetype_row group={group} rank={index} format={@format} cached_ids={@cached_ids} />
         </li>
       </ol>
     </section>
@@ -778,16 +808,20 @@ defmodule Scry2Web.NetdecksLive do
 
   attr :group, :map, required: true
   attr :rank, :integer, required: true
+  attr :format, :string, required: true
   attr :cached_ids, :any, required: true
 
   defp archetype_row(assigns) do
     group = assigns.group
 
     # A single-build archetype has no comparison to show, so link straight to
-    # that build's page instead of the (redundant) archetype screen.
+    # that build's page instead of the (redundant) archetype screen. The
+    # archetype-screen link carries the browsed format because slugs are only
+    # disambiguated within one format's catalog — the same slug can name a
+    # different archetype in another format.
     href =
       case NetdecksHelpers.sole_variant_deck_id(group) do
-        nil -> ~p"/netdecks/archetype/#{group.slug}"
+        nil -> netdecks_archetype_path(group.slug, assigns.format)
         deck_id -> ~p"/netdecks/#{deck_id}"
       end
 
@@ -919,12 +953,13 @@ defmodule Scry2Web.NetdecksLive do
   attr :extras, :map, default: nil
   attr :cached_ids, :any, required: true
   attr :prefs, DeckRendering.CompositionPrefs, required: true
+  attr :format, :string, required: true
 
   defp archetype_detail(assigns) do
     ~H"""
     <div class="mt-4 mb-6">
       <.link
-        patch={~p"/netdecks"}
+        patch={netdecks_format_path(@format)}
         class="text-xs text-base-content/55 inline-flex items-center gap-1 mb-2"
       >
         <.icon name="hero-arrow-long-left" class="size-3" /> all netdecks
@@ -1113,6 +1148,7 @@ defmodule Scry2Web.NetdecksLive do
   attr :detail, :map, required: true
   attr :cached_ids, :any, required: true
   attr :prefs, DeckRendering.CompositionPrefs, required: true
+  attr :format, :string, required: true
 
   defp detail(assigns) do
     assigns =
@@ -1127,7 +1163,7 @@ defmodule Scry2Web.NetdecksLive do
     ~H"""
     <div class="mt-4 mb-6">
       <.link
-        patch={~p"/netdecks"}
+        patch={netdecks_format_path(@format)}
         class="text-xs text-base-content/55 inline-flex items-center gap-1 mb-2"
       >
         <.icon name="hero-arrow-long-left" class="size-3" /> all netdecks
@@ -1472,6 +1508,12 @@ defmodule Scry2Web.NetdecksLive do
   defp view_from_params(%{"view" => "recent"}), do: "recent"
   defp view_from_params(_params), do: "status"
 
+  defp format_from_params(params, default \\ "Standard") do
+    format = params["format"]
+
+    if format in NetDecking.formats(), do: format, else: default
+  end
+
   defp parse_page(nil), do: 1
   defp parse_page(page) when is_binary(page), do: max(1, String.to_integer(page))
 
@@ -1486,12 +1528,19 @@ defmodule Scry2Web.NetdecksLive do
     ~p"/netdecks?#{params}"
   end
 
+  defp netdecks_format_path("Standard"), do: ~p"/netdecks"
+  defp netdecks_format_path(format), do: ~p"/netdecks?#{%{"format" => format}}"
+
+  defp netdecks_archetype_path(slug, "Standard"), do: ~p"/netdecks/archetype/#{slug}"
+
+  defp netdecks_archetype_path(slug, format),
+    do: ~p"/netdecks/archetype/#{slug}?#{%{"format" => format}}"
+
   # Loads whichever tab's data the current view needs and requests its hero
   # art (both variants: art crop for the row thumbnail, full card for the
   # hover popup, matching every other card-image request in this module).
-  defp assign_view_content(socket, "recent", page, _catalog) do
-    # TODO(Task 7): read the browsed format from assigns, not this literal.
-    recent = NetDecking.recent_decks("Standard", page, @per_page)
+  defp assign_view_content(socket, "recent", page, format, _catalog) do
+    recent = NetDecking.recent_decks(format, page, @per_page)
 
     art_ids =
       recent.entries
@@ -1504,7 +1553,7 @@ defmodule Scry2Web.NetdecksLive do
     |> CardImages.request(art_ids, variants: [:art, :full])
   end
 
-  defp assign_view_content(socket, "status", _page, catalog) do
+  defp assign_view_content(socket, "status", _page, _format, catalog) do
     art_ids =
       [catalog.buildable, catalog.craftable, catalog.short]
       |> Enum.concat()

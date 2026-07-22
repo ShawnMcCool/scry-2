@@ -489,4 +489,175 @@ defmodule Scry2Web.NetdecksLiveTest do
       assert Scry2.NetDecking.auto_fetch_enabled?("stub-mtgo")
     end
   end
+
+  describe "format switcher (multi-format catalog)" do
+    test "switching the format tab shows only that format's decks", %{conn: conn} do
+      create_card(name: "Lightning Bolt", rarity: "rare")
+      create_card(name: "Mountain", rarity: "common", is_land: true)
+
+      {:ok, _} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Standard deck",
+          source_name: "manual",
+          decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+        })
+
+      {:ok, _} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Modern deck",
+          source_name: "manual",
+          format: "Modern",
+          decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+        })
+
+      # The Recent tab renders each deck's own name/pilot directly, unlike the
+      # by-status tab which groups decks under a synthesized archetype label.
+      {:ok, view, _html} = live(conn, ~p"/netdecks?view=recent")
+      refute has_element?(view, "a", "Modern deck")
+
+      {:ok, view, _html} = live(conn, ~p"/netdecks?format=Modern&view=recent")
+      assert has_element?(view, "a", "Modern deck")
+    end
+
+    test "an unrecognized format param falls back to Standard", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/netdecks?format=NotAFormat")
+      assert html =~ "Standard Netdecks"
+    end
+
+    test "the manual-paste form's format select flows through to the created deck", %{
+      conn: conn
+    } do
+      create_card(name: "Lightning Bolt", rarity: "rare")
+      {:ok, view, _html} = live(conn, ~p"/netdecks")
+
+      render_click(view, "toggle_import_panel")
+
+      view
+      |> form("#netdeck-import",
+        import: %{
+          name: "Pauper Burn",
+          format: "Pauper",
+          decklist_text: "Deck\n4 Lightning Bolt\n"
+        }
+      )
+      |> render_submit()
+
+      deck = Enum.find(Scry2.NetDecking.list_decks("Pauper"), &(&1.name == "Pauper Burn"))
+      assert deck
+      assert deck.format == "Pauper"
+    end
+
+    test "an archetype slug that collides across formats resolves to the browsed format's deck",
+         %{conn: conn} do
+      # Archetype slugs are only disambiguated within one format's catalog
+      # (NetDecking.catalog/1 calls disambiguate_slugs/1 per-call), so an
+      # identical decklist imported under two formats produces the same
+      # synthetic "color · hero" slug in each format's own catalog.
+      create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+      create_card(
+        name: "Mountain",
+        rarity: "common",
+        color_identity: "",
+        is_land: true,
+        types: "Land"
+      )
+
+      {:ok, _} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Standard Aggro",
+          source_name: "manual",
+          decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+        })
+
+      {:ok, _} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Modern Aggro",
+          source_name: "manual",
+          format: "Modern",
+          decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+        })
+
+      standard_catalog = Scry2.NetDecking.catalog("Standard")
+
+      [standard_group] =
+        standard_catalog.buildable ++ standard_catalog.craftable ++ standard_catalog.short
+
+      modern_catalog = Scry2.NetDecking.catalog("Modern")
+
+      [modern_group] =
+        modern_catalog.buildable ++ modern_catalog.craftable ++ modern_catalog.short
+
+      assert standard_group.slug == modern_group.slug
+
+      {:ok, _view, html} = live(conn, ~p"/netdecks/archetype/#{modern_group.slug}?format=Modern")
+
+      assert html =~ "Modern Aggro"
+      refute html =~ "Standard Aggro"
+    end
+
+    test "an archetype tile's href carries the browsed format so the slug resolves to the right catalog",
+         %{conn: conn} do
+      # ArchetypeCatalog splits every *unclassified* cluster into its own
+      # singleton group (net_decking/archetype_catalog.ex), so a group can
+      # only ever have more than one variant when its members share a real
+      # community archetype name. Seed one for Modern (mirrors
+      # Scry2.MetagameTest's Modern seeding) so two distinct, non-clustering
+      # decklists merge into one multi-variant group — the only shape where
+      # the archetype-row link actually points at the archetype route
+      # instead of shortcutting straight to the lone deck.
+      Scry2.Metagame.replace_definitions!("Modern", %{
+        definitions: [
+          %{
+            key: "Burn",
+            kind: "archetype",
+            name: "Burn",
+            include_color_in_name: true,
+            conditions: [%{"type" => "InMainboard", "cards" => ["Lightning Bolt"]}],
+            variants: [],
+            common_cards: []
+          }
+        ],
+        overrides: []
+      })
+
+      create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+      create_card(name: "Goblin Guide", rarity: "rare", color_identity: "R")
+      create_card(name: "Monastery Swiftspear", rarity: "common", color_identity: "R")
+
+      create_card(
+        name: "Mountain",
+        rarity: "common",
+        color_identity: "",
+        is_land: true,
+        types: "Land"
+      )
+
+      {:ok, _} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Modern A",
+          source_name: "manual",
+          format: "Modern",
+          decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Guide\n12 Mountain\n"
+        })
+
+      {:ok, _} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Modern B",
+          source_name: "manual",
+          format: "Modern",
+          decklist_text: "Deck\n4 Lightning Bolt\n4 Monastery Swiftspear\n12 Mountain\n"
+        })
+
+      catalog = Scry2.NetDecking.catalog("Modern")
+      [group] = catalog.buildable ++ catalog.craftable ++ catalog.short
+      # Sanity check on the test setup itself: this must be the multi-variant
+      # shape, not the single-variant shortcut this test isn't exercising.
+      assert length(group.variants) == 2
+
+      {:ok, view, _html} = live(conn, ~p"/netdecks?format=Modern")
+
+      assert has_element?(view, ~s{a[href="/netdecks/archetype/#{group.slug}?format=Modern"]})
+    end
+  end
 end
