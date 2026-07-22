@@ -246,6 +246,138 @@ defmodule Scry2Web.NetdecksLiveTest do
              live(conn, ~p"/netdecks/archetype/never-heard-of-it")
   end
 
+  describe "recent view (UIDR-018)" do
+    test "the Recent tab lists decks ordered by fetched_at, newest first", %{conn: conn} do
+      create_card(name: "Lightning Bolt", rarity: "rare")
+
+      {:ok, older} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Older Deck",
+          source_name: "manual",
+          decklist_text: "Deck\n1 Lightning Bolt\n"
+        })
+
+      {:ok, newer} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Newer Deck",
+          source_name: "manual",
+          decklist_text: "Deck\n2 Lightning Bolt\n"
+        })
+
+      pin_fetched_at(older, ~U[2026-07-01 00:00:00.000000Z])
+      pin_fetched_at(newer, ~U[2026-07-10 00:00:00.000000Z])
+
+      {:ok, view, _html} = live(conn, ~p"/netdecks")
+
+      view
+      |> element(~s{a[href^="/netdecks?"]}, "Recent")
+      |> render_click()
+
+      assert_patch(view, ~p"/netdecks?view=recent")
+      html = render(view)
+
+      assert position_of(html, "Newer Deck") < position_of(html, "Older Deck")
+    end
+
+    test "By status is the default with no view param", %{conn: conn} do
+      create_card(name: "Lightning Bolt", rarity: "rare")
+
+      {:ok, _} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Burn",
+          source_name: "manual",
+          decklist_text: "Deck\n4 Lightning Bolt\n"
+        })
+
+      {:ok, _view, html} = live(conn, ~p"/netdecks")
+      assert html =~ "Buildable now"
+    end
+
+    test "clicking a recent row opens that deck's detail", %{conn: conn} do
+      create_card(name: "Lightning Bolt", rarity: "rare")
+
+      {:ok, deck} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Burn",
+          source_name: "manual",
+          decklist_text: "Deck\n4 Lightning Bolt\n"
+        })
+
+      {:ok, _} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Also Burn",
+          source_name: "manual",
+          decklist_text: "Deck\n3 Lightning Bolt\n"
+        })
+
+      {:ok, view, html} = live(conn, ~p"/netdecks?view=recent")
+
+      # The Recent tab is genuinely rendering (both decks present, unlike the
+      # tiered view which would cluster/label them) before we click through.
+      assert html =~ "Burn"
+      assert html =~ "Also Burn"
+
+      view
+      |> element(~s{a[href="/netdecks/#{deck.id}"]})
+      |> render_click()
+
+      assert_patch(view, ~p"/netdecks/#{deck.id}")
+      assert render(view) =~ "Copy to MTGA"
+    end
+
+    test "an empty catalog shows the same empty state on Recent", %{conn: conn} do
+      {:ok, _view, html} = live(conn, ~p"/netdecks?view=recent")
+      assert html =~ "No decks yet"
+    end
+
+    test "a snapshot_saved rescore refreshes data without reordering the recent list", %{
+      conn: conn
+    } do
+      bolt = create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+      {:ok, older} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Older Deck",
+          source_name: "manual",
+          decklist_text: "Deck\n1 Lightning Bolt\n"
+        })
+
+      {:ok, newer} =
+        Scry2.NetDecking.import_decklist(%{
+          name: "Newer Deck",
+          source_name: "manual",
+          decklist_text: "Deck\n2 Lightning Bolt\n"
+        })
+
+      pin_fetched_at(older, ~U[2026-07-01 00:00:00.000000Z])
+      pin_fetched_at(newer, ~U[2026-07-10 00:00:00.000000Z])
+
+      {:ok, view, _html} = live(conn, ~p"/netdecks?view=recent")
+      html = render(view)
+      assert position_of(html, "Newer Deck") < position_of(html, "Older Deck")
+
+      create_collection_snapshot(entries: [{bolt.arena_id, 4}])
+      Scry2.Topics.broadcast(Scry2.Topics.collection_snapshots(), {:snapshot_saved, %{}})
+      # Mailbox drain (ADR-009 exception): ensures the broadcast above has been
+      # handled before asserting, without inspecting GenServer-internal state.
+      :sys.get_state(view.pid)
+
+      html = render(view)
+      assert position_of(html, "Newer Deck") < position_of(html, "Older Deck")
+    end
+  end
+
+  defp position_of(html, text) do
+    {index, _length} = :binary.match(html, text)
+    index
+  end
+
+  defp pin_fetched_at(deck, fetched_at) do
+    deck
+    |> Ecto.Changeset.change(fetched_at: fetched_at)
+    |> Scry2.Repo.update!()
+  end
+
   defmodule BrowseStub do
     @behaviour Scry2.NetDecking.Source
     @impl true

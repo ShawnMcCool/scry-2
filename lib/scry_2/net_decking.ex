@@ -261,6 +261,51 @@ defmodule Scry2.NetDecking do
     }
   end
 
+  @doc """
+  Individual decks ordered by `fetched_at` descending, independent of
+  buildability tier or archetype grouping (UIDR-018) — "what's new," not
+  "what should I build." Each entry decorates one deck: `deck`, `result`
+  (buildability score), `color_identity`, `signature_arena_ids` (hero art),
+  `label` (the deck's own archetype stamp, or its own synthetic color · hero
+  label — cheaper than cluster-majority labeling and correct for a flat
+  per-deck view), `finish`/`record` (this deck's own provenance).
+
+  Returns `%{entries: [map()], total: non_neg_integer(), total_pages: pos_integer(), page: pos_integer()}`.
+  """
+  @spec recent_decks(pos_integer(), pos_integer()) :: %{
+          entries: [map()],
+          total: non_neg_integer(),
+          total_pages: pos_integer(),
+          page: pos_integer()
+        }
+  def recent_decks(page, per_page) do
+    total = Repo.aggregate(Deck, :count)
+    total_pages = max(1, ceil(total / per_page))
+
+    page_decks =
+      Deck
+      |> order_by([deck], desc: deck.fetched_at)
+      |> limit(^per_page)
+      |> offset(^((page - 1) * per_page))
+      |> Repo.all()
+
+    snapshot = Collection.current()
+    {raw_owned, wildcards} = collection_context(snapshot)
+
+    cards_by_arena_id = cards_for(page_decks)
+    owned = owned_by_identity(raw_owned, cards_by_arena_id)
+    rarities = Map.new(cards_by_arena_id, fn {id, card} -> {id, card_rarity(card)} end)
+    free_ids = Buildability.default_free_ids(cards_by_arena_id)
+
+    entries =
+      Enum.map(
+        page_decks,
+        &decorate_recent(&1, cards_by_arena_id, owned, wildcards, rarities, free_ids)
+      )
+
+    %{entries: entries, total: total, total_pages: total_pages, page: page}
+  end
+
   @doc ~s(URL segment for an archetype label: "Izzet Prowess" → "izzet-prowess".)
   @spec slugify(String.t()) :: String.t()
   def slugify(label) do
@@ -416,6 +461,25 @@ defmodule Scry2.NetDecking do
   defp synthetic_label(colors, signature, cards) do
     hero_name = signature |> List.first() |> card_name_or(cards)
     "#{DeckQualities.color_combo_name(colors)} · #{hero_name}"
+  end
+
+  # A recent-view row: this deck's own archetype stamp (or its own synthetic
+  # label), not its cluster's majority — cheap (no corpus-wide clustering
+  # pass) and correct for a flat per-deck list (UIDR-018).
+  defp decorate_recent(deck, cards, owned, wildcards, rarities, free_ids) do
+    entries = card_entries(deck.main_deck)
+    colors = DeckQualities.deck_color_identity(entries, cards)
+    signature = DeckQualities.signature_arena_ids(entries, cards, @cluster_signature_cards)
+
+    %{
+      deck: deck,
+      result: score_deck(deck, owned, wildcards, rarities, free_ids),
+      color_identity: colors,
+      signature_arena_ids: signature,
+      label: deck.archetype_name || synthetic_label(colors, signature, cards),
+      finish: Provenance.finish_label(deck),
+      record: Provenance.record_label(deck)
+    }
   end
 
   defp tile_provenance(member_decks) do

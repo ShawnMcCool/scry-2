@@ -118,6 +118,123 @@ defmodule Scry2.NetDeckingTest do
     assert detail.export_text =~ "Lightning Bolt"
   end
 
+  describe "recent_decks/2" do
+    test "orders entries by fetched_at descending" do
+      create_card(name: "Lightning Bolt", rarity: "rare")
+
+      # Distinct maindeck compositions — import is idempotent by maindeck
+      # composition hash, so identical decklists would collapse to one row.
+      {:ok, oldest} =
+        NetDecking.import_decklist(%{
+          name: "Oldest",
+          source_name: "manual",
+          decklist_text: "Deck\n1 Lightning Bolt\n"
+        })
+
+      {:ok, middle} =
+        NetDecking.import_decklist(%{
+          name: "Middle",
+          source_name: "manual",
+          decklist_text: "Deck\n2 Lightning Bolt\n"
+        })
+
+      {:ok, newest} =
+        NetDecking.import_decklist(%{
+          name: "Newest",
+          source_name: "manual",
+          decklist_text: "Deck\n3 Lightning Bolt\n"
+        })
+
+      pin_fetched_at(oldest, ~U[2026-07-01 10:00:00.000000Z])
+      pin_fetched_at(middle, ~U[2026-07-10 10:00:00.000000Z])
+      pin_fetched_at(newest, ~U[2026-07-20 10:00:00.000000Z])
+
+      result = NetDecking.recent_decks(1, 20)
+
+      assert Enum.map(result.entries, & &1.deck.name) == ["Newest", "Middle", "Oldest"]
+      assert result.total == 3
+      assert result.total_pages == 1
+    end
+
+    test "paginates with limit/offset and reports total_pages" do
+      create_card(name: "Lightning Bolt", rarity: "rare")
+
+      decks =
+        for n <- 1..5 do
+          {:ok, deck} =
+            NetDecking.import_decklist(%{
+              name: "Deck #{n}",
+              source_name: "manual",
+              decklist_text: "Deck\n#{n} Lightning Bolt\n"
+            })
+
+          deck
+        end
+
+      decks
+      |> Enum.with_index()
+      |> Enum.each(fn {deck, index} ->
+        pin_fetched_at(deck, DateTime.add(~U[2026-07-01 00:00:00.000000Z], index, :day))
+      end)
+
+      page_1 = NetDecking.recent_decks(1, 2)
+      page_2 = NetDecking.recent_decks(2, 2)
+      page_3 = NetDecking.recent_decks(3, 2)
+
+      assert Enum.map(page_1.entries, & &1.deck.name) == ["Deck 5", "Deck 4"]
+      assert Enum.map(page_2.entries, & &1.deck.name) == ["Deck 3", "Deck 2"]
+      assert Enum.map(page_3.entries, & &1.deck.name) == ["Deck 1"]
+      assert page_1.total == 5
+      assert page_1.total_pages == 3
+    end
+
+    test "decorates each entry with label, color identity, result, and provenance" do
+      bolt = create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+      create_card(
+        name: "Mountain",
+        rarity: "common",
+        color_identity: "",
+        is_land: true,
+        types: "Land"
+      )
+
+      create_collection_snapshot(entries: [{bolt.arena_id, 4}])
+
+      {:ok, _} =
+        NetDecking.import_decklist(%{
+          name: "Burn",
+          archetype: "Aggro",
+          source_name: "mtgo",
+          decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+        })
+
+      result = NetDecking.recent_decks(1, 20)
+
+      assert [entry] = result.entries
+      assert entry.label == "Mono-Red · Lightning Bolt"
+      assert entry.color_identity == "R"
+      assert entry.result.status == :buildable
+      assert entry.signature_arena_ids == [bolt.arena_id]
+      assert entry.finish == nil
+      assert entry.record == nil
+    end
+
+    test "an empty catalog returns no entries and one total page" do
+      result = NetDecking.recent_decks(1, 20)
+
+      assert result.entries == []
+      assert result.total == 0
+      assert result.total_pages == 1
+    end
+  end
+
+  defp pin_fetched_at(deck, fetched_at) do
+    deck
+    |> Ecto.Changeset.change(fetched_at: fetched_at)
+    |> Scry2.Repo.update!()
+  end
+
   test "deck_detail includes the variant matrix for the deck's cluster" do
     _bolt = create_card(name: "Lightning Bolt", rarity: "rare")
     _shock = create_card(name: "Shock", rarity: "common")

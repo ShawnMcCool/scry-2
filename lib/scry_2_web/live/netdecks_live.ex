@@ -34,6 +34,8 @@ defmodule Scry2Web.NetdecksLive do
     wildcards: %{common: 0, uncommon: 0, rare: 0, mythic: 0}
   }
 
+  @per_page 20
+
   @impl true
   def mount(_params, _session, socket) do
     if connected?(socket), do: Topics.subscribe(Topics.collection_snapshots())
@@ -44,6 +46,9 @@ defmodule Scry2Web.NetdecksLive do
      assign(socket,
        search: "",
        catalog: @empty_catalog,
+       view: "status",
+       page: 1,
+       recent: nil,
        detail: nil,
        archetype: nil,
        archetype_extras: nil,
@@ -81,17 +86,10 @@ defmodule Scry2Web.NetdecksLive do
     end
   end
 
-  def handle_params(_params, _uri, socket) do
+  def handle_params(params, _uri, socket) do
     catalog = NetDecking.catalog()
-
-    # Hero art crops for the archetype rows; full cards for the hover popup
-    # (CardHover pops the full card, not the crop).
-    art_ids =
-      [catalog.buildable, catalog.craftable, catalog.short]
-      |> Enum.concat()
-      |> Enum.map(fn group -> List.first(group.signature_arena_ids) end)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.uniq()
+    view = view_from_params(params)
+    page = parse_page(params["page"])
 
     socket =
       socket
@@ -99,10 +97,12 @@ defmodule Scry2Web.NetdecksLive do
         detail: nil,
         archetype: nil,
         catalog: catalog,
+        view: view,
+        page: page,
         sources: NetDecking.source_status(),
         imported_urls: NetDecking.imported_source_urls()
       )
-      |> CardImages.request(art_ids, variants: [:art, :full])
+      |> assign_view_content(view, page, catalog)
 
     {:noreply, socket}
   end
@@ -271,7 +271,17 @@ defmodule Scry2Web.NetdecksLive do
           end
 
         true ->
-          assign(socket, catalog: NetDecking.catalog())
+          socket = assign(socket, catalog: NetDecking.catalog())
+
+          if socket.assigns.view == "recent" do
+            # Refreshes cost/status data only — row order comes from the
+            # `fetched_at` DB query, never from score, so it can't shift here.
+            assign(socket,
+              recent: NetDecking.recent_decks(socket.assigns.page, @per_page)
+            )
+          else
+            socket
+          end
       end
 
     {:noreply, socket}
@@ -315,6 +325,8 @@ defmodule Scry2Web.NetdecksLive do
         browse={@browse}
         browse_sources={@browse_sources}
         imported_urls={@imported_urls}
+        view={@view}
+        recent={@recent}
       />
     </Layouts.app>
     """
@@ -331,6 +343,8 @@ defmodule Scry2Web.NetdecksLive do
   attr :browse, :map, required: true
   attr :browse_sources, :list, required: true
   attr :imported_urls, :any, required: true
+  attr :view, :string, required: true
+  attr :recent, :map, default: nil
 
   defp catalog(assigns) do
     assigns = assign(assigns, :total, catalog_total(assigns.catalog))
@@ -447,7 +461,20 @@ defmodule Scry2Web.NetdecksLive do
       No decks yet — paste an MTGA decklist above to start your catalog.
     </.empty_state>
 
-    <div :if={@total > 0} class="mb-5">
+    <div :if={@total > 0} role="tablist" class="tabs tabs-border mb-6">
+      <.link patch={~p"/netdecks"} role="tab" class={["tab", @view == "status" && "tab-active"]}>
+        By status
+      </.link>
+      <.link
+        patch={netdecks_path("recent", 1)}
+        role="tab"
+        class={["tab", @view == "recent" && "tab-active"]}
+      >
+        Recent
+      </.link>
+    </div>
+
+    <div :if={@total > 0 && @view == "status"} class="mb-5">
       <label class="input input-bordered input-sm flex items-center gap-2 w-full max-w-md">
         <.icon name="hero-magnifying-glass" class="size-4 text-base-content/40" />
         <input
@@ -461,7 +488,11 @@ defmodule Scry2Web.NetdecksLive do
       </label>
     </div>
 
-    <section :for={status <- NetdecksHelpers.status_order()} :if={@total > 0} class="mb-10">
+    <section
+      :for={status <- NetdecksHelpers.status_order()}
+      :if={@total > 0 && @view == "status"}
+      class="mb-10"
+    >
       <% meta = NetdecksHelpers.status_meta(status) %>
       <% groups = visible(@catalog[status], @search) %>
       <div class="flex items-baseline gap-3 border-b border-base-300/40 pb-2">
@@ -485,6 +516,119 @@ defmodule Scry2Web.NetdecksLive do
         </li>
       </ol>
     </section>
+
+    <.recent_list :if={@total > 0 && @view == "recent"} recent={@recent} cached_ids={@cached_ids} />
+    """
+  end
+
+  # ── Recent view (UIDR-018) ───────────────────────────────────────────────
+
+  attr :recent, :map, required: true
+  attr :cached_ids, :any, required: true
+
+  defp recent_list(assigns) do
+    ~H"""
+    <div>
+      <p :if={@recent.entries == []} class="text-sm text-base-content/30 italic pt-3">
+        Nothing recent yet.
+      </p>
+
+      <ol class="divide-y divide-base-300/25">
+        <li :for={entry <- @recent.entries}>
+          <.recent_deck_row entry={entry} cached_ids={@cached_ids} />
+        </li>
+      </ol>
+
+      <.pagination
+        :if={@recent.total_pages > 1}
+        page={@recent.page}
+        total_pages={@recent.total_pages}
+      />
+    </div>
+    """
+  end
+
+  attr :entry, :map, required: true
+  attr :cached_ids, :any, required: true
+
+  defp recent_deck_row(assigns) do
+    entry = assigns.entry
+
+    assigns =
+      assign(assigns,
+        hero: List.first(entry.signature_arena_ids),
+        meta: NetdecksHelpers.status_meta(entry.result.status)
+      )
+
+    ~H"""
+    <.link
+      patch={~p"/netdecks/#{@entry.deck.id}"}
+      class="grid grid-cols-[3.5rem_1fr] sm:grid-cols-[3.5rem_1fr_auto] items-center gap-4 py-4 px-1 hover:bg-base-200/40 transition-colors"
+    >
+      <.card_image
+        :if={@hero}
+        id={"recent-hero-#{@entry.deck.id}"}
+        arena_id={@hero}
+        variant={:art}
+        class="w-14 h-[4.5rem] object-cover rounded border border-base-300/40"
+        cached_ids={@cached_ids}
+      />
+      <span :if={is_nil(@hero)} class="w-14 h-[4.5rem] rounded bg-base-200/60"></span>
+
+      <div class="min-w-0">
+        <div class="flex items-baseline gap-3">
+          <span class="font-beleren text-xl leading-tight truncate">{@entry.label}</span>
+          <.mana_pips colors={@entry.color_identity} />
+          <span class={["badge badge-sm", @meta.badge]}>{@meta.label}</span>
+        </div>
+        <div class="flex items-center gap-2 mt-1.5 text-sm text-base-content/55 min-w-0 flex-wrap">
+          <span class="truncate">{@entry.deck.pilot || @entry.deck.name}</span>
+          <span :if={@entry.finish} class="italic text-base-content/50 shrink-0">
+            {@entry.finish}
+          </span>
+          <span :if={@entry.deck.event_name} class="text-base-content/40 truncate">
+            · {@entry.deck.event_name}
+            <span :if={@entry.deck.event_date}>
+              · {NetdecksHelpers.format_event_date(@entry.deck.event_date)}
+            </span>
+          </span>
+        </div>
+        <div class="text-xs text-base-content/40 mt-1">
+          via {@entry.deck.source_name} · {NetdecksHelpers.relative_time(@entry.deck.fetched_at)}
+        </div>
+      </div>
+
+      <div class="col-start-2 sm:col-start-3 flex sm:flex-col items-center sm:items-end gap-2 sm:gap-1.5 sm:text-right">
+        <span
+          :if={!NetdecksHelpers.any_cost?(@entry.result.maindeck.wildcard_cost)}
+          class="text-[10px] uppercase tracking-widest text-success/80"
+        >
+          owned — 0 wildcards
+        </span>
+        <.cost_pips
+          :if={NetdecksHelpers.any_cost?(@entry.result.maindeck.wildcard_cost)}
+          cost={@entry.result.maindeck.wildcard_cost}
+          size="size-3.5"
+        />
+      </div>
+    </.link>
+    """
+  end
+
+  attr :page, :integer, required: true
+  attr :total_pages, :integer, required: true
+
+  defp pagination(assigns) do
+    ~H"""
+    <div class="flex items-center justify-center gap-1 mt-6">
+      <.link
+        :for={p <- 1..@total_pages}
+        patch={netdecks_path("recent", p)}
+        class={["btn btn-xs", if(p == @page, do: "btn-active", else: "btn-ghost")]}
+      >
+        {p}
+      </.link>
+    </div>
     """
   end
 
@@ -1296,6 +1440,55 @@ defmodule Scry2Web.NetdecksLive do
 
   defp catalog_total(catalog) do
     Enum.sum(Enum.map([:buildable, :craftable, :short], &length(catalog[&1] || [])))
+  end
+
+  # ── Recent view (UIDR-018) ───────────────────────────────────────────────
+
+  defp view_from_params(%{"view" => "recent"}), do: "recent"
+  defp view_from_params(_params), do: "status"
+
+  defp parse_page(nil), do: 1
+  defp parse_page(page) when is_binary(page), do: max(1, String.to_integer(page))
+
+  defp netdecks_path("status", _page), do: ~p"/netdecks"
+
+  defp netdecks_path("recent", page) do
+    params =
+      if page > 1,
+        do: %{"view" => "recent", "page" => to_string(page)},
+        else: %{"view" => "recent"}
+
+    ~p"/netdecks?#{params}"
+  end
+
+  # Loads whichever tab's data the current view needs and requests its hero
+  # art (both variants: art crop for the row thumbnail, full card for the
+  # hover popup, matching every other card-image request in this module).
+  defp assign_view_content(socket, "recent", page, _catalog) do
+    recent = NetDecking.recent_decks(page, @per_page)
+
+    art_ids =
+      recent.entries
+      |> Enum.map(fn entry -> List.first(entry.signature_arena_ids) end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    socket
+    |> assign(recent: recent)
+    |> CardImages.request(art_ids, variants: [:art, :full])
+  end
+
+  defp assign_view_content(socket, "status", _page, catalog) do
+    art_ids =
+      [catalog.buildable, catalog.craftable, catalog.short]
+      |> Enum.concat()
+      |> Enum.map(fn group -> List.first(group.signature_arena_ids) end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    socket
+    |> assign(recent: nil)
+    |> CardImages.request(art_ids, variants: [:art, :full])
   end
 
   defp presence(nil), do: nil
