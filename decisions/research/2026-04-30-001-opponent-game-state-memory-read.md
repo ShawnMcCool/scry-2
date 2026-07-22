@@ -1,9 +1,24 @@
 ---
-status: exploratory
+status: implemented
 date: 2026-04-30
-revised: 2026-04-30
+revised: 2026-07-21
 ---
 # Opponent game-state memory read — feasibility & blueprint
+
+> **Revision 2026-07-21:** Chain 1 and Chain 2 are both shipped in
+> production (v0.29.0–v0.30.1, 2026-05-03). Live-polling `Scry2.LiveState.Server`
+> reads opponent rank/screen-name/commander (Chain 1) and per-zone
+> board state — battlefield, hand (revealed-only), graveyard, exile,
+> both players (Chain 2) — persisting a final snapshot at match
+> wind-down and rendering it as "Revealed cards" on the match detail
+> page. Stack and command zone were deliberately left unwalked (see
+> `specs/2026-05-03-chain-2-board-state-design.md`); library remains
+> fundamentally unreadable (the client never has unrevealed
+> identities). This record's "Decision Outcome" and phase plan below
+> describes what was actually built; treat it as history, not an open
+> task. The one item from that plan that did **not** ship: per-tick
+> board history / a live HUD feed — only the final snapshot is
+> persisted (see `plans.md` section D).
 
 > **Revision 2026-04-30:** spike 16
 > (`mtga-duress/experiments/spikes/spike16_match_manager/FINDING.md`)

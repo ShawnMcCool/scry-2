@@ -1,6 +1,6 @@
 # Chain 2: Opponent Board State and Revealed Cards
 
-**Status:** Draft (2026-05-03)
+**Status:** Shipped (v0.29.0–v0.30.1, 2026-05-03) — see CHANGELOG
 **Scope:** Walker → MtgaMemory contract → persistence → match detail UI for the cards visible in each zone of each player's board during a match.
 **Builds on:** Walker refactor (`refactor(walker): extract shared primitives per engineering audit`) and Chain 1 enrichment (`specs/2026-05-03-memory-observation-match-enrichment-design.md`).
 
@@ -256,6 +256,8 @@ Helpers extracted into `Scry2Web.Live.MatchBoardView` (pure functions: `group_by
 6. **UI surface on match detail** — render section + helpers + tests. ~1 day.
 
 Sub-project 2 is the sole remaining blocker. 3 and 4 can be planned in parallel once it lands. 5 depends on 3+4. 6 depends on 5.
+
+**Implementation deviation (discovered 2026-07-21, open):** sub-project 4 as shipped (`walker/card_holder.rs::read_battlefield_arena_ids`) did **not** do the region/stack drill-down described above. It walks the simpler `BattlefieldLayout._unattachedCardsCache` — a single flat `List<DuelScene_CDC>` — instead of the per-seat `_local*Region`/`_opponent*Region` fields. That cache is not split by player, so every battlefield card comes back unattributed (renders as "Unknown" in the UI rather than "You"/"Opponent"). The per-seat region traversal planned here is one candidate fix; see `plans.md` section D for the tracked investigation (an owner/controller field directly on `CardInstanceData`/`DuelScene_CDC`/`BaseCDC` is the other candidate, and is being investigated first).
 
 ## Open questions to resolve during sub-project 2 (spike)
 

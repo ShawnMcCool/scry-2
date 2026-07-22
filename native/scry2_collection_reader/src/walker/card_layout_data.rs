@@ -4,14 +4,24 @@
 //!
 //! Each `CardLayoutData` has:
 //!   - `Card : BaseCDC`            — the card display object
-//!   - `IsVisibleInLayout : bool`  — true iff face-up in this layout
-//!   - `FaceDownState`             — struct with `_reasonFaceDown` enum
+//!   - `IsVisibleInLayout : bool`  — true iff rendered in this layout
 //!
-//! The "is revealed" filter is `IsVisibleInLayout == true &&
-//! FaceDownState._reasonFaceDown == 0`. This naturally includes the
-//! local player's full hand (always visible to themselves), only the
-//! Thoughtseize/Duress-revealed entries in the opponent's hand, and
-//! every face-up entry in graveyard / exile.
+//! The "is revealed" filter is: the card's `BaseGrpId` (arena_id)
+//! resolves to a nonzero value. MTGA never populates `BaseGrpId` for a
+//! card it hasn't shown the local client's identity, so a resolved
+//! nonzero id is the authoritative signal. `IsVisibleInLayout` is
+//! checked first as a cheap pre-filter but is not sufficient on its
+//! own — it is true for every card occupying a rendered slot,
+//! including an opponent's face-down hand cards, not just revealed
+//! ones. (`CardLayoutData` has no `FaceDownState` field in current
+//! MTGA builds — verified live via `walker_debug_class_fields` on
+//! 2026-07-21 — so an earlier version of this filter that checked it
+//! always silently fell through to "revealed".)
+//!
+//! This naturally includes the local player's full hand (always
+//! visible to themselves), only the Thoughtseize/Duress-revealed
+//! entries in the opponent's hand, and every face-up entry in
+//! graveyard / exile.
 
 use super::card_holder;
 use super::field;
@@ -73,7 +83,18 @@ where
 }
 
 /// Read one `CardLayoutData` and return its `Card`'s arena_id only if
-/// it passes the revealed filter.
+/// the card's identity has actually been resolved client-side.
+///
+/// `IsVisibleInLayout` gates out entries not currently rendered in
+/// this layout. The authoritative "was this genuinely revealed to
+/// us" signal is `BaseGrpId` itself: MTGA never populates it for a
+/// card it hasn't shown the local client (see module doc). An earlier
+/// version of this filter also checked `CardLayoutData.FaceDownState`
+/// — verified live via `walker_debug_class_fields("CardLayoutData")`
+/// on 2026-07-21 that no such field exists on that class in current
+/// MTGA builds, so the check always silently defaulted to "revealed"
+/// and let every un-revealed opponent hand card through with
+/// `arena_id == 0`.
 fn arena_id_for_layout_entry_if_revealed<F>(
     offsets: &MonoOffsets,
     entry_addr: u64,
@@ -84,7 +105,7 @@ where
 {
     let entry_class_bytes = object::read_runtime_class_bytes(entry_addr, read_mem)?;
 
-    if !is_revealed(offsets, &entry_class_bytes, entry_addr, read_mem) {
+    if !is_visible_in_layout(offsets, &entry_class_bytes, entry_addr, read_mem) {
         return None;
     }
 
@@ -95,17 +116,17 @@ where
     }
     let card_addr = read_pointer_at(entry_addr.checked_add(card_field.offset as u64)?, read_mem)?;
 
-    card_holder::arena_id_for_cdc(offsets, card_addr, read_mem)
+    match card_holder::arena_id_for_cdc(offsets, card_addr, read_mem) {
+        Some(arena_id) if arena_id != 0 => Some(arena_id),
+        _ => None,
+    }
 }
 
-/// True when `IsVisibleInLayout` is set AND `FaceDownState._reasonFaceDown`
-/// is zero (i.e. the card is genuinely visible — not morphed, cloaked,
-/// or face-down).
-///
-/// Defensive default: when either field is unreadable, treat the entry
-/// as revealed. We'd rather over-report than silently drop revealed
-/// cards.
-fn is_revealed<F>(
+/// True when `IsVisibleInLayout` is set. Defensive default: unreadable
+/// → assume visible. This alone does not mean "revealed" — see
+/// [`arena_id_for_layout_entry_if_revealed`] for the authoritative
+/// check.
+fn is_visible_in_layout<F>(
     offsets: &MonoOffsets,
     entry_class_bytes: &[u8],
     entry_addr: u64,
@@ -114,7 +135,7 @@ fn is_revealed<F>(
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
-    let visible = match field::find_field_by_name_in_chain(
+    match field::find_field_by_name_in_chain(
         offsets,
         entry_class_bytes,
         "IsVisibleInLayout",
@@ -127,34 +148,6 @@ where
             },
             None => true, // address overflow → assume visible
         },
-        _ => true,
-    };
-    if !visible {
-        return false;
-    }
-
-    let face_down_offset = match field::find_field_by_name_in_chain(
-        offsets,
-        entry_class_bytes,
-        "FaceDownState",
-        *read_mem,
-    ) {
-        Some(f) if !f.is_static => f.offset,
-        _ => return true, // no FaceDownState field → assume revealed
-    };
-
-    let reason_addr = match entry_addr.checked_add(face_down_offset as u64) {
-        Some(a) => a,
-        None => return true,
-    };
-
-    // FaceDownState is an inlined value-type; its _reasonFaceDown enum
-    // sits at the start of that struct as an i32. Read the first 4
-    // bytes — non-zero means face-down for some reason.
-    match read_mem(reason_addr, 4) {
-        Some(bytes) if bytes.len() == 4 => {
-            i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) == 0
-        }
         _ => true,
     }
 }
@@ -232,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn is_revealed_true_when_visible_and_no_face_down_reason() {
+    fn is_visible_in_layout_true_when_flag_set() {
         let mut mem = FakeMem::default();
         let offsets = MonoOffsets::mtga_default();
 
@@ -242,7 +235,7 @@ mod tests {
             0x101_0000,
             0x102_0000,
             0x103_0000,
-            &[("IsVisibleInLayout", 0x10), ("FaceDownState", 0x14)],
+            &[("IsVisibleInLayout", 0x10)],
         );
         let entry_addr = 0x110_0000;
         let vtable = 0x120_0000;
@@ -253,14 +246,19 @@ mod tests {
             vtable,
             class_addr,
             &class_bytes,
-            &[(0x10, &[1]), (0x14, &0i32.to_le_bytes())],
+            &[(0x10, &[1])],
         );
 
-        assert!(is_revealed(&offsets, &class_bytes, entry_addr, &|a, l| mem.read(a, l)));
+        assert!(is_visible_in_layout(
+            &offsets,
+            &class_bytes,
+            entry_addr,
+            &|a, l| mem.read(a, l)
+        ));
     }
 
     #[test]
-    fn is_revealed_false_when_not_visible() {
+    fn is_visible_in_layout_false_when_flag_clear() {
         let mut mem = FakeMem::default();
         let offsets = MonoOffsets::mtga_default();
 
@@ -270,7 +268,7 @@ mod tests {
             0x201_0000,
             0x202_0000,
             0x203_0000,
-            &[("IsVisibleInLayout", 0x10), ("FaceDownState", 0x14)],
+            &[("IsVisibleInLayout", 0x10)],
         );
         let entry_addr = 0x210_0000;
         let vtable = 0x220_0000;
@@ -281,46 +279,19 @@ mod tests {
             vtable,
             class_addr,
             &class_bytes,
-            &[(0x10, &[0]), (0x14, &0i32.to_le_bytes())],
+            &[(0x10, &[0])],
         );
 
-        assert!(!is_revealed(&offsets, &class_bytes, entry_addr, &|a, l| {
-            mem.read(a, l)
-        }));
-    }
-
-    #[test]
-    fn is_revealed_false_when_face_down_reason_set() {
-        let mut mem = FakeMem::default();
-        let offsets = MonoOffsets::mtga_default();
-
-        let class_addr = 0x300_0000;
-        let class_bytes = build_flat_class(
-            &mut mem,
-            0x301_0000,
-            0x302_0000,
-            0x303_0000,
-            &[("IsVisibleInLayout", 0x10), ("FaceDownState", 0x14)],
-        );
-        let entry_addr = 0x310_0000;
-        let vtable = 0x320_0000;
-        install_object(
-            &mut mem,
-            entry_addr,
-            0x40,
-            vtable,
-            class_addr,
+        assert!(!is_visible_in_layout(
+            &offsets,
             &class_bytes,
-            &[(0x10, &[1]), (0x14, &7i32.to_le_bytes())],
-        );
-
-        assert!(!is_revealed(&offsets, &class_bytes, entry_addr, &|a, l| {
-            mem.read(a, l)
-        }));
+            entry_addr,
+            &|a, l| mem.read(a, l)
+        ));
     }
 
     #[test]
-    fn is_revealed_defaults_visible_when_fields_missing() {
+    fn is_visible_in_layout_defaults_true_when_field_missing() {
         let mut mem = FakeMem::default();
         let offsets = MonoOffsets::mtga_default();
 
@@ -338,6 +309,190 @@ mod tests {
             &[],
         );
 
-        assert!(is_revealed(&offsets, &class_bytes, entry_addr, &|a, l| mem.read(a, l)));
+        assert!(is_visible_in_layout(
+            &offsets,
+            &class_bytes,
+            entry_addr,
+            &|a, l| mem.read(a, l)
+        ));
+    }
+
+    /// Install a full `CardLayoutData → Card → _model → _instance →
+    /// BaseGrpId` chain, mirroring the production shape confirmed live
+    /// via `walker_debug_class_fields("CardLayoutData")` on 2026-07-21:
+    /// the class has `IsVisibleInLayout` but no `FaceDownState` field.
+    /// Returns the holder's `_previousLayoutData` list address so the
+    /// caller can install a holder pointing at it.
+    fn install_layout_entry_chain(mem: &mut FakeMem, base: u64, arena_id: i32) -> u64 {
+        // CardInstanceData: one field "BaseGrpId" at offset 0x10.
+        let inst_class_addr = base + 0x100_0000;
+        let inst_addr = base + 0x110_0000;
+        let inst_vtable = base + 0x120_0000;
+        let inst_class_bytes = build_flat_class(
+            mem,
+            base + 0x101_0000,
+            base + 0x102_0000,
+            base + 0x103_0000,
+            &[("BaseGrpId", 0x10)],
+        );
+        let mut inst_payload = vec![0u8; 0x20];
+        inst_payload[0..8].copy_from_slice(&inst_vtable.to_le_bytes());
+        inst_payload[0x10..0x14].copy_from_slice(&arena_id.to_le_bytes());
+        mem.add(inst_addr, inst_payload);
+        let mut vt = vec![0u8; 0x50];
+        vt[0..8].copy_from_slice(&inst_class_addr.to_le_bytes());
+        mem.add(inst_vtable, vt);
+        mem.add(inst_class_addr, inst_class_bytes);
+
+        // CardDataAdapter: one field "_instance" at offset 0x18.
+        let adapter_class_addr = base + 0x200_0000;
+        let adapter_addr = base + 0x210_0000;
+        let adapter_vtable = base + 0x220_0000;
+        let adapter_class_bytes = build_flat_class(
+            mem,
+            base + 0x201_0000,
+            base + 0x202_0000,
+            base + 0x203_0000,
+            &[("_instance", 0x18)],
+        );
+        install_object(
+            mem,
+            adapter_addr,
+            0x40,
+            adapter_vtable,
+            adapter_class_addr,
+            &adapter_class_bytes,
+            &[(0x18, &inst_addr.to_le_bytes())],
+        );
+
+        // BASE_CDC: one field "_model" at offset 0x40.
+        let base_cdc_class_addr = base + 0x300_0000;
+        let base_cdc_class_bytes = build_flat_class(
+            mem,
+            base + 0x301_0000,
+            base + 0x302_0000,
+            base + 0x303_0000,
+            &[("_model", 0x40)],
+        );
+        mem.add(base_cdc_class_addr, base_cdc_class_bytes);
+
+        // DuelScene_CDC: parent → BASE_CDC, no own fields needed.
+        let cdc_class_addr = base + 0x400_0000;
+        let cdc_class_bytes = make_class_def_with_parent(0, 0, base_cdc_class_addr);
+        let cdc_addr = base + 0x410_0000;
+        let cdc_vtable = base + 0x420_0000;
+        install_object(
+            mem,
+            cdc_addr,
+            0x80,
+            cdc_vtable,
+            cdc_class_addr,
+            &cdc_class_bytes,
+            &[(0x40, &adapter_addr.to_le_bytes())],
+        );
+
+        // CardLayoutData (production shape): "IsVisibleInLayout" @
+        // 0x48 and "Card" @ 0x10, NO "FaceDownState" field.
+        let entry_class_addr = base + 0x500_0000;
+        let entry_class_bytes = build_flat_class(
+            mem,
+            base + 0x501_0000,
+            base + 0x502_0000,
+            base + 0x503_0000,
+            &[("Card", 0x10), ("IsVisibleInLayout", 0x48)],
+        );
+        let entry_addr = base + 0x510_0000;
+        let entry_vtable = base + 0x520_0000;
+        install_object(
+            mem,
+            entry_addr,
+            0x50,
+            entry_vtable,
+            entry_class_addr,
+            &entry_class_bytes,
+            &[(0x10, &cdc_addr.to_le_bytes()), (0x48, &[1])],
+        );
+
+        // List<CardLayoutData> wrapping the single entry.
+        let list_class_addr = base + 0x600_0000;
+        let list_class_bytes = build_flat_class(
+            mem,
+            base + 0x601_0000,
+            base + 0x602_0000,
+            base + 0x603_0000,
+            &[("_items", 0x10), ("_size", 0x18)],
+        );
+        mem.add(list_class_addr, list_class_bytes);
+        let list_addr = base + 0x610_0000;
+        let list_vtable = base + 0x620_0000;
+        let items_ptr = base + 0x630_0000;
+        let mut list_payload = vec![0u8; 0x30];
+        list_payload[0..8].copy_from_slice(&list_vtable.to_le_bytes());
+        list_payload[0x10..0x18].copy_from_slice(&items_ptr.to_le_bytes());
+        list_payload[0x18..0x1c].copy_from_slice(&1i32.to_le_bytes());
+        mem.add(list_addr, list_payload);
+        let mut lvt = vec![0u8; 0x50];
+        lvt[0..8].copy_from_slice(&list_class_addr.to_le_bytes());
+        mem.add(list_vtable, lvt);
+        mem.add(items_ptr + 0x20, entry_addr.to_le_bytes().to_vec());
+
+        list_addr
+    }
+
+    /// Install a holder object whose `_previousLayoutData` points at
+    /// `list_addr`.
+    fn install_holder(mem: &mut FakeMem, base: u64, list_addr: u64) -> u64 {
+        let holder_class_addr = base + 0x100_0000;
+        let holder_class_bytes = build_flat_class(
+            mem,
+            base + 0x101_0000,
+            base + 0x102_0000,
+            base + 0x103_0000,
+            &[("_previousLayoutData", 0x10)],
+        );
+        let holder_addr = base + 0x110_0000;
+        let holder_vtable = base + 0x120_0000;
+        install_object(
+            mem,
+            holder_addr,
+            0x18,
+            holder_vtable,
+            holder_class_addr,
+            &holder_class_bytes,
+            &[(0x10, &list_addr.to_le_bytes())],
+        );
+        holder_addr
+    }
+
+    #[test]
+    fn read_revealed_arena_ids_excludes_entry_with_unresolved_arena_id() {
+        let mut mem = FakeMem::default();
+        let offsets = MonoOffsets::mtga_default();
+
+        // IsVisibleInLayout = true, but BaseGrpId = 0 — the shape MTGA
+        // actually produces for an opponent's un-revealed hand card.
+        let list_addr = install_layout_entry_chain(&mut mem, 0x5000_0000, 0);
+        let holder_addr = install_holder(&mut mem, 0x6000_0000, list_addr);
+
+        let result = read_revealed_arena_ids(&offsets, holder_addr, |a, l| mem.read(a, l));
+
+        assert_eq!(
+            result,
+            Some(vec![]),
+            "a card whose identity never resolved must not be reported as revealed"
+        );
+    }
+
+    #[test]
+    fn read_revealed_arena_ids_includes_entry_with_resolved_arena_id() {
+        let mut mem = FakeMem::default();
+        let offsets = MonoOffsets::mtga_default();
+
+        let list_addr = install_layout_entry_chain(&mut mem, 0x7000_0000, 88_983);
+        let holder_addr = install_holder(&mut mem, 0x8000_0000, list_addr);
+
+        let result = read_revealed_arena_ids(&offsets, holder_addr, |a, l| mem.read(a, l));
+
+        assert_eq!(result, Some(vec![88_983]));
     }
 }

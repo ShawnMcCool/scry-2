@@ -72,16 +72,27 @@ is clean.
 
 ## D. Live tracking (continuous reads — new architectural mode)
 
-`Scry2.LiveState` plumbing **shipped (Chain 1)**: GenServer polls 500 ms
-on `MatchCreated → MatchCompleted`, persists `live_state_snapshots`,
-broadcasts `live_match:updates` / `live_match:final`. Settings toggle
-+ setup-tour step ship the kill switch. The walker NIF currently
-returns the rank/screen-name/commander chain only — every "Chain 2"
-item below (board state) is still gated on `walker/card_holder.rs`
-(blocked on parent-class + GRE captures, see task #22).
+`Scry2.LiveState` plumbing **shipped (Chain 1 + Chain 2)**: GenServer
+polls 500 ms on `MatchCreated → MatchCompleted`, persists
+`live_state_snapshots`, broadcasts `live_match:updates` /
+`live_match:final`. Settings toggle + setup-tour step ship the kill
+switch. Chain 1 (rank/screen-name/commander) and Chain 2 (per-zone
+board state — battlefield/hand/graveyard/exile, both players) are both
+live; `walker/card_holder.rs` + `list_t.rs` + `card_layout_data.rs`
+do the final drill-down. See `specs/2026-05-03-chain-2-board-state-design.md`
+(status: shipped) and CHANGELOG v0.29.0–v0.30.1.
 
 - LiveView UI consuming `live_match:updates` (rank/screen-name/commander) — **✅ shipped** (`Scry2Web.Components.LiveMatchCard` on `/matches`)
-- Active match HUD feed (life, hand, library, gy, exile, mana, stack) — **live** + **reader+**
+- Opponent (and own) revealed cards — battlefield, hand (revealed-only), graveyard, exile — **✅ shipped** (`Scry2Web.Components.RevealedCardsCard` on the match detail page; captured live, persisted at wind-down via `LiveState.record_final_board/2`). Stack and command zone deliberately unwalked (rarely populated at end-of-match / no Brawl-Commander play); library is fundamentally unreadable — the client never has unrevealed identities.
+  - **Known bug, fixed 2026-07-21:** opponent hand cards were showing as "revealed" when MTGA never actually revealed them (blank/broken card images). Root cause: `card_layout_data.rs`'s reveal filter checked a `FaceDownState` field that does not exist on `CardLayoutData` in current MTGA builds (confirmed live via `walker_debug_class_fields`) — the check silently defaulted to "revealed" on every entry, so the real gate was just `IsVisibleInLayout`, which is also true for un-revealed cards (it means "occupies a rendered slot," not "shown to the player"). Fixed by gating on a resolved nonzero `BaseGrpId` instead — MTGA only ever populates that when the card's identity has genuinely been shown. Forward-only fix (does not backfill historical `arena_id=0` rows already in the DB).
+  - **Open bug, not yet started — battlefield per-card ownership.** Every battlefield card lands in an unattributed "Unknown" bucket in the UI (`match_board_view.ex`'s `seat_label(0)`) instead of being split between "You" and "Opponent." Root cause confirmed via DB query: `live_match_revealed_cards` has 8,685 battlefield rows, 100% at `seat_id=0`.
+    - **Why:** the original design (`specs/2026-05-03-chain-2-board-state-design.md`, sub-project 4) planned a per-seat region traversal — `BattlefieldLayout.Layout` exposes 8 `BattlefieldRegion` fields split `_local*`/`_opponent*` per card type (creature/land/artifact/planeswalker), which would give per-seat attribution for free. The shipped implementation (`walker/card_holder.rs::read_battlefield_arena_ids`) instead walks the simpler `BattlefieldLayout._unattachedCardsCache` — a single flat `List<DuelScene_CDC>` that is not split by player, so every card resolves to the same unattributed pool regardless of which seat's holder you reached it from.
+    - **Two candidate fixes to investigate (user chose "investigate per-card ownership first," i.e. option 2, before falling back to option 1):**
+      1. Switch the battlefield walk back to the region-based traversal from the original design (`_localCreatureRegion`/`_opponentCreatureRegion`/etc. → `_stacksByShape` → `BattlefieldStack.AllCards`) — region membership itself is the ownership signal, no new field needed.
+      2. Look for a controller/owner/seat field directly on `CardInstanceData`, `DuelScene_CDC`, or `BaseCDC` (the same objects the walker already drills into for `BaseGrpId`) — would work for battlefield without abandoning the simpler unified-cache traversal, and might also generalize to other zones.
+    - **Next steps:** user has MTGA closed; needs it (and ideally an active match) reopened to probe candidate classes via `walker_debug_class_fields`/`walker_debug_classes_matching` — field *names* can be enumerated without a match, but confirming *populated* owner/controller values needs a live game. Start with `CardInstanceData` (cheapest — already resolved on every walk) before touching the battlefield region traversal.
+    - **UI treatment in the meantime:** left as "Unknown" rather than relabeled to something like "Battlefield (shared)" — user chose to pursue ownership resolution rather than relabel around the gap.
+- Active match HUD feed (life, hand, library, gy, exile, mana, stack) — **live** + **reader+** (per-tick board history was explicitly deferred when Chain 2 shipped — only the final snapshot is persisted; a HUD needs the tick broadcast, not new walker work)
 - Real-time draft pack reader (cards seen but passed) — **live** + **reader+**
 - Real-time mana / card-advantage tracker — **live** + **reader+**
 - Opponent disconnect / concede early-detection — **live** + **reader+**
@@ -146,12 +157,14 @@ re-anchors on navigation. Supersedes the UIDR-013 per-row delta lines
   on every `Scry2.Collection` snapshot. See "Walker phase 6 — shipped" at
   the top of this file for refs. B/E/F items can now be picked up on top
   of real walker data.
-- **Live-state GenServer — ✅ shipped (Chain 1).** `Scry2.LiveState.Server`
+- **Live-state GenServer — ✅ shipped (Chain 1 + Chain 2).** `Scry2.LiveState.Server`
   polls every 500 ms while a match is active, gated by the
   `live_match_polling_enabled` Settings flag (on by default, configurable
   in setup tour and Settings → Memory Reading). Chain 1 reads
   rank/screen-name/commander via `MtgaMemory.walk_match_info/1`. Chain 2
-  (board state) is still gated on `walker/card_holder.rs` — see task #22.
+  reads per-zone board state via `MtgaMemory.walk_match_board/1`,
+  persisted at wind-down and rendered as "Revealed cards" on the match
+  detail page.
 - **Reader extensions** (`reader+`) — each new memory structure (rank object,
   deck list, quest list, etc.) needs its own walker-style traversal. Current
   scanner only finds the cards dictionary. Each extension is its own ADR.
