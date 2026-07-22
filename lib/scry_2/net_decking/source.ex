@@ -7,7 +7,8 @@ defmodule Scry2.NetDecking.Source do
   Parse/Resolve/Dedup/Persist.
 
   Shipped adapters (ADR-040): `Sources.LocalJsonSource` (canonical out-of-band
-  feed) and `Sources.MtgoSource` (mtgo.com Standard). `Scry2.NetDecking.
+  feed) and `Sources.MtgoSource` (mtgo.com Standard/Modern/Pioneer/Pauper).
+  `Scry2.NetDecking.
   IngestSource` runs one source through the funnel; `Scry2.Workers.
   PeriodicallyFetchNetdecks` schedules the enabled sources daily.
 
@@ -21,6 +22,7 @@ defmodule Scry2.NetDecking.Source do
   @type raw_deck :: %{
           required(:name) => String.t(),
           required(:decklist_text) => String.t(),
+          optional(:format) => String.t(),
           optional(:archetype) => String.t(),
           optional(:source_url) => String.t(),
           optional(:pilot) => String.t(),

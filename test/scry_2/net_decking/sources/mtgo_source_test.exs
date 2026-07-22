@@ -18,7 +18,8 @@ defmodule Scry2.NetDecking.Sources.MtgoSourceTest do
               ~s|<a href="/decklist/vintage-league-2026-06-2910887">y</a>|
           )
 
-        String.starts_with?(conn.request_path, "/decklist/standard-") ->
+        String.starts_with?(conn.request_path, "/decklist/standard-") or
+            String.starts_with?(conn.request_path, "/decklist/modern-") ->
           Plug.Conn.resp(conn, 200, @deck_html)
 
         true ->
@@ -45,8 +46,8 @@ defmodule Scry2.NetDecking.Sources.MtgoSourceTest do
     refute Enum.any?(decks, &(&1.source_url =~ "vintage"))
   end
 
-  test "declares standard as its only browsable format" do
-    assert MtgoSource.formats() == ["standard"]
+  test "declares four browsable formats" do
+    assert MtgoSource.formats() == ["Standard", "Modern", "Pioneer", "Pauper"]
   end
 
   describe "list_events/2" do
@@ -93,6 +94,26 @@ defmodule Scry2.NetDecking.Sources.MtgoSourceTest do
     end
   end
 
+  describe "format_from_url/1" do
+    test "maps each known slug to its Titlecase display format" do
+      assert MtgoSource.format_from_url("https://www.mtgo.com/decklist/standard-challenge-32-x") ==
+               "Standard"
+
+      assert MtgoSource.format_from_url("https://www.mtgo.com/decklist/modern-challenge-32-x") ==
+               "Modern"
+
+      assert MtgoSource.format_from_url("https://www.mtgo.com/decklist/pioneer-league-x") ==
+               "Pioneer"
+
+      assert MtgoSource.format_from_url("https://www.mtgo.com/decklist/pauper-challenge-x") ==
+               "Pauper"
+    end
+
+    test "returns nil for a slug this source doesn't declare" do
+      assert MtgoSource.format_from_url("https://www.mtgo.com/decklist/vintage-league-x") == nil
+    end
+  end
+
   describe "fetch_event/2" do
     test "returns the event's raw decks on success" do
       url = "https://www.mtgo.com/decklist/standard-challenge-32-2026-06-0812843830"
@@ -102,6 +123,16 @@ defmodule Scry2.NetDecking.Sources.MtgoSourceTest do
 
       assert decks != []
       assert Enum.all?(decks, &(&1.source_url == url))
+    end
+
+    test "stamps each raw deck with the format derived from the event url" do
+      url = "https://www.mtgo.com/decklist/modern-challenge-32-2026-07-0112846483"
+
+      assert {:ok, decks} =
+               MtgoSource.fetch_event(url, req_options: [plug: {Req.Test, MtgoSource}])
+
+      assert decks != []
+      assert Enum.all?(decks, &(&1.format == "Modern"))
     end
 
     test "returns an error when the event page is unreachable" do

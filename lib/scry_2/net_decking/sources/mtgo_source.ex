@@ -1,14 +1,16 @@
 defmodule Scry2.NetDecking.Sources.MtgoSource do
   @moduledoc """
-  Fetches current-Standard decklists from mtgo.com. The landing page lists
-  event links (`/decklist/standard-challenge-…`, `/decklist/standard-league-…`);
-  each event page server-renders `window.MTGO.decklists.data`, parsed by
-  `Scry2.NetDecking.Sources.MtgoExtract`.
+  Fetches current decklists from mtgo.com for Standard, Modern, Pioneer, and
+  Pauper. The landing page lists event links (`/decklist/standard-challenge-…`,
+  `/decklist/modern-league-…`, etc.); each event page server-renders
+  `window.MTGO.decklists.data`, parsed by `Scry2.NetDecking.Sources.MtgoExtract`.
 
-  Browsable (import browser): `formats/0` declares `["standard"]`;
-  `list_events/2` scrapes the landing page into `%{name, date, url}` events
-  (name + date parsed from the link slug — the landing page carries nothing
-  richer); `fetch_event/2` pulls one event's decklists by URL.
+  Browsable (import browser): `formats/0` declares
+  `["Standard", "Modern", "Pioneer", "Pauper"]`; `list_events/2` scrapes the
+  landing page into `%{name, date, url}` events (name + date parsed from the
+  link slug — the landing page carries nothing richer); `fetch_event/2` pulls
+  one event's decklists by URL, stamping each with the format parsed from the
+  event URL's slug (`format_from_url/1`).
 
   First-party Wizards/Daybreak source — no Cloudflare, honest User-Agent, never
   a browser-UA spoof. Politeness: events fetched per run are capped; HTTP is
@@ -25,11 +27,19 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
   @user_agent "scry2/#{Mix.Project.config()[:version]} (+https://github.com/ShawnMcCool/scry-2)"
   @default_max_events 8
 
+  @formats ["Standard", "Modern", "Pioneer", "Pauper"]
+  @format_by_slug %{
+    "standard" => "Standard",
+    "modern" => "Modern",
+    "pioneer" => "Pioneer",
+    "pauper" => "Pauper"
+  }
+
   @impl true
   def source_name, do: "mtgo"
 
   @impl true
-  def formats, do: ["standard"]
+  def formats, do: @formats
 
   @impl true
   def fetch, do: fetch([])
@@ -39,7 +49,11 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
     req_options = Keyword.get(opts, :req_options, [])
     max_events = Keyword.get(opts, :max_events, @default_max_events)
 
-    case list_events("standard", opts) do
+    Enum.flat_map(@formats, &fetch_format(&1, req_options, max_events))
+  end
+
+  defp fetch_format(format, req_options, max_events) do
+    case list_events(format, req_options: req_options) do
       {:ok, events} ->
         events
         |> Enum.take(max_events)
@@ -55,7 +69,7 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
         end)
 
       {:error, reason} ->
-        Log.warning(:importer, "mtgo landing fetch failed: #{inspect(reason)}")
+        Log.warning(:importer, "mtgo landing fetch failed (#{format}): #{inspect(reason)}")
         []
     end
   end
@@ -67,14 +81,15 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
           {:ok, [Scry2.NetDecking.Source.event()]} | {:error, term()}
   def list_events(format, opts) do
     req_options = Keyword.get(opts, :req_options, [])
+    slug = String.downcase(format)
 
     with {:ok, landing} <- get("#{@base}/decklists", req_options) do
       events =
-        ~r{/decklist/#{format}-[a-z0-9-]+}
+        ~r{/decklist/#{slug}-[a-z0-9-]+}
         |> Regex.scan(landing)
         |> List.flatten()
         |> Enum.uniq()
-        |> Enum.map(&parse_event_link(&1, format))
+        |> Enum.map(&parse_event_link(&1, slug))
 
       {:ok, events}
     end
@@ -87,9 +102,28 @@ defmodule Scry2.NetDecking.Sources.MtgoSource do
           {:ok, [Scry2.NetDecking.Source.raw_deck()]} | {:error, term()}
   def fetch_event(url, opts) do
     req_options = Keyword.get(opts, :req_options, [])
+    format = format_from_url(url)
 
     with {:ok, html} <- get(url, req_options) do
-      {:ok, MtgoExtract.raw_decks(html, url)}
+      raw_decks =
+        html
+        |> MtgoExtract.raw_decks(url)
+        |> Enum.map(&Map.put(&1, :format, format))
+
+      {:ok, raw_decks}
+    end
+  end
+
+  @doc """
+  The Titlecase display format parsed from an MTGO decklist event URL's
+  slug prefix (`.../decklist/modern-challenge-...` → `"Modern"`), or
+  `nil` for a format this source doesn't declare (e.g. vintage).
+  """
+  @spec format_from_url(String.t()) :: String.t() | nil
+  def format_from_url(url) do
+    case Regex.run(~r{/decklist/([a-z]+)-}, url) do
+      [_, slug] -> Map.get(@format_by_slug, slug)
+      nil -> nil
     end
   end
 
