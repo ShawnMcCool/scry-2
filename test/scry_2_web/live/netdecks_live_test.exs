@@ -115,6 +115,24 @@ defmodule Scry2Web.NetdecksLiveTest do
     assert_patch(view, ~p"/netdecks/#{variant.id}")
   end
 
+  test "unresolved cards render inline in the decklist, not just the summary banner", %{
+    conn: conn
+  } do
+    create_card(name: "Mountain", rarity: "common", is_land: true)
+
+    {:ok, deck} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Partial deck",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Made Up Card (XYZ) 1\n16 Mountain\n"
+      })
+
+    {:ok, view, _html} = live(conn, ~p"/netdecks/#{deck.id}")
+
+    assert has_element?(view, "span", "Made Up Card")
+    assert has_element?(view, "span", "not on MTGA")
+  end
+
   test "unknown deck id redirects back to the catalog", %{conn: conn} do
     assert {:error, {:live_redirect, %{to: "/netdecks"}}} = live(conn, ~p"/netdecks/999999")
   end

@@ -1155,6 +1155,7 @@ defmodule Scry2Web.NetdecksLive do
       assign(assigns,
         meta: NetdecksHelpers.status_meta(assigns.detail.result.status),
         unresolved: NetdecksHelpers.unresolved_count(assigns.detail.deck),
+        unresolved_entries: NetdecksHelpers.unresolved_entries(assigns.detail.deck),
         provenance_line: NetdecksHelpers.detail_provenance(assigns.detail),
         rows_by_arena_id:
           NetdecksHelpers.rows_by_arena_id(assigns.detail.main_rows, assigns.detail.side_rows)
@@ -1317,6 +1318,7 @@ defmodule Scry2Web.NetdecksLive do
           prefs={@prefs}
           card_class={missing_card_tint(@rows_by_arena_id)}
           count_entry={NetdecksHelpers.ownership_count_entry(@rows_by_arena_id)}
+          unresolved={@unresolved_entries}
         >
           <:card_overlay :let={card}>
             <.ownership_wash row={Map.get(@rows_by_arena_id, card.arena_id)} />
