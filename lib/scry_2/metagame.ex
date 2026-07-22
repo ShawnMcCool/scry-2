@@ -66,16 +66,17 @@ defmodule Scry2.Metagame do
   A classification as row-stamp attrs — `archetype_name` (display name,
   variant-refined), `archetype_variant`, `archetype_fallback` — the
   shape consumer contexts (NetDecking, Decks) persist onto their own
-  rows. Standard-only: any other format yields the nil stamp, as do
-  `:unknown` classifications.
+  rows. Works for any format with loaded definitions; a format with no
+  vocabulary at all (nothing ever fetched or vendored for it) classifies
+  `:unknown` the same as any deck that matches no archetype.
   """
   @spec classification_attrs(map() | nil, map() | nil, String.t() | nil) :: %{
           archetype_name: String.t() | nil,
           archetype_variant: String.t() | nil,
           archetype_fallback: boolean()
         }
-  def classification_attrs(main_deck, sideboard, "Standard") do
-    case classify(main_deck, sideboard, "Standard") do
+  def classification_attrs(main_deck, sideboard, format) when is_binary(format) do
+    case classify(main_deck, sideboard, format) do
       %Classification{} = classification ->
         %{
           archetype_name: classification.name,

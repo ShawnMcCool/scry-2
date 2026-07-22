@@ -128,4 +128,51 @@ defmodule Scry2.MetagameTest do
       assert Metagame.classify_observed([]) == :unknown
     end
   end
+
+  describe "classification_attrs/3" do
+    test "classifies non-Standard formats, not just Standard" do
+      Metagame.replace_definitions!("Modern", %{
+        definitions: [
+          %{
+            key: "Burn",
+            kind: "archetype",
+            name: "Burn",
+            include_color_in_name: true,
+            conditions: [%{"type" => "InMainboard", "cards" => ["Lightning Bolt"]}],
+            variants: [],
+            common_cards: []
+          }
+        ],
+        overrides: []
+      })
+
+      bolt = create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+      mountain =
+        create_card(name: "Mountain", rarity: "common", color_identity: "R", is_land: true)
+
+      main = %{
+        "cards" => [
+          %{"arena_id" => bolt.arena_id, "count" => 4},
+          %{"arena_id" => mountain.arena_id, "count" => 20}
+        ]
+      }
+
+      sideboard = %{"cards" => []}
+
+      assert %{archetype_name: "Mono-Red Burn"} =
+               Metagame.classification_attrs(main, sideboard, "Modern")
+    end
+
+    test "an unrecognized format (no vocabulary at all) classifies unknown, not an error" do
+      bolt = create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+      main = %{"cards" => [%{"arena_id" => bolt.arena_id, "count" => 4}]}
+
+      assert Metagame.classification_attrs(main, %{"cards" => []}, "Historic") == %{
+               archetype_name: nil,
+               archetype_variant: nil,
+               archetype_fallback: false
+             }
+    end
+  end
 end
