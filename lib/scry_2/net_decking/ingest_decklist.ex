@@ -74,8 +74,8 @@ defmodule Scry2.NetDecking.IngestDecklist do
   end
 
   defp persist(attrs, main_cards, side_cards, unresolved, composition_hash) do
-    row = existing(composition_hash)
     format = attrs[:format] || "Standard"
+    row = existing(composition_hash, format)
 
     stamp =
       Metagame.classification_attrs(%{"cards" => main_cards}, %{"cards" => side_cards}, format)
@@ -108,11 +108,11 @@ defmodule Scry2.NetDecking.IngestDecklist do
     Repo.insert_or_update(changeset)
   end
 
-  defp existing(nil), do: nil
+  defp existing(nil, _format), do: nil
 
-  defp existing(composition_hash) do
+  defp existing(composition_hash, format) do
     Deck
-    |> where([d], d.composition_hash == ^composition_hash)
+    |> where([d], d.composition_hash == ^composition_hash and d.format == ^format)
     |> limit(1)
     |> Repo.one()
   end

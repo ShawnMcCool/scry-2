@@ -114,6 +114,31 @@ defmodule Scry2.NetDecking.IngestDecklistTest do
     assert deck.event_date == nil
   end
 
+  test "the same maindeck in two different formats does not collide" do
+    seed_cards()
+
+    {:ok, standard_deck} =
+      IngestDecklist.run(%{
+        name: "Mono-Red Standard",
+        source_name: "manual",
+        format: "Standard",
+        decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+      })
+
+    {:ok, modern_deck} =
+      IngestDecklist.run(%{
+        name: "Mono-Red Modern",
+        source_name: "manual",
+        format: "Modern",
+        decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+      })
+
+    assert standard_deck.id != modern_deck.id
+    assert standard_deck.format == "Standard"
+    assert modern_deck.format == "Modern"
+    assert Repo.aggregate(Deck, :count) == 2
+  end
+
   describe "archetype stamping" do
     defp install_burn_definition do
       Scry2.Metagame.replace_definitions!("Standard", %{
