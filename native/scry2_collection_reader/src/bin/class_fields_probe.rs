@@ -100,6 +100,26 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    if env::args().any(|a| a == "--walk-board") {
+        // Exercises the actual shipped code path (same function the
+        // NIF calls), not the ad-hoc drilling above — the real
+        // end-to-end verification for the battlefield per-card-seat fix.
+        match scry2_collection_reader::walker::run::walk_match_board(&maps_owned, read_mem) {
+            Ok(Some(snapshot)) => {
+                println!("\n# walk_match_board — real production path");
+                for zone in &snapshot.zones {
+                    println!(
+                        "  seat_id={} zone_id={} arena_ids={:?}",
+                        zone.seat_id, zone.zone_id, zone.arena_ids
+                    );
+                }
+            }
+            Ok(None) => println!("[probe] walk_match_board: no active match scene"),
+            Err(e) => println!("[probe] walk_match_board failed: {e:?}"),
+        }
+        return ExitCode::SUCCESS;
+    }
+
     for target in &targets {
         println!("\n# {target}");
         let mut found_any = false;
@@ -310,8 +330,71 @@ where
         "  cdc=0x{:x} instance=0x{:x} BaseGrpId={:?}",
         cdc_addr, instance_addr, base_grp_id
     );
-    print_dual_interpretation("    Controller", controller_raw);
-    print_dual_interpretation("    Owner", owner_raw);
+    print_dual_interpretation("    Controller", controller_raw.clone());
+    print_dual_interpretation("    Owner", owner_raw.clone());
+    if let Some(ptr) = controller_raw.as_ref().and_then(|b| read_u64(b)) {
+        deref_boxed_value("    Controller ->", ptr, read_mem);
+    }
+    if let Some(ptr) = owner_raw.as_ref().and_then(|b| read_u64(b)) {
+        deref_boxed_value("    Owner ->", ptr, read_mem);
+    }
+}
+
+/// Dereference a pointer field whose target's identity is unknown —
+/// print its runtime class name plus the first bytes past the
+/// standard 0x10 object header, in case it's a boxed primitive/enum
+/// (`GREPlayerNum` boxed as `object`, `Nullable<int>`, etc.).
+fn deref_boxed_value<F>(label: &str, ptr: u64, read_mem: &F)
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    if ptr == 0 {
+        println!("{label} NULL");
+        return;
+    }
+    let class_name = object::read_runtime_class_bytes(ptr, read_mem)
+        .and_then(|cb| {
+            let read_mem2 = read_mem;
+            (|| -> Option<String> {
+                if cb.len() < 0x50 {
+                    return None;
+                }
+                let name_ptr = u64::from_le_bytes([
+                    cb[0x48], cb[0x49], cb[0x4a], cb[0x4b], cb[0x4c], cb[0x4d], cb[0x4e], cb[0x4f],
+                ]);
+                let bytes = read_mem2(name_ptr, READ_NAME_MAX)?;
+                let nul = bytes.iter().position(|b| *b == 0).unwrap_or(bytes.len());
+                String::from_utf8(bytes[..nul].to_vec()).ok()
+            })()
+        })
+        .unwrap_or_else(|| "?".to_string());
+    let payload = read_mem(ptr + 0x10, 8);
+    let payload_str = match payload {
+        Some(bytes) if bytes.len() >= 8 => {
+            let as_i32 = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+            let as_u64 = u64::from_le_bytes([
+                bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+            ]);
+            format!("payload_i32={as_i32} payload_u64=0x{as_u64:x}")
+        }
+        _ => "<payload read failed>".to_string(),
+    };
+
+    // MtgPlayer.ClientPlayerEnum (offset 0x13c) / ControllerId (0x11c) —
+    // confirmed live via class-fields-probe --class=MtgPlayer. These are
+    // candidates for the stable per-player identity, since the MtgPlayer
+    // *object* pointer itself appears to churn across GRE update batches.
+    let client_player_enum = read_mem(ptr + 0x13c, 4)
+        .filter(|b| b.len() >= 4)
+        .map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+    let controller_id = read_mem(ptr + 0x11c, 4)
+        .filter(|b| b.len() >= 4)
+        .map(|b| i32::from_le_bytes([b[0], b[1], b[2], b[3]]));
+
+    println!(
+        "{label} 0x{ptr:x} class='{class_name}' {payload_str} ClientPlayerEnum={:?} ControllerId={:?}",
+        client_player_enum, controller_id
+    );
 }
 
 fn print_dual_interpretation(label: &str, raw: Option<Vec<u8>>) {
@@ -462,7 +545,12 @@ fn read_u64(b: &[u8]) -> Option<u64> {
     }
 }
 
-fn find_class_in_any<F>(offsets: &MonoOffsets, images: &[u64], target: &str, read_mem: &F) -> Option<u64>
+fn find_class_in_any<F>(
+    offsets: &MonoOffsets,
+    images: &[u64],
+    target: &str,
+    read_mem: &F,
+) -> Option<u64>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {

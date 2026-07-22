@@ -21,6 +21,18 @@
 //! `CardLayoutData` wrapper to unpack and no per-region/per-stack
 //! drill (battlefield regions are layout metadata, not card storage).
 //!
+//! ## Per-card seat attribution
+//!
+//! `_unattachedCardsCache` is not split by player — `PlayerTypeMap`
+//! (see `super::match_scene`) holds exactly one battlefield holder,
+//! keyed `0`. So unlike Hand/Graveyard/Exile, the outer seat key is
+//! useless here; each card's seat has to be read out of the card
+//! itself: `CardDataAdapter._instance` (`MtgCardInstance`) `.Owner` →
+//! `MtgPlayer.ClientPlayerEnum : i32` (same `1`=LocalPlayer,
+//! `2`=Opponent encoding as the outer seat key elsewhere). Verified
+//! live 2026-07-22 against 19 real battlefield cards in an active
+//! match — see [`owner_seat_for_cdc`] and `plans.md` section D.
+//!
 //! ## Non-battlefield zones (Hand, Graveyard, Exile)
 //!
 //! Hand / Graveyard / Exile go through the universal
@@ -51,17 +63,23 @@ pub const ZONE_BATTLEFIELD: i32 = 4;
 /// Brawl/Commander.
 pub const READABLE_ZONES: &[i32] = &[3, 4, 5, 6];
 
-/// Read every visible card's arena_id in a battlefield holder.
+/// Read every visible battlefield card as `(seat_id, arena_id)` pairs.
 ///
-/// Returns the arena_ids in the order MTGA stored them in
+/// `seat_id` is resolved per card via [`owner_seat_for_cdc`] — the
+/// outer `PlayerTypeMap` seat key is not usable for battlefield (see
+/// that function's doc comment). Cards whose owner chain fails to
+/// resolve get `seat_id = 0` (unknown) — the arena_id is still kept,
+/// matching every other zone reader's partial-read tolerance.
+///
+/// Returns pairs in the order MTGA stored them in
 /// `_unattachedCardsCache` (creation/play order). Empty `Vec` when
 /// the chain is reachable but nothing is on the field; `None` only on
 /// structural read failure (null pointers, unresolvable fields).
-pub fn read_battlefield_arena_ids<F>(
+pub fn read_battlefield_cards<F>(
     offsets: &MonoOffsets,
     holder_addr: u64,
     read_mem: F,
-) -> Option<Vec<i32>>
+) -> Option<Vec<(i32, i32)>>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
@@ -90,15 +108,38 @@ where
     let list_class_bytes = object::read_runtime_class_bytes(list_addr, &read_mem)?;
     let cdc_pointers = list_t::read_pointer_list(offsets, &list_class_bytes, list_addr, &read_mem);
 
-    let mut arena_ids = Vec::with_capacity(cdc_pointers.len().min(limits::MAX_LIST_ELEMENTS));
+    let mut cards = Vec::with_capacity(cdc_pointers.len().min(limits::MAX_LIST_ELEMENTS));
     for cdc_ptr in cdc_pointers.into_iter().take(limits::MAX_LIST_ELEMENTS) {
         if let Some(arena_id) = arena_id_for_cdc(offsets, cdc_ptr, &read_mem) {
-            arena_ids.push(arena_id);
+            let seat_id = owner_seat_for_cdc(offsets, cdc_ptr, &read_mem).unwrap_or(0);
+            cards.push((seat_id, arena_id));
         }
         // Drop unresolvable entries — partial reads are better than no reads.
     }
 
-    Some(arena_ids)
+    Some(cards)
+}
+
+/// Read every visible card's arena_id in a battlefield holder,
+/// discarding per-card seat attribution.
+///
+/// Thin wrapper over [`read_battlefield_cards`] kept for callers that
+/// only need the arena_ids (and for the existing test suite, which
+/// predates per-card seat resolution).
+pub fn read_battlefield_arena_ids<F>(
+    offsets: &MonoOffsets,
+    holder_addr: u64,
+    read_mem: F,
+) -> Option<Vec<i32>>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    read_battlefield_cards(offsets, holder_addr, read_mem).map(|cards| {
+        cards
+            .into_iter()
+            .map(|(_seat_id, arena_id)| arena_id)
+            .collect()
+    })
 }
 
 /// Dispatch from a `(holder_addr, zone_id)` pair to the right reader.
@@ -125,16 +166,19 @@ where
     }
 }
 
-/// Drill one `BaseCDC` (or any `*_CDC` subclass) to its arena_id:
-/// `BASE_CDC._model` (parent-class field) →
-/// `CardDataAdapter._instance` →
-/// `CardInstanceData.BaseGrpId : i32`.
+/// Drill one `BaseCDC` (or any `*_CDC` subclass) to its
+/// `MtgCardInstance` object address: `BASE_CDC._model` (parent-class
+/// field) → `CardDataAdapter._instance`.
+///
+/// Shared prefix of [`arena_id_for_cdc`] and [`owner_seat_for_cdc`] —
+/// both need the same card-instance object, just different fields off
+/// it.
 ///
 /// `_model` lives on `BASE_CDC`, not on the concrete subclass, so we
 /// need [`field::find_field_by_name_in_chain`] for the first hop.
-/// `_instance` and `BaseGrpId` live on their own classes (verified by
-/// follow-up spike data) and use the flat resolver.
-pub fn arena_id_for_cdc<F>(offsets: &MonoOffsets, cdc_addr: u64, read_mem: &F) -> Option<i32>
+/// `_instance` lives on its own class (verified by follow-up spike
+/// data) and uses the flat resolver.
+fn card_instance_addr_for_cdc<F>(offsets: &MonoOffsets, cdc_addr: u64, read_mem: &F) -> Option<u64>
 where
     F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
 {
@@ -169,9 +213,19 @@ where
         read_mem,
     )?;
     if instance_addr == 0 {
-        return None;
+        None
+    } else {
+        Some(instance_addr)
     }
+}
 
+/// Drill one `BaseCDC` (or any `*_CDC` subclass) to its arena_id:
+/// [`card_instance_addr_for_cdc`] → `CardInstanceData.BaseGrpId : i32`.
+pub fn arena_id_for_cdc<F>(offsets: &MonoOffsets, cdc_addr: u64, read_mem: &F) -> Option<i32>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let instance_addr = card_instance_addr_for_cdc(offsets, cdc_addr, read_mem)?;
     let instance_class_bytes = object::read_runtime_class_bytes(instance_addr, read_mem)?;
 
     // CardInstanceData.BaseGrpId — i32 by name (parent-aware).
@@ -180,6 +234,46 @@ where
         &instance_class_bytes,
         instance_addr,
         "BaseGrpId",
+        read_mem,
+    )
+}
+
+/// Drill one `BaseCDC` to the client-relative seat id of the card's
+/// owner: [`card_instance_addr_for_cdc`] →
+/// `MtgCardInstance.Owner` → `MtgPlayer.ClientPlayerEnum : i32`.
+///
+/// `ClientPlayerEnum` uses the same `GREPlayerNum` encoding
+/// (`LocalPlayer=1, Opponent=2`) as the outer `PlayerTypeMap` seat key
+/// `match_scene.rs` reads for every other zone. Needed specifically
+/// for battlefield: verified live 2026-07-22 that MTGA's
+/// `PlayerTypeMap` holds exactly one battlefield holder, keyed `0` —
+/// there's no per-seat holder to key off of for this zone the way
+/// there is for Hand/Graveyard/Exile, so per-card seat has to be read
+/// out of the card itself. `MtgCardInstance.Controller` (same offset
+/// pattern) resolves to the same object in every case observed and
+/// was not used — `Owner` was chosen since it's the semantically
+/// stable one across control-changing effects.
+pub fn owner_seat_for_cdc<F>(offsets: &MonoOffsets, cdc_addr: u64, read_mem: &F) -> Option<i32>
+where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    let instance_addr = card_instance_addr_for_cdc(offsets, cdc_addr, read_mem)?;
+    let instance_class_bytes = object::read_runtime_class_bytes(instance_addr, read_mem)?;
+
+    let owner_addr = object::read_instance_pointer_in_chain(
+        offsets,
+        &instance_class_bytes,
+        instance_addr,
+        "Owner",
+        read_mem,
+    )?;
+
+    let owner_class_bytes = object::read_runtime_class_bytes(owner_addr, read_mem)?;
+    instance_field::read_instance_i32_in_chain(
+        offsets,
+        &owner_class_bytes,
+        owner_addr,
+        "ClientPlayerEnum",
         read_mem,
     )
 }
@@ -390,6 +484,232 @@ mod tests {
         );
 
         cdc_addr
+    }
+
+    /// Like [`install_full_card_chain`] but also wires
+    /// `CardInstanceData.Owner` to a fake `MtgPlayer` whose
+    /// `ClientPlayerEnum` field holds `seat_id` — the chain
+    /// [`owner_seat_for_cdc`] drills.
+    fn install_full_card_chain_with_owner(
+        mem: &mut FakeMem,
+        base: u64,
+        cdc_addr: u64,
+        arena_id: i32,
+        seat_id: i32,
+    ) -> u64 {
+        // MtgPlayer class: one field "ClientPlayerEnum" at offset 0x30.
+        let player_class_addr = base + 0x500_0000;
+        let player_addr = base + 0x510_0000;
+        let player_vtable = base + 0x520_0000;
+        let player_class_bytes = build_class_with_one_field(
+            mem,
+            base + 0x501_0000,
+            base + 0x502_0000,
+            base + 0x503_0000,
+            0,
+            "ClientPlayerEnum",
+            0x30,
+        );
+        let mut player_payload = vec![0u8; 0x40];
+        player_payload[0..8].copy_from_slice(&player_vtable.to_le_bytes());
+        player_payload[0x30..0x34].copy_from_slice(&seat_id.to_le_bytes());
+        mem.add(player_addr, player_payload);
+        let mut player_vt = vec![0u8; 0x50];
+        player_vt[0..8].copy_from_slice(&player_class_addr.to_le_bytes());
+        mem.add(player_vtable, player_vt);
+        mem.add(player_class_addr, player_class_bytes);
+
+        // CardInstanceData class: "BaseGrpId" @ 0x10, "Owner" @ 0x20.
+        let inst_class_addr = base + 0x100_0000;
+        let inst_addr = base + 0x110_0000;
+        let inst_vtable = base + 0x120_0000;
+        let inst_class_bytes = build_class_with_fields(
+            mem,
+            base + 0x101_0000,
+            base + 0x102_0000,
+            base + 0x103_0000,
+            0,
+            &[("BaseGrpId", 0x10), ("Owner", 0x20)],
+        );
+        let mut inst_payload = vec![0u8; 0x30];
+        inst_payload[0..8].copy_from_slice(&inst_vtable.to_le_bytes());
+        inst_payload[0x10..0x14].copy_from_slice(&arena_id.to_le_bytes());
+        inst_payload[0x20..0x28].copy_from_slice(&player_addr.to_le_bytes());
+        mem.add(inst_addr, inst_payload);
+        let mut inst_vt = vec![0u8; 0x50];
+        inst_vt[0..8].copy_from_slice(&inst_class_addr.to_le_bytes());
+        mem.add(inst_vtable, inst_vt);
+        mem.add(inst_class_addr, inst_class_bytes);
+
+        // CardDataAdapter class: one field "_instance" at offset 0x18.
+        let adapter_class_addr = base + 0x200_0000;
+        let adapter_addr = base + 0x210_0000;
+        let adapter_vtable = base + 0x220_0000;
+        let adapter_class_bytes = build_class_with_one_field(
+            mem,
+            base + 0x201_0000,
+            base + 0x202_0000,
+            base + 0x203_0000,
+            0,
+            "_instance",
+            0x18,
+        );
+        install_object(
+            mem,
+            adapter_addr,
+            0x40,
+            adapter_vtable,
+            adapter_class_addr,
+            &adapter_class_bytes,
+            &[(0x18, inst_addr)],
+        );
+
+        // BASE_CDC parent class with "_model" at offset 0x40.
+        let base_cdc_class_addr = base + 0x300_0000;
+        let base_cdc_class_bytes = build_class_with_one_field(
+            mem,
+            base + 0x301_0000,
+            base + 0x302_0000,
+            base + 0x303_0000,
+            0,
+            "_model",
+            0x40,
+        );
+        mem.add(base_cdc_class_addr, base_cdc_class_bytes);
+
+        // DuelScene_CDC subclass with parent → BASE_CDC.
+        let cdc_class_addr = base + 0x400_0000;
+        let cdc_class_bytes = build_class_with_one_field(
+            mem,
+            base + 0x401_0000,
+            base + 0x402_0000,
+            base + 0x403_0000,
+            base_cdc_class_addr,
+            "_unrelated_own_field",
+            0x100,
+        );
+        let cdc_vtable = base + 0x420_0000;
+        install_object(
+            mem,
+            cdc_addr,
+            0x80,
+            cdc_vtable,
+            cdc_class_addr,
+            &cdc_class_bytes,
+            &[(0x40, adapter_addr)],
+        );
+
+        cdc_addr
+    }
+
+    #[test]
+    fn owner_seat_for_cdc_resolves_client_player_enum() -> Result<(), String> {
+        let mut mem = FakeMem::default();
+        let offsets = MonoOffsets::mtga_default();
+        let cdc_addr = 0x1500_0000;
+        install_full_card_chain_with_owner(&mut mem, 0x1600_0000, cdc_addr, 55_555, 2);
+
+        let result = owner_seat_for_cdc(&offsets, cdc_addr, &|a, l| mem.read(a, l));
+        assert_eq!(result, Some(2));
+        Ok(())
+    }
+
+    #[test]
+    fn owner_seat_for_cdc_returns_none_when_owner_field_missing() {
+        // install_full_card_chain's CardInstanceData has no "Owner"
+        // field at all — chain stops cleanly, doesn't panic.
+        let mut mem = FakeMem::default();
+        let offsets = MonoOffsets::mtga_default();
+        let cdc_addr = 0x1700_0000;
+        install_full_card_chain(&mut mem, 0x1800_0000, cdc_addr, 1);
+
+        let result = owner_seat_for_cdc(&offsets, cdc_addr, &|a, l| mem.read(a, l));
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn read_battlefield_cards_returns_arena_id_and_seat_pairs() -> Result<(), String> {
+        let mut mem = FakeMem::default();
+        let offsets = MonoOffsets::mtga_default();
+
+        let cdc_a = 0x1900_0000;
+        let cdc_b = 0x1a00_0000;
+        install_full_card_chain_with_owner(&mut mem, 0x1900_4000_0000, cdc_a, 100, 1);
+        install_full_card_chain_with_owner(&mut mem, 0x1a00_4000_0000, cdc_b, 200, 2);
+
+        let list_array_addr: u64 = 0x1b00_0000;
+        install_pointer_array(&mut mem, list_array_addr, &[cdc_a, cdc_b]);
+
+        let list_addr: u64 = 0x1b10_0000;
+        let list_vtable: u64 = 0x1b20_0000;
+        let list_class_addr: u64 = 0x1b30_0000;
+        let list_class_bytes = build_class_with_fields(
+            &mut mem,
+            0x1b40_0000,
+            0x1b50_0000,
+            0x1b60_0000,
+            0,
+            &[("_items", 0x10), ("_size", 0x18)],
+        );
+        let mut list_payload = vec![0u8; 0x40];
+        list_payload[0..8].copy_from_slice(&list_vtable.to_le_bytes());
+        list_payload[0x10..0x18].copy_from_slice(&list_array_addr.to_le_bytes());
+        list_payload[0x18..0x1c].copy_from_slice(&2i32.to_le_bytes());
+        mem.add(list_addr, list_payload);
+        let mut vt = vec![0u8; 0x50];
+        vt[0..8].copy_from_slice(&list_class_addr.to_le_bytes());
+        mem.add(list_vtable, vt);
+        mem.add(list_class_addr, list_class_bytes);
+
+        let layout_addr: u64 = 0x1c00_0000;
+        let layout_vtable: u64 = 0x1c10_0000;
+        let layout_class_addr: u64 = 0x1c20_0000;
+        let layout_class_bytes = build_class_with_one_field(
+            &mut mem,
+            0x1c30_0000,
+            0x1c40_0000,
+            0x1c50_0000,
+            0,
+            "_unattachedCardsCache",
+            0x20,
+        );
+        install_object(
+            &mut mem,
+            layout_addr,
+            0x40,
+            layout_vtable,
+            layout_class_addr,
+            &layout_class_bytes,
+            &[(0x20, list_addr)],
+        );
+
+        let holder_addr: u64 = 0x1d00_0000;
+        let holder_vtable: u64 = 0x1d10_0000;
+        let holder_class_addr: u64 = 0x1d20_0000;
+        let holder_class_bytes = build_class_with_one_field(
+            &mut mem,
+            0x1d30_0000,
+            0x1d40_0000,
+            0x1d50_0000,
+            0,
+            "_battlefieldLayout",
+            0x30,
+        );
+        install_object(
+            &mut mem,
+            holder_addr,
+            0x40,
+            holder_vtable,
+            holder_class_addr,
+            &holder_class_bytes,
+            &[(0x30, layout_addr)],
+        );
+
+        let cards = read_battlefield_cards(&offsets, holder_addr, |a, l| mem.read(a, l))
+            .ok_or("should return Some")?;
+
+        assert_eq!(cards, vec![(1, 100), (2, 200)]);
+        Ok(())
     }
 
     #[test]

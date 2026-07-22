@@ -21,6 +21,8 @@
 //! (no /proc, no syscalls) so unit tests can drive it with a
 //! `FakeMem`-style fixture.
 
+use std::collections::BTreeMap;
+
 use super::card_holder;
 use super::chain;
 use super::class_lookup;
@@ -271,6 +273,58 @@ pub struct BoardSnapshot {
     pub zones: Vec<ZoneCards>,
 }
 
+/// Push one or more [`ZoneCards`] rows for a single `(seat, zone)`
+/// entry from the seat→zone map.
+///
+/// Battlefield is special-cased: its holder is not split by player
+/// (see the `card_holder` module doc — `PlayerTypeMap` holds exactly
+/// one battlefield holder, keyed `0`), so seat is resolved per card
+/// via [`card_holder::read_battlefield_cards`] and one row is emitted
+/// per distinct resolved seat — overriding `outer_seat_id`, which is
+/// meaningless for this zone. Every other zone keeps the outer
+/// `PlayerTypeMap` seat as-is.
+fn push_zone_cards<F>(
+    zones: &mut Vec<ZoneCards>,
+    offsets: &MonoOffsets,
+    outer_seat_id: i32,
+    zone_id: i32,
+    holder_addr: u64,
+    read_mem: F,
+) where
+    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
+{
+    if zone_id == card_holder::ZONE_BATTLEFIELD {
+        let Some(cards) = card_holder::read_battlefield_cards(offsets, holder_addr, read_mem)
+        else {
+            return;
+        };
+        let mut by_seat: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
+        for (seat_id, arena_id) in cards {
+            by_seat.entry(seat_id).or_default().push(arena_id);
+        }
+        for (seat_id, arena_ids) in by_seat {
+            zones.push(ZoneCards {
+                seat_id,
+                zone_id,
+                arena_ids,
+            });
+        }
+        return;
+    }
+
+    if let Some(arena_ids) =
+        card_holder::read_zone_arena_ids(offsets, holder_addr, zone_id, read_mem)
+    {
+        if !arena_ids.is_empty() {
+            zones.push(ZoneCards {
+                seat_id: outer_seat_id,
+                zone_id,
+                arena_ids,
+            });
+        }
+    }
+}
+
 /// Run the board-state walker (Chain 2) against a target process.
 ///
 /// Resolves `MatchSceneManager.Instance` (the static singleton),
@@ -343,18 +397,14 @@ where
             if zone.holder_addr == 0 {
                 continue;
             }
-            if let Some(arena_ids) =
-                card_holder::read_zone_arena_ids(&offsets, zone.holder_addr, zone.zone_id, read_mem)
-            {
-                if arena_ids.is_empty() {
-                    continue;
-                }
-                zones.push(ZoneCards {
-                    seat_id: seat.seat_id,
-                    zone_id: zone.zone_id,
-                    arena_ids,
-                });
-            }
+            push_zone_cards(
+                &mut zones,
+                &offsets,
+                seat.seat_id,
+                zone.zone_id,
+                zone.holder_addr,
+                read_mem,
+            );
         }
     }
 
@@ -798,18 +848,14 @@ where
             if zone.holder_addr == 0 {
                 continue;
             }
-            if let Some(arena_ids) =
-                card_holder::read_zone_arena_ids(&offsets, zone.holder_addr, zone.zone_id, read_mem)
-            {
-                if arena_ids.is_empty() {
-                    continue;
-                }
-                zones.push(ZoneCards {
-                    seat_id: seat.seat_id,
-                    zone_id: zone.zone_id,
-                    arena_ids,
-                });
-            }
+            push_zone_cards(
+                &mut zones,
+                &offsets,
+                seat.seat_id,
+                zone.zone_id,
+                zone.holder_addr,
+                read_mem,
+            );
         }
     }
 
