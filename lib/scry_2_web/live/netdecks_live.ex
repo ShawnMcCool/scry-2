@@ -276,8 +276,9 @@ defmodule Scry2Web.NetdecksLive do
           if socket.assigns.view == "recent" do
             # Refreshes cost/status data only — row order comes from the
             # `fetched_at` DB query, never from score, so it can't shift here.
+            # TODO(Task 7): read the browsed format from assigns, not this literal.
             assign(socket,
-              recent: NetDecking.recent_decks(socket.assigns.page, @per_page)
+              recent: NetDecking.recent_decks("Standard", socket.assigns.page, @per_page)
             )
           else
             socket
@@ -1489,7 +1490,8 @@ defmodule Scry2Web.NetdecksLive do
   # art (both variants: art crop for the row thumbnail, full card for the
   # hover popup, matching every other card-image request in this module).
   defp assign_view_content(socket, "recent", page, _catalog) do
-    recent = NetDecking.recent_decks(page, @per_page)
+    # TODO(Task 7): read the browsed format from assigns, not this literal.
+    recent = NetDecking.recent_decks("Standard", page, @per_page)
 
     art_ids =
       recent.entries

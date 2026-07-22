@@ -8,7 +8,7 @@ defmodule Scry2.NetDecking do
   (clipboard text) through their public APIs only.
 
   Buildability is computed at read time against the most recent collection
-  snapshot (`catalog/0`). The corpus is small and the collection changes
+  snapshot (`catalog/1`). The corpus is small and the collection changes
   often, so no projection is stored (see the design spec).
   """
   import Ecto.Query
@@ -38,6 +38,12 @@ defmodule Scry2.NetDecking do
   @cluster_signature_cards 4
   @default_sources [LocalJsonSource, MtgoSource]
   @auto_fetch_setting_prefix "netdecking.auto_fetch."
+
+  @formats ["Standard", "Modern", "Pioneer", "Pauper"]
+
+  @doc "The formats this catalog covers, Standard first."
+  @spec formats() :: [String.t()]
+  def formats, do: @formats
 
   # ── Sources ─────────────────────────────────────────────────────────
 
@@ -99,6 +105,15 @@ defmodule Scry2.NetDecking do
   @spec list_decks() :: [Deck.t()]
   def list_decks, do: Deck |> order_by([deck], asc: deck.name) |> Repo.all()
 
+  @doc "Every corpus deck of one format, name-ordered."
+  @spec list_decks(String.t()) :: [Deck.t()]
+  def list_decks(format) do
+    Deck
+    |> where([deck], deck.format == ^format)
+    |> order_by([deck], asc: deck.name)
+    |> Repo.all()
+  end
+
   @doc """
   Per-source catalog status for the UI strip: `[%{source_name, count, latest}]`
   sorted by source name, where `latest` is the most recent `fetched_at` for
@@ -152,14 +167,14 @@ defmodule Scry2.NetDecking do
   each variant's best-finished member. `wildcards` is the player's current
   pool, for the catalog's balance readout.
   """
-  @spec catalog() :: %{
+  @spec catalog(String.t()) :: %{
           buildable: [map()],
           craftable: [map()],
           short: [map()],
           wildcards: map()
         }
-  def catalog do
-    decks = list_decks()
+  def catalog(format \\ "Standard") do
+    decks = list_decks(format)
     snapshot = Collection.current()
     {raw_owned, wildcards} = collection_context(snapshot)
 
@@ -227,7 +242,7 @@ defmodule Scry2.NetDecking do
   variant's deck id to `%{arena_id => missing}` — the copies short of that
   variant's list (`needed − owned`, free lands excluded), driving the chip
   strip's craft pip. `cards_by_arena_id` is the card reference lookup for
-  rendering. Takes a group from `catalog/0`.
+  rendering. Takes a group from `catalog/1`.
   """
   @core_presence_threshold 0.5
 
@@ -272,18 +287,19 @@ defmodule Scry2.NetDecking do
 
   Returns `%{entries: [map()], total: non_neg_integer(), total_pages: pos_integer(), page: pos_integer()}`.
   """
-  @spec recent_decks(pos_integer(), pos_integer()) :: %{
+  @spec recent_decks(String.t(), pos_integer(), pos_integer()) :: %{
           entries: [map()],
           total: non_neg_integer(),
           total_pages: pos_integer(),
           page: pos_integer()
         }
-  def recent_decks(page, per_page) do
-    total = Repo.aggregate(Deck, :count)
+  def recent_decks(format, page, per_page) do
+    query = where(Deck, [deck], deck.format == ^format)
+    total = Repo.aggregate(query, :count)
     total_pages = max(1, ceil(total / per_page))
 
     page_decks =
-      Deck
+      query
       |> order_by([deck], desc: deck.fetched_at)
       |> limit(^per_page)
       |> offset(^((page - 1) * per_page))

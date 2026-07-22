@@ -1,6 +1,7 @@
 defmodule Scry2.NetDeckingTest do
   use Scry2.DataCase, async: true
 
+  import ExUnit.CaptureLog
   import Scry2.TestFactory
   alias Scry2.NetDecking
 
@@ -118,7 +119,54 @@ defmodule Scry2.NetDeckingTest do
     assert detail.export_text =~ "Lightning Bolt"
   end
 
-  describe "recent_decks/2" do
+  describe "formats/0" do
+    test "lists the four supported formats, Standard first" do
+      assert NetDecking.formats() == ["Standard", "Modern", "Pioneer", "Pauper"]
+    end
+  end
+
+  describe "catalog/1" do
+    test "only scores decks of the given format" do
+      create_card(name: "Lightning Bolt", rarity: "rare")
+      create_card(name: "Mountain", rarity: "common", is_land: true)
+
+      # Modern has no vendored archetype definitions in the test DB, so
+      # classifying the Modern import logs a graceful-degradation warning —
+      # expected, captured here to keep it out of the suite's console output.
+      log =
+        capture_log(fn ->
+          {:ok, _standard} =
+            NetDecking.import_decklist(%{
+              name: "Standard deck",
+              source_name: "manual",
+              format: "Standard",
+              decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+            })
+
+          {:ok, _modern} =
+            NetDecking.import_decklist(%{
+              name: "Modern deck",
+              source_name: "manual",
+              format: "Modern",
+              decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+            })
+        end)
+
+      assert log =~ "no vendored definitions for format Modern"
+
+      standard_catalog = NetDecking.catalog("Standard")
+      modern_catalog = NetDecking.catalog("Modern")
+
+      assert catalog_deck_names(standard_catalog) == ["Standard deck"]
+      assert catalog_deck_names(modern_catalog) == ["Modern deck"]
+    end
+
+    test "defaults to Standard" do
+      assert NetDecking.catalog() == NetDecking.catalog("Standard")
+    end
+  end
+
+  describe "recent_decks/3" do
     test "orders entries by fetched_at descending" do
       create_card(name: "Lightning Bolt", rarity: "rare")
 
@@ -149,7 +197,7 @@ defmodule Scry2.NetDeckingTest do
       pin_fetched_at(middle, ~U[2026-07-10 10:00:00.000000Z])
       pin_fetched_at(newest, ~U[2026-07-20 10:00:00.000000Z])
 
-      result = NetDecking.recent_decks(1, 20)
+      result = NetDecking.recent_decks("Standard", 1, 20)
 
       assert Enum.map(result.entries, & &1.deck.name) == ["Newest", "Middle", "Oldest"]
       assert result.total == 3
@@ -177,9 +225,9 @@ defmodule Scry2.NetDeckingTest do
         pin_fetched_at(deck, DateTime.add(~U[2026-07-01 00:00:00.000000Z], index, :day))
       end)
 
-      page_1 = NetDecking.recent_decks(1, 2)
-      page_2 = NetDecking.recent_decks(2, 2)
-      page_3 = NetDecking.recent_decks(3, 2)
+      page_1 = NetDecking.recent_decks("Standard", 1, 2)
+      page_2 = NetDecking.recent_decks("Standard", 2, 2)
+      page_3 = NetDecking.recent_decks("Standard", 3, 2)
 
       assert Enum.map(page_1.entries, & &1.deck.name) == ["Deck 5", "Deck 4"]
       assert Enum.map(page_2.entries, & &1.deck.name) == ["Deck 3", "Deck 2"]
@@ -209,7 +257,7 @@ defmodule Scry2.NetDeckingTest do
           decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
         })
 
-      result = NetDecking.recent_decks(1, 20)
+      result = NetDecking.recent_decks("Standard", 1, 20)
 
       assert [entry] = result.entries
       assert entry.label == "Mono-Red · Lightning Bolt"
@@ -221,11 +269,49 @@ defmodule Scry2.NetDeckingTest do
     end
 
     test "an empty catalog returns no entries and one total page" do
-      result = NetDecking.recent_decks(1, 20)
+      result = NetDecking.recent_decks("Standard", 1, 20)
 
       assert result.entries == []
       assert result.total == 0
       assert result.total_pages == 1
+    end
+
+    test "only lists decks of the given format" do
+      create_card(name: "Lightning Bolt", rarity: "rare")
+      create_card(name: "Mountain", rarity: "common", is_land: true)
+
+      # Modern has no vendored archetype definitions in the test DB, so
+      # classifying the Modern import logs a graceful-degradation warning —
+      # expected, captured here to keep it out of the suite's console output.
+      log =
+        capture_log(fn ->
+          {:ok, _standard} =
+            NetDecking.import_decklist(%{
+              name: "Standard deck",
+              source_name: "manual",
+              format: "Standard",
+              decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+            })
+
+          {:ok, _modern} =
+            NetDecking.import_decklist(%{
+              name: "Modern deck",
+              source_name: "manual",
+              format: "Modern",
+              decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+            })
+        end)
+
+      assert log =~ "no vendored definitions for format Modern"
+
+      standard_names =
+        NetDecking.recent_decks("Standard", 1, 20).entries |> Enum.map(& &1.deck.name)
+
+      modern_names =
+        NetDecking.recent_decks("Modern", 1, 20).entries |> Enum.map(& &1.deck.name)
+
+      assert standard_names == ["Standard deck"]
+      assert modern_names == ["Modern deck"]
     end
   end
 
@@ -233,6 +319,14 @@ defmodule Scry2.NetDeckingTest do
     deck
     |> Ecto.Changeset.change(fetched_at: fetched_at)
     |> Scry2.Repo.update!()
+  end
+
+  defp catalog_deck_names(catalog) do
+    [catalog.buildable, catalog.craftable, catalog.short]
+    |> Enum.concat()
+    |> Enum.flat_map(& &1.variants)
+    |> Enum.map(& &1.deck.name)
+    |> Enum.sort()
   end
 
   test "deck_detail includes the variant matrix for the deck's cluster" do
