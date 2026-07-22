@@ -55,3 +55,6 @@ docs/superpowers/
 
 # Claude Code runtime locks (per-session, not source).
 /.claude/scheduled_tasks.lock
+
+# Git worktrees for isolated feature work.
+/.worktrees/
