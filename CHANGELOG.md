@@ -11,6 +11,19 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Netdecks now cover Modern, Pioneer, and Pauper**, not just Standard. Switch formats on the catalog page, and pick a format when you paste a deck.
+- **A "Recent" view on the Netdecks page** lists the decks most recently added, with page navigation.
+- **Decks that need cards you can't get on MTGA are now marked Incomplete**, and those cards are flagged inline in the decklist — so you can see at a glance exactly what's missing and that no amount of wildcards will build it.
+
+### Fixed
+
+- **Spider-Man cards are recognised again.** Cards from the Spider-Man set (and other crossover reprints that MTGA lists under a different name than the decklist source) were being treated as unavailable on MTGA, so netdecks using them were wrongly marked Incomplete. They now match correctly, and affected netdecks show their real craft cost.
+- Fixed the **deck detail page** losing its format when opened directly from a link.
+- Fixed some **battlefield cards** being credited to the wrong player during a match.
+- Fixed **opening-hand cards** occasionally showing as unrecognised during a match.
+
 ## v0.52.4 — 2026-07-19
 
 ### New
