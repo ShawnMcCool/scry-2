@@ -725,7 +725,7 @@ defmodule Scry2.Cards do
     arena_by_name =
       Enum.reduce(mirror_name_arena_ids(names), %{}, fn {name, arena_id}, acc ->
         # Deterministic when a name spans printings: lowest arena_id wins.
-        Map.update(acc, String.downcase(name), arena_id, &min(&1, arena_id))
+        Map.update(acc, normalize_mirror_name(name), arena_id, &min(&1, arena_id))
       end)
 
     # A `cards_cards` name match already wins in `match_card_ref/4`; the alias
@@ -756,21 +756,35 @@ defmodule Scry2.Cards do
 
   # `{name, arena_id}` pairs from both mirrors for the requested names. Only
   # rows that carry an arena_id are candidates — the alias must land on a real
-  # Arena card.
+  # Arena card. The MTGA client DB wraps some words in `<nobr>` layout tags, so
+  # both the WHERE match and the key are stripped to the clean decklist form.
   defp mirror_name_arena_ids(names) do
     mtga =
       MtgaCard
-      |> where([m], fragment("lower(?)", m.name) in ^names and not is_nil(m.arena_id))
+      |> where(
+        [m],
+        fragment("lower(replace(replace(?, '<nobr>', ''), '</nobr>', ''))", m.name) in ^names and
+          not is_nil(m.arena_id)
+      )
       |> select([m], {m.name, m.arena_id})
       |> Repo.all()
 
     scryfall =
       ScryfallCard
-      |> where([s], fragment("lower(?)", s.name) in ^names and not is_nil(s.arena_id))
+      |> where(
+        [s],
+        fragment("lower(replace(replace(?, '<nobr>', ''), '</nobr>', ''))", s.name) in ^names and
+          not is_nil(s.arena_id)
+      )
       |> select([s], {s.name, s.arena_id})
       |> Repo.all()
 
     mtga ++ scryfall
+  end
+
+  # `<nobr>`-stripped, lowercased mirror name — the clean form a decklist uses.
+  defp normalize_mirror_name(name) do
+    name |> String.replace(["<nobr>", "</nobr>"], "") |> String.downcase()
   end
 
   defp match_card_ref(ref, by_set_collector, by_name, by_alias) do

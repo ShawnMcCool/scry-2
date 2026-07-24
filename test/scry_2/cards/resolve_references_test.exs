@@ -73,6 +73,21 @@ defmodule Scry2.Cards.ResolveReferencesTest do
     assert arena_id == card.arena_id
   end
 
+  # The MTGA client DB wraps some words in <nobr> layout tags
+  # ("<nobr>Fire-Brained</nobr> Scheme"). The decklist name is clean, so the
+  # alias must strip the tags before matching.
+  test "resolves via MTGA mirror name after stripping <nobr> layout tags" do
+    card = create_card(name: "Some Licensed Name", rarity: "rare", arena_id: 104_729)
+    create_mtga_card(arena_id: 104_729, name: "<nobr>Fire-Brained</nobr> Scheme")
+
+    refs = [%{name: "Fire-Brained Scheme", set_code: nil, collector_number: nil, count: 2}]
+
+    assert %{resolved: [%{arena_id: arena_id, count: 2}], unresolved: []} =
+             Cards.resolve_references(refs)
+
+    assert arena_id == card.arena_id
+  end
+
   test "mirror alias only resolves to arena_ids present in cards_cards" do
     # Mirror knows the name, but no synthesised card exists for it — must stay
     # unresolved rather than resolving to a phantom arena_id.
