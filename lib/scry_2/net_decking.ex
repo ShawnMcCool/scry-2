@@ -156,7 +156,7 @@ defmodule Scry2.NetDecking do
   deck row stays in the DB), and tiers each group by its best variant's
   status:
 
-      %{buildable: [group], craftable: [group], short: [group], wildcards: rarity_map}
+      %{buildable: [group], craftable: [group], short: [group], incomplete: [group], wildcards: rarity_map}
 
   A group is the `ArchetypeCatalog` group decorated for display: `label`
   (the archetype name, or the synthetic color · hero label for unclassified
@@ -165,12 +165,15 @@ defmodule Scry2.NetDecking do
   `set_code`, `provenance` (the group's best finish, UIDR-010), and variants
   decorated with `finish`/`record`/`pilot`/`event_name`/`event_date` from
   each variant's best-finished member. `wildcards` is the player's current
-  pool, for the catalog's balance readout.
+  pool, for the catalog's balance readout. `incomplete` groups have at
+  least one card missing from MTGA in every member list — no wildcard
+  count builds them, so they never appear in buildable/craftable/short.
   """
   @spec catalog(String.t()) :: %{
           buildable: [map()],
           craftable: [map()],
           short: [map()],
+          incomplete: [map()],
           wildcards: map()
         }
   def catalog(format \\ "Standard") do
@@ -201,6 +204,7 @@ defmodule Scry2.NetDecking do
       buildable: decorate_groups(tiers.buildable, cards_by_arena_id, sets, groups_playing),
       craftable: decorate_groups(tiers.craftable, cards_by_arena_id, sets, groups_playing),
       short: decorate_groups(tiers.short, cards_by_arena_id, sets, groups_playing),
+      incomplete: decorate_groups(tiers.incomplete, cards_by_arena_id, sets, groups_playing),
       wildcards: wildcards
     }
     |> disambiguate_slugs()
@@ -211,18 +215,21 @@ defmodule Scry2.NetDecking do
   # routable. Repeats get a deterministic ordinal suffix in tier order.
   defp disambiguate_slugs(catalog) do
     {catalog, _seen} =
-      Enum.reduce([:buildable, :craftable, :short], {catalog, %{}}, fn tier_key,
-                                                                       {catalog, seen} ->
-        {groups, seen} =
-          Enum.map_reduce(catalog[tier_key], seen, fn group, seen ->
-            occurrence = Map.get(seen, group.slug, 0) + 1
-            seen = Map.put(seen, group.slug, occurrence)
-            slug = if occurrence == 1, do: group.slug, else: "#{group.slug}-#{occurrence}"
-            {%{group | slug: slug}, seen}
-          end)
+      Enum.reduce(
+        [:buildable, :craftable, :short, :incomplete],
+        {catalog, %{}},
+        fn tier_key, {catalog, seen} ->
+          {groups, seen} =
+            Enum.map_reduce(catalog[tier_key], seen, fn group, seen ->
+              occurrence = Map.get(seen, group.slug, 0) + 1
+              seen = Map.put(seen, group.slug, occurrence)
+              slug = if occurrence == 1, do: group.slug, else: "#{group.slug}-#{occurrence}"
+              {%{group | slug: slug}, seen}
+            end)
 
-        {Map.put(catalog, tier_key, groups), seen}
-      end)
+          {Map.put(catalog, tier_key, groups), seen}
+        end
+      )
 
     catalog
   end
@@ -403,7 +410,7 @@ defmodule Scry2.NetDecking do
   # How many archetype groups play each card — the discount input for the
   # distinctive-signature ranking (`DeckQualities.archetype_signature_ids/4`).
   defp groups_playing_counts(tiers) do
-    [tiers.buildable, tiers.craftable, tiers.short]
+    [tiers.buildable, tiers.craftable, tiers.short, tiers.incomplete]
     |> Enum.concat()
     |> Enum.flat_map(fn group ->
       group.member_decks
@@ -444,16 +451,21 @@ defmodule Scry2.NetDecking do
   end
 
   # A clustered variant row displays its best-finished member's provenance;
-  # the representative (cheapest member) stays the row's deck and cost.
+  # the representative (cheapest member) stays the row's deck and cost. When
+  # those two decks differ, `cost_pilot` names whose actual list the shown
+  # card counts/cost/deltas belong to — nil when the credited pilot's own
+  # deck is the one being shown, so the UI only speaks up when it must.
   defp decorate_variant(variant) do
     provenance_deck = Provenance.best_finish_deck(variant.member_decks) || variant.deck
+    cost_pilot = if provenance_deck.id != variant.deck.id, do: variant.deck.pilot
 
     Map.merge(variant, %{
       finish: Provenance.finish_label(provenance_deck),
       record: Provenance.record_label(provenance_deck),
       pilot: provenance_deck.pilot,
       event_name: provenance_deck.event_name,
-      event_date: provenance_deck.event_date
+      event_date: provenance_deck.event_date,
+      cost_pilot: cost_pilot
     })
   end
 
@@ -557,9 +569,17 @@ defmodule Scry2.NetDecking do
       owned: owned,
       wildcards: wildcards,
       rarities: rarities,
-      free_arena_ids: free_ids
+      free_arena_ids: free_ids,
+      unresolved_count: unresolved_count(deck)
     })
   end
+
+  # Maindeck references that never resolved to an arena_id (cards missing
+  # from the local MTGA database) — see Buildability.Inputs.unresolved_count.
+  defp unresolved_count(%{unresolved_cards: %{"cards" => cards}}) when is_list(cards),
+    do: length(cards)
+
+  defp unresolved_count(_deck), do: 0
 
   defp card_name_or(nil, _cards), do: "Unknown"
 

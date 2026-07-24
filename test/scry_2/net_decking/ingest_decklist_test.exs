@@ -27,6 +27,35 @@ defmodule Scry2.NetDecking.IngestDecklistTest do
     assert is_integer(deck.composition_hash)
   end
 
+  test "merges a card split across two decklist lines into one summed entry" do
+    seed_cards()
+
+    {:ok, deck} =
+      IngestDecklist.run(%{
+        name: "Split Lines",
+        source_name: "mtgo",
+        decklist_text: "Deck\n1 Lightning Bolt\n3 Lightning Bolt\n16 Mountain\n"
+      })
+
+    assert deck.main_deck["cards"]
+           |> Enum.filter(&(&1["arena_id"] == card_arena_id("Lightning Bolt")))
+           |> length() == 1
+
+    assert %{"count" => 4} =
+             Enum.find(
+               deck.main_deck["cards"],
+               &(&1["arena_id"] == card_arena_id("Lightning Bolt"))
+             )
+  end
+
+  defp card_arena_id(name) do
+    Scry2.Cards.resolve_references([
+      %{name: name, set_code: nil, collector_number: nil, count: 1}
+    ]).resolved
+    |> hd()
+    |> Map.fetch!(:arena_id)
+  end
+
   test "records unresolved cards instead of dropping them" do
     create_card(name: "Mountain", rarity: "common")
 
@@ -137,6 +166,50 @@ defmodule Scry2.NetDecking.IngestDecklistTest do
     assert standard_deck.format == "Standard"
     assert modern_deck.format == "Modern"
     assert Repo.aggregate(Deck, :count) == 2
+  end
+
+  describe "reingest/2" do
+    test "re-resolves an existing deck in place after the card data improves" do
+      create_card(name: "Mountain", rarity: "common")
+
+      attrs = %{
+        name: "Improves Later",
+        source_name: "mtgo",
+        pilot: "venom01",
+        decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+      }
+
+      {:ok, stale} = IngestDecklist.run(attrs)
+      assert [%{"name" => "Lightning Bolt"}] = stale.unresolved_cards["cards"]
+      assert length(stale.main_deck["cards"]) == 1
+
+      # Card data now covers the missing card.
+      create_card(name: "Lightning Bolt", rarity: "rare")
+
+      {:ok, fixed} = IngestDecklist.reingest(stale, attrs)
+
+      assert fixed.id == stale.id
+      assert fixed.unresolved_cards["cards"] == []
+      assert length(fixed.main_deck["cards"]) == 2
+      assert fixed.composition_hash != stale.composition_hash
+      assert Repo.aggregate(Deck, :count) == 1
+    end
+
+    test "does not spawn a duplicate even though the composition hash changed" do
+      create_card(name: "Mountain", rarity: "common")
+
+      attrs = %{
+        name: "No Dup",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+      }
+
+      {:ok, stale} = IngestDecklist.run(attrs)
+      create_card(name: "Lightning Bolt", rarity: "rare")
+      {:ok, _fixed} = IngestDecklist.reingest(stale, attrs)
+
+      assert Repo.aggregate(Deck, :count) == 1
+    end
   end
 
   describe "archetype stamping" do

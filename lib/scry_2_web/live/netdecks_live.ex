@@ -632,14 +632,24 @@ defmodule Scry2Web.NetdecksLive do
       </div>
 
       <div class="col-start-2 sm:col-start-3 flex sm:flex-col items-center sm:items-end gap-2 sm:gap-1.5 sm:text-right">
+        <%!-- Zero resolved cost means "owned" only when the list is actually
+              buildable — an :incomplete deck's missing-from-MTGA cards carry
+              no wildcard cost either, so a bare cost check would call it
+              "owned" too. --%>
         <span
-          :if={!NetdecksHelpers.any_cost?(@entry.result.maindeck.wildcard_cost)}
+          :if={@entry.result.status == :buildable}
           class="text-[10px] uppercase tracking-widest text-success/80"
         >
           owned — 0 wildcards
         </span>
+        <span
+          :if={@entry.result.status == :incomplete}
+          class="text-[10px] uppercase tracking-widest text-warning/80"
+        >
+          not on mtga
+        </span>
         <.cost_pips
-          :if={NetdecksHelpers.any_cost?(@entry.result.maindeck.wildcard_cost)}
+          :if={@entry.result.status in [:craftable, :short]}
           cost={@entry.result.maindeck.wildcard_cost}
           size="size-3.5"
         />
@@ -878,14 +888,24 @@ defmodule Scry2Web.NetdecksLive do
 
       <div class="col-start-3 sm:col-start-4 flex sm:flex-col items-center sm:items-end gap-2 sm:gap-1.5 sm:text-right">
         <.tally_line tally={@group.tally} />
+        <%!-- Zero resolved cost means "owned" only when the cheapest variant
+              is actually buildable — an :incomplete deck's missing-from-MTGA
+              cards carry no wildcard cost either, so a bare cost check would
+              call it "owned" too. --%>
         <span
-          :if={!NetdecksHelpers.any_cost?(@cheapest.result.maindeck.wildcard_cost)}
+          :if={@cheapest.result.status == :buildable}
           class="text-[10px] uppercase tracking-widest text-success/80"
         >
           owned — 0 wildcards
         </span>
+        <span
+          :if={@cheapest.result.status == :incomplete}
+          class="text-[10px] uppercase tracking-widest text-warning/80"
+        >
+          not on mtga
+        </span>
         <.cost_pips
-          :if={NetdecksHelpers.any_cost?(@cheapest.result.maindeck.wildcard_cost)}
+          :if={@cheapest.result.status in [:craftable, :short]}
           cost={@cheapest.result.maindeck.wildcard_cost}
           size="size-3.5"
         />
@@ -1093,6 +1113,12 @@ defmodule Scry2Web.NetdecksLive do
             · {NetdecksHelpers.format_event_date(@variant.event_date)}
           </span>
         </span>
+        <%!-- The cluster's cheapest member drives the cards/cost/deltas below,
+              which isn't always the credited (best-finish) pilot's own list —
+              say so plainly rather than let the two silently look like one. --%>
+        <span :if={@variant.cost_pilot} class="block text-xs text-base-content/40 italic truncate">
+          cards & cost shown are {@variant.cost_pilot}'s cheaper build in this cluster
+        </span>
       </span>
 
       <%!-- What this list changes vs. the archetype core, inline as one
@@ -1238,6 +1264,14 @@ defmodule Scry2Web.NetdecksLive do
             </p>
             <p :if={@detail.result.status == :craftable} class="text-xs text-info mt-2">
               You have the wildcards to craft this now.
+            </p>
+            <p
+              :if={@detail.result.status == :incomplete}
+              class="text-xs text-warning mt-2 flex items-center gap-2"
+            >
+              <.icon name="hero-exclamation-triangle" class="size-3.5 shrink-0" />
+              {@unresolved} card(s) below aren't on MTGA — this decklist can't be fully built,
+              no matter your wildcards.
             </p>
           </div>
 
@@ -1504,7 +1538,7 @@ defmodule Scry2Web.NetdecksLive do
   end
 
   defp catalog_total(catalog) do
-    Enum.sum(Enum.map([:buildable, :craftable, :short], &length(catalog[&1] || [])))
+    Enum.sum(Enum.map([:buildable, :craftable, :short, :incomplete], &length(catalog[&1] || [])))
   end
 
   # ── Recent view (UIDR-018) ───────────────────────────────────────────────

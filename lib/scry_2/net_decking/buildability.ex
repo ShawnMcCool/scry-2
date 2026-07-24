@@ -82,12 +82,24 @@ defmodule Scry2.NetDecking.Buildability do
      Map.get(cost, :common, 0), total(cost)}
   end
 
-  @doc "Scores a deck against a collection. Status and sort_key derive from the maindeck."
+  @doc """
+  Scores a deck against a collection. Status and sort_key derive from the
+  maindeck. A maindeck with any card missing from MTGA (`unresolved_count > 0`)
+  is always `:incomplete` — no wildcard count fixes a card the client
+  doesn't have, so this gates ahead of `classify_status/2` rather than
+  being folded into its cost/shortfall math.
+  """
   @spec score(Inputs.t()) :: Result.t()
   def score(%Inputs{} = inputs) do
     main = section(inputs.main_cards, inputs)
     side = section(inputs.side_cards, inputs)
-    status = classify_status(main.wildcard_cost, main.shortfall)
+
+    status =
+      if inputs.unresolved_count > 0 do
+        :incomplete
+      else
+        classify_status(main.wildcard_cost, main.shortfall)
+      end
 
     %Result{
       status: status,

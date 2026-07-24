@@ -19,23 +19,32 @@ defmodule Scry2.NetDecking.ArchetypeCatalog do
   no member is classified become nil-named groups — the caller labels
   them synthetically.
 
-  Output: `%{buildable: [group], craftable: [group], short: [group]}`.
+  Output: `%{buildable: [group], craftable: [group], short: [group], incomplete: [group]}`.
   A group is `%{archetype_name, status, variants, tally, list_count,
   member_decks, best_finish_deck, cheapest_sort_key}`; a variant is
   `%{deck, result, member_decks, count}` (near-identical lists collapsed,
   cheapest member as representative). Variants order buildable → craftable
-  → short, best finish then cheapest within a status. Tier order: the
-  buildable tier by best finish (cost is degenerate at zero); craftable
-  and short cheapest-first — matching the rules stated on the page.
+  → short → incomplete, best finish then cheapest within a status. Tier
+  order: the buildable tier by best finish (cost is degenerate at zero);
+  craftable and short cheapest-first; incomplete by best finish, matching
+  the rules stated on the page. `:incomplete` outranks (is worse than)
+  `:short` — a wildcard shortfall is reachable, a card missing from MTGA
+  never is, so a group with any short variant is never incomplete even if
+  its cheaper builds are.
   """
 
   alias Scry2.NetDecking.Deck
   alias Scry2.NetDecking.DeckClusters
   alias Scry2.NetDecking.Provenance
 
-  @status_rank %{buildable: 0, craftable: 1, short: 2}
+  @status_rank %{buildable: 0, craftable: 1, short: 2, incomplete: 3}
 
-  @spec build([map()], float()) :: %{buildable: [map()], craftable: [map()], short: [map()]}
+  @spec build([map()], float()) :: %{
+          buildable: [map()],
+          craftable: [map()],
+          short: [map()],
+          incomplete: [map()]
+        }
   def build(scored_decks, threshold) do
     groups =
       scored_decks
@@ -52,7 +61,8 @@ defmodule Scry2.NetDecking.ArchetypeCatalog do
     %{
       buildable: tier(groups, :buildable, &buildable_order/1),
       craftable: tier(groups, :craftable, &cheapest_order/1),
-      short: tier(groups, :short, &cheapest_order/1)
+      short: tier(groups, :short, &cheapest_order/1),
+      incomplete: tier(groups, :incomplete, &buildable_order/1)
     }
   end
 
@@ -132,7 +142,8 @@ defmodule Scry2.NetDecking.ArchetypeCatalog do
     %{
       buildable: Map.get(counts, :buildable, 0),
       craftable: Map.get(counts, :craftable, 0),
-      short: Map.get(counts, :short, 0)
+      short: Map.get(counts, :short, 0),
+      incomplete: Map.get(counts, :incomplete, 0)
     }
   end
 

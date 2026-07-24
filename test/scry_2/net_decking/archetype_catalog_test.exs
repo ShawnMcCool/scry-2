@@ -51,9 +51,9 @@ defmodule Scry2.NetDecking.ArchetypeCatalogTest do
       assert [%{archetype_name: "Domain Overlords"}] = catalog.short
 
       assert prowess.status == :buildable
-      assert prowess.tally == %{buildable: 1, craftable: 1, short: 0}
+      assert prowess.tally == %{buildable: 1, craftable: 1, short: 0, incomplete: 0}
       assert dimir.status == :craftable
-      assert dimir.tally == %{buildable: 0, craftable: 1, short: 1}
+      assert dimir.tally == %{buildable: 0, craftable: 1, short: 1, incomplete: 0}
     end
 
     test "an archetype appears in exactly one tier" do
@@ -73,7 +73,38 @@ defmodule Scry2.NetDecking.ArchetypeCatalogTest do
 
     test "empty corpus yields empty tiers" do
       assert ArchetypeCatalog.build([], @threshold) ==
-               %{buildable: [], craftable: [], short: []}
+               %{buildable: [], craftable: [], short: [], incomplete: []}
+    end
+
+    test "a deck with cards missing from MTGA is never buildable/craftable — its group tiers as incomplete" do
+      catalog =
+        ArchetypeCatalog.build(
+          [
+            scored(1, %{archetype_name: "Pauper Elves"}, :incomplete, @zero_cost, [1, 2, 3])
+          ],
+          @threshold
+        )
+
+      assert [%{archetype_name: "Pauper Elves"} = group] = catalog.incomplete
+      assert group.status == :incomplete
+      assert group.tally == %{buildable: 0, craftable: 0, short: 0, incomplete: 1}
+      assert catalog.buildable == []
+      assert catalog.craftable == []
+      assert catalog.short == []
+    end
+
+    test "incomplete ranks worse than short — a group with any short variant is never incomplete" do
+      catalog =
+        ArchetypeCatalog.build(
+          [
+            scored(1, %{archetype_name: "Pauper Elves"}, :incomplete, @zero_cost, [1, 2, 3]),
+            scored(2, %{archetype_name: "Pauper Elves"}, :short, {1, 0, 0, 0, 1}, [7, 8, 9])
+          ],
+          @threshold
+        )
+
+      assert [%{status: :short}] = catalog.short
+      assert catalog.incomplete == []
     end
   end
 

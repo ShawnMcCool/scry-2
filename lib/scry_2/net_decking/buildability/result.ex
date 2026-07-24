@@ -9,7 +9,7 @@ defmodule Scry2.NetDecking.Buildability.Result do
   @enforce_keys [:status, :maindeck, :sideboard, :sort_key]
   defstruct [:status, :maindeck, :sideboard, :sort_key]
 
-  @type status :: :buildable | :craftable | :short
+  @type status :: :buildable | :craftable | :short | :incomplete
   @type t :: %__MODULE__{
           status: status(),
           maindeck: Section.t(),

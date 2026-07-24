@@ -40,18 +40,28 @@ defmodule Scry2Web.NetdecksHelpers do
       icon: "hero-arrow-trending-up",
       tone: "text-base-content/40",
       tone_dot: "bg-base-content/40"
+    },
+    incomplete: %{
+      label: "Incomplete",
+      section: "Not on MTGA",
+      definition: "cards missing from MTGA — no wildcard count builds these",
+      ordering: "ordered by best finish",
+      badge: "badge-soft badge-warning",
+      icon: "hero-exclamation-triangle",
+      tone: "text-warning",
+      tone_dot: "bg-warning"
     }
   }
 
   @doc "Relative time label (e.g. \"3 days ago\") — delegated to the shared helper."
   defdelegate relative_time(datetime), to: Scry2Web.LiveHelpers
 
-  @doc "Status group order, cheapest/most-ready first."
-  @spec status_order() :: [:buildable | :craftable | :short]
-  def status_order, do: [:buildable, :craftable, :short]
+  @doc "Status group order, cheapest/most-ready first; incomplete (never buildable) last."
+  @spec status_order() :: [:buildable | :craftable | :short | :incomplete]
+  def status_order, do: [:buildable, :craftable, :short, :incomplete]
 
   @doc "Presentation metadata (label, section heading, badge/icon classes) for a status."
-  @spec status_meta(:buildable | :craftable | :short) :: map()
+  @spec status_meta(:buildable | :craftable | :short | :incomplete) :: map()
   def status_meta(status), do: Map.fetch!(@statuses, status)
 
   @doc """

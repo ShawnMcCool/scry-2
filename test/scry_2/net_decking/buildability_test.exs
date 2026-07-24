@@ -78,7 +78,8 @@ defmodule Scry2.NetDecking.BuildabilityTest do
       owned: %{1 => 4},
       wildcards: %{common: 0, uncommon: 0, rare: 0, mythic: 0},
       rarities: %{1 => "rare"},
-      free_arena_ids: MapSet.new([99])
+      free_arena_ids: MapSet.new([99]),
+      unresolved_count: 0
     }
 
     assert %Result{status: :buildable, maindeck: %Section{} = main} = Buildability.score(inputs)
@@ -95,7 +96,8 @@ defmodule Scry2.NetDecking.BuildabilityTest do
       owned: %{1 => 2},
       wildcards: %{common: 0, uncommon: 0, rare: 5, mythic: 0},
       rarities: %{1 => "rare"},
-      free_arena_ids: MapSet.new()
+      free_arena_ids: MapSet.new(),
+      unresolved_count: 0
     }
 
     assert %Result{status: :craftable, maindeck: main} = Buildability.score(inputs)
@@ -110,9 +112,24 @@ defmodule Scry2.NetDecking.BuildabilityTest do
       owned: %{},
       wildcards: %{common: 0, uncommon: 0, rare: 0, mythic: 0},
       rarities: %{1 => "mythic"},
-      free_arena_ids: MapSet.new()
+      free_arena_ids: MapSet.new(),
+      unresolved_count: 0
     }
 
     assert %Result{status: :short, sort_key: {4, 0, 0, 0, 4}} = Buildability.score(inputs)
+  end
+
+  test "score produces an incomplete result when the list has cards missing from MTGA, even if the resolved cards are fully owned" do
+    inputs = %Inputs{
+      main_cards: [%{arena_id: 1, count: 4}],
+      side_cards: [],
+      owned: %{1 => 4},
+      wildcards: %{common: 0, uncommon: 0, rare: 0, mythic: 0},
+      rarities: %{1 => "rare"},
+      free_arena_ids: MapSet.new(),
+      unresolved_count: 15
+    }
+
+    assert %Result{status: :incomplete} = Buildability.score(inputs)
   end
 end

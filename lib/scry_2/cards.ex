@@ -700,9 +700,11 @@ defmodule Scry2.Cards do
         Map.put_new(acc, String.downcase(card.name), card)
       end)
 
+    by_alias = alias_index(names, by_name)
+
     {resolved, unresolved} =
       Enum.reduce(refs, {[], []}, fn ref, {res, unres} ->
-        case match_card_ref(ref, by_set_collector, by_name) do
+        case match_card_ref(ref, by_set_collector, by_name, by_alias) do
           nil -> {res, [ref | unres]}
           card -> {[%{arena_id: card.arena_id, count: ref.count} | res], unres}
         end
@@ -711,23 +713,91 @@ defmodule Scry2.Cards do
     %{resolved: Enum.reverse(resolved), unresolved: Enum.reverse(unresolved)}
   end
 
-  defp match_card_ref(ref, by_set_collector, by_name) do
+  # Alternate-name index: the same card is titled differently across the MTGA
+  # client DB and Scryfall — Universes Beyond "Universes Within" printings
+  # (e.g. OM1 "Through the Omenpaths") carry the Magic-flavored name in the
+  # MTGA DB and the licensed name on Scryfall. Synthesis keeps one name on
+  # `cards_cards`, so a decklist that uses the other one only resolves through
+  # a mirror alias. Maps each alternate name to its synthesised `Card` via
+  # arena_id; mirror names for arena_ids without a `cards_cards` row are
+  # dropped, so an alias never resolves to a card the collection can't score.
+  defp alias_index(names, by_name) do
+    arena_by_name =
+      Enum.reduce(mirror_name_arena_ids(names), %{}, fn {name, arena_id}, acc ->
+        # Deterministic when a name spans printings: lowest arena_id wins.
+        Map.update(acc, String.downcase(name), arena_id, &min(&1, arena_id))
+      end)
+
+    # A `cards_cards` name match already wins in `match_card_ref/4`; the alias
+    # only fills gaps, so skip names we can already resolve directly.
+    candidate_ids =
+      arena_by_name
+      |> Map.drop(Map.keys(by_name))
+      |> Map.values()
+      |> Enum.uniq()
+
+    cards_by_arena_id =
+      if candidate_ids == [] do
+        %{}
+      else
+        Card
+        |> where([c], c.arena_id in ^candidate_ids)
+        |> Repo.all()
+        |> Map.new(&{&1.arena_id, &1})
+      end
+
+    Enum.reduce(arena_by_name, %{}, fn {name, arena_id}, acc ->
+      case Map.get(cards_by_arena_id, arena_id) do
+        nil -> acc
+        card -> Map.put_new(acc, name, card)
+      end
+    end)
+  end
+
+  # `{name, arena_id}` pairs from both mirrors for the requested names. Only
+  # rows that carry an arena_id are candidates — the alias must land on a real
+  # Arena card.
+  defp mirror_name_arena_ids(names) do
+    mtga =
+      MtgaCard
+      |> where([m], fragment("lower(?)", m.name) in ^names and not is_nil(m.arena_id))
+      |> select([m], {m.name, m.arena_id})
+      |> Repo.all()
+
+    scryfall =
+      ScryfallCard
+      |> where([s], fragment("lower(?)", s.name) in ^names and not is_nil(s.arena_id))
+      |> select([s], {s.name, s.arena_id})
+      |> Repo.all()
+
+    mtga ++ scryfall
+  end
+
+  defp match_card_ref(ref, by_set_collector, by_name, by_alias) do
     set_code = ref.set_code && String.upcase(ref.set_code)
     collector_number = ref.collector_number
     key = {set_code, collector_number}
+    name_key = String.downcase(ref.name)
+    # Double-faced source names ("Front // Back") fall back to the front face;
+    # full-name matches win, so true split cards stored with "//" resolve to
+    # their own row first.
+    front_key = String.downcase(front_face(ref.name))
 
     cond do
       set_code && collector_number && Map.has_key?(by_set_collector, key) ->
         Map.get(by_set_collector, key)
 
-      Map.has_key?(by_name, String.downcase(ref.name)) ->
-        Map.get(by_name, String.downcase(ref.name))
+      Map.has_key?(by_name, name_key) ->
+        Map.get(by_name, name_key)
+
+      Map.has_key?(by_name, front_key) ->
+        Map.get(by_name, front_key)
+
+      Map.has_key?(by_alias, name_key) ->
+        Map.get(by_alias, name_key)
 
       true ->
-        # Double-faced source names ("Front // Back") fall back to the front
-        # face; full-name match above wins, so true split cards stored with
-        # "//" still resolve to their own row.
-        Map.get(by_name, String.downcase(front_face(ref.name)))
+        Map.get(by_alias, front_key)
     end
   end
 

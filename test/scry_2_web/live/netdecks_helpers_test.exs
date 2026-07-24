@@ -53,11 +53,12 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.find_group(catalog, "unknown") == nil
   end
 
-  test "tally_parts lists non-zero statuses in buildable → craftable → short order" do
-    assert NetdecksHelpers.tally_parts(%{buildable: 1, craftable: 0, short: 3}) ==
-             [{:buildable, 1}, {:short, 3}]
+  test "tally_parts lists non-zero statuses in buildable → craftable → short → incomplete order" do
+    assert NetdecksHelpers.tally_parts(%{buildable: 1, craftable: 0, short: 3, incomplete: 2}) ==
+             [{:buildable, 1}, {:short, 3}, {:incomplete, 2}]
 
-    assert NetdecksHelpers.tally_parts(%{buildable: 0, craftable: 0, short: 0}) == []
+    assert NetdecksHelpers.tally_parts(%{buildable: 0, craftable: 0, short: 0, incomplete: 0}) ==
+             []
   end
 
   test "wildcard_balances orders the pool common → mythic" do
@@ -221,12 +222,12 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.medal_text(nil) == nil
   end
 
-  test "status_order leads with buildable, then craftable, then short" do
-    assert NetdecksHelpers.status_order() == [:buildable, :craftable, :short]
+  test "status_order leads with buildable, then craftable, short, and incomplete last" do
+    assert NetdecksHelpers.status_order() == [:buildable, :craftable, :short, :incomplete]
   end
 
   test "status_meta returns presentation metadata per status" do
-    for status <- [:buildable, :craftable, :short] do
+    for status <- [:buildable, :craftable, :short, :incomplete] do
       meta = NetdecksHelpers.status_meta(status)
       assert is_binary(meta.label)
       assert is_binary(meta.section)
@@ -236,6 +237,7 @@ defmodule Scry2Web.NetdecksHelpersTest do
 
     assert NetdecksHelpers.status_meta(:buildable).section == "Buildable now"
     assert NetdecksHelpers.status_meta(:short).section == "Within reach"
+    assert NetdecksHelpers.status_meta(:incomplete).section == "Not on MTGA"
   end
 
   test "status_meta states each tier's definition and ordering rule (UIDR-017)" do
@@ -243,6 +245,7 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.status_meta(:buildable).ordering == "ordered by best finish"
     assert NetdecksHelpers.status_meta(:craftable).ordering == "ordered by cheapest build"
     assert NetdecksHelpers.status_meta(:short).ordering == "ordered by cheapest build"
+    assert NetdecksHelpers.status_meta(:incomplete).definition =~ "missing from MTGA"
   end
 
   test "cost_pips returns non-zero rarities as {rarity, count} in common→mythic order" do

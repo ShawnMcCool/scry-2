@@ -618,6 +618,64 @@ defmodule Scry2.NetDeckingTest do
     assert bears.provenance == nil
   end
 
+  test "a variant's cost_pilot flags when the shown cards belong to a cheaper build than the pilot credited" do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+    create_card(name: "Goblin Raider", rarity: "common", color_identity: "R")
+    create_card(name: "Shock Bolt", rarity: "common", color_identity: "R")
+    create_card(name: "Grizzly Bear", rarity: "rare", color_identity: "G")
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Standard Challenge 32 — deep",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n",
+        pilot: "deep",
+        event_name: "Standard Challenge 32",
+        event_date: ~D[2026-06-08],
+        placement: 14,
+        field_size: 42
+      })
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Standard Challenge 32 — winner",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n4 Goblin Raider\n4 Shock Bolt\n1 Grizzly Bear\n",
+        pilot: "winner",
+        event_name: "Standard Challenge 32",
+        event_date: ~D[2026-06-26],
+        placement: 1,
+        field_size: 42
+      })
+
+    catalog = NetDecking.catalog()
+    groups = catalog.buildable ++ catalog.craftable ++ catalog.short
+    red = Enum.find(groups, &(&1.list_count == 2))
+
+    # "winner" is credited (best finish), but "deep"'s cheaper list is what
+    # the row's card counts/cost/deltas actually reflect.
+    assert [%{pilot: "winner", cost_pilot: "deep"}] = red.variants
+  end
+
+  test "a single-deck variant's cost_pilot is nil — the credited pilot is the shown deck" do
+    create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
+
+    {:ok, _} =
+      NetDecking.import_decklist(%{
+        name: "Standard Challenge 32 — solo",
+        source_name: "mtgo",
+        decklist_text: "Deck\n4 Lightning Bolt\n",
+        pilot: "solo",
+        placement: 5
+      })
+
+    catalog = NetDecking.catalog()
+    groups = catalog.buildable ++ catalog.craftable ++ catalog.short
+    solo = Enum.find(groups, &(&1.list_count == 1))
+
+    assert [%{pilot: "solo", cost_pilot: nil}] = solo.variants
+  end
+
   test "deck_detail returns the archetype label and the cluster's variants sorted by finish" do
     create_card(name: "Lightning Bolt", rarity: "rare", color_identity: "R")
     create_card(name: "Goblin Raider", rarity: "common", color_identity: "R")

@@ -43,4 +43,44 @@ defmodule Scry2.Cards.ResolveReferencesTest do
     assert arena_id == card.arena_id
     assert unresolved.name == "Nonexistent Card"
   end
+
+  # Universes Beyond "Universes Within" cards (e.g. OM1 "Through the
+  # Omenpaths") carry the Magic-flavored name in the MTGA client DB while
+  # Scryfall names them after the licensed IP. Synthesis keeps the Scryfall
+  # name on `cards_cards`, so a decklist that uses the MTGA/MTGO name resolves
+  # only through the mirror alias.
+  test "resolves via MTGA mirror name when cards_cards uses the other naming convention" do
+    card = create_card(name: "Spectacular Spider-Man", rarity: "rare", arena_id: 104_661)
+    create_mtga_card(arena_id: 104_661, name: "Ademi of the Silkchutes")
+
+    refs = [%{name: "Ademi of the Silkchutes", set_code: nil, collector_number: nil, count: 3}]
+
+    assert %{resolved: [%{arena_id: arena_id, count: 3}], unresolved: []} =
+             Cards.resolve_references(refs)
+
+    assert arena_id == card.arena_id
+  end
+
+  test "resolves via Scryfall mirror name alias" do
+    card = create_card(name: "Ademi of the Silkchutes", rarity: "rare", arena_id: 104_662)
+    create_scryfall_card(arena_id: 104_662, name: "Spectacular Spider-Man")
+
+    refs = [%{name: "Spectacular Spider-Man", set_code: nil, collector_number: nil, count: 1}]
+
+    assert %{resolved: [%{arena_id: arena_id, count: 1}], unresolved: []} =
+             Cards.resolve_references(refs)
+
+    assert arena_id == card.arena_id
+  end
+
+  test "mirror alias only resolves to arena_ids present in cards_cards" do
+    # Mirror knows the name, but no synthesised card exists for it — must stay
+    # unresolved rather than resolving to a phantom arena_id.
+    create_mtga_card(arena_id: 104_663, name: "Zora, Spider Fancier")
+
+    refs = [%{name: "Zora, Spider Fancier", set_code: nil, collector_number: nil, count: 2}]
+
+    assert %{resolved: [], unresolved: [unresolved]} = Cards.resolve_references(refs)
+    assert unresolved.name == "Zora, Spider Fancier"
+  end
 end
