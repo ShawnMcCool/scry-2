@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.52.6 — 2026-07-24
+
 ### Fixed
 
 - Fixed the last few netdeck cards from crossover sets (such as the Spider-Man set) that were still wrongly marked as not on MTGA — every Standard netdeck now recognises its cards and shows its real craft cost.
