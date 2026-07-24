@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.52.5 — 2026-07-24
+
 ### New
 
 - **Netdecks now cover Modern, Pioneer, and Pauper**, not just Standard. Switch formats on the catalog page, and pick a format when you paste a deck.
