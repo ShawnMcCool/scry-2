@@ -143,9 +143,16 @@ defmodule Scry2Web.NetdecksLive do
   end
 
   # Escape arrives through the same debounced keyup (see SearchBox moduledoc);
-  # the clause must come first — every keyup payload carries both keys.
-  def handle_event("filter_query", %{"key" => "Escape"}, socket) do
-    {:noreply, assign(socket, archetype_suggestions: [])}
+  # the clause must come first — every keyup payload carries both keys. The
+  # payload still carries the latest typed value, so sync it into filter.query
+  # rather than discarding it — otherwise the input text and the applied
+  # filter can desync.
+  def handle_event("filter_query", %{"key" => "Escape", "value" => value}, socket) do
+    {:noreply,
+     assign(socket,
+       filter: %{socket.assigns.filter | query: value},
+       archetype_suggestions: []
+     )}
   end
 
   def handle_event("filter_query", %{"value" => value}, socket) do
@@ -170,6 +177,35 @@ defmodule Scry2Web.NetdecksLive do
 
   def handle_event("dismiss_suggestions", _params, socket) do
     {:noreply, assign(socket, archetype_suggestions: [], card_suggestions: [])}
+  end
+
+  def handle_event("filter_card_query", %{"key" => "Escape", "value" => value}, socket) do
+    {:noreply, assign(socket, card_query: value, card_suggestions: [])}
+  end
+
+  def handle_event("filter_card_query", %{"value" => value}, socket) do
+    {:noreply,
+     assign(socket,
+       card_query: value,
+       card_suggestions:
+         NetdecksHelpers.rank_suggestions(
+           NetdecksHelpers.card_candidates(socket.assigns.catalog),
+           value
+         )
+     )}
+  end
+
+  def handle_event("pick_card", %{"key" => key, "label" => label}, socket) do
+    {:noreply,
+     assign(socket,
+       filter: %{socket.assigns.filter | card: %{key: key, label: label}},
+       card_query: "",
+       card_suggestions: []
+     )}
+  end
+
+  def handle_event("clear_card", _params, socket) do
+    {:noreply, assign(socket, filter: %{socket.assigns.filter | card: nil})}
   end
 
   def handle_event("toggle_import_panel", _params, socket) do
@@ -554,6 +590,22 @@ defmodule Scry2Web.NetdecksLive do
         pick_event="pick_archetype"
         dismiss_event="dismiss_suggestions"
       />
+      <.search_box
+        :if={is_nil(@filter.card)}
+        id="card-search"
+        value={@card_query}
+        placeholder="Filter by card…"
+        suggestions={@card_suggestions}
+        input_event="filter_card_query"
+        pick_event="pick_card"
+        dismiss_event="dismiss_suggestions"
+      />
+      <div :if={@filter.card} id="card-filter-chip" class="badge badge-outline badge-lg gap-2">
+        <span>{@filter.card.label}</span>
+        <button type="button" phx-click="clear_card" aria-label="Clear card filter">
+          <.icon name="hero-x-mark" class="size-3" />
+        </button>
+      </div>
     </div>
 
     <section
