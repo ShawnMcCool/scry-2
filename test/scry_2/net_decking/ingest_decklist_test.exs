@@ -24,7 +24,7 @@ defmodule Scry2.NetDecking.IngestDecklistTest do
     assert %Deck{name: "Mono-Red", format: "Standard", source_name: "manual"} = deck
     assert length(deck.main_deck["cards"]) == 2
     assert deck.unresolved_cards["cards"] == []
-    assert is_integer(deck.composition_hash)
+    assert is_binary(deck.composition_key)
   end
 
   test "merges a card split across two decklist lines into one summed entry" do
@@ -81,6 +81,27 @@ defmodule Scry2.NetDecking.IngestDecklistTest do
     {:ok, second} = IngestDecklist.run(attrs)
 
     assert first.id == second.id
+    assert Repo.aggregate(Deck, :count) == 1
+  end
+
+  test "the same unresolved list with reordered and printing-split lines deduplicates" do
+    create_card(name: "Mountain", rarity: "common")
+
+    {:ok, first} =
+      IngestDecklist.run(%{
+        name: "League — pilot",
+        source_name: "mtgo",
+        decklist_text: "Deck\n2 Mystery Card (ABC) 1\n16 Mountain\n"
+      })
+
+    {:ok, second} =
+      IngestDecklist.run(%{
+        name: "League — pilot",
+        source_name: "mtgo",
+        decklist_text: "Deck\n16 Mountain\n1 Mystery Card (XYZ) 9\n1 Mystery Card (ABC) 1\n"
+      })
+
+    assert second.id == first.id
     assert Repo.aggregate(Deck, :count) == 1
   end
 
@@ -191,7 +212,7 @@ defmodule Scry2.NetDecking.IngestDecklistTest do
       assert fixed.id == stale.id
       assert fixed.unresolved_cards["cards"] == []
       assert length(fixed.main_deck["cards"]) == 2
-      assert fixed.composition_hash != stale.composition_hash
+      assert fixed.composition_key != stale.composition_key
       assert Repo.aggregate(Deck, :count) == 1
     end
 
@@ -209,6 +230,67 @@ defmodule Scry2.NetDecking.IngestDecklistTest do
       {:ok, _fixed} = IngestDecklist.reingest(stale, attrs)
 
       assert Repo.aggregate(Deck, :count) == 1
+    end
+
+    test "merges into the earlier row when the corrected composition already exists" do
+      create_card(name: "Mountain", rarity: "common")
+
+      {:ok, first} =
+        IngestDecklist.run(%{
+          name: "League — wolf777",
+          source_name: "mtgo",
+          pilot: "wolf777",
+          decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+        })
+
+      {:ok, second} =
+        IngestDecklist.run(%{
+          name: "League — wolf777 (variant)",
+          source_name: "mtgo",
+          pilot: "wolf777",
+          decklist_text: "Deck\n3 Lightning Bolt\n17 Mountain\n"
+        })
+
+      assert first.id != second.id
+
+      # The card data improves, and the source now reports one list for the
+      # pilot — the reingest walk corrects both rows with it, sequentially.
+      # The second correction converges onto the first row's composition.
+      # The rows must merge, not coexist.
+      create_card(name: "Lightning Bolt", rarity: "rare")
+
+      corrected = %{
+        name: "League — wolf777",
+        source_name: "mtgo",
+        pilot: "wolf777",
+        decklist_text: "Deck\n4 Lightning Bolt\n16 Mountain\n"
+      }
+
+      {:ok, _first_corrected} = IngestDecklist.reingest(first, corrected)
+      {:ok, merged} = IngestDecklist.reingest(second, corrected)
+
+      assert merged.id == first.id
+      assert Repo.aggregate(Deck, :count) == 1
+    end
+  end
+
+  describe "duplicate backstop" do
+    test "the database rejects a second row with the same composition and format" do
+      fetched_at = DateTime.utc_now()
+
+      shared = %{
+        name: "Direct Insert",
+        format: "Standard",
+        main_deck: %{"cards" => [%{"arena_id" => 1, "count" => 4}]},
+        sideboard: %{"cards" => []},
+        composition_key: String.duplicate("ab", 32),
+        source_name: "manual",
+        fetched_at: fetched_at
+      }
+
+      assert {:ok, _} = Repo.insert(Deck.changeset(shared))
+      assert {:error, changeset} = Repo.insert(Deck.changeset(shared))
+      assert %{composition_key: [_message]} = errors_on(changeset)
     end
   end
 

@@ -3,7 +3,9 @@ defmodule Scry2.NetDecking.Deck do
   A single external reference deck in the NetDecking corpus.
 
   Card lists (`main_deck`, `sideboard`) use the same `{"cards" => [%{arena_id, count}]}`
-  shape as `decks_decks`. `composition_hash` enables idempotent re-ingest.
+  shape as `decks_decks`. `composition_key` (see `Scry2.NetDecking.CompositionKey`)
+  enables idempotent re-ingest and is enforced unique per format at the
+  database level — the corpus can never hold two rows for the same card list.
   `unresolved_cards` records references that did not map to an arena_id —
   the deck is still stored, with the unresolved references retained so the
   catalog UI can surface them.
@@ -27,7 +29,7 @@ defmodule Scry2.NetDecking.Deck do
     field :format, :string, default: "Standard"
     field :main_deck, :map
     field :sideboard, :map
-    field :composition_hash, :integer
+    field :composition_key, :string
     field :source_name, :string
     field :source_url, :string
     field :fetched_at, :utc_datetime_usec
@@ -50,7 +52,7 @@ defmodule Scry2.NetDecking.Deck do
     :archetype_name,
     :archetype_variant,
     :archetype_fallback,
-    :composition_hash,
+    :composition_key,
     :source_url,
     :unresolved_cards,
     :pilot,
@@ -69,5 +71,6 @@ defmodule Scry2.NetDecking.Deck do
     deck
     |> cast(attrs, @required ++ @optional)
     |> validate_required(@required)
+    |> unique_constraint([:composition_key, :format])
   end
 end

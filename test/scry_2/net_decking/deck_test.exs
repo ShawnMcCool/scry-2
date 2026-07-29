@@ -11,7 +11,7 @@ defmodule Scry2.NetDecking.DeckTest do
       format: "Standard",
       main_deck: %{"cards" => [%{"arena_id" => 30_001, "count" => 4}]},
       sideboard: %{"cards" => []},
-      composition_hash: 12_345,
+      composition_key: String.duplicate("0", 64),
       source_name: "manual",
       source_url: nil,
       fetched_at: DateTime.utc_now(),

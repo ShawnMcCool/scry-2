@@ -5,12 +5,17 @@ defmodule Scry2.NetDecking.IngestDecklist do
 
       Parse    (MtgaClipboardParser: text → refs)
       Resolve  (Cards.resolve_references: refs → {resolved, unresolved})
-      Dedup    (Decks.composition_hash: idempotent key over maindeck)
+      Dedup    (CompositionKey: content identity over the known card list)
       Classify (Metagame.classification_attrs: card lists → archetype columns)
-      Persist  (upsert netdecking_decks by composition_hash)
+      Persist  (upsert netdecking_decks by composition_key + format)
 
   Buildability is NOT computed here — ingestion produces only
   collection-independent facts.
+
+  Dedup is enforced twice: the lookup here reuses an existing row for the
+  same `(composition_key, format)`, and the database's unique index rejects
+  anything that slips past it (e.g. two overlapping ingest runs) — the
+  changeset surfaces that as an error the caller logs and skips.
 
   A source can list the same card on two separate decklist lines (MTGO
   splits some cards across set/printing groupings within one player's
@@ -19,13 +24,15 @@ defmodule Scry2.NetDecking.IngestDecklist do
   as separate entries — merged into one summed entry per `arena_id` before
   persisting, so every downstream reader of `main_deck`/`sideboard` (score,
   buildability cost, archetype-core deltas) sees one true count per card.
+  `CompositionKey` applies the same normalization to unresolved references,
+  so printing splits and line order never make one list look like two.
   """
   import Ecto.Query
 
   alias Scry2.Cards
-  alias Scry2.Decks
   alias Scry2.Decks.MtgaClipboardParser
   alias Scry2.Metagame
+  alias Scry2.NetDecking.CompositionKey
   alias Scry2.NetDecking.Deck
   alias Scry2.Repo
 
@@ -50,25 +57,49 @@ defmodule Scry2.NetDecking.IngestDecklist do
   def run(%{decklist_text: _} = attrs) do
     computed = compute(attrs)
     format = attrs[:format] || "Standard"
-    row = existing(computed.composition_hash, format)
+    row = existing(computed.composition_key, format)
     persist(row || %Deck{}, attrs, computed)
   end
 
   @doc """
   Re-runs the funnel for a deck that is already in the corpus, updating that
-  exact row in place (by id) rather than deduping by `composition_hash`. Used
+  exact row in place (by id) rather than deduping by `composition_key`. Used
   when the card data has improved and previously-unresolved references now
-  resolve: the composition — and therefore the hash — changes, so the normal
-  hash-keyed upsert would spawn a fresh row and orphan the stale one. Keeping
+  resolve: the composition — and therefore the key — changes, so the normal
+  key-keyed upsert would spawn a fresh row and orphan the stale one. Keeping
   the id preserves provenance clustering and any references to the deck.
+
+  When the corrected composition already exists as another corpus row, the
+  two rows have converged on the same card list — they merge: the earlier
+  row survives (and receives the fresh data), the later row is deleted.
   """
   @spec reingest(Deck.t(), attrs()) :: {:ok, Deck.t()} | {:error, Ecto.Changeset.t()}
   def reingest(%Deck{} = deck, %{decklist_text: _} = attrs) do
-    persist(deck, attrs, compute(attrs))
+    computed = compute(attrs)
+    format = attrs[:format] || "Standard"
+
+    case converged_row(computed.composition_key, format, deck.id) do
+      nil ->
+        persist(deck, attrs, computed)
+
+      other ->
+        {survivor, duplicate} = if deck.id <= other.id, do: {deck, other}, else: {other, deck}
+        merge(survivor, duplicate, attrs, computed)
+    end
+  end
+
+  # The duplicate goes first so the survivor can take over the composition
+  # key inside the same transaction without tripping the unique index.
+  defp merge(survivor, duplicate, attrs, computed) do
+    Repo.transact(fn ->
+      with {:ok, _deleted} <- Repo.delete(duplicate) do
+        persist(survivor, attrs, computed)
+      end
+    end)
   end
 
   # Collection-independent facts derived from the raw decklist text: resolved
-  # main/sideboard card maps, the unresolved references, and the dedup hash.
+  # main/sideboard card maps, the unresolved references, and the dedup key.
   defp compute(%{decklist_text: text} = _attrs) do
     %{main: main_refs, sideboard: side_refs} = MtgaClipboardParser.parse(text)
 
@@ -77,13 +108,13 @@ defmodule Scry2.NetDecking.IngestDecklist do
 
     main_cards = to_card_maps(main.resolved)
     side_cards = to_card_maps(side.resolved)
+    unresolved = normalize_unresolved(main.unresolved ++ side.unresolved)
 
     %{
       main_cards: main_cards,
       side_cards: side_cards,
-      unresolved: normalize_unresolved(main.unresolved ++ side.unresolved),
-      composition_hash:
-        Decks.composition_hash(main_cards) || :erlang.phash2({main_refs, side_refs})
+      unresolved: unresolved,
+      composition_key: CompositionKey.compute(main_cards, unresolved)
     }
   end
 
@@ -111,7 +142,7 @@ defmodule Scry2.NetDecking.IngestDecklist do
       main_cards: main_cards,
       side_cards: side_cards,
       unresolved: unresolved,
-      composition_hash: composition_hash
+      composition_key: composition_key
     } = computed
 
     format = attrs[:format] || "Standard"
@@ -129,7 +160,7 @@ defmodule Scry2.NetDecking.IngestDecklist do
         format: format,
         main_deck: %{"cards" => main_cards},
         sideboard: %{"cards" => side_cards},
-        composition_hash: composition_hash,
+        composition_key: composition_key,
         source_name: attrs.source_name,
         source_url: attrs[:source_url],
         fetched_at: DateTime.utc_now(),
@@ -149,9 +180,19 @@ defmodule Scry2.NetDecking.IngestDecklist do
 
   defp existing(nil, _format), do: nil
 
-  defp existing(composition_hash, format) do
+  defp existing(composition_key, format) do
     Deck
-    |> where([d], d.composition_hash == ^composition_hash and d.format == ^format)
+    |> where([d], d.composition_key == ^composition_key and d.format == ^format)
+    |> limit(1)
+    |> Repo.one()
+  end
+
+  defp converged_row(nil, _format, _deck_id), do: nil
+
+  defp converged_row(composition_key, format, deck_id) do
+    Deck
+    |> where([d], d.composition_key == ^composition_key and d.format == ^format)
+    |> where([d], d.id != ^deck_id)
     |> limit(1)
     |> Repo.one()
   end
