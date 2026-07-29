@@ -191,6 +191,7 @@ defmodule Scry2.NetDeckingTest do
       all_groups =
         catalog.buildable ++ catalog.craftable ++ catalog.short ++ catalog.incomplete
 
+      refute Enum.empty?(all_groups)
       assert Enum.all?(all_groups, &match?(%MapSet{}, &1.card_names))
 
       mono_green =

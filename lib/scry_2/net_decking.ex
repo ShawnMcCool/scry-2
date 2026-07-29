@@ -169,7 +169,8 @@ defmodule Scry2.NetDecking do
   `finish`/`record`/`pilot`/`event_name`/`event_date` from each variant's
   best-finished member. `wildcards` is the player's current pool, for the
   catalog's balance readout. `card_index` is `[%{key, name, group_count}]` —
-  every distinct card in the corpus (by identity key), sorted by display
+  every distinct resolvable card in the corpus (by identity key; cards
+  whose arena_id has no cards_cards row are excluded), sorted by display
   name, with `group_count` counting how many groups (any tier) play it —
   the card-search suggestion source. `incomplete` groups have at least one
   card missing from MTGA in every member list — no wildcard count builds
@@ -491,7 +492,7 @@ defmodule Scry2.NetDecking do
     |> Enum.map(fn {key, group_count} ->
       %{key: key, name: Map.get(display_names, key, key), group_count: group_count}
     end)
-    |> Enum.sort_by(&String.downcase(&1.name))
+    |> Enum.sort_by(& &1.key)
   end
 
   defp decorate_groups(groups, cards, sets, groups_playing) do
