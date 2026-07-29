@@ -510,6 +510,93 @@ defmodule Scry2Web.NetdecksHelpersTest do
     end
   end
 
+  describe "rank_suggestions/3" do
+    @candidates [
+      %{key: "duress", label: "Duress", count: 3},
+      %{key: "llanowar elves", label: "Llanowar Elves", count: 9},
+      %{key: "elvish mystic", label: "Elvish Mystic", count: 5},
+      %{key: "quandrix cultivator", label: "Quandrix Cultivator", count: 1}
+    ]
+
+    test "blank query yields nothing" do
+      assert NetdecksHelpers.rank_suggestions(@candidates, "") == []
+      assert NetdecksHelpers.rank_suggestions(@candidates, "   ") == []
+    end
+
+    test "substring match, prefix matches first, then count desc" do
+      assert Enum.map(NetdecksHelpers.rank_suggestions(@candidates, "elv"), & &1.key) ==
+               ["elvish mystic", "llanowar elves"]
+    end
+
+    test "case-insensitive" do
+      assert Enum.map(NetdecksHelpers.rank_suggestions(@candidates, "DURESS"), & &1.key) ==
+               ["duress"]
+    end
+
+    test "caps at limit" do
+      many = Enum.map(1..20, fn n -> %{key: "card #{n}", label: "Card #{n}", count: n} end)
+      assert length(NetdecksHelpers.rank_suggestions(many, "card")) == 8
+      assert length(NetdecksHelpers.rank_suggestions(many, "card", 3)) == 3
+    end
+  end
+
+  describe "match_card?/2 and visible?/2" do
+    test "nil selection matches every group" do
+      group = %{card_names: MapSet.new(["duress"])}
+      assert NetdecksHelpers.match_card?(group, nil)
+    end
+
+    test "membership on the group's card_names" do
+      group = %{card_names: MapSet.new(["duress"])}
+      assert NetdecksHelpers.match_card?(group, %{key: "duress", label: "Duress"})
+      refute NetdecksHelpers.match_card?(group, %{key: "llanowar elves", label: "Llanowar Elves"})
+    end
+
+    test "visible?/2 is the AND of text and card filters" do
+      group = %{
+        label: "Mono Black",
+        card_names: MapSet.new(["duress"]),
+        variants: [%{deck: %{name: "Mono Black Midrange", archetype: nil}}]
+      }
+
+      selected_duress = %{key: "duress", label: "Duress"}
+      assert NetdecksHelpers.visible?(group, %{query: "mono", card: selected_duress})
+      refute NetdecksHelpers.visible?(group, %{query: "izzet", card: selected_duress})
+
+      refute NetdecksHelpers.visible?(group, %{
+               query: "mono",
+               card: %{key: "swamp", label: "Swamp"}
+             })
+
+      assert NetdecksHelpers.visible?(group, %{query: "", card: nil})
+    end
+  end
+
+  describe "suggestion candidates" do
+    test "card_candidates/1 maps the card index" do
+      catalog = %{card_index: [%{key: "duress", name: "Duress", group_count: 3}]}
+
+      assert NetdecksHelpers.card_candidates(catalog) ==
+               [%{key: "duress", label: "Duress", count: 3}]
+    end
+
+    test "archetype_candidates/1 dedupes labels across tiers and sums list counts" do
+      group = fn label, list_count -> %{label: label, list_count: list_count} end
+
+      catalog = %{
+        buildable: [group.("Izzet Prowess", 2)],
+        craftable: [group.("Izzet Prowess", 3), group.("Mono Black", 1)],
+        short: [],
+        incomplete: []
+      }
+
+      candidates = NetdecksHelpers.archetype_candidates(catalog)
+      assert %{key: "Izzet Prowess", label: "Izzet Prowess", count: 5} in candidates
+      assert %{key: "Mono Black", label: "Mono Black", count: 1} in candidates
+      assert length(candidates) == 2
+    end
+  end
+
   describe "page_window/2" do
     test "shows every page when the total fits without truncation" do
       assert NetdecksHelpers.page_window(1, 5) == [1, 2, 3, 4, 5]

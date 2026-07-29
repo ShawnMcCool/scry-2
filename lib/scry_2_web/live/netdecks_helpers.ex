@@ -229,6 +229,64 @@ defmodule Scry2Web.NetdecksHelpers do
   defp contains?(nil, _query_lower), do: false
   defp contains?(value, query_lower), do: String.contains?(String.downcase(value), query_lower)
 
+  @doc """
+  Ranks suggestion candidates (`%{key, label, count}`) for a query:
+  case-insensitive substring match, prefix matches first, then count
+  descending, then label. Blank query yields nothing. Capped at `limit`.
+  One ranking rule for both the archetype and card search bars.
+  """
+  @spec rank_suggestions([map()], String.t(), pos_integer()) :: [map()]
+  def rank_suggestions(candidates, query, limit \\ 8) do
+    normalized = query |> String.trim() |> String.downcase()
+
+    if normalized == "" do
+      []
+    else
+      candidates
+      |> Enum.filter(fn candidate ->
+        String.contains?(String.downcase(candidate.label), normalized)
+      end)
+      |> Enum.sort_by(fn candidate ->
+        label = String.downcase(candidate.label)
+        {if(String.starts_with?(label, normalized), do: 0, else: 1), -candidate.count, label}
+      end)
+      |> Enum.take(limit)
+    end
+  end
+
+  @doc "True when no card is selected, or the group plays the selected card."
+  @spec match_card?(map(), nil | %{key: String.t(), label: String.t()}) :: boolean()
+  def match_card?(_group, nil), do: true
+  def match_card?(group, %{key: key}), do: MapSet.member?(group.card_names, key)
+
+  @doc "AND of the text query (`match_search?/2`) and the selected card (`match_card?/2`)."
+  @spec visible?(map(), %{query: String.t(), card: nil | map()}) :: boolean()
+  def visible?(group, filter) do
+    match_search?(group, filter.query) and match_card?(group, filter.card)
+  end
+
+  @doc """
+  Archetype suggestion candidates: one per distinct group label across all
+  tiers; count sums the decklists under that label.
+  """
+  @spec archetype_candidates(map()) :: [map()]
+  def archetype_candidates(catalog) do
+    [catalog.buildable, catalog.craftable, catalog.short, catalog.incomplete]
+    |> Enum.concat()
+    |> Enum.group_by(& &1.label)
+    |> Enum.map(fn {label, groups} ->
+      %{key: label, label: label, count: groups |> Enum.map(& &1.list_count) |> Enum.sum()}
+    end)
+  end
+
+  @doc "Card suggestion candidates from the catalog's corpus-wide card index."
+  @spec card_candidates(map()) :: [map()]
+  def card_candidates(catalog) do
+    Enum.map(catalog.card_index, fn entry ->
+      %{key: entry.key, label: entry.name, count: entry.group_count}
+    end)
+  end
+
   @doc "The archetype group with this slug, across all tiers; nil when absent."
   @spec find_group(map(), String.t()) :: map() | nil
   def find_group(catalog, slug) do
