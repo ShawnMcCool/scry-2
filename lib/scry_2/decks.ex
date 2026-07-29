@@ -1062,20 +1062,16 @@ defmodule Scry2.Decks do
   Hash of a main-deck composition. `nil` if the input has no resolvable
   arena_id/count pairs. Stable across BEAM versions per `:erlang.phash2/1`.
   Deliberately does NOT sum duplicate arena_id pairs — raw sorted pairs,
-  unlike `Scry2.DeckList.canonical_pairs/2`.
+  unlike `Scry2.DeckList.canonical_pairs/2`. Parsing is strict per
+  `DeckList.entries/1`: pairs without an integer `arena_id`/`count` are
+  dropped, not hashed.
   """
   @spec composition_hash(list() | nil) :: integer() | nil
   def composition_hash(nil), do: nil
   def composition_hash([]), do: nil
 
   def composition_hash(cards) when is_list(cards) do
-    pairs =
-      cards
-      |> DeckList.entries()
-      |> Enum.map(fn %{arena_id: arena_id, count: count} -> {arena_id, count} end)
-      |> Enum.sort()
-
-    case pairs do
+    case sort_pairs(cards) do
       [] -> nil
       sorted -> :erlang.phash2(sorted)
     end

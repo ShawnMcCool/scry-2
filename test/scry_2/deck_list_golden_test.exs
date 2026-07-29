@@ -60,8 +60,8 @@ defmodule Scry2.DeckListGoldenTest do
     assert CompositionKey.compute([], []) == nil
   end
 
-  test "canonical composition hash — empty list is nil" do
-    assert DeckList.canonical_pairs(DeckList.entries([]), @representatives) == []
+  test "composition_hash/1 — non-integer arena_id or count is dropped, not hashed" do
+    assert Decks.composition_hash([%{"arena_id" => "111", "count" => 4}]) == nil
   end
 
   test "composition_key/2 — unresolved-only composition" do

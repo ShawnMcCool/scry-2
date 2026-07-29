@@ -91,8 +91,11 @@ defmodule Scry2.DeckListTest do
   # unmapped arena_ids to themselves) are obsolete: that parsing now lives in
   # `entries/1` and is already covered by the "entries/1" describe block
   # above and by "arena_ids absent from the representative map represent
-  # themselves" above. The old module's nil-on-empty hash behavior is
-  # covered by `test/scry_2/deck_list_golden_test.exs`.
+  # themselves" above. The old module's nil-on-empty hash behavior has no
+  # direct successor (`hash/2` was deleted); its stored-hash equivalent is
+  # golden-covered by `Decks.composition_hash/1`'s own tests in
+  # `test/scry_2/deck_list_golden_test.exs`
+  # ("composition_hash/1 — empty and unresolvable input is nil").
   describe "canonical_pairs/2 — printing-insensitive identity (ported)" do
     @printing_representatives %{
       105_175 => 100,
