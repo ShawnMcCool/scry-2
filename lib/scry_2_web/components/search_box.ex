@@ -5,10 +5,20 @@ defmodule Scry2Web.Components.SearchBox do
 
   The caller owns all state: it supplies `value` and `suggestions`
   (`%{key, label, count}`) and receives events — `input_event` on debounced
-  keyup (current text in `"value"`), `pick_event` with
-  `phx-value-key`/`phx-value-label` when a suggestion is clicked, and
-  `dismiss_event` on click-away or Escape. Suggestions render only while
-  non-empty, absolutely positioned (no layout shift, no keyframe animation).
+  keyup, whose payload carries both `"value"` (current text) and `"key"`
+  (the key that triggered it); callers MUST treat a payload of
+  `%{"key" => "Escape"}` as a dismiss. `pick_event` fires with
+  `phx-value-key`/`phx-value-label` when a suggestion is clicked.
+  `dismiss_event` fires on click-away while suggestions are open. There is
+  deliberately no `phx-keydown` Escape binding on the input: LiveView
+  applies `phx-key` to every key binding on an element, so pairing it with
+  `phx-keyup` would filter out every non-Escape keystroke and silently
+  break typing. Suggestions render only while non-empty, absolutely
+  positioned (no layout shift, no keyframe animation). Clicking a
+  suggestion to fill the input relies on the click moving focus off the
+  input — LiveView skips patching the value of a focused input, so the
+  new `value` assign only lands once focus has left it (a Safari focus
+  timing quirk is an accepted caveat here).
   """
   use Phoenix.Component
 
@@ -26,7 +36,10 @@ defmodule Scry2Web.Components.SearchBox do
 
   def search_box(assigns) do
     ~H"""
-    <div class="relative w-full max-w-md" phx-click-away={JS.push(@dismiss_event)}>
+    <div
+      class="relative w-full max-w-md"
+      phx-click-away={@suggestions != [] && JS.push(@dismiss_event)}
+    >
       <label class="input input-bordered input-sm flex w-full items-center gap-2">
         <.icon name="hero-magnifying-glass" class="size-4 text-base-content/40" />
         <input
@@ -34,8 +47,6 @@ defmodule Scry2Web.Components.SearchBox do
           type="text"
           phx-keyup={@input_event}
           phx-debounce="200"
-          phx-keydown={JS.push(@dismiss_event)}
-          phx-key="escape"
           value={@value}
           placeholder={@placeholder}
           autocomplete="off"
