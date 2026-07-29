@@ -935,6 +935,7 @@ defmodule Scry2Web.NetdecksLive do
 
     ~H"""
     <.link
+      id={"archetype-row-#{@group.slug}"}
       patch={@href}
       class="grid grid-cols-[2.25rem_3.5rem_1fr] sm:grid-cols-[2.25rem_3.5rem_1fr_auto] items-center gap-4 py-4 px-1 hover:bg-base-200/40 transition-colors"
     >

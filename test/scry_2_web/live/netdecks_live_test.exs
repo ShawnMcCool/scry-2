@@ -387,8 +387,8 @@ defmodule Scry2Web.NetdecksLiveTest do
 
   describe "card search" do
     test "suggests, filters, picks to a chip, and clears", %{conn: conn} do
-      create_card(%{arena_id: 111, name: "Llanowar Elves", rarity: "common"})
-      create_card(%{arena_id: 222, name: "Duress", rarity: "common"})
+      create_card(%{arena_id: 111, name: "Llanowar Elves", rarity: "common", color_identity: "G"})
+      create_card(%{arena_id: 222, name: "Duress", rarity: "common", color_identity: "B"})
 
       create_netdeck_with_cards(%{
         name: "Mono Green",
@@ -404,6 +404,10 @@ defmodule Scry2Web.NetdecksLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/netdecks")
 
+      # Both groups' rows are on the page before any card is picked.
+      assert has_element?(view, "#archetype-row-mono-green-llanowar-elves")
+      assert has_element?(view, "#archetype-row-mono-black-duress")
+
       render_keyup(view, "filter_card_query", %{"value" => "llanowar"})
       assert has_element?(view, "#card-search-suggestions")
 
@@ -414,17 +418,32 @@ defmodule Scry2Web.NetdecksLiveTest do
       assert has_element?(view, "#card-filter-chip")
       refute has_element?(view, "#card-search")
 
+      # The catalog itself is filtered, not just the chip shown: the
+      # Llanowar Elves deck's row stays, the Duress deck's row is gone.
+      assert has_element?(view, "#archetype-row-mono-green-llanowar-elves")
+      refute has_element?(view, "#archetype-row-mono-black-duress")
+
       render_click(view, "clear_card", %{})
       assert has_element?(view, "#card-search")
       refute has_element?(view, "#card-filter-chip")
+
+      assert has_element?(view, "#archetype-row-mono-green-llanowar-elves")
+      assert has_element?(view, "#archetype-row-mono-black-duress")
     end
 
     test "Escape syncs text state and clears suggestions on both bars", %{conn: conn} do
-      create_card(%{arena_id: 111, name: "Llanowar Elves", rarity: "common"})
+      create_card(%{arena_id: 111, name: "Llanowar Elves", rarity: "common", color_identity: "G"})
+      create_card(%{arena_id: 222, name: "Duress", rarity: "common", color_identity: "B"})
 
       create_netdeck_with_cards(%{
         name: "Mono Green",
         main_deck: netdeck_cards([{111, 4}]),
+        sideboard: netdeck_cards([])
+      })
+
+      create_netdeck_with_cards(%{
+        name: "Mono Black",
+        main_deck: netdeck_cards([{222, 4}]),
         sideboard: netdeck_cards([])
       })
 
@@ -439,8 +458,18 @@ defmodule Scry2Web.NetdecksLiveTest do
       render_keyup(view, "filter_query", %{"value" => "mono"})
       assert has_element?(view, "#archetype-search-suggestions")
 
+      # Escape's payload value must land in filter.query, not just clear
+      # suggestions — observed server-side via the catalog it drives: "black"
+      # excludes the Mono-Green row (a stale/discarded value wouldn't).
+      render_keyup(view, "filter_query", %{"key" => "Escape", "value" => "black"})
+      refute has_element?(view, "#archetype-search-suggestions")
+      refute has_element?(view, "#archetype-row-mono-green-llanowar-elves")
+      assert has_element?(view, "#archetype-row-mono-black-duress")
+
       render_keyup(view, "filter_query", %{"key" => "Escape", "value" => "mono"})
       refute has_element?(view, "#archetype-search-suggestions")
+      assert has_element?(view, "#archetype-row-mono-green-llanowar-elves")
+      assert has_element?(view, "#archetype-row-mono-black-duress")
     end
 
     test "dismiss_suggestions clears both bars", %{conn: conn} do

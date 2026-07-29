@@ -1165,6 +1165,11 @@ defmodule Scry2.TestFactory do
     }
   end
 
+  @doc """
+  Persists a `Scry2.NetDecking.Deck` via `NetDecking.import_decklist/1` —
+  the card list comes from parsing `attrs[:decklist_text]`, not from raw
+  arena_id/count maps. Use this for tests exercising the real ingest path.
+  """
   def create_netdeck(attrs \\ %{}) do
     base = Map.new(attrs)
 
@@ -1184,8 +1189,9 @@ defmodule Scry2.TestFactory do
   (raw `main_deck`/`sideboard` card maps — see `netdeck_cards/1`), bypassing
   the `import_decklist` funnel entirely. Use this when a test wants to
   control the exact resolved card lists rather than parsing decklist text —
-  `import_decklist` re-resolves card names against the catalog, which is
-  the wrong tool when the test wants an exact, known printing.
+  `import_decklist` re-resolves card names against the card database
+  (`Cards.resolve_references/1`), which is the wrong tool when the test
+  wants an exact, known printing.
   """
   def create_netdeck_with_cards(attrs \\ %{}) do
     attrs
