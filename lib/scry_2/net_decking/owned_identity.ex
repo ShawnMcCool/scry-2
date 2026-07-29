@@ -10,6 +10,11 @@ defmodule Scry2.NetDecking.OwnedIdentity do
   engine stays `arena_id`-keyed; this stage feeds it correctly aggregated
   counts.
 
+  The card-identity rule (downcased, trimmed card name) lives in
+  `Scry2.DeckList.identity_key/1`. Note: `identity_key/1` also trims; names
+  from `cards_cards` never carry surrounding whitespace, so keys are
+  unchanged.
+
   Pure function — no DB. Inputs:
 
     * `cards_by_arena_id` — `%{arena_id => %{name: ...}}` for the deck's cards
@@ -20,6 +25,8 @@ defmodule Scry2.NetDecking.OwnedIdentity do
   Output: `%{representative_arena_id => total_owned_across_printings}`.
   """
 
+  alias Scry2.DeckList
+
   @spec owned_by_representative(
           %{optional(integer()) => map()},
           %{optional(integer()) => non_neg_integer()},
@@ -27,7 +34,7 @@ defmodule Scry2.NetDecking.OwnedIdentity do
         ) :: %{optional(integer()) => non_neg_integer()}
   def owned_by_representative(cards_by_arena_id, owned_by_arena_id, printings) do
     Map.new(cards_by_arena_id, fn {arena_id, card} ->
-      key = card |> name() |> String.downcase()
+      key = DeckList.identity_key(name(card))
       printing_ids = Map.get(printings, key, [arena_id])
 
       total =

@@ -17,6 +17,7 @@ defmodule Scry2.NetDecking do
   alias Scry2.Collection
   alias Scry2.Collection.Snapshot
   alias Scry2.Config
+  alias Scry2.DeckList
   alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.Economy
   alias Scry2.Metagame
@@ -263,7 +264,7 @@ defmodule Scry2.NetDecking do
     rarities = Map.new(cards_by_arena_id, fn {id, card} -> {id, card_rarity(card)} end)
     free_ids = Buildability.default_free_ids(cards_by_arena_id)
 
-    member_entries = Enum.map(group.member_decks, &card_entries(&1.main_deck))
+    member_entries = Enum.map(group.member_decks, &DeckList.entries(&1.main_deck))
     core = DeckQualities.archetype_core(member_entries, @core_presence_threshold)
     core_rows = card_rows(%{"cards" => core}, cards_by_arena_id, owned, rarities, free_ids)
 
@@ -272,7 +273,8 @@ defmodule Scry2.NetDecking do
       core_rows_by_arena_id: Map.new(core_rows, fn row -> {row.arena_id, row} end),
       deltas_by_deck_id:
         Map.new(group.variants, fn variant ->
-          {variant.deck.id, DeckQualities.core_deltas(card_entries(variant.deck.main_deck), core)}
+          {variant.deck.id,
+           DeckQualities.core_deltas(DeckList.entries(variant.deck.main_deck), core)}
         end),
       craft_by_deck_id:
         Map.new(group.variants, fn variant ->
@@ -368,7 +370,7 @@ defmodule Scry2.NetDecking do
 
     free_ids = Buildability.default_free_ids(cards_by_arena_id)
 
-    entries = card_entries(deck.main_deck)
+    entries = DeckList.entries(deck.main_deck)
     colors = DeckQualities.deck_color_identity(entries, cards_by_arena_id)
 
     signature =
@@ -414,7 +416,7 @@ defmodule Scry2.NetDecking do
     |> Enum.concat()
     |> Enum.flat_map(fn group ->
       group.member_decks
-      |> Enum.flat_map(fn deck -> Enum.map(card_entries(deck.main_deck), & &1.arena_id) end)
+      |> Enum.flat_map(fn deck -> Enum.map(DeckList.entries(deck.main_deck), & &1.arena_id) end)
       |> Enum.uniq()
     end)
     |> Enum.frequencies()
@@ -425,7 +427,7 @@ defmodule Scry2.NetDecking do
   end
 
   defp decorate_group(group, cards, sets, groups_playing) do
-    member_entries = Enum.map(group.member_decks, &card_entries(&1.main_deck))
+    member_entries = Enum.map(group.member_decks, &DeckList.entries(&1.main_deck))
 
     signature =
       DeckQualities.archetype_signature_ids(
@@ -435,7 +437,7 @@ defmodule Scry2.NetDecking do
         @cluster_signature_cards
       )
 
-    representative_entries = card_entries(hd(group.variants).deck.main_deck)
+    representative_entries = DeckList.entries(hd(group.variants).deck.main_deck)
     colors = DeckQualities.deck_color_identity(representative_entries, cards)
     label = group.archetype_name || synthetic_label(colors, signature, cards)
 
@@ -495,7 +497,7 @@ defmodule Scry2.NetDecking do
   # label), not its cluster's majority — cheap (no corpus-wide clustering
   # pass) and correct for a flat per-deck list (UIDR-018).
   defp decorate_recent(deck, cards, owned, wildcards, rarities, free_ids) do
-    entries = card_entries(deck.main_deck)
+    entries = DeckList.entries(deck.main_deck)
     colors = DeckQualities.deck_color_identity(entries, cards)
     signature = DeckQualities.signature_arena_ids(entries, cards, @cluster_signature_cards)
 
@@ -564,8 +566,8 @@ defmodule Scry2.NetDecking do
 
   defp score_deck(deck, owned, wildcards, rarities, free_ids) do
     Buildability.score(%Inputs{
-      main_cards: card_entries(deck.main_deck),
-      side_cards: card_entries(deck.sideboard),
+      main_cards: DeckList.entries(deck.main_deck),
+      side_cards: DeckList.entries(deck.sideboard),
       owned: owned,
       wildcards: wildcards,
       rarities: rarities,
@@ -592,7 +594,7 @@ defmodule Scry2.NetDecking do
 
   defp nonland_signature(deck, cards, free_ids) do
     deck.main_deck
-    |> card_entries()
+    |> DeckList.entries()
     |> Enum.map(& &1.arena_id)
     |> Enum.reject(fn id ->
       MapSet.member?(free_ids, id) or match?(%{is_land: true}, Map.get(cards, id))
@@ -611,7 +613,7 @@ defmodule Scry2.NetDecking do
 
   defp card_rows(card_list, cards_by_arena_id, owned, rarities, free_ids) do
     card_list
-    |> card_entries()
+    |> DeckList.entries()
     |> Enum.map(fn %{arena_id: arena_id, count: needed} ->
       free? = MapSet.member?(free_ids, arena_id)
       owned_count = Map.get(owned, arena_id, 0)
@@ -694,19 +696,13 @@ defmodule Scry2.NetDecking do
 
   defp cards_for(decks) do
     decks
-    |> Enum.flat_map(fn deck -> card_entries(deck.main_deck) ++ card_entries(deck.sideboard) end)
+    |> Enum.flat_map(fn deck ->
+      DeckList.entries(deck.main_deck) ++ DeckList.entries(deck.sideboard)
+    end)
     |> Enum.map(& &1.arena_id)
     |> Enum.uniq()
     |> Cards.list_by_arena_ids()
   end
-
-  defp card_entries(%{"cards" => cards}) when is_list(cards) do
-    Enum.map(cards, fn card ->
-      %{arena_id: card["arena_id"] || card[:arena_id], count: card["count"] || card[:count]}
-    end)
-  end
-
-  defp card_entries(_), do: []
 
   defp card_rarity(%{rarity: rarity}) when is_binary(rarity), do: rarity
   defp card_rarity(_), do: nil
