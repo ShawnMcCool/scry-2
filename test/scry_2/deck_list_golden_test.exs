@@ -58,4 +58,13 @@ defmodule Scry2.DeckListGoldenTest do
   test "composition_key/2 — empty composition is nil" do
     assert CompositionKey.compute([], []) == nil
   end
+
+  test "canonical composition hash — empty list is nil" do
+    assert CompositionIdentity.hash([], @representatives) == nil
+  end
+
+  test "composition_key/2 — unresolved-only composition" do
+    assert CompositionKey.compute([], @unresolved_cards) ==
+             "52b65ed98e3d96ca4e96c4a1f802e3c2405550ed026b45fc6f1dadbb777f059c"
+  end
 end
