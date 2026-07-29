@@ -157,25 +157,31 @@ defmodule Scry2.NetDecking do
   deck row stays in the DB), and tiers each group by its best variant's
   status:
 
-      %{buildable: [group], craftable: [group], short: [group], incomplete: [group], wildcards: rarity_map}
+      %{buildable: [group], craftable: [group], short: [group], incomplete: [group], wildcards: rarity_map, card_index: [entry]}
 
   A group is the `ArchetypeCatalog` group decorated for display: `label`
   (the archetype name, or the synthetic color · hero label for unclassified
   clusters), `slug` (archetype detail route segment), `color_identity`,
   `signature_arena_ids` (the archetype's distinctive cards, hero first),
-  `set_code`, `provenance` (the group's best finish, UIDR-010), and variants
-  decorated with `finish`/`record`/`pilot`/`event_name`/`event_date` from
-  each variant's best-finished member. `wildcards` is the player's current
-  pool, for the catalog's balance readout. `incomplete` groups have at
-  least one card missing from MTGA in every member list — no wildcard
-  count builds them, so they never appear in buildable/craftable/short.
+  `set_code`, `provenance` (the group's best finish, UIDR-010), `card_names`
+  (a `MapSet` of card identity keys across the group's maindeck AND
+  sideboard, for card search), and variants decorated with
+  `finish`/`record`/`pilot`/`event_name`/`event_date` from each variant's
+  best-finished member. `wildcards` is the player's current pool, for the
+  catalog's balance readout. `card_index` is `[%{key, name, group_count}]` —
+  every distinct card in the corpus (by identity key), sorted by display
+  name, with `group_count` counting how many groups (any tier) play it —
+  the card-search suggestion source. `incomplete` groups have at least one
+  card missing from MTGA in every member list — no wildcard count builds
+  them, so they never appear in buildable/craftable/short.
   """
   @spec catalog(String.t()) :: %{
           buildable: [map()],
           craftable: [map()],
           short: [map()],
           incomplete: [map()],
-          wildcards: map()
+          wildcards: map(),
+          card_index: [%{key: String.t(), name: String.t(), group_count: pos_integer()}]
         }
   def catalog(format \\ "Standard") do
     decks = list_decks(format)
@@ -199,14 +205,19 @@ defmodule Scry2.NetDecking do
 
     threshold = Config.get(:netdecking_cluster_threshold) || 0.7
     tiers = ArchetypeCatalog.build(scored, threshold)
-    groups_playing = groups_playing_counts(tiers)
+
+    # Stage boundary: one corpus walk derives every per-group card fact —
+    # signature frequencies (maindeck-only) and search facets (main + side).
+    annotated = annotate_card_facts(tiers, cards_by_arena_id)
+    groups_playing = groups_playing_counts(annotated)
 
     %{
-      buildable: decorate_groups(tiers.buildable, cards_by_arena_id, sets, groups_playing),
-      craftable: decorate_groups(tiers.craftable, cards_by_arena_id, sets, groups_playing),
-      short: decorate_groups(tiers.short, cards_by_arena_id, sets, groups_playing),
-      incomplete: decorate_groups(tiers.incomplete, cards_by_arena_id, sets, groups_playing),
-      wildcards: wildcards
+      buildable: decorate_groups(annotated.buildable, cards_by_arena_id, sets, groups_playing),
+      craftable: decorate_groups(annotated.craftable, cards_by_arena_id, sets, groups_playing),
+      short: decorate_groups(annotated.short, cards_by_arena_id, sets, groups_playing),
+      incomplete: decorate_groups(annotated.incomplete, cards_by_arena_id, sets, groups_playing),
+      wildcards: wildcards,
+      card_index: card_index(annotated, cards_by_arena_id)
     }
     |> disambiguate_slugs()
   end
@@ -409,17 +420,78 @@ defmodule Scry2.NetDecking do
 
   # ── Helpers ─────────────────────────────────────────────────────────
 
+  # One corpus walk over every tiered group, deriving the per-group card
+  # facts that both `groups_playing_counts/1` (signature frequencies) and
+  # `decorate_group/4` (search facets) need — replaces what used to be two
+  # separate re-walks of `member_decks`.
+  defp annotate_card_facts(tiers, cards_by_arena_id) do
+    Map.new([:buildable, :craftable, :short, :incomplete], fn tier ->
+      {tier,
+       Enum.map(Map.fetch!(tiers, tier), fn group ->
+         Map.put(group, :card_facts, group_card_facts(group, cards_by_arena_id))
+       end)}
+    end)
+  end
+
+  defp group_card_facts(group, cards_by_arena_id) do
+    member_main_entries = Enum.map(group.member_decks, &DeckList.entries(&1.main_deck))
+    main_entries = Enum.concat(member_main_entries)
+    side_entries = Enum.flat_map(group.member_decks, &DeckList.entries(&1.sideboard))
+
+    %{
+      member_main_entries: member_main_entries,
+      maindeck_ids: main_entries |> Enum.map(& &1.arena_id) |> Enum.uniq(),
+      card_names: DeckList.name_keys(main_entries ++ side_entries, cards_by_arena_id)
+    }
+  end
+
   # How many archetype groups play each card — the discount input for the
   # distinctive-signature ranking (`DeckQualities.archetype_signature_ids/4`).
-  defp groups_playing_counts(tiers) do
-    [tiers.buildable, tiers.craftable, tiers.short, tiers.incomplete]
+  # Maindeck only, uniq per group — semantics unchanged from the pre-facets
+  # implementation, now read off the shared walk instead of a separate one.
+  defp groups_playing_counts(annotated_tiers) do
+    [
+      annotated_tiers.buildable,
+      annotated_tiers.craftable,
+      annotated_tiers.short,
+      annotated_tiers.incomplete
+    ]
     |> Enum.concat()
-    |> Enum.flat_map(fn group ->
-      group.member_decks
-      |> Enum.flat_map(fn deck -> Enum.map(DeckList.entries(deck.main_deck), & &1.arena_id) end)
-      |> Enum.uniq()
-    end)
+    |> Enum.flat_map(& &1.card_facts.maindeck_ids)
     |> Enum.frequencies()
+  end
+
+  # Sorted `[%{key, name, group_count}]` for every distinct card (by identity
+  # key) across the corpus — the search-bar's suggestion source. `name` is
+  # the lowest arena_id's display name for that identity, so it's stable
+  # across re-catalogs regardless of tier ordering.
+  defp card_index(annotated_tiers, cards_by_arena_id) do
+    display_names =
+      cards_by_arena_id
+      |> Enum.sort_by(fn {arena_id, _card} -> arena_id end)
+      |> Enum.reduce(%{}, fn {_arena_id, card}, acc ->
+        case card do
+          %{name: name} when is_binary(name) ->
+            Map.put_new(acc, DeckList.identity_key(name), name)
+
+          _nameless ->
+            acc
+        end
+      end)
+
+    [
+      annotated_tiers.buildable,
+      annotated_tiers.craftable,
+      annotated_tiers.short,
+      annotated_tiers.incomplete
+    ]
+    |> Enum.concat()
+    |> Enum.flat_map(fn group -> MapSet.to_list(group.card_facts.card_names) end)
+    |> Enum.frequencies()
+    |> Enum.map(fn {key, group_count} ->
+      %{key: key, name: Map.get(display_names, key, key), group_count: group_count}
+    end)
+    |> Enum.sort_by(&String.downcase(&1.name))
   end
 
   defp decorate_groups(groups, cards, sets, groups_playing) do
@@ -427,7 +499,7 @@ defmodule Scry2.NetDecking do
   end
 
   defp decorate_group(group, cards, sets, groups_playing) do
-    member_entries = Enum.map(group.member_decks, &DeckList.entries(&1.main_deck))
+    member_entries = group.card_facts.member_main_entries
 
     signature =
       DeckQualities.archetype_signature_ids(
@@ -441,15 +513,18 @@ defmodule Scry2.NetDecking do
     colors = DeckQualities.deck_color_identity(representative_entries, cards)
     label = group.archetype_name || synthetic_label(colors, signature, cards)
 
-    Map.merge(group, %{
+    group
+    |> Map.merge(%{
       label: label,
       slug: slugify(label),
       color_identity: colors,
       signature_arena_ids: signature,
       set_code: DeckQualities.newest_set_code(representative_entries, cards, sets),
       provenance: tile_provenance(group.member_decks),
-      variants: Enum.map(group.variants, &decorate_variant/1)
+      variants: Enum.map(group.variants, &decorate_variant/1),
+      card_names: group.card_facts.card_names
     })
+    |> Map.delete(:card_facts)
   end
 
   # A clustered variant row displays its best-finished member's provenance;

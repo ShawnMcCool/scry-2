@@ -166,6 +166,52 @@ defmodule Scry2.NetDeckingTest do
     end
   end
 
+  describe "catalog/1 card facets" do
+    test "groups carry card_names across maindeck and sideboard, and card_index counts groups" do
+      create_card(%{arena_id: 111, name: "Llanowar Elves", rarity: "common"})
+      create_card(%{arena_id: 112, name: "LLANOWAR ELVES", rarity: "common"})
+      create_card(%{arena_id: 222, name: "Duress", rarity: "common"})
+
+      create_full_netdeck(%{
+        name: "Mono Green",
+        composition_key: "facets-test-mono-green",
+        main_deck: netdeck_cards([{111, 4}]),
+        sideboard: netdeck_cards([{222, 2}])
+      })
+
+      create_full_netdeck(%{
+        name: "Green Splash",
+        composition_key: "facets-test-green-splash",
+        main_deck: netdeck_cards([{112, 4}]),
+        sideboard: netdeck_cards([])
+      })
+
+      catalog = NetDecking.catalog()
+
+      all_groups =
+        catalog.buildable ++ catalog.craftable ++ catalog.short ++ catalog.incomplete
+
+      assert Enum.all?(all_groups, &match?(%MapSet{}, &1.card_names))
+
+      mono_green =
+        Enum.find(all_groups, fn group ->
+          Enum.any?(group.variants, &(&1.deck.name == "Mono Green"))
+        end)
+
+      assert MapSet.member?(mono_green.card_names, "duress")
+      assert MapSet.member?(mono_green.card_names, "llanowar elves")
+
+      llanowar = Enum.find(catalog.card_index, &(&1.key == "llanowar elves"))
+      assert llanowar.name == "Llanowar Elves"
+
+      assert llanowar.group_count ==
+               length(Enum.filter(all_groups, &MapSet.member?(&1.card_names, "llanowar elves")))
+
+      duress = Enum.find(catalog.card_index, &(&1.key == "duress"))
+      assert duress.group_count == 1
+    end
+  end
+
   describe "recent_decks/3" do
     test "orders entries by fetched_at descending" do
       create_card(name: "Lightning Bolt", rarity: "rare")
@@ -319,6 +365,18 @@ defmodule Scry2.NetDeckingTest do
     deck
     |> Ecto.Changeset.change(fetched_at: fetched_at)
     |> Scry2.Repo.update!()
+  end
+
+  # Persists a deck straight from `build_netdeck/1`'s attrs (main_deck/sideboard
+  # card maps), bypassing the `import_decklist` funnel — used when a test wants
+  # to control the exact resolved card lists rather than parsing decklist text.
+  defp create_full_netdeck(attrs) do
+    attrs
+    |> build_netdeck()
+    |> Map.from_struct()
+    |> Map.drop([:__meta__])
+    |> Scry2.NetDecking.Deck.changeset()
+    |> Scry2.Repo.insert!()
   end
 
   defp catalog_deck_names(catalog) do

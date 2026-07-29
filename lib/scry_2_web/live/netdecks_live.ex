@@ -31,7 +31,8 @@ defmodule Scry2Web.NetdecksLive do
     buildable: [],
     craftable: [],
     short: [],
-    wildcards: %{common: 0, uncommon: 0, rare: 0, mythic: 0}
+    wildcards: %{common: 0, uncommon: 0, rare: 0, mythic: 0},
+    card_index: []
   }
 
   @per_page 20
