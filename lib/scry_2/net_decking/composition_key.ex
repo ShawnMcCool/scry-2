@@ -20,7 +20,14 @@ defmodule Scry2.NetDecking.CompositionKey do
   Both inputs use the stored string-keyed map shapes (`main_deck["cards"]`
   and `unresolved_cards["cards"]`), so the key is recomputable from a
   persisted row as well as at ingest time.
+
+  Canonicalization runs through the shared kernel `Scry2.DeckList`: entry
+  parsing (`entries/1`) and printing-summed pairs (`canonical_pairs/2`) for
+  the resolved side, and the case-folding card-identity rule
+  (`identity_key/1`) for the unresolved side.
   """
+
+  alias Scry2.DeckList
 
   @spec compute([map()], [map()]) :: String.t() | nil
   def compute(main_cards, unresolved_cards)
@@ -38,27 +45,19 @@ defmodule Scry2.NetDecking.CompositionKey do
 
   defp resolved_lines(main_cards) do
     main_cards
-    |> Enum.flat_map(fn card ->
-      case {card["arena_id"], card["count"]} do
-        {arena_id, count} when is_integer(arena_id) and is_integer(count) ->
-          [{arena_id, count}]
-
-        _ ->
-          []
-      end
-    end)
-    |> sum_counts()
+    |> DeckList.entries()
+    |> DeckList.canonical_pairs(%{})
     |> Enum.map(fn {arena_id, count} -> "arena:#{arena_id}=#{count}" end)
   end
 
   defp unresolved_lines(unresolved_cards) do
     unresolved_cards
-    |> Enum.flat_map(fn ref ->
-      name = ref["name"]
-      count = ref["count"]
+    |> Enum.flat_map(fn reference ->
+      name = reference["name"]
+      count = reference["count"]
 
       if is_binary(name) and is_integer(count) do
-        [{name |> String.trim() |> String.downcase(), count}]
+        [{DeckList.identity_key(name), count}]
       else
         []
       end
