@@ -610,7 +610,7 @@ defmodule Scry2.Cards do
 
   This collapses printing-only differences (card styles, alternate art, re-imports)
   so a decklist has one identity regardless of which printing MTGA recorded. See
-  `Scry2.Decks.CompositionIdentity`.
+  `Scry2.DeckList.canonical_pairs/2`.
   """
   @spec representative_arena_ids([integer()]) :: %{optional(integer()) => integer()}
   def representative_arena_ids([]), do: %{}

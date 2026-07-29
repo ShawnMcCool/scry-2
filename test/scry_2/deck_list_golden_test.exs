@@ -11,8 +11,8 @@ defmodule Scry2.DeckListGoldenTest do
   """
   use ExUnit.Case, async: true
 
+  alias Scry2.DeckList
   alias Scry2.Decks
-  alias Scry2.Decks.CompositionIdentity
   alias Scry2.NetDecking.CompositionKey
 
   # Duplicate arena_id 86_423 on purpose: composition_hash/1 must NOT sum
@@ -42,12 +42,13 @@ defmodule Scry2.DeckListGoldenTest do
   end
 
   test "canonical_pairs/2 — printings collapse onto representatives, counts summed" do
-    assert CompositionIdentity.canonical_pairs(@main_deck_cards, @representatives) ==
+    assert DeckList.canonical_pairs(DeckList.entries(@main_deck_cards), @representatives) ==
              [{86_423, 7}, {91_020, 24}]
   end
 
   test "canonical composition hash — phash2 of summed pairs" do
-    assert CompositionIdentity.hash(@main_deck_cards, @representatives) == 36_621_933
+    pairs = DeckList.canonical_pairs(DeckList.entries(@main_deck_cards), @representatives)
+    assert :erlang.phash2(pairs) == 36_621_933
   end
 
   test "composition_key/2 — digest over resolved + case-folded unresolved lines" do
@@ -60,7 +61,7 @@ defmodule Scry2.DeckListGoldenTest do
   end
 
   test "canonical composition hash — empty list is nil" do
-    assert CompositionIdentity.hash([], @representatives) == nil
+    assert DeckList.canonical_pairs(DeckList.entries([]), @representatives) == []
   end
 
   test "composition_key/2 — unresolved-only composition" do

@@ -16,9 +16,9 @@ defmodule Scry2.Decks do
   import Ecto.Query
 
   alias Scry2.Analytics.RollingWindow
+  alias Scry2.DeckList
 
   alias Scry2.Decks.{
-    CompositionIdentity,
     Deck,
     DeckSummary,
     DeckVersion,
@@ -298,9 +298,8 @@ defmodule Scry2.Decks do
   # normalize `composition_hash` too so attribution consolidates at write time and
   # this grouping becomes a thin safety net.
   defp deck_key(mtga_deck_id, main_deck, representatives) do
-    cards = main_deck_cards(main_deck)
-    pairs = CompositionIdentity.canonical_pairs(cards, representatives)
-    size = Enum.reduce(pairs, 0, fn {_rep, count}, acc -> acc + count end)
+    pairs = main_deck |> DeckList.entries() |> DeckList.canonical_pairs(representatives)
+    size = Enum.reduce(pairs, 0, fn {_representative, count}, acc -> acc + count end)
 
     if size >= @min_grouped_deck_size and not String.starts_with?(mtga_deck_id, "draft:") do
       "comp:" <> Integer.to_string(:erlang.phash2(pairs))
@@ -312,15 +311,8 @@ defmodule Scry2.Decks do
   defp groupable_key?("comp:" <> _), do: true
   defp groupable_key?(_), do: false
 
-  defp main_deck_cards(%{"cards" => cards}) when is_list(cards), do: cards
-  defp main_deck_cards(%{cards: cards}) when is_list(cards), do: cards
-  defp main_deck_cards(_), do: []
-
   defp main_deck_arena_ids(main_deck) do
-    main_deck
-    |> main_deck_cards()
-    |> Enum.map(fn card -> card["arena_id"] || card[:arena_id] end)
-    |> Enum.reject(&is_nil/1)
+    main_deck |> DeckList.entries() |> Enum.map(& &1.arena_id)
   end
 
   @doc "Returns the number of deck versions across the deck's decklist group."
@@ -1069,6 +1061,8 @@ defmodule Scry2.Decks do
   @doc """
   Hash of a main-deck composition. `nil` if the input has no resolvable
   arena_id/count pairs. Stable across BEAM versions per `:erlang.phash2/1`.
+  Deliberately does NOT sum duplicate arena_id pairs — raw sorted pairs,
+  unlike `Scry2.DeckList.canonical_pairs/2`.
   """
   @spec composition_hash(list() | nil) :: integer() | nil
   def composition_hash(nil), do: nil
@@ -1077,8 +1071,8 @@ defmodule Scry2.Decks do
   def composition_hash(cards) when is_list(cards) do
     pairs =
       cards
-      |> Enum.map(&card_arena_count_pair/1)
-      |> Enum.reject(&is_nil/1)
+      |> DeckList.entries()
+      |> Enum.map(fn %{arena_id: arena_id, count: count} -> {arena_id, count} end)
       |> Enum.sort()
 
     case pairs do
@@ -1086,14 +1080,6 @@ defmodule Scry2.Decks do
       sorted -> :erlang.phash2(sorted)
     end
   end
-
-  defp card_arena_count_pair(card) when is_map(card) do
-    arena_id = card["arena_id"] || card[:arena_id]
-    count = card["count"] || card[:count]
-    if arena_id && count, do: {arena_id, count}, else: nil
-  end
-
-  defp card_arena_count_pair(_), do: nil
 
   defp same_composition?(submitted, %{"cards" => cards}) when is_list(cards) do
     sort_pairs(submitted) == sort_pairs(cards)
@@ -1103,8 +1089,8 @@ defmodule Scry2.Decks do
 
   defp sort_pairs(cards) do
     cards
-    |> Enum.map(&card_arena_count_pair/1)
-    |> Enum.reject(&is_nil/1)
+    |> DeckList.entries()
+    |> Enum.map(fn %{arena_id: arena_id, count: count} -> {arena_id, count} end)
     |> Enum.sort()
   end
 

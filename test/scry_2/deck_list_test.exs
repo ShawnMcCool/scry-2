@@ -83,6 +83,120 @@ defmodule Scry2.DeckListTest do
     end
   end
 
+  # Ported from the deleted printing-insensitive-identity module's test suite
+  # (formerly test/scry_2/decks/composition_identity_test.exs) — scenarios not
+  # already covered above by canonical_pairs/2 or entries/1. Scenarios that
+  # tested the old module's raw-map parsing (accepting string/atom-keyed
+  # cards directly, ignoring cards missing arena_id/count, falling back
+  # unmapped arena_ids to themselves) are obsolete: that parsing now lives in
+  # `entries/1` and is already covered by the "entries/1" describe block
+  # above and by "arena_ids absent from the representative map represent
+  # themselves" above. The old module's nil-on-empty hash behavior is
+  # covered by `test/scry_2/deck_list_golden_test.exs`.
+  describe "canonical_pairs/2 — printing-insensitive identity (ported)" do
+    @printing_representatives %{
+      105_175 => 100,
+      102_727 => 100,
+      67_810 => 200,
+      95_072 => 300
+    }
+
+    test "collapses printing-only differences onto the same signature" do
+      week3 =
+        DeckList.entries([
+          %{"arena_id" => 105_175, "count" => 4},
+          %{"arena_id" => 67_810, "count" => 4}
+        ])
+
+      dragonstorm =
+        DeckList.entries([
+          %{"arena_id" => 102_727, "count" => 4},
+          %{"arena_id" => 67_810, "count" => 4}
+        ])
+
+      assert DeckList.canonical_pairs(week3, @printing_representatives) ==
+               DeckList.canonical_pairs(dragonstorm, @printing_representatives)
+    end
+
+    test "sums counts when two printings of the same card appear in one list" do
+      split =
+        DeckList.entries([
+          %{"arena_id" => 105_175, "count" => 2},
+          %{"arena_id" => 102_727, "count" => 2}
+        ])
+
+      merged = DeckList.entries([%{"arena_id" => 105_175, "count" => 4}])
+
+      assert DeckList.canonical_pairs(split, @printing_representatives) == [{100, 4}]
+      assert DeckList.canonical_pairs(merged, @printing_representatives) == [{100, 4}]
+    end
+
+    test "genuinely different card lists stay distinct" do
+      a = DeckList.entries([%{"arena_id" => 105_175, "count" => 4}])
+      b = DeckList.entries([%{"arena_id" => 95_072, "count" => 4}])
+
+      refute DeckList.canonical_pairs(a, @printing_representatives) ==
+               DeckList.canonical_pairs(b, @printing_representatives)
+    end
+
+    test "different counts of the same card stay distinct" do
+      four = DeckList.entries([%{"arena_id" => 105_175, "count" => 4}])
+      three = DeckList.entries([%{"arena_id" => 105_175, "count" => 3}])
+
+      refute DeckList.canonical_pairs(four, @printing_representatives) ==
+               DeckList.canonical_pairs(three, @printing_representatives)
+    end
+
+    test "is order-independent" do
+      forward =
+        DeckList.entries([
+          %{"arena_id" => 67_810, "count" => 4},
+          %{"arena_id" => 95_072, "count" => 2}
+        ])
+
+      reverse =
+        DeckList.entries([
+          %{"arena_id" => 95_072, "count" => 2},
+          %{"arena_id" => 67_810, "count" => 4}
+        ])
+
+      assert DeckList.canonical_pairs(forward, @printing_representatives) ==
+               DeckList.canonical_pairs(reverse, @printing_representatives)
+    end
+
+    test "printing-insensitive hash matches for equivalent decks, differs for real changes" do
+      week3 =
+        DeckList.entries([
+          %{"arena_id" => 105_175, "count" => 4},
+          %{"arena_id" => 67_810, "count" => 4}
+        ])
+
+      dragonstorm =
+        DeckList.entries([
+          %{"arena_id" => 102_727, "count" => 4},
+          %{"arena_id" => 67_810, "count" => 4}
+        ])
+
+      other =
+        DeckList.entries([
+          %{"arena_id" => 95_072, "count" => 4},
+          %{"arena_id" => 67_810, "count" => 4}
+        ])
+
+      week3_hash =
+        week3 |> DeckList.canonical_pairs(@printing_representatives) |> :erlang.phash2()
+
+      dragonstorm_hash =
+        dragonstorm |> DeckList.canonical_pairs(@printing_representatives) |> :erlang.phash2()
+
+      other_hash =
+        other |> DeckList.canonical_pairs(@printing_representatives) |> :erlang.phash2()
+
+      assert week3_hash == dragonstorm_hash
+      refute week3_hash == other_hash
+    end
+  end
+
   describe "name_keys/2" do
     test "resolves entries to identity keys, skipping unresolved arena_ids" do
       cards_by_arena_id = %{
