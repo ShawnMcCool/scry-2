@@ -144,6 +144,11 @@ rows. Pilot names must stay searchable DOM text. Name-identity diffing;
 re-anchors on navigation. Supersedes the UIDR-013 per-row delta lines
 (never built); design and degenerate cases in UIDR-014.
 
+## UI: decks-page card search
+
+- Decks-page card search — adopt DeckList facets + the shared search_box
+  component (kernel + netdecks search shipped 2026-07-30, ADR-045).
+
 ## H. Composed capabilities
 
 - Personal draft database (every pack seen, every card passed) — **D + storage**

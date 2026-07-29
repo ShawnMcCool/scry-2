@@ -255,6 +255,7 @@ Every system — Elixir, JavaScript, or otherwise — must be designed so that C
 - **Event sourcing is the core architecture for MTGA ingestion.** Raw events → IdentifyDomainEvents (anti-corruption layer) → domain events → projections. See [ADR-017](decisions/architecture/2026-04-05-017-event-sourcing-core-architecture.md) and [ADR-018](decisions/architecture/2026-04-05-018-anti-corruption-layer-mtga-domain.md).
 - **MTGA wire format lives in exactly one module: `Scry2.Events.IdentifyDomainEvents`.** Every downstream consumer works with typed domain event structs under `Scry2.Events.*` and subscribes to `domain:events`. No downstream context touches `mtga_logs_events` directly.
 - **Projections are disposable read models.** `matches_*` and `drafts_*` tables can be dropped and rebuilt from the domain event log at any time via `Scry2.Events.replay_projections!/0`.
+- **`Scry2.DeckList` is the shared kernel for card-list representation.** Pure, no DB, owned by no context. It owns entry parsing, the card-identity rule (downcased trimmed name), printing collapse, and name facets. Purpose-specific outputs (`composition_hash`, `composition_key`, ownership sums) stay in their contexts. Golden tests (`test/scry_2/deck_list_golden_test.exs`) freeze persisted identity values — never update those literals; fix the code. See [ADR-045](decisions/architecture/2026-07-30-045-decklist-shared-kernel.md).
 
 ## MTGA: Detailed Logs Required
 

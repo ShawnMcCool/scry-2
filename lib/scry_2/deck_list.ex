@@ -22,7 +22,7 @@ defmodule Scry2.DeckList do
   Note: `Scry2.Cards.printings_by_name/1` keys by SQL `lower()` (ASCII-only)
   while `identity_key/1` uses Unicode `String.downcase/1`. The mismatch
   pre-dates this module and affects only names with uppercase non-ASCII
-  initials (today: four Éomer/Éowyn printings, none Standard-legal);
+  letters (today: four Éomer/Éowyn printings, none Standard-legal);
   consumers joining `identity_key/1` output against `printings_by_name/1`
   keys inherit that caveat.
   """
