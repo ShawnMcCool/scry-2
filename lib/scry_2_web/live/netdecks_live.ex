@@ -167,6 +167,7 @@ defmodule Scry2Web.NetdecksLive do
      )}
   end
 
+  # Ignores the payload's "key" — for archetypes, key and label are the same string.
   def handle_event("pick_archetype", %{"label" => label}, socket) do
     {:noreply,
      assign(socket,
@@ -179,6 +180,7 @@ defmodule Scry2Web.NetdecksLive do
     {:noreply, assign(socket, archetype_suggestions: [], card_suggestions: [])}
   end
 
+  # Same clause-order constraint as filter_query above.
   def handle_event("filter_card_query", %{"key" => "Escape", "value" => value}, socket) do
     {:noreply, assign(socket, card_query: value, card_suggestions: [])}
   end

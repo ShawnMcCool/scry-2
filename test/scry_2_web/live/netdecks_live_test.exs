@@ -385,6 +385,84 @@ defmodule Scry2Web.NetdecksLiveTest do
     end
   end
 
+  describe "card search" do
+    test "suggests, filters, picks to a chip, and clears", %{conn: conn} do
+      create_card(%{arena_id: 111, name: "Llanowar Elves", rarity: "common"})
+      create_card(%{arena_id: 222, name: "Duress", rarity: "common"})
+
+      create_netdeck_with_cards(%{
+        name: "Mono Green",
+        main_deck: netdeck_cards([{111, 4}]),
+        sideboard: netdeck_cards([])
+      })
+
+      create_netdeck_with_cards(%{
+        name: "Mono Black",
+        main_deck: netdeck_cards([{222, 4}]),
+        sideboard: netdeck_cards([])
+      })
+
+      {:ok, view, _html} = live(conn, ~p"/netdecks")
+
+      render_keyup(view, "filter_card_query", %{"value" => "llanowar"})
+      assert has_element?(view, "#card-search-suggestions")
+
+      view
+      |> element("#card-search-suggestions button", "Llanowar Elves")
+      |> render_click()
+
+      assert has_element?(view, "#card-filter-chip")
+      refute has_element?(view, "#card-search")
+
+      render_click(view, "clear_card", %{})
+      assert has_element?(view, "#card-search")
+      refute has_element?(view, "#card-filter-chip")
+    end
+
+    test "Escape syncs text state and clears suggestions on both bars", %{conn: conn} do
+      create_card(%{arena_id: 111, name: "Llanowar Elves", rarity: "common"})
+
+      create_netdeck_with_cards(%{
+        name: "Mono Green",
+        main_deck: netdeck_cards([{111, 4}]),
+        sideboard: netdeck_cards([])
+      })
+
+      {:ok, view, _html} = live(conn, ~p"/netdecks")
+
+      render_keyup(view, "filter_card_query", %{"value" => "llan"})
+      assert has_element?(view, "#card-search-suggestions")
+
+      render_keyup(view, "filter_card_query", %{"key" => "Escape", "value" => "llan"})
+      refute has_element?(view, "#card-search-suggestions")
+
+      render_keyup(view, "filter_query", %{"value" => "mono"})
+      assert has_element?(view, "#archetype-search-suggestions")
+
+      render_keyup(view, "filter_query", %{"key" => "Escape", "value" => "mono"})
+      refute has_element?(view, "#archetype-search-suggestions")
+    end
+
+    test "dismiss_suggestions clears both bars", %{conn: conn} do
+      create_card(%{arena_id: 111, name: "Llanowar Elves", rarity: "common"})
+
+      create_netdeck_with_cards(%{
+        name: "Mono Green",
+        main_deck: netdeck_cards([{111, 4}]),
+        sideboard: netdeck_cards([])
+      })
+
+      {:ok, view, _html} = live(conn, ~p"/netdecks")
+
+      render_keyup(view, "filter_card_query", %{"value" => "llan"})
+      render_keyup(view, "filter_query", %{"value" => "mono"})
+
+      render_click(view, "dismiss_suggestions", %{})
+      refute has_element?(view, "#card-search-suggestions")
+      refute has_element?(view, "#archetype-search-suggestions")
+    end
+  end
+
   defp position_of(html, text) do
     {index, _length} = :binary.match(html, text)
     index
