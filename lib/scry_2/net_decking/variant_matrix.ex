@@ -20,6 +20,7 @@ defmodule Scry2.NetDecking.VariantMatrix do
   input order with `deltas` keyed by card name.
   """
 
+  alias Scry2.DeckList
   alias Scry2.NetDecking.Deck
 
   @type row :: %{
@@ -121,7 +122,7 @@ defmodule Scry2.NetDecking.VariantMatrix do
   # arena_ids are dropped here, which excludes them from the whole matrix.
   defp counts_by_name(card_list, cards_by_arena_id) do
     card_list
-    |> card_entries()
+    |> DeckList.entries()
     |> Enum.reduce(%{}, fn entry, counts ->
       case Map.get(cards_by_arena_id, entry.arena_id) do
         nil -> counts
@@ -138,12 +139,4 @@ defmodule Scry2.NetDecking.VariantMatrix do
 
   defp land?(%{is_land: true}), do: true
   defp land?(_card), do: false
-
-  defp card_entries(%{"cards" => cards}) when is_list(cards) do
-    Enum.map(cards, fn card ->
-      %{arena_id: card["arena_id"] || card[:arena_id], count: card["count"] || card[:count]}
-    end)
-  end
-
-  defp card_entries(_card_list), do: []
 end
