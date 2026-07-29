@@ -1179,6 +1179,23 @@ defmodule Scry2.TestFactory do
     deck
   end
 
+  @doc """
+  Persists a `Scry2.NetDecking.Deck` straight from `build_netdeck/1`'s attrs
+  (raw `main_deck`/`sideboard` card maps — see `netdeck_cards/1`), bypassing
+  the `import_decklist` funnel entirely. Use this when a test wants to
+  control the exact resolved card lists rather than parsing decklist text —
+  `import_decklist` re-resolves card names against the catalog, which is
+  the wrong tool when the test wants an exact, known printing.
+  """
+  def create_netdeck_with_cards(attrs \\ %{}) do
+    attrs
+    |> build_netdeck()
+    |> Map.from_struct()
+    |> Map.drop([:__meta__])
+    |> Scry2.NetDecking.Deck.changeset()
+    |> Scry2.Repo.insert!()
+  end
+
   # ── Crafts (ADR 037) ─────────────────────────────────────────────────────
 
   alias Scry2.Crafts.{Attribution, Craft}

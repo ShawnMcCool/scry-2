@@ -172,14 +172,14 @@ defmodule Scry2.NetDeckingTest do
       create_card(%{arena_id: 112, name: "LLANOWAR ELVES", rarity: "common"})
       create_card(%{arena_id: 222, name: "Duress", rarity: "common"})
 
-      create_full_netdeck(%{
+      create_netdeck_with_cards(%{
         name: "Mono Green",
         composition_key: "facets-test-mono-green",
         main_deck: netdeck_cards([{111, 4}]),
         sideboard: netdeck_cards([{222, 2}])
       })
 
-      create_full_netdeck(%{
+      create_netdeck_with_cards(%{
         name: "Green Splash",
         composition_key: "facets-test-green-splash",
         main_deck: netdeck_cards([{112, 4}]),
@@ -366,18 +366,6 @@ defmodule Scry2.NetDeckingTest do
     deck
     |> Ecto.Changeset.change(fetched_at: fetched_at)
     |> Scry2.Repo.update!()
-  end
-
-  # Persists a deck straight from `build_netdeck/1`'s attrs (main_deck/sideboard
-  # card maps), bypassing the `import_decklist` funnel — used when a test wants
-  # to control the exact resolved card lists rather than parsing decklist text.
-  defp create_full_netdeck(attrs) do
-    attrs
-    |> build_netdeck()
-    |> Map.from_struct()
-    |> Map.drop([:__meta__])
-    |> Scry2.NetDecking.Deck.changeset()
-    |> Scry2.Repo.insert!()
   end
 
   defp catalog_deck_names(catalog) do
