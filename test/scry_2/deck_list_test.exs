@@ -43,6 +43,15 @@ defmodule Scry2.DeckListTest do
       assert DeckList.entries(%{}) == []
       assert DeckList.entries(%{"cards" => "corrupt"}) == []
     end
+
+    test "skips structs in a card list" do
+      assert DeckList.entries(%{"cards" => [%URI{}, %{"arena_id" => 111, "count" => 4}]}) ==
+               [%{arena_id: 111, count: 4}]
+    end
+
+    test "parses mixed string- and atom-keyed fields on one card" do
+      assert DeckList.entries([%{"arena_id" => 7, :count => 3}]) == [%{arena_id: 7, count: 3}]
+    end
   end
 
   describe "identity_key/1" do

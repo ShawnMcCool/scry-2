@@ -21,7 +21,10 @@ defmodule Scry2.DeckList do
 
   Note: `Scry2.Cards.printings_by_name/1` keys by SQL `lower()` (ASCII-only)
   while `identity_key/1` uses Unicode `String.downcase/1`. The mismatch
-  pre-dates this module and is harmless for Arena's ASCII card names.
+  pre-dates this module and affects only names with uppercase non-ASCII
+  initials (today: four Éomer/Éowyn printings, none Standard-legal);
+  consumers joining `identity_key/1` output against `printings_by_name/1`
+  keys inherit that caveat.
   """
 
   @type entry :: %{arena_id: integer(), count: integer()}
@@ -30,7 +33,9 @@ defmodule Scry2.DeckList do
   @doc """
   Parses a stored card-list map (string- or atom-keyed) or a bare card list
   into entries. Cards without integer `arena_id` and `count` are skipped.
-  `nil` and shapeless input parse as empty.
+  `nil` and shapeless input parse as empty. Counts are not range-validated —
+  0 and negative counts are preserved as stored (filtering them would change
+  persisted composition hashes/keys).
   """
   @spec entries(map() | [map()] | nil) :: [entry()]
   def entries(%{"cards" => cards}) when is_list(cards), do: parse(cards)
@@ -40,7 +45,7 @@ defmodule Scry2.DeckList do
 
   defp parse(cards) do
     Enum.flat_map(cards, fn
-      card when is_map(card) ->
+      card when is_map(card) and not is_struct(card) ->
         arena_id = card["arena_id"] || card[:arena_id]
         count = card["count"] || card[:count]
 
