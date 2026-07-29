@@ -260,7 +260,8 @@ defmodule Scry2Web.NetdecksHelpers do
   def match_card?(group, %{key: key}), do: MapSet.member?(group.card_names, key)
 
   @doc "AND of the text query (`match_search?/2`) and the selected card (`match_card?/2`)."
-  @spec visible?(map(), %{query: String.t(), card: nil | map()}) :: boolean()
+  @spec visible?(map(), %{query: String.t(), card: nil | %{key: String.t(), label: String.t()}}) ::
+          boolean()
   def visible?(group, filter) do
     match_search?(group, filter.query) and match_card?(group, filter.card)
   end

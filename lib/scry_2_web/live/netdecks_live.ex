@@ -25,6 +25,7 @@ defmodule Scry2Web.NetdecksLive do
   alias Scry2Web.DeckRendering
   alias Scry2Web.NetdecksHelpers
 
+  import Scry2Web.Components.SearchBox
   import Scry2Web.Components.VariantMatrix, only: [variant_matrix: 1]
 
   @empty_catalog %{
@@ -45,7 +46,10 @@ defmodule Scry2Web.NetdecksLive do
 
     {:ok,
      assign(socket,
-       search: "",
+       filter: %{query: "", card: nil},
+       card_query: "",
+       archetype_suggestions: [],
+       card_suggestions: [],
        format: "Standard",
        catalog: @empty_catalog,
        view: "status",
@@ -138,8 +142,34 @@ defmodule Scry2Web.NetdecksLive do
     end
   end
 
-  def handle_event("search", %{"value" => query}, socket) do
-    {:noreply, assign(socket, search: query)}
+  # Escape arrives through the same debounced keyup (see SearchBox moduledoc);
+  # the clause must come first — every keyup payload carries both keys.
+  def handle_event("filter_query", %{"key" => "Escape"}, socket) do
+    {:noreply, assign(socket, archetype_suggestions: [])}
+  end
+
+  def handle_event("filter_query", %{"value" => value}, socket) do
+    {:noreply,
+     assign(socket,
+       filter: %{socket.assigns.filter | query: value},
+       archetype_suggestions:
+         NetdecksHelpers.rank_suggestions(
+           NetdecksHelpers.archetype_candidates(socket.assigns.catalog),
+           value
+         )
+     )}
+  end
+
+  def handle_event("pick_archetype", %{"label" => label}, socket) do
+    {:noreply,
+     assign(socket,
+       filter: %{socket.assigns.filter | query: label},
+       archetype_suggestions: []
+     )}
+  end
+
+  def handle_event("dismiss_suggestions", _params, socket) do
+    {:noreply, assign(socket, archetype_suggestions: [], card_suggestions: [])}
   end
 
   def handle_event("toggle_import_panel", _params, socket) do
@@ -336,7 +366,10 @@ defmodule Scry2Web.NetdecksLive do
         :if={is_nil(@detail) && is_nil(@archetype)}
         catalog={@catalog}
         format={@format}
-        search={@search}
+        filter={@filter}
+        card_query={@card_query}
+        archetype_suggestions={@archetype_suggestions}
+        card_suggestions={@card_suggestions}
         sources={@sources}
         cached_ids={@cached_card_ids}
         import_open={@import_open}
@@ -354,7 +387,10 @@ defmodule Scry2Web.NetdecksLive do
   # ── Catalog view ─────────────────────────────────────────────────────────
 
   attr :catalog, :map, required: true
-  attr :search, :string, required: true
+  attr :filter, :map, required: true
+  attr :card_query, :string, required: true
+  attr :archetype_suggestions, :list, required: true
+  attr :card_suggestions, :list, required: true
   attr :sources, :list, required: true
   attr :cached_ids, :any, required: true
   attr :import_open, :boolean, required: true
@@ -508,18 +544,16 @@ defmodule Scry2Web.NetdecksLive do
       </.link>
     </div>
 
-    <div :if={@total > 0 && @view == "status"} class="mb-5">
-      <label class="input input-bordered input-sm flex items-center gap-2 w-full max-w-md">
-        <.icon name="hero-magnifying-glass" class="size-4 text-base-content/40" />
-        <input
-          type="text"
-          phx-keyup="search"
-          phx-debounce="200"
-          value={@search}
-          placeholder="Search by name or archetype…"
-          class="grow"
-        />
-      </label>
+    <div :if={@total > 0 && @view == "status"} class="mb-5 flex flex-wrap items-start gap-3">
+      <.search_box
+        id="archetype-search"
+        value={@filter.query}
+        placeholder="Search by name or archetype…"
+        suggestions={@archetype_suggestions}
+        input_event="filter_query"
+        pick_event="pick_archetype"
+        dismiss_event="dismiss_suggestions"
+      />
     </div>
 
     <section
@@ -528,7 +562,7 @@ defmodule Scry2Web.NetdecksLive do
       class="mb-10"
     >
       <% meta = NetdecksHelpers.status_meta(status) %>
-      <% groups = visible(@catalog[status], @search) %>
+      <% groups = visible(@catalog[status], @filter) %>
       <div class="flex items-baseline gap-3 border-b border-base-300/40 pb-2">
         <.icon name={meta.icon} class={["size-4 self-center", meta.tone]} />
         <h2 class="text-lg font-beleren text-base-content/90">{meta.section}</h2>
@@ -1472,8 +1506,8 @@ defmodule Scry2Web.NetdecksLive do
 
   # ── Private helpers ──────────────────────────────────────────────────────
 
-  defp visible(entries, search) do
-    Enum.filter(entries || [], &NetdecksHelpers.match_search?(&1, search))
+  defp visible(entries, filter) do
+    Enum.filter(entries || [], &NetdecksHelpers.visible?(&1, filter))
   end
 
   defp browse_needs_load?(nil), do: false

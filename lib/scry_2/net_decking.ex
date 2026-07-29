@@ -170,9 +170,10 @@ defmodule Scry2.NetDecking do
   best-finished member. `wildcards` is the player's current pool, for the
   catalog's balance readout. `card_index` is `[%{key, name, group_count}]` —
   every distinct resolvable card in the corpus (by identity key; cards
-  whose arena_id has no cards_cards row are excluded), sorted by display
-  name, with `group_count` counting how many groups (any tier) play it —
-  the card-search suggestion source. `incomplete` groups have at least one
+  whose arena_id has no cards_cards row are excluded), sorted by identity
+  key (case-insensitive name order), with `group_count` counting how many
+  groups (any tier) play it — the card-search suggestion source.
+  `incomplete` groups have at least one
   card missing from MTGA in every member list — no wildcard count builds
   them, so they never appear in buildable/craftable/short.
   """
