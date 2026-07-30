@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.53.0 — 2026-07-30
+
 ### New
 
 - **Search netdecks by card.** The **Netdecks** page has a second search box: start typing a card name to see suggestions drawn from the cards actually played in the catalog, each showing how many archetypes play it. Pick one to show only the decks playing that card — maindeck or sideboard. The active card appears as a small tag you can clear with one click.
