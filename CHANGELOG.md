@@ -11,6 +11,15 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Search netdecks by card.** The **Netdecks** page has a second search box: start typing a card name to see suggestions drawn from the cards actually played in the catalog, each showing how many archetypes play it. Pick one to show only the decks playing that card — maindeck or sideboard. The active card appears as a small tag you can clear with one click.
+- **Archetype suggestions.** The existing search box now suggests archetype names as you type, ranked by how many decklists each archetype has — pick one to filter straight to it.
+
+### Fixed
+
+- Duplicate decklists no longer accumulate on the **Netdecks** page when the same list is fetched or pasted more than once — each unique list is now stored exactly once, and existing duplicates are cleaned up automatically.
+
 ## v0.52.6 — 2026-07-24
 
 ### Fixed
