@@ -1,11 +1,14 @@
 defmodule Scry2.Events.SnapshotDiff do
   @moduledoc """
-  Pure-function diff helpers for snapshot domain events.
+  Pure-function diff helpers for pass-through snapshot domain events.
 
-  MTGA broadcasts many event types as periodic state dumps — rank info,
-  quest status, inventory, deck lists — even when nothing has changed.
-  `changed?/2` extracts a semantically meaningful key from each snapshot
-  event and compares it against the last-known key for that event type.
+  MTGA broadcasts many event types as periodic state dumps even when nothing
+  has changed. Most snapshot types are converted to state-change events by
+  `Scry2.Events.SnapshotConvert` and never reach this module — it covers only
+  the pass-through types that are appended as-is (`DeckInventory`,
+  `InventorySnapshot`, `InventoryUpdated`). `changed?/2` extracts a
+  semantically meaningful key from the snapshot and compares it against the
+  last-known key for that event type.
 
   ## Usage
 
@@ -26,46 +29,11 @@ defmodule Scry2.Events.SnapshotDiff do
   """
 
   alias Scry2.Events.Deck.DeckInventory
-  alias Scry2.Events.Economy.{CollectionUpdated, InventorySnapshot, InventoryUpdated}
-  alias Scry2.Events.Event.EventCourseUpdated
-  alias Scry2.Events.Progression.{DailyWinsStatus, MasteryProgress, QuestStatus, RankSnapshot}
+  alias Scry2.Events.Economy.{InventorySnapshot, InventoryUpdated}
 
   @type diff_key :: term()
 
   @spec changed?(struct(), diff_key() | nil) :: {:changed, diff_key()} | :unchanged
-
-  # ── Progression ──────────────────────────────────────────────────────────
-
-  def changed?(%RankSnapshot{} = event, previous_key) do
-    key =
-      {event.constructed_class, event.constructed_level, event.constructed_step,
-       event.constructed_matches_won, event.constructed_matches_lost, event.limited_class,
-       event.limited_level, event.limited_step, event.limited_matches_won,
-       event.limited_matches_lost, event.season_ordinal}
-
-    compare(key, previous_key)
-  end
-
-  def changed?(%QuestStatus{} = event, previous_key) do
-    # reward_gold and reward_xp are static reward descriptions — they don't change on an existing quest
-    key =
-      Enum.map(event.quests, fn quest ->
-        {quest.quest_id, quest.goal, quest.progress, quest.quest_track}
-      end)
-
-    compare(key, previous_key)
-  end
-
-  def changed?(%DailyWinsStatus{} = event, previous_key) do
-    key = {event.daily_position, event.weekly_position}
-    compare(key, previous_key)
-  end
-
-  def changed?(%MasteryProgress{} = event, previous_key) do
-    # node_states can be large; completed_nodes + milestone_states captures all meaningful progression changes
-    key = {event.completed_nodes, event.milestone_states}
-    compare(key, previous_key)
-  end
 
   # ── Deck ─────────────────────────────────────────────────────────────────
 
@@ -75,10 +43,6 @@ defmodule Scry2.Events.SnapshotDiff do
   end
 
   # ── Economy ──────────────────────────────────────────────────────────────
-
-  def changed?(%CollectionUpdated{} = event, previous_key) do
-    compare(event.card_counts, previous_key)
-  end
 
   def changed?(%InventorySnapshot{} = event, previous_key) do
     key =
@@ -98,26 +62,10 @@ defmodule Scry2.Events.SnapshotDiff do
     compare(key, previous_key)
   end
 
-  # ── Event ─────────────────────────────────────────────────────────────────
-
-  def changed?(%EventCourseUpdated{} = event, previous_key) do
-    key =
-      {event.event_name, event.current_wins, event.current_losses, event.current_module,
-       event.card_pool}
-
-    compare(key, previous_key)
-  end
-
-  @doc "Returns true if this event type is a snapshot event subject to dedup."
-  def snapshot_event?(%RankSnapshot{}), do: true
-  def snapshot_event?(%QuestStatus{}), do: true
-  def snapshot_event?(%DailyWinsStatus{}), do: true
-  def snapshot_event?(%MasteryProgress{}), do: true
+  @doc "Returns true if this event type is a pass-through snapshot subject to dedup."
   def snapshot_event?(%DeckInventory{}), do: true
-  def snapshot_event?(%CollectionUpdated{}), do: true
   def snapshot_event?(%InventorySnapshot{}), do: true
   def snapshot_event?(%InventoryUpdated{}), do: true
-  def snapshot_event?(%EventCourseUpdated{}), do: true
   def snapshot_event?(_), do: false
 
   # ── Private ───────────────────────────────────────────────────────────────
