@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.54.0 — 2026-08-01
+
 ### Fixed
 
 - Fixed phantom ranked-match results being recorded every time you logged into MTGA — most visibly after the monthly ranked season reset, which could record "wins" for matches you never played, even in formats you don't play.
