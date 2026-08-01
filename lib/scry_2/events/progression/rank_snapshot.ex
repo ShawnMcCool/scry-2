@@ -20,6 +20,7 @@ defmodule Scry2.Events.Progression.RankSnapshot do
   - `constructed_step` — progress steps within the current tier
   - `constructed_matches_won` — constructed wins this season
   - `constructed_matches_lost` — constructed losses this season
+  - `constructed_matches_drawn` — constructed draws this season
   - `constructed_percentile` — mythic percentile ranking (nil if not mythic)
   - `constructed_leaderboard_placement` — leaderboard rank number (nil if not top placement)
   - `limited_class` — limited rank class (e.g. `"Gold"`, `"Mythic"`)
@@ -27,13 +28,20 @@ defmodule Scry2.Events.Progression.RankSnapshot do
   - `limited_step` — progress steps within the current tier
   - `limited_matches_won` — limited wins this season
   - `limited_matches_lost` — limited losses this season
+  - `limited_matches_drawn` — limited draws this season
   - `limited_percentile` — mythic percentile ranking (nil if not mythic)
   - `limited_leaderboard_placement` — leaderboard rank number (nil if not top placement)
   - `season_ordinal` — current ranked season number
 
+  ## Counter normalization
+
+  MTGA's wire format omits zero-valued fields, so absent win/loss/drawn/step
+  values mean 0, not unknown. `IdentifyDomainEvents` normalizes them at
+  translation — counters on this struct are always integers, never nil.
+
   ## Diff key
 
-  `SnapshotDiff` compares all class/level/step/wins/losses/season fields for
+  `SnapshotConvert` compares all class/level/step/wins/losses/draws/season fields for
   both constructed and limited. `player_id` and `occurred_at` are excluded
   (metadata). Percentile and leaderboard placement are included as they reflect
   rank position changes within mythic.
@@ -55,6 +63,7 @@ defmodule Scry2.Events.Progression.RankSnapshot do
     :constructed_step,
     :constructed_matches_won,
     :constructed_matches_lost,
+    :constructed_matches_drawn,
     :constructed_percentile,
     :constructed_leaderboard_placement,
     :limited_class,
@@ -62,6 +71,7 @@ defmodule Scry2.Events.Progression.RankSnapshot do
     :limited_step,
     :limited_matches_won,
     :limited_matches_lost,
+    :limited_matches_drawn,
     :limited_percentile,
     :limited_leaderboard_placement,
     :season_ordinal,
@@ -72,16 +82,18 @@ defmodule Scry2.Events.Progression.RankSnapshot do
           player_id: String.t() | nil,
           constructed_class: String.t() | nil,
           constructed_level: integer() | nil,
-          constructed_step: integer() | nil,
-          constructed_matches_won: integer() | nil,
-          constructed_matches_lost: integer() | nil,
+          constructed_step: integer(),
+          constructed_matches_won: integer(),
+          constructed_matches_lost: integer(),
+          constructed_matches_drawn: integer(),
           constructed_percentile: number() | nil,
           constructed_leaderboard_placement: integer() | nil,
           limited_class: String.t() | nil,
           limited_level: integer() | nil,
-          limited_step: integer() | nil,
-          limited_matches_won: integer() | nil,
-          limited_matches_lost: integer() | nil,
+          limited_step: integer(),
+          limited_matches_won: integer(),
+          limited_matches_lost: integer(),
+          limited_matches_drawn: integer(),
           limited_percentile: number() | nil,
           limited_leaderboard_placement: integer() | nil,
           season_ordinal: integer() | nil,
@@ -93,16 +105,18 @@ defmodule Scry2.Events.Progression.RankSnapshot do
       player_id: payload["player_id"],
       constructed_class: payload["constructed_class"],
       constructed_level: payload["constructed_level"],
-      constructed_step: payload["constructed_step"],
-      constructed_matches_won: payload["constructed_matches_won"],
-      constructed_matches_lost: payload["constructed_matches_lost"],
+      constructed_step: payload["constructed_step"] || 0,
+      constructed_matches_won: payload["constructed_matches_won"] || 0,
+      constructed_matches_lost: payload["constructed_matches_lost"] || 0,
+      constructed_matches_drawn: payload["constructed_matches_drawn"] || 0,
       constructed_percentile: payload["constructed_percentile"],
       constructed_leaderboard_placement: payload["constructed_leaderboard_placement"],
       limited_class: payload["limited_class"],
       limited_level: payload["limited_level"],
-      limited_step: payload["limited_step"],
-      limited_matches_won: payload["limited_matches_won"],
-      limited_matches_lost: payload["limited_matches_lost"],
+      limited_step: payload["limited_step"] || 0,
+      limited_matches_won: payload["limited_matches_won"] || 0,
+      limited_matches_lost: payload["limited_matches_lost"] || 0,
+      limited_matches_drawn: payload["limited_matches_drawn"] || 0,
       limited_percentile: payload["limited_percentile"],
       limited_leaderboard_placement: payload["limited_leaderboard_placement"],
       season_ordinal: payload["season_ordinal"],

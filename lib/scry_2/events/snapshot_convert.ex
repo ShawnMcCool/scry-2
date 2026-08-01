@@ -77,11 +77,13 @@ defmodule Scry2.Events.SnapshotConvert do
       event.constructed_step,
       event.constructed_matches_won,
       event.constructed_matches_lost,
+      event.constructed_matches_drawn,
       event.limited_class,
       event.limited_level,
       event.limited_step,
       event.limited_matches_won,
       event.limited_matches_lost,
+      event.limited_matches_drawn,
       event.season_ordinal
     }
 
@@ -224,34 +226,60 @@ defmodule Scry2.Events.SnapshotConvert do
   defp rank_match_records(_event, nil), do: []
 
   defp rank_match_records(event, previous_key) do
-    {_pc_class, _pc_level, _pc_step, pc_won, pc_lost, _pl_class, _pl_level, _pl_step, pl_won,
-     pl_lost, _season} = previous_key
+    {_pc_class, _pc_level, _pc_step, pc_won, pc_lost, pc_drawn, _pl_class, _pl_level, _pl_step,
+     pl_won, pl_lost, pl_drawn, previous_season} = previous_key
 
-    constructed_record =
-      if {event.constructed_matches_won, event.constructed_matches_lost} != {pc_won, pc_lost} do
-        %RankMatchRecorded{
-          player_id: event.player_id,
-          format: :constructed,
-          won: event.constructed_matches_won > pc_won,
-          wins: event.constructed_matches_won,
-          losses: event.constructed_matches_lost,
-          occurred_at: event.occurred_at
-        }
-      end
+    # Rank counters are season-scoped: a cross-season diff is a reset, not
+    # match evidence. The season transition itself is carried by the
+    # RankAdvanced emitted alongside.
+    if event.season_ordinal != previous_season do
+      []
+    else
+      constructed_record =
+        rank_match_record(event, :constructed, {pc_won, pc_lost, pc_drawn}, {
+          event.constructed_matches_won,
+          event.constructed_matches_lost,
+          event.constructed_matches_drawn
+        })
 
-    limited_record =
-      if {event.limited_matches_won, event.limited_matches_lost} != {pl_won, pl_lost} do
-        %RankMatchRecorded{
-          player_id: event.player_id,
-          format: :limited,
-          won: event.limited_matches_won > pl_won,
-          wins: event.limited_matches_won,
-          losses: event.limited_matches_lost,
-          occurred_at: event.occurred_at
-        }
-      end
+      limited_record =
+        rank_match_record(event, :limited, {pl_won, pl_lost, pl_drawn}, {
+          event.limited_matches_won,
+          event.limited_matches_lost,
+          event.limited_matches_drawn
+        })
 
-    [constructed_record, limited_record] |> Enum.reject(&is_nil/1)
+      Enum.reject([constructed_record, limited_record], &is_nil/1)
+    end
+  end
+
+  # `won` is only well-defined when the diff covers exactly one match; a
+  # multi-match delta (results observed at login after playing elsewhere) or a
+  # draw gets won: nil — the wins/losses totals remain the authoritative fact.
+  defp rank_match_record(event, format, {previous_won, previous_lost, previous_drawn}, {
+         won,
+         lost,
+         drawn
+       }) do
+    if {won, lost, drawn} != {previous_won, previous_lost, previous_drawn} do
+      single_match? = won - previous_won + (lost - previous_lost) + (drawn - previous_drawn) == 1
+
+      outcome =
+        cond do
+          single_match? and won == previous_won + 1 -> true
+          single_match? and lost == previous_lost + 1 -> false
+          true -> nil
+        end
+
+      %RankMatchRecorded{
+        player_id: event.player_id,
+        format: format,
+        won: outcome,
+        wins: won,
+        losses: lost,
+        occurred_at: event.occurred_at
+      }
+    end
   end
 
   # ── Private: daily wins conversion ────────────────────────────────────────

@@ -379,10 +379,87 @@ defmodule Scry2.Events.SnapshotConvertTest do
              ] = events
     end
 
-    test "key contains all 11 rank fields" do
+    test "key contains all 13 rank fields" do
       event = build_rank_snapshot()
       {:converted, key, _} = SnapshotConvert.convert(event, nil)
-      assert tuple_size(key) == 11
+      assert tuple_size(key) == 13
+    end
+
+    test "season rollover emits RankAdvanced only — reset counters are not match records" do
+      # Real season 91 → 92 transition observed 2026-08-01: finals snapshot
+      # followed by the new season's zeroed snapshot at next login.
+      season_finals =
+        build_rank_snapshot(
+          constructed_class: "Platinum",
+          constructed_level: 3,
+          constructed_step: 4,
+          constructed_matches_won: 69,
+          constructed_matches_lost: 65,
+          constructed_matches_drawn: 1,
+          limited_class: "Gold",
+          limited_level: 4,
+          limited_step: 3,
+          limited_matches_won: 19,
+          limited_matches_lost: 15,
+          limited_matches_drawn: 0,
+          season_ordinal: 91
+        )
+
+      {:converted, key, _} = SnapshotConvert.convert(season_finals, nil)
+
+      season_reset =
+        build_rank_snapshot(
+          constructed_class: "Gold",
+          constructed_level: 4,
+          constructed_step: 0,
+          constructed_matches_won: 0,
+          constructed_matches_lost: 0,
+          constructed_matches_drawn: 0,
+          limited_class: nil,
+          limited_level: 1,
+          limited_step: 0,
+          limited_matches_won: 0,
+          limited_matches_lost: 0,
+          limited_matches_drawn: 0,
+          season_ordinal: 92
+        )
+
+      assert {:converted, _new_key, [%RankAdvanced{}]} =
+               SnapshotConvert.convert(season_reset, key)
+    end
+
+    test "multi-match delta emits RankMatchRecorded with won: nil" do
+      snapshot =
+        build_rank_snapshot(constructed_matches_won: 15, constructed_matches_lost: 10)
+
+      {:converted, key, _} = SnapshotConvert.convert(snapshot, nil)
+
+      later_snapshot =
+        build_rank_snapshot(constructed_matches_won: 17, constructed_matches_lost: 11)
+
+      {:converted, _key, events} = SnapshotConvert.convert(later_snapshot, key)
+
+      assert [
+               %RankAdvanced{},
+               %RankMatchRecorded{format: :constructed, won: nil, wins: 17, losses: 11}
+             ] = events
+    end
+
+    test "drawn match emits RankMatchRecorded with won: nil" do
+      snapshot =
+        build_rank_snapshot(constructed_matches_drawn: 0)
+
+      {:converted, key, _} = SnapshotConvert.convert(snapshot, nil)
+
+      later_snapshot =
+        build_rank_snapshot(constructed_matches_drawn: 1)
+
+      {:converted, _key, events} = SnapshotConvert.convert(later_snapshot, key)
+
+      assert [
+               %RankAdvanced{},
+               %RankMatchRecorded{format: :constructed, won: nil}
+             ] = events
     end
   end
 

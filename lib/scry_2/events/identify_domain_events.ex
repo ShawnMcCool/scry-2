@@ -582,13 +582,28 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   # RankGetSeasonAndRankDetails and RankGetCombinedRankInfo share the
   # same payload shape. REQUEST events have a "request" key and are
   # skipped.
-  @rank_event_types ~w(RankGetSeasonAndRankDetails RankGetCombinedRankInfo)
+  # RankGetSeasonAndRankDetails responses carry only season metadata
+  # (currentSeason) and the static rank-ladder structure
+  # (constructedRankInfo/limitedRankInfo) — no player rank state. Nothing to
+  # translate; the raw event is preserved for replay should a season-calendar
+  # feature ever want it.
   def translate(
-        %EventRecord{event_type: event_type} = record,
+        %EventRecord{event_type: "RankGetSeasonAndRankDetails"},
         _self_user_id,
         _match_context
-      )
-      when event_type in @rank_event_types do
+      ) do
+    {[], []}
+  end
+
+  # MTGA omits zero-valued fields from the wire format, so absent
+  # won/lost/drawn/step values mean 0 — normalized here so no downstream
+  # consumer ever sees nil counters (a fresh season's snapshot omits all of
+  # them).
+  def translate(
+        %EventRecord{event_type: "RankGetCombinedRankInfo"} = record,
+        _self_user_id,
+        _match_context
+      ) do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
@@ -597,16 +612,18 @@ defmodule Scry2.Events.IdentifyDomainEvents do
          %RankSnapshot{
            constructed_class: payload["constructedClass"],
            constructed_level: payload["constructedLevel"],
-           constructed_step: payload["constructedStep"],
-           constructed_matches_won: payload["constructedMatchesWon"],
-           constructed_matches_lost: payload["constructedMatchesLost"],
+           constructed_step: payload["constructedStep"] || 0,
+           constructed_matches_won: payload["constructedMatchesWon"] || 0,
+           constructed_matches_lost: payload["constructedMatchesLost"] || 0,
+           constructed_matches_drawn: payload["constructedMatchesDrawn"] || 0,
            constructed_percentile: payload["constructedMatchmakingPercentile"],
            constructed_leaderboard_placement: payload["constructedLeaderboardPlacement"],
            limited_class: payload["limitedClass"],
            limited_level: payload["limitedLevel"],
-           limited_step: payload["limitedStep"],
-           limited_matches_won: payload["limitedMatchesWon"],
-           limited_matches_lost: payload["limitedMatchesLost"],
+           limited_step: payload["limitedStep"] || 0,
+           limited_matches_won: payload["limitedMatchesWon"] || 0,
+           limited_matches_lost: payload["limitedMatchesLost"] || 0,
+           limited_matches_drawn: payload["limitedMatchesDrawn"] || 0,
            limited_percentile: payload["limitedMatchmakingPercentile"],
            limited_leaderboard_placement: payload["limitedLeaderboardPlacement"],
            season_ordinal: payload["constructedSeasonOrdinal"],
@@ -958,7 +975,9 @@ defmodule Scry2.Events.IdentifyDomainEvents do
   end
 
   # PeriodicRewardsGetStatus response carries daily/weekly win progress.
-  # Request format has {"id", "request"} — skip it.
+  # Request format has {"id", "request"} — skip it. MTGA omits zero-valued
+  # fields, so an absent position means 0 wins (e.g. right after the daily
+  # reset), not missing data.
   def translate(
         %EventRecord{event_type: "PeriodicRewardsGetStatus"} = record,
         _self_user_id,
@@ -967,12 +986,12 @@ defmodule Scry2.Events.IdentifyDomainEvents do
     occurred_at = record.mtga_timestamp || record.inserted_at
 
     with {:ok, payload} <- Scry2.Events.RawPayload.decode(record),
-         daily when is_integer(daily) <- payload["_dailyRewardSequenceId"] do
+         false <- Map.has_key?(payload, "request") do
       {[
          %DailyWinsStatus{
-           daily_position: daily,
+           daily_position: payload["_dailyRewardSequenceId"] || 0,
            daily_reset_at: parse_timestamp(payload["_dailyRewardResetTimestamp"]),
-           weekly_position: payload["_weeklyRewardSequenceId"],
+           weekly_position: payload["_weeklyRewardSequenceId"] || 0,
            weekly_reset_at: parse_timestamp(payload["_weeklyRewardResetTimestamp"]),
            occurred_at: occurred_at
          }

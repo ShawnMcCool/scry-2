@@ -406,7 +406,7 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
     test "produces a %RankSnapshot{} from a response event" do
       record = %EventRecord{
         id: 1,
-        event_type: "RankGetSeasonAndRankDetails",
+        event_type: "RankGetCombinedRankInfo",
         mtga_timestamp: ~U[2026-04-05 20:00:00Z],
         file_offset: 0,
         source_file: "Player.log",
@@ -458,6 +458,44 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       assert event.constructed_matches_lost == 18
       assert event.limited_class == "Silver"
       assert event.occurred_at == ~U[2026-04-06 18:47:51Z]
+    end
+
+    test "normalizes omitted counters to zero — season-reset response omits won/lost/step" do
+      record = record_from_fixture("rank_get_combined_rank_info_season_reset.log")
+
+      assert {[%RankSnapshot{} = snapshot], []} = IdentifyDomainEvents.translate(record, nil)
+      assert snapshot.season_ordinal == 92
+      assert snapshot.constructed_class == "Gold"
+      assert snapshot.constructed_level == 4
+      assert snapshot.constructed_step == 0
+      assert snapshot.constructed_matches_won == 0
+      assert snapshot.constructed_matches_lost == 0
+      assert snapshot.constructed_matches_drawn == 0
+      assert snapshot.limited_level == 1
+      assert snapshot.limited_step == 0
+      assert snapshot.limited_matches_won == 0
+      assert snapshot.limited_matches_lost == 0
+      assert snapshot.limited_matches_drawn == 0
+    end
+
+    test "captures drawn-match counters from the response" do
+      record = record_from_fixture("rank_get_combined_rank_info_with_draws.log")
+
+      assert {[%RankSnapshot{} = snapshot], []} = IdentifyDomainEvents.translate(record, nil)
+      assert snapshot.constructed_matches_won == 69
+      assert snapshot.constructed_matches_lost == 65
+      assert snapshot.constructed_matches_drawn == 1
+      assert snapshot.limited_matches_won == 19
+      assert snapshot.limited_matches_lost == 15
+      assert snapshot.limited_matches_drawn == 0
+    end
+
+    test "RankGetSeasonAndRankDetails response produces no events — season metadata only" do
+      # Real responses carry only currentSeason + the static rank-ladder
+      # structure (constructedRankInfo/limitedRankInfo). No player rank state.
+      record = record_from_fixture("rank_get_season_and_rank_details_response.log")
+
+      assert {[], []} = IdentifyDomainEvents.translate(record, nil)
     end
   end
 
@@ -1354,6 +1392,28 @@ defmodule Scry2.Events.IdentifyDomainEventsTest do
       }
 
       assert {[], []} = IdentifyDomainEvents.translate(record, nil)
+    end
+
+    test "normalizes omitted positions to zero — MTGA omits zero-valued counters" do
+      record = %EventRecord{
+        id: 1,
+        event_type: "PeriodicRewardsGetStatus",
+        mtga_timestamp: ~U[2026-04-06 16:00:00Z],
+        file_offset: 0,
+        source_file: "Player.log",
+        raw_json:
+          Jason.encode!(%{
+            "_dailyRewardResetTimestamp" => "2026-04-07T09:00:00Z",
+            "_weeklyRewardResetTimestamp" => "2026-04-12T09:00:00Z",
+            "_dailyRewardChestDescriptions" => %{},
+            "_weeklyRewardChestDescriptions" => %{}
+          }),
+        processed: false
+      }
+
+      assert {[%DailyWinsStatus{} = status], []} = IdentifyDomainEvents.translate(record, nil)
+      assert status.daily_position == 0
+      assert status.weekly_position == 0
     end
   end
 

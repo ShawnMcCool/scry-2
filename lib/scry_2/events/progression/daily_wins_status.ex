@@ -20,9 +20,15 @@ defmodule Scry2.Events.Progression.DailyWinsStatus do
   - `weekly_position` — next weekly win reward tier to be unlocked (1 = first)
   - `weekly_reset_at` — when the weekly win counter resets
 
+  ## Counter normalization
+
+  MTGA's wire format omits zero-valued fields, so an absent position means 0
+  wins, not missing data. `IdentifyDomainEvents` normalizes at translation —
+  positions on this struct are always integers, never nil.
+
   ## Diff key
 
-  `SnapshotDiff` compares `{daily_position, weekly_position}`. Reset times
+  `SnapshotConvert` compares `{daily_position, weekly_position}`. Reset times
   (`daily_reset_at`, `weekly_reset_at`) are excluded — they change on a fixed
   schedule and would generate spurious events without a corresponding progress
   change.
@@ -50,7 +56,7 @@ defmodule Scry2.Events.Progression.DailyWinsStatus do
           player_id: String.t() | nil,
           daily_position: non_neg_integer(),
           daily_reset_at: DateTime.t() | nil,
-          weekly_position: non_neg_integer() | nil,
+          weekly_position: non_neg_integer(),
           weekly_reset_at: DateTime.t() | nil,
           occurred_at: DateTime.t()
         }
@@ -58,9 +64,9 @@ defmodule Scry2.Events.Progression.DailyWinsStatus do
   def from_payload(payload) do
     %__MODULE__{
       player_id: payload["player_id"],
-      daily_position: payload["daily_position"],
+      daily_position: payload["daily_position"] || 0,
       daily_reset_at: payload["daily_reset_at"],
-      weekly_position: payload["weekly_position"],
+      weekly_position: payload["weekly_position"] || 0,
       weekly_reset_at: payload["weekly_reset_at"],
       occurred_at: Payload.parse_datetime(payload["occurred_at"])
     }
