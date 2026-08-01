@@ -11,6 +11,17 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed phantom ranked-match results being recorded every time you logged into MTGA — most visibly after the monthly ranked season reset, which could record "wins" for matches you never played, even in formats you don't play.
+- Fixed empty rank readings being captured at every login, which could scatter blank entries through your rank history.
+- Fixed daily and weekly win progress being missed right after the daily reset — a day starting at zero wins was previously skipped entirely.
+
+### Improved
+
+- Ranked draws are now tracked alongside wins and losses in your season record.
+- When several ranked matches are recorded between sessions (for example after the app was closed), the results are stored without guessing a single win/loss outcome.
+
 ## v0.53.0 — 2026-07-30
 
 ### New
