@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.55.0 — 2026-08-06
+
 ### New
 
 - **Search your deck library.** The **Decks** page now has the same search the **Netdecks** page has: type a deck name or archetype to narrow the list, or start typing a card name to see only the decks that play it — maindeck or sideboard. Card suggestions show how many of your decks play each card, and the chosen card sits in a tag you can clear with one click. Search narrows whatever you have selected, so Active, Archived, All and Starred keep working as they did.
