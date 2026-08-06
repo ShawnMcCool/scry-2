@@ -22,10 +22,13 @@ defmodule Scry2Web.NetdecksLive do
   alias Scry2.NetDecking.IngestSource
   alias Scry2.Topics
   alias Scry2Web.CardImages
+  alias Scry2Web.Components.DeckExport
   alias Scry2Web.DeckRendering
+  alias Scry2Web.DeckSearch
   alias Scry2Web.NetdecksHelpers
 
-  import Scry2Web.Components.SearchBox
+  import Scry2Web.Components.DeckExport
+  import Scry2Web.Components.DeckSearchBar, only: [deck_search_bar: 1]
   import Scry2Web.Components.VariantMatrix, only: [variant_matrix: 1]
 
   @empty_catalog %{
@@ -46,10 +49,7 @@ defmodule Scry2Web.NetdecksLive do
 
     {:ok,
      assign(socket,
-       filter: %{query: "", card: nil},
-       card_query: "",
-       archetype_suggestions: [],
-       card_suggestions: [],
+       search: DeckSearch.new(),
        format: "Standard",
        catalog: @empty_catalog,
        view: "status",
@@ -142,72 +142,32 @@ defmodule Scry2Web.NetdecksLive do
     end
   end
 
-  # Escape arrives through the same debounced keyup (see SearchBox moduledoc);
-  # the clause must come first — every keyup payload carries both keys. The
-  # payload still carries the latest typed value, so sync it into filter.query
-  # rather than discarding it — otherwise the input text and the applied
-  # filter can desync.
-  def handle_event("filter_query", %{"key" => "Escape", "value" => value}, socket) do
-    {:noreply,
-     assign(socket,
-       filter: %{socket.assigns.filter | query: value},
-       archetype_suggestions: []
-     )}
+  # The search bar's six events all reduce to one `DeckSearch` call — Escape
+  # handling and suggestion ranking live there, not per page.
+  def handle_event("search_name", params, socket) do
+    candidates = NetdecksHelpers.archetype_candidates(socket.assigns.catalog)
+    {:noreply, update_search(socket, &DeckSearch.name_typed(&1, params, candidates))}
   end
 
-  def handle_event("filter_query", %{"value" => value}, socket) do
-    {:noreply,
-     assign(socket,
-       filter: %{socket.assigns.filter | query: value},
-       archetype_suggestions:
-         NetdecksHelpers.rank_suggestions(
-           NetdecksHelpers.archetype_candidates(socket.assigns.catalog),
-           value
-         )
-     )}
+  def handle_event("pick_name", params, socket) do
+    {:noreply, update_search(socket, &DeckSearch.name_picked(&1, params))}
   end
 
-  # Ignores the payload's "key" — for archetypes, key and label are the same string.
-  def handle_event("pick_archetype", %{"label" => label}, socket) do
-    {:noreply,
-     assign(socket,
-       filter: %{socket.assigns.filter | query: label},
-       archetype_suggestions: []
-     )}
+  def handle_event("search_card", params, socket) do
+    candidates = DeckSearch.card_candidates(socket.assigns.catalog.card_index)
+    {:noreply, update_search(socket, &DeckSearch.card_typed(&1, params, candidates))}
   end
 
-  def handle_event("dismiss_suggestions", _params, socket) do
-    {:noreply, assign(socket, archetype_suggestions: [], card_suggestions: [])}
-  end
-
-  # Same clause-order constraint as filter_query above.
-  def handle_event("filter_card_query", %{"key" => "Escape", "value" => value}, socket) do
-    {:noreply, assign(socket, card_query: value, card_suggestions: [])}
-  end
-
-  def handle_event("filter_card_query", %{"value" => value}, socket) do
-    {:noreply,
-     assign(socket,
-       card_query: value,
-       card_suggestions:
-         NetdecksHelpers.rank_suggestions(
-           NetdecksHelpers.card_candidates(socket.assigns.catalog),
-           value
-         )
-     )}
-  end
-
-  def handle_event("pick_card", %{"key" => key, "label" => label}, socket) do
-    {:noreply,
-     assign(socket,
-       filter: %{socket.assigns.filter | card: %{key: key, label: label}},
-       card_query: "",
-       card_suggestions: []
-     )}
+  def handle_event("pick_card", params, socket) do
+    {:noreply, update_search(socket, &DeckSearch.card_picked(&1, params))}
   end
 
   def handle_event("clear_card", _params, socket) do
-    {:noreply, assign(socket, filter: %{socket.assigns.filter | card: nil})}
+    {:noreply, update_search(socket, &DeckSearch.card_cleared/1)}
+  end
+
+  def handle_event("dismiss_suggestions", _params, socket) do
+    {:noreply, update_search(socket, &DeckSearch.dismissed/1)}
   end
 
   def handle_event("toggle_import_panel", _params, socket) do
@@ -287,12 +247,11 @@ defmodule Scry2Web.NetdecksLive do
   end
 
   def handle_event("copied", _params, socket) do
-    {:noreply, put_flash(socket, :info, "Copied — switch to MTGA → Import in the Deck Builder.")}
+    {:noreply, put_flash(socket, :info, DeckExport.copied_flash())}
   end
 
   def handle_event("copy_failed", _params, socket) do
-    {:noreply,
-     put_flash(socket, :error, "Couldn't reach the clipboard. Select the text to copy manually.")}
+    {:noreply, put_flash(socket, :error, DeckExport.copy_failed_flash())}
   end
 
   @impl true
@@ -404,10 +363,7 @@ defmodule Scry2Web.NetdecksLive do
         :if={is_nil(@detail) && is_nil(@archetype)}
         catalog={@catalog}
         format={@format}
-        filter={@filter}
-        card_query={@card_query}
-        archetype_suggestions={@archetype_suggestions}
-        card_suggestions={@card_suggestions}
+        search={@search}
         sources={@sources}
         cached_ids={@cached_card_ids}
         import_open={@import_open}
@@ -425,10 +381,7 @@ defmodule Scry2Web.NetdecksLive do
   # ── Catalog view ─────────────────────────────────────────────────────────
 
   attr :catalog, :map, required: true
-  attr :filter, :map, required: true
-  attr :card_query, :string, required: true
-  attr :archetype_suggestions, :list, required: true
-  attr :card_suggestions, :list, required: true
+  attr :search, DeckSearch, required: true
   attr :sources, :list, required: true
   attr :cached_ids, :any, required: true
   attr :import_open, :boolean, required: true
@@ -582,33 +535,13 @@ defmodule Scry2Web.NetdecksLive do
       </.link>
     </div>
 
-    <div :if={@total > 0 && @view == "status"} class="mb-5 flex flex-wrap items-start gap-3">
-      <.search_box
-        id="archetype-search"
-        value={@filter.query}
-        placeholder="Search by name or archetype…"
-        suggestions={@archetype_suggestions}
-        input_event="filter_query"
-        pick_event="pick_archetype"
-        dismiss_event="dismiss_suggestions"
-      />
-      <.search_box
-        :if={is_nil(@filter.card)}
-        id="card-search"
-        value={@card_query}
-        placeholder="Filter by card…"
-        suggestions={@card_suggestions}
-        input_event="filter_card_query"
-        pick_event="pick_card"
-        dismiss_event="dismiss_suggestions"
-      />
-      <div :if={@filter.card} id="card-filter-chip" class="badge badge-outline badge-lg gap-2">
-        <span>{@filter.card.label}</span>
-        <button type="button" phx-click="clear_card" aria-label="Clear card filter">
-          <.icon name="hero-x-mark" class="size-3" />
-        </button>
-      </div>
-    </div>
+    <.deck_search_bar
+      :if={@total > 0 && @view == "status"}
+      id="netdeck-search"
+      search={@search}
+      name_placeholder="Search by name or archetype…"
+      class="mb-5"
+    />
 
     <section
       :for={status <- NetdecksHelpers.status_order()}
@@ -616,7 +549,7 @@ defmodule Scry2Web.NetdecksLive do
       class="mb-10"
     >
       <% meta = NetdecksHelpers.status_meta(status) %>
-      <% groups = visible(@catalog[status], @filter) %>
+      <% groups = visible(@catalog[status], @search) %>
       <div class="flex items-baseline gap-3 border-b border-base-300/40 pb-2">
         <.icon name={meta.icon} class={["size-4 self-center", meta.tone]} />
         <h2 class="text-lg font-beleren text-base-content/90">{meta.section}</h2>
@@ -1398,16 +1331,8 @@ defmodule Scry2Web.NetdecksLive do
             </div>
           </div>
 
-          <button
-            type="button"
-            class="btn btn-primary btn-sm w-full"
-            phx-hook="ClipboardCopy"
-            id="copy-to-mtga-button"
-            data-copy-text={@detail.export_text}
-            title="Copy this deck in MTGA's import format, then click Import in the Deck Builder."
-          >
-            <.icon name="hero-clipboard-document" class="size-4" /> Copy to MTGA
-          </button>
+          <.copy_to_mtga_button export_text={@detail.export_text} class="w-full" />
+          <.mtga_import_text export_text={@detail.export_text} class="mt-3" />
         </div>
 
         <.mana_curve_chart
@@ -1561,8 +1486,14 @@ defmodule Scry2Web.NetdecksLive do
 
   # ── Private helpers ──────────────────────────────────────────────────────
 
-  defp visible(entries, filter) do
-    Enum.filter(entries || [], &NetdecksHelpers.visible?(&1, filter))
+  defp visible(entries, search) do
+    Enum.filter(entries || [], fn group ->
+      DeckSearch.match?(search, NetdecksHelpers.search_facets(group))
+    end)
+  end
+
+  defp update_search(socket, fun) do
+    assign(socket, search: fun.(socket.assigns.search))
   end
 
   defp browse_needs_load?(nil), do: false

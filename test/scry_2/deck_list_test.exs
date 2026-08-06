@@ -219,4 +219,45 @@ defmodule Scry2.DeckListTest do
                MapSet.new(["llanowar elves"])
     end
   end
+
+  describe "display_names_by_identity/1" do
+    test "picks the lowest arena_id's spelling for each identity" do
+      cards_by_arena_id = %{
+        222 => %{name: "LLANOWAR ELVES"},
+        111 => %{name: "Llanowar Elves"},
+        333 => %{name: "Duress"}
+      }
+
+      assert DeckList.display_names_by_identity(cards_by_arena_id) == %{
+               "llanowar elves" => "Llanowar Elves",
+               "duress" => "Duress"
+             }
+    end
+
+    test "skips nameless cards" do
+      assert DeckList.display_names_by_identity(%{111 => %{name: nil}}) == %{}
+    end
+  end
+
+  describe "card_index/2" do
+    test "counts the lists playing each identity and resolves display names" do
+      lists = [
+        MapSet.new(["duress", "swamp"]),
+        MapSet.new(["duress"]),
+        MapSet.new(["llanowar elves"])
+      ]
+
+      display_names = %{"duress" => "Duress", "swamp" => "Swamp"}
+
+      assert DeckList.card_index(lists, display_names) == [
+               %{key: "duress", name: "Duress", count: 2},
+               %{key: "llanowar elves", name: "llanowar elves", count: 1},
+               %{key: "swamp", name: "Swamp", count: 1}
+             ]
+    end
+
+    test "no lists yields an empty index" do
+      assert DeckList.card_index([], %{}) == []
+    end
+  end
 end

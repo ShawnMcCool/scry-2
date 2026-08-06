@@ -205,11 +205,11 @@ defmodule Scry2.NetDeckingTest do
       llanowar = Enum.find(catalog.card_index, &(&1.key == "llanowar elves"))
       assert llanowar.name == "Llanowar Elves"
 
-      assert llanowar.group_count ==
+      assert llanowar.count ==
                length(Enum.filter(all_groups, &MapSet.member?(&1.card_names, "llanowar elves")))
 
       duress = Enum.find(catalog.card_index, &(&1.key == "duress"))
-      assert duress.group_count == 1
+      assert duress.count == 1
     end
   end
 

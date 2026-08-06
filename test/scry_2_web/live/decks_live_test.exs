@@ -111,6 +111,21 @@ defmodule Scry2Web.DecksLiveTest do
       assert html =~ "Deck\n4 "
     end
 
+    test "a failed copy points at the import-text disclosure on the page", %{conn: conn} do
+      deck =
+        Factory.create_deck(%{
+          mtga_deck_id: "live-export-fallback",
+          current_name: "FallbackDeck",
+          current_main_deck: %{"cards" => [%{"arena_id" => 12_345, "count" => 4}]},
+          current_sideboard: %{"cards" => []}
+        })
+
+      {:ok, view, html} = live(conn, "/decks/#{deck.mtga_deck_id}")
+
+      assert html =~ "View MTGA import text"
+      assert render_hook(view, "copy_failed", %{}) =~ "View MTGA import text"
+    end
+
     test "renders star and archive buttons on the deck detail page", %{conn: conn} do
       deck = Factory.create_deck(%{mtga_deck_id: "live-detail", current_name: "DetailDeck"})
 
@@ -121,6 +136,98 @@ defmodule Scry2Web.DecksLiveTest do
       |> render_click()
 
       assert Decks.get_deck(deck.mtga_deck_id).archived == true
+    end
+  end
+
+  describe "/decks — search" do
+    setup do
+      Factory.create_card(%{arena_id: 111, name: "Llanowar Elves"})
+      Factory.create_card(%{arena_id: 222, name: "Duress"})
+
+      Factory.create_deck(%{
+        mtga_deck_id: "search-green",
+        current_name: "Mono Green Stompy",
+        current_main_deck: %{"cards" => [%{"arena_id" => 111, "count" => 4}]},
+        current_sideboard: %{"cards" => []}
+      })
+
+      Factory.create_deck(%{
+        mtga_deck_id: "search-black",
+        current_name: "Mono Black Midrange",
+        current_main_deck: %{"cards" => [%{"arena_id" => 222, "count" => 4}]},
+        current_sideboard: %{"cards" => []}
+      })
+
+      :ok
+    end
+
+    test "the name box narrows the list", %{conn: conn} do
+      {:ok, view, html} = live(conn, "/decks")
+
+      assert html =~ "Mono Green Stompy"
+      assert html =~ "Mono Black Midrange"
+
+      html = render_keyup(view, "search_name", %{"value" => "stompy"})
+
+      assert html =~ "Mono Green Stompy"
+      refute html =~ "Mono Black Midrange"
+    end
+
+    test "no matches shows the search empty state without dropping the bar", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/decks")
+
+      html = render_keyup(view, "search_name", %{"value" => "izzet"})
+
+      assert html =~ "No decks match this search."
+      assert has_element?(view, "#deck-search-name")
+    end
+
+    test "picking a card filters the list and the chip clears it", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/decks")
+
+      render_keyup(view, "search_card", %{"value" => "llan"})
+      assert has_element?(view, "#deck-search-card-suggestions")
+
+      html =
+        view
+        |> element("#deck-search-card-suggestions button", "Llanowar Elves")
+        |> render_click()
+
+      assert html =~ "Mono Green Stompy"
+      refute html =~ "Mono Black Midrange"
+      assert has_element?(view, "#deck-search-card-chip")
+      refute has_element?(view, "#deck-search-card")
+
+      html = render_click(view, "clear_card", %{})
+
+      assert html =~ "Mono Green Stompy"
+      assert html =~ "Mono Black Midrange"
+      assert has_element?(view, "#deck-search-card")
+    end
+
+    test "Escape keeps the typed value and closes suggestions", %{conn: conn} do
+      {:ok, view, _html} = live(conn, "/decks")
+
+      render_keyup(view, "search_name", %{"value" => "mono"})
+      assert has_element?(view, "#deck-search-name-suggestions")
+
+      html = render_keyup(view, "search_name", %{"key" => "Escape", "value" => "black"})
+
+      refute has_element?(view, "#deck-search-name-suggestions")
+      assert html =~ "Mono Black Midrange"
+      refute html =~ "Mono Green Stompy"
+    end
+
+    test "the search narrows within the status filter, not across it", %{conn: conn} do
+      archived = Decks.get_deck("search-black")
+      Decks.update_deck_flags!(archived, %{archived: true})
+
+      {:ok, view, _html} = live(conn, "/decks?status=active")
+
+      html = render_keyup(view, "search_name", %{"value" => "mono"})
+
+      assert html =~ "Mono Green Stompy"
+      refute html =~ "Mono Black Midrange"
     end
   end
 end

@@ -168,11 +168,11 @@ defmodule Scry2.NetDecking do
   sideboard, for card search), and variants decorated with
   `finish`/`record`/`pilot`/`event_name`/`event_date` from each variant's
   best-finished member. `wildcards` is the player's current pool, for the
-  catalog's balance readout. `card_index` is `[%{key, name, group_count}]` —
-  every distinct resolvable card in the corpus (by identity key; cards
-  whose arena_id has no cards_cards row are excluded), sorted by identity
-  key (case-insensitive name order), with `group_count` counting how many
-  groups (any tier) play it — the card-search suggestion source.
+  catalog's balance readout. `card_index` is `Scry2.DeckList.card_index/2`
+  over the groups — every distinct resolvable card in the corpus (by
+  identity key; cards whose arena_id has no cards_cards row are excluded),
+  sorted by identity key, with `count` being how many groups (any tier)
+  play it — the card-search suggestion source.
   `incomplete` groups have at least one
   card missing from MTGA in every member list — no wildcard count builds
   them, so they never appear in buildable/craftable/short.
@@ -183,7 +183,7 @@ defmodule Scry2.NetDecking do
           short: [map()],
           incomplete: [map()],
           wildcards: map(),
-          card_index: [%{key: String.t(), name: String.t(), group_count: pos_integer()}]
+          card_index: [%{key: String.t(), name: String.t(), count: pos_integer()}]
         }
   def catalog(format \\ "Standard") do
     decks = list_decks(format)
@@ -463,24 +463,9 @@ defmodule Scry2.NetDecking do
     |> Enum.frequencies()
   end
 
-  # Sorted `[%{key, name, group_count}]` for every distinct card (by identity
-  # key) across the corpus — the search-bar's suggestion source. `name` is
-  # the lowest arena_id's display name for that identity, so it's stable
-  # across re-catalogs regardless of tier ordering.
+  # The corpus-wide card index behind the catalog's card-search bar: one entry
+  # per distinct identity, counting the groups (any tier) that play it.
   defp card_index(annotated_tiers, cards_by_arena_id) do
-    display_names =
-      cards_by_arena_id
-      |> Enum.sort_by(fn {arena_id, _card} -> arena_id end)
-      |> Enum.reduce(%{}, fn {_arena_id, card}, acc ->
-        case card do
-          %{name: name} when is_binary(name) ->
-            Map.put_new(acc, DeckList.identity_key(name), name)
-
-          _nameless ->
-            acc
-        end
-      end)
-
     [
       annotated_tiers.buildable,
       annotated_tiers.craftable,
@@ -488,12 +473,8 @@ defmodule Scry2.NetDecking do
       annotated_tiers.incomplete
     ]
     |> Enum.concat()
-    |> Enum.flat_map(fn group -> MapSet.to_list(group.card_facts.card_names) end)
-    |> Enum.frequencies()
-    |> Enum.map(fn {key, group_count} ->
-      %{key: key, name: Map.get(display_names, key, key), group_count: group_count}
-    end)
-    |> Enum.sort_by(& &1.key)
+    |> Enum.map(fn group -> group.card_facts.card_names end)
+    |> DeckList.card_index(DeckList.display_names_by_identity(cards_by_arena_id))
   end
 
   defp decorate_groups(groups, cards, sets, groups_playing) do

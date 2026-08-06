@@ -61,10 +61,17 @@ defmodule Scry2.Decks do
   groups follow, sorted by `last_updated_at` descending.
 
   Each entry is a `%Scry2.Decks.DeckSummary{}` struct with `:deck`, `:bo1`,
-  and `:bo3` (the latter two are `%Scry2.Decks.FormatStats{}`).
+  `:bo3` (the latter two are `%Scry2.Decks.FormatStats{}`), and `:card_names`.
   """
   @spec list_decks_with_stats(integer() | nil, keyword()) :: [DeckSummary.t()]
   def list_decks_with_stats(player_id \\ nil, opts \\ []) do
+    {summaries, _cards_by_arena_id} = summarize_library(player_id, opts)
+    summaries
+  end
+
+  # The library read both public entry points share: summaries plus the card
+  # rows they resolved, so `library/2` does not repeat the lookup.
+  defp summarize_library(player_id, opts) do
     only_played = Keyword.get(opts, :only_played, true)
     status = Keyword.get(opts, :status, :all)
     starred_only = Keyword.get(opts, :starred_only, false)
@@ -76,14 +83,71 @@ defmodule Scry2.Decks do
 
     keys = deck_keys_for(decks)
 
-    decks
-    |> Enum.group_by(fn deck -> Map.fetch!(keys, deck.mtga_deck_id) end)
-    |> Enum.map(fn {_key, members} -> summarize_group(members) end)
-    |> Enum.filter(&keep_group?(&1, status, starred_only, only_played))
-    |> Enum.sort_by(& &1.deck, &deck_sort_before?/2)
+    groups =
+      decks
+      |> Enum.group_by(fn deck -> Map.fetch!(keys, deck.mtga_deck_id) end)
+      |> Enum.map(fn {_key, members} -> summarize_group(members) end)
+      |> Enum.filter(&keep_group?(&1, status, starred_only, only_played))
+      |> Enum.sort_by(& &1.deck, &deck_sort_before?/2)
+
+    # Card rows are resolved once for the surviving groups, after filtering.
+    cards_by_arena_id = cards_for_lists(Enum.map(groups, & &1.deck))
+
+    summaries =
+      Enum.map(groups, fn group ->
+        %DeckSummary{
+          deck: group.deck,
+          bo1: group.bo1,
+          bo3: group.bo3,
+          card_names: deck_card_names(group.deck, cards_by_arena_id)
+        }
+      end)
+
+    {summaries, cards_by_arena_id}
   end
 
-  # Collapses a group's members into a single summary: stats are the sum of
+  @doc """
+  The deck library as one read model: the summaries `list_decks_with_stats/2`
+  returns for `opts`, plus `card_index` — `Scry2.DeckList.card_index/2` over
+  exactly those summaries, counting how many of them play each card identity.
+  It is the card-search suggestion source for the library page, and the
+  counterpart of `Scry2.NetDecking.catalog/1`'s index for the netdeck corpus.
+  """
+  @spec library(integer() | nil, keyword()) :: %{
+          decks: [DeckSummary.t()],
+          card_index: [%{key: String.t(), name: String.t(), count: pos_integer()}]
+        }
+  def library(player_id \\ nil, opts \\ []) do
+    {summaries, cards_by_arena_id} = summarize_library(player_id, opts)
+
+    card_index =
+      summaries
+      |> Enum.map(& &1.card_names)
+      |> DeckList.card_index(DeckList.display_names_by_identity(cards_by_arena_id))
+
+    %{decks: summaries, card_index: card_index}
+  end
+
+  # Every card row referenced by these decks' maindecks and sideboards.
+  defp cards_for_lists(decks) do
+    decks
+    |> Enum.flat_map(&deck_entries/1)
+    |> Enum.map(& &1.arena_id)
+    |> Enum.uniq()
+    |> Scry2.Cards.list_by_arena_ids()
+  end
+
+  defp deck_entries(deck) do
+    DeckList.entries(deck.current_main_deck) ++ DeckList.entries(deck.current_sideboard)
+  end
+
+  defp deck_card_names(deck, cards_by_arena_id) do
+    deck |> deck_entries() |> DeckList.name_keys(cards_by_arena_id)
+  end
+
+  # Collapses a group's members into one intermediate group (the summary minus
+  # its card facets, which are resolved in one batch once filtering is done):
+  # stats are the sum of
   # members' counters, the represented deck is the canonical (most-recently-
   # played) member, and the group flags are ANY-starred / ALL-archived stamped
   # onto that deck so the display and the group-level filters agree.
@@ -94,7 +158,7 @@ defmodule Scry2.Decks do
         archived: Enum.all?(members, & &1.archived)
     }
 
-    %DeckSummary{
+    %{
       deck: canonical,
       bo1: format_stats(sum_field(members, :bo1_wins), sum_field(members, :bo1_losses)),
       bo3: format_stats(sum_field(members, :bo3_wins), sum_field(members, :bo3_losses))
@@ -119,14 +183,14 @@ defmodule Scry2.Decks do
   end
 
   defp keep_status?(_summary, :all), do: true
-  defp keep_status?(%DeckSummary{deck: %{archived: archived}}, :active), do: not archived
-  defp keep_status?(%DeckSummary{deck: %{archived: archived}}, :archived), do: archived
+  defp keep_status?(%{deck: %{archived: archived}}, :active), do: not archived
+  defp keep_status?(%{deck: %{archived: archived}}, :archived), do: archived
 
-  defp keep_starred?(_summary, false), do: true
-  defp keep_starred?(%DeckSummary{deck: %{starred: starred}}, true), do: starred
+  defp keep_starred?(_group, false), do: true
+  defp keep_starred?(%{deck: %{starred: starred}}, true), do: starred
 
-  defp keep_played?(_summary, false), do: true
-  defp keep_played?(%DeckSummary{bo1: bo1, bo3: bo3}, true), do: bo1.total + bo3.total > 0
+  defp keep_played?(_group, false), do: true
+  defp keep_played?(%{bo1: bo1, bo3: bo3}, true), do: bo1.total + bo3.total > 0
 
   # In-memory equivalent of `desc_nulls_last: last_played_at, desc: last_updated_at`.
   # Returns true when deck `a` should sort at or before deck `b`.

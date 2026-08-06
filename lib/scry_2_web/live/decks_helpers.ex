@@ -5,10 +5,13 @@ defmodule Scry2Web.DecksHelpers do
   Deck composition rendering (type/CMC grouping, mana curve, card stacks)
   lives in `Scry2Web.DeckRendering` — the deck rendering engine.
   This module keeps what is specific to the deck pages: record lines,
-  version timeline helpers, and match display formatting.
+  version timeline helpers, match display formatting, and the library's
+  search facets (`Scry2Web.DeckSearch` supplies the search itself).
   """
 
+  alias Scry2.DeckList
   alias Scry2Web.DeckRendering
+  alias Scry2Web.DeckSearch
 
   # ── Display formatting ─────────────────────────────────────────────
 
@@ -130,4 +133,50 @@ defmodule Scry2Web.DecksHelpers do
 
   defp pad(n) when n < 10, do: "0#{n}"
   defp pad(n), do: "#{n}"
+
+  # ── Library search ─────────────────────────────────────────────────
+
+  @doc """
+  A library deck's search facets: it answers to the name the list shows for
+  it and to its classified archetype, and it plays the cards in its maindeck
+  and sideboard.
+  """
+  @spec search_facets(Scry2.Decks.DeckSummary.t()) :: DeckSearch.Facets.t()
+  def search_facets(summary) do
+    %DeckSearch.Facets{
+      names: [display_name(summary.deck), summary.deck.archetype_name],
+      card_keys: summary.card_names
+    }
+  end
+
+  @doc """
+  Name suggestions for the library: one per distinct deck name or archetype
+  (by card identity rule), counting the decks that answer to it. The first
+  spelling seen wins, so suggestions read the way the list is labelled.
+  """
+  @spec name_candidates([Scry2.Decks.DeckSummary.t()]) :: [DeckSearch.candidate()]
+  def name_candidates(summaries) do
+    summaries
+    |> Enum.flat_map(fn summary ->
+      summary
+      |> search_facets()
+      |> Map.fetch!(:names)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq_by(&DeckList.identity_key/1)
+    end)
+    |> Enum.reduce(%{}, fn name, candidates ->
+      key = DeckList.identity_key(name)
+
+      Map.update(candidates, key, %{key: key, label: name, count: 1}, fn candidate ->
+        %{candidate | count: candidate.count + 1}
+      end)
+    end)
+    |> Map.values()
+    |> Enum.sort_by(& &1.key)
+  end
+
+  @doc "The name the library shows for a deck — MTGA leaves some decks unnamed."
+  @spec display_name(map()) :: String.t()
+  def display_name(%{current_name: name}) when is_binary(name) and name != "", do: name
+  def display_name(_deck), do: "Unnamed Deck"
 end

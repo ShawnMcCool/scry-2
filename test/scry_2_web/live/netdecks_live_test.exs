@@ -80,6 +80,22 @@ defmodule Scry2Web.NetdecksLiveTest do
     assert html =~ "Aggro"
   end
 
+  test "a failed copy points at the import-text disclosure on the page", %{conn: conn} do
+    create_card(name: "Lightning Bolt", rarity: "rare")
+
+    {:ok, deck} =
+      Scry2.NetDecking.import_decklist(%{
+        name: "Mono-Red",
+        source_name: "manual",
+        decklist_text: "Deck\n4 Lightning Bolt\n"
+      })
+
+    {:ok, view, html} = live(conn, ~p"/netdecks/#{deck.id}")
+
+    assert html =~ "View MTGA import text"
+    assert render_hook(view, "copy_failed", %{}) =~ "View MTGA import text"
+  end
+
   test "detail view renders the variant matrix when the cluster has variants", %{conn: conn} do
     create_card(name: "Lightning Bolt", rarity: "rare")
     create_card(name: "Shock", rarity: "common")
@@ -408,15 +424,15 @@ defmodule Scry2Web.NetdecksLiveTest do
       assert has_element?(view, "#archetype-row-mono-green-llanowar-elves")
       assert has_element?(view, "#archetype-row-mono-black-duress")
 
-      render_keyup(view, "filter_card_query", %{"value" => "llanowar"})
-      assert has_element?(view, "#card-search-suggestions")
+      render_keyup(view, "search_card", %{"value" => "llanowar"})
+      assert has_element?(view, "#netdeck-search-card-suggestions")
 
       view
-      |> element("#card-search-suggestions button", "Llanowar Elves")
+      |> element("#netdeck-search-card-suggestions button", "Llanowar Elves")
       |> render_click()
 
-      assert has_element?(view, "#card-filter-chip")
-      refute has_element?(view, "#card-search")
+      assert has_element?(view, "#netdeck-search-card-chip")
+      refute has_element?(view, "#netdeck-search-card")
 
       # The catalog itself is filtered, not just the chip shown: the
       # Llanowar Elves deck's row stays, the Duress deck's row is gone.
@@ -424,8 +440,8 @@ defmodule Scry2Web.NetdecksLiveTest do
       refute has_element?(view, "#archetype-row-mono-black-duress")
 
       render_click(view, "clear_card", %{})
-      assert has_element?(view, "#card-search")
-      refute has_element?(view, "#card-filter-chip")
+      assert has_element?(view, "#netdeck-search-card")
+      refute has_element?(view, "#netdeck-search-card-chip")
 
       assert has_element?(view, "#archetype-row-mono-green-llanowar-elves")
       assert has_element?(view, "#archetype-row-mono-black-duress")
@@ -449,25 +465,25 @@ defmodule Scry2Web.NetdecksLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/netdecks")
 
-      render_keyup(view, "filter_card_query", %{"value" => "llan"})
-      assert has_element?(view, "#card-search-suggestions")
+      render_keyup(view, "search_card", %{"value" => "llan"})
+      assert has_element?(view, "#netdeck-search-card-suggestions")
 
-      render_keyup(view, "filter_card_query", %{"key" => "Escape", "value" => "llan"})
-      refute has_element?(view, "#card-search-suggestions")
+      render_keyup(view, "search_card", %{"key" => "Escape", "value" => "llan"})
+      refute has_element?(view, "#netdeck-search-card-suggestions")
 
-      render_keyup(view, "filter_query", %{"value" => "mono"})
-      assert has_element?(view, "#archetype-search-suggestions")
+      render_keyup(view, "search_name", %{"value" => "mono"})
+      assert has_element?(view, "#netdeck-search-name-suggestions")
 
       # Escape's payload value must land in filter.query, not just clear
       # suggestions — observed server-side via the catalog it drives: "black"
       # excludes the Mono-Green row (a stale/discarded value wouldn't).
-      render_keyup(view, "filter_query", %{"key" => "Escape", "value" => "black"})
-      refute has_element?(view, "#archetype-search-suggestions")
+      render_keyup(view, "search_name", %{"key" => "Escape", "value" => "black"})
+      refute has_element?(view, "#netdeck-search-name-suggestions")
       refute has_element?(view, "#archetype-row-mono-green-llanowar-elves")
       assert has_element?(view, "#archetype-row-mono-black-duress")
 
-      render_keyup(view, "filter_query", %{"key" => "Escape", "value" => "mono"})
-      refute has_element?(view, "#archetype-search-suggestions")
+      render_keyup(view, "search_name", %{"key" => "Escape", "value" => "mono"})
+      refute has_element?(view, "#netdeck-search-name-suggestions")
       assert has_element?(view, "#archetype-row-mono-green-llanowar-elves")
       assert has_element?(view, "#archetype-row-mono-black-duress")
     end
@@ -483,12 +499,12 @@ defmodule Scry2Web.NetdecksLiveTest do
 
       {:ok, view, _html} = live(conn, ~p"/netdecks")
 
-      render_keyup(view, "filter_card_query", %{"value" => "llan"})
-      render_keyup(view, "filter_query", %{"value" => "mono"})
+      render_keyup(view, "search_card", %{"value" => "llan"})
+      render_keyup(view, "search_name", %{"value" => "mono"})
 
       render_click(view, "dismiss_suggestions", %{})
-      refute has_element?(view, "#card-search-suggestions")
-      refute has_element?(view, "#archetype-search-suggestions")
+      refute has_element?(view, "#netdeck-search-card-suggestions")
+      refute has_element?(view, "#netdeck-search-name-suggestions")
     end
   end
 

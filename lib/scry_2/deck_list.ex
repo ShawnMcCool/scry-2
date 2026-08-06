@@ -7,7 +7,8 @@ defmodule Scry2.DeckList do
   `%{"cards" => [%{"arena_id" => id, "count" => n}]}`. This module owns that
   shape: parsing (`entries/1`), the card-identity rule (`identity_key/1` —
   downcased, trimmed card name), printing collapse (`canonical_pairs/2`), and
-  name-level facets (`name_keys/2`).
+  name-level facets (`name_keys/2`, `display_names_by_identity/1`,
+  `card_index/2` — the corpus-wide index behind card search).
 
   Purpose-specific outputs stay with their contexts:
   `Scry2.Decks.composition_hash/1` keeps the stored integer hash,
@@ -96,5 +97,41 @@ defmodule Scry2.DeckList do
       end
     end)
     |> MapSet.new()
+  end
+
+  @doc """
+  Maps each card identity to a display spelling, taken from the lowest
+  arena_id carrying that identity so the choice is stable across reloads
+  regardless of map ordering. Nameless cards are skipped.
+  """
+  @spec display_names_by_identity(%{optional(integer()) => map()}) :: %{String.t() => String.t()}
+  def display_names_by_identity(cards_by_arena_id) do
+    cards_by_arena_id
+    |> Enum.sort_by(fn {arena_id, _card} -> arena_id end)
+    |> Enum.reduce(%{}, fn {_arena_id, card}, acc ->
+      case card do
+        %{name: name} when is_binary(name) -> Map.put_new(acc, identity_key(name), name)
+        _nameless -> acc
+      end
+    end)
+  end
+
+  @doc """
+  Indexes a corpus of card lists by identity: `[%{key, name, count}]` sorted
+  by key, where `count` is how many of the given lists play that card. Each
+  list is a `name_keys/2` set. Identities missing from `display_names` fall
+  back to the key itself.
+  """
+  @spec card_index([MapSet.t(String.t())], %{String.t() => String.t()}) :: [
+          %{key: String.t(), name: String.t(), count: pos_integer()}
+        ]
+  def card_index(name_key_sets, display_names) when is_list(name_key_sets) do
+    name_key_sets
+    |> Enum.flat_map(&MapSet.to_list/1)
+    |> Enum.frequencies()
+    |> Enum.map(fn {key, count} ->
+      %{key: key, name: Map.get(display_names, key, key), count: count}
+    end)
+    |> Enum.sort_by(& &1.key)
   end
 end

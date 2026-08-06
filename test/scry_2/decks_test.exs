@@ -1354,4 +1354,85 @@ defmodule Scry2.DecksTest do
       assert Decks.canonical_deck_ids_for_matches(["unknown-match"]) == %{}
     end
   end
+
+  describe "library/2" do
+    setup do
+      TestFactory.create_card(%{arena_id: 111, name: "Llanowar Elves"})
+      TestFactory.create_card(%{arena_id: 222, name: "Duress"})
+      TestFactory.create_card(%{arena_id: 333, name: "Swamp"})
+      :ok
+    end
+
+    test "summaries carry the card identities of maindeck and sideboard" do
+      TestFactory.create_deck(%{
+        mtga_deck_id: "lib-green",
+        current_name: "Mono Green",
+        current_main_deck: %{"cards" => [%{"arena_id" => 111, "count" => 4}]},
+        current_sideboard: %{"cards" => [%{"arena_id" => 222, "count" => 2}]}
+      })
+
+      %{decks: [summary]} = Decks.library(nil, only_played: false)
+
+      assert summary.card_names == MapSet.new(["llanowar elves", "duress"])
+    end
+
+    test "the card index counts the decks playing each identity, with display names" do
+      TestFactory.create_deck(%{
+        mtga_deck_id: "lib-green-2",
+        current_main_deck: %{"cards" => [%{"arena_id" => 111, "count" => 4}]},
+        current_sideboard: %{"cards" => []}
+      })
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "lib-black-2",
+        current_main_deck: %{
+          "cards" => [%{"arena_id" => 222, "count" => 4}, %{"arena_id" => 333, "count" => 20}]
+        },
+        current_sideboard: %{"cards" => [%{"arena_id" => 111, "count" => 1}]}
+      })
+
+      %{card_index: index} = Decks.library(nil, only_played: false)
+
+      assert Enum.find(index, &(&1.key == "llanowar elves")) ==
+               %{key: "llanowar elves", name: "Llanowar Elves", count: 2}
+
+      assert Enum.find(index, &(&1.key == "swamp")) ==
+               %{key: "swamp", name: "Swamp", count: 1}
+    end
+
+    test "the card index covers only the decks the filters return" do
+      archived =
+        TestFactory.create_deck(%{
+          mtga_deck_id: "lib-archived",
+          current_main_deck: %{"cards" => [%{"arena_id" => 222, "count" => 4}]},
+          current_sideboard: %{"cards" => []}
+        })
+
+      Decks.update_deck_flags!(archived, %{archived: true})
+
+      TestFactory.create_deck(%{
+        mtga_deck_id: "lib-active",
+        current_main_deck: %{"cards" => [%{"arena_id" => 111, "count" => 4}]},
+        current_sideboard: %{"cards" => []}
+      })
+
+      %{decks: decks, card_index: index} = Decks.library(nil, only_played: false, status: :active)
+
+      assert Enum.map(decks, & &1.deck.mtga_deck_id) == ["lib-active"]
+      assert Enum.map(index, & &1.key) == ["llanowar elves"]
+    end
+
+    test "cards with no cards_cards row are skipped" do
+      TestFactory.create_deck(%{
+        mtga_deck_id: "lib-unknown",
+        current_main_deck: %{"cards" => [%{"arena_id" => 999_999, "count" => 4}]},
+        current_sideboard: %{"cards" => []}
+      })
+
+      %{decks: [summary], card_index: index} = Decks.library(nil, only_played: false)
+
+      assert summary.card_names == MapSet.new()
+      assert index == []
+    end
+  end
 end

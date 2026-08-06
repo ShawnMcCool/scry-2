@@ -19,10 +19,15 @@ defmodule Scry2Web.DecksLive do
   alias Scry2.Decks.MtgaClipboardFormat
   alias Scry2.Topics
   alias Scry2Web.CardImages
+  alias Scry2Web.Components.DeckExport
   alias Scry2Web.DeckRendering
   alias Scry2Web.DeckRendering.ViewSpec
   alias Scry2Web.DecksAnalysisHelpers
   alias Scry2Web.DecksHelpers
+  alias Scry2Web.DeckSearch
+
+  import Scry2Web.Components.DeckExport
+  import Scry2Web.Components.DeckSearchBar, only: [deck_search_bar: 1]
 
   @impl true
   def mount(_params, _session, socket) do
@@ -34,6 +39,8 @@ defmodule Scry2Web.DecksLive do
        deck: nil,
        status_filter: :active,
        starred_only: false,
+       search: DeckSearch.new(),
+       card_index: [],
        export_text: "",
        performance: nil,
        versions: [],
@@ -84,8 +91,8 @@ defmodule Scry2Web.DecksLive do
     status_filter = parse_status_filter(params["status"])
     starred_only = params["starred"] == "1"
 
-    decks =
-      Decks.list_decks_with_stats(player_id,
+    library =
+      Decks.library(player_id,
         only_played: false,
         status: status_filter,
         starred_only: starred_only
@@ -93,7 +100,8 @@ defmodule Scry2Web.DecksLive do
 
     {:noreply,
      assign(socket,
-       decks: decks,
+       decks: library.decks,
+       card_index: library.card_index,
        deck: nil,
        status_filter: status_filter,
        starred_only: starred_only
@@ -133,22 +141,40 @@ defmodule Scry2Web.DecksLive do
     {:noreply, socket}
   end
 
+  # The search bar's six events all reduce to one `DeckSearch` call — Escape
+  # handling and suggestion ranking live there, not per page.
+  def handle_event("search_name", params, socket) do
+    candidates = DecksHelpers.name_candidates(socket.assigns.decks)
+    {:noreply, update_search(socket, &DeckSearch.name_typed(&1, params, candidates))}
+  end
+
+  def handle_event("pick_name", params, socket) do
+    {:noreply, update_search(socket, &DeckSearch.name_picked(&1, params))}
+  end
+
+  def handle_event("search_card", params, socket) do
+    candidates = DeckSearch.card_candidates(socket.assigns.card_index)
+    {:noreply, update_search(socket, &DeckSearch.card_typed(&1, params, candidates))}
+  end
+
+  def handle_event("pick_card", params, socket) do
+    {:noreply, update_search(socket, &DeckSearch.card_picked(&1, params))}
+  end
+
+  def handle_event("clear_card", _params, socket) do
+    {:noreply, update_search(socket, &DeckSearch.card_cleared/1)}
+  end
+
+  def handle_event("dismiss_suggestions", _params, socket) do
+    {:noreply, update_search(socket, &DeckSearch.dismissed/1)}
+  end
+
   def handle_event("copied", _params, socket) do
-    {:noreply,
-     put_flash(
-       socket,
-       :info,
-       "Copied to clipboard — switch to MTGA → click Import in the Deck Builder."
-     )}
+    {:noreply, put_flash(socket, :info, DeckExport.copied_flash())}
   end
 
   def handle_event("copy_failed", _params, socket) do
-    {:noreply,
-     put_flash(
-       socket,
-       :error,
-       "Couldn't access the clipboard. Use the View text section to copy manually."
-     )}
+    {:noreply, put_flash(socket, :error, DeckExport.copy_failed_flash())}
   end
 
   @impl true
@@ -162,14 +188,18 @@ defmodule Scry2Web.DecksLive do
     socket =
       case socket.assigns.deck do
         nil ->
-          decks =
-            Decks.list_decks_with_stats(player_id,
+          library =
+            Decks.library(player_id,
               only_played: false,
               status: socket.assigns.status_filter,
               starred_only: socket.assigns.starred_only
             )
 
-          assign(socket, decks: decks, reload_timer: nil)
+          assign(socket,
+            decks: library.decks,
+            card_index: library.card_index,
+            reload_timer: nil
+          )
 
         deck ->
           fresh_deck = Decks.get_deck(deck.mtga_deck_id)
@@ -249,6 +279,14 @@ defmodule Scry2Web.DecksLive do
         </div>
       </div>
 
+      <.deck_search_bar
+        :if={@decks != []}
+        id="deck-search"
+        search={@search}
+        name_placeholder="Search by name or archetype…"
+        class="mb-5"
+      />
+
       <.empty_state :if={@decks == [] and @status_filter == :active and not @starred_only}>
         No active decks. Create or edit a deck in MTGA — it will appear here as soon as Scry2 sees the next DeckUpdated event.
       </.empty_state>
@@ -265,7 +303,13 @@ defmodule Scry2Web.DecksLive do
         No decks found. Decks appear here after MTGA emits a DeckUpdated event.
       </.empty_state>
 
-      <div :if={@decks != []} class="overflow-x-auto">
+      <% visible_decks = visible(@decks, @search) %>
+
+      <.empty_state :if={@decks != [] and visible_decks == []} icon="hero-magnifying-glass">
+        No decks match this search.
+      </.empty_state>
+
+      <div :if={visible_decks != []} class="overflow-x-auto">
         <table class="table table-zebra w-full">
           <thead>
             <tr class="text-xs text-base-content/60 uppercase">
@@ -279,7 +323,7 @@ defmodule Scry2Web.DecksLive do
           </thead>
           <tbody>
             <tr
-              :for={entry <- @decks}
+              :for={entry <- visible_decks}
               class="cursor-pointer hover:bg-base-content/5 transition-colors"
               phx-click={JS.navigate(~p"/decks/#{entry.deck.mtga_deck_id}")}
             >
@@ -302,7 +346,7 @@ defmodule Scry2Web.DecksLive do
               </td>
               <td>
                 <div class="flex items-center gap-2">
-                  <span class="font-medium">{entry.deck.current_name || "Unnamed Deck"}</span>
+                  <span class="font-medium">{DecksHelpers.display_name(entry.deck)}</span>
                   <span :if={entry.deck.archetype_name} class="badge badge-sm badge-ghost">
                     {entry.deck.archetype_name}
                   </span>
@@ -413,19 +457,11 @@ defmodule Scry2Web.DecksLive do
             />
             {if(@deck.archived, do: "Unarchive", else: "Archive")}
           </button>
-          <.export_button export_text={@export_text} disabled={@export_text == ""} />
+          <.copy_to_mtga_button export_text={@export_text} disabled={@export_text == ""} />
         </div>
       </div>
 
-      <details :if={@export_text != ""} class="mb-4 group">
-        <summary class="cursor-pointer text-xs text-base-content/55 inline-flex items-center gap-1 list-none">
-          <.icon
-            name="hero-chevron-right"
-            class="size-3 transition-transform group-open:rotate-90"
-          /> View MTGA import text
-        </summary>
-        <pre class="mt-2 p-3 bg-base-200 rounded text-xs font-mono whitespace-pre-wrap break-all"><%= @export_text %></pre>
-      </details>
+      <.mtga_import_text export_text={@export_text} class="mb-4" />
 
       <%!-- Tabs --%>
       <div role="tablist" class="tabs tabs-border mb-6">
@@ -490,25 +526,6 @@ defmodule Scry2Web.DecksLive do
   end
 
   # ── Private components ───────────────────────────────────────────────
-
-  attr :export_text, :string, required: true
-  attr :disabled, :boolean, default: false
-
-  defp export_button(assigns) do
-    ~H"""
-    <button
-      type="button"
-      class="btn btn-primary btn-sm"
-      phx-hook="ClipboardCopy"
-      id="copy-to-mtga-button"
-      data-copy-text={@export_text}
-      disabled={@disabled}
-      title="Copy this deck in MTGA's import format. Switch to MTGA and click Import in the Deck Builder."
-    >
-      <.icon name="hero-clipboard-document" class="size-4" /> Copy to MTGA
-    </button>
-    """
-  end
 
   attr :stats, :map, required: true
 
@@ -1678,6 +1695,16 @@ defmodule Scry2Web.DecksLive do
       {n, _} when n > 0 -> n
       _ -> 1
     end
+  end
+
+  defp visible(decks, search) do
+    Enum.filter(decks, fn summary ->
+      DeckSearch.match?(search, DecksHelpers.search_facets(summary))
+    end)
+  end
+
+  defp update_search(socket, fun) do
+    assign(socket, search: fun.(socket.assigns.search))
   end
 
   defp parse_status_filter("archived"), do: :archived

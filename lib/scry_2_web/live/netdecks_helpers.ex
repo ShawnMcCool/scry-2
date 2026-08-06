@@ -2,6 +2,7 @@ defmodule Scry2Web.NetdecksHelpers do
   @moduledoc "Pure helpers for `Scry2Web.NetdecksLive` (ADR-013)."
 
   alias Scry2Web.DeckRendering
+  alias Scry2Web.DeckSearch
 
   @order [common: "c", uncommon: "u", rare: "r", mythic: "m"]
   @rarity_order [:common, :uncommon, :rare, :mythic]
@@ -209,82 +210,33 @@ defmodule Scry2Web.NetdecksHelpers do
   def unresolved_count(deck), do: length(unresolved_entries(deck))
 
   @doc """
-  True if the archetype group's label, or any variant's deck name or
-  source-provided archetype, contains `query` (case-insensitive). Empty
-  query matches all.
+  A group's search facets (`Scry2Web.DeckSearch`): it answers to its
+  archetype label and to every variant's deck name and source-provided
+  archetype, and it plays the cards its variants play.
   """
-  @spec match_search?(map(), String.t()) :: boolean()
-  def match_search?(_group, ""), do: true
-
-  def match_search?(group, query) do
-    query_lower = String.downcase(query)
-
-    contains?(group.label, query_lower) or
-      Enum.any?(group.variants, fn variant ->
-        contains?(variant.deck.name, query_lower) or
-          contains?(variant.deck.archetype, query_lower)
+  @spec search_facets(map()) :: DeckSearch.Facets.t()
+  def search_facets(group) do
+    variant_names =
+      Enum.flat_map(group.variants, fn variant ->
+        [variant.deck.name, variant.deck.archetype]
       end)
-  end
 
-  defp contains?(nil, _query_lower), do: false
-  defp contains?(value, query_lower), do: String.contains?(String.downcase(value), query_lower)
-
-  @doc """
-  Ranks suggestion candidates (`%{key, label, count}`) for a query:
-  case-insensitive substring match, prefix matches first, then count
-  descending, then label. Blank query yields nothing. Capped at `limit`.
-  One ranking rule for both the archetype and card search bars.
-  """
-  @spec rank_suggestions([map()], String.t(), pos_integer()) :: [map()]
-  def rank_suggestions(candidates, query, limit \\ 8) do
-    normalized = query |> String.trim() |> String.downcase()
-
-    if normalized == "" do
-      []
-    else
-      candidates
-      |> Enum.filter(fn candidate ->
-        String.contains?(String.downcase(candidate.label), normalized)
-      end)
-      |> Enum.sort_by(fn candidate ->
-        label = String.downcase(candidate.label)
-        {if(String.starts_with?(label, normalized), do: 0, else: 1), -candidate.count, label}
-      end)
-      |> Enum.take(limit)
-    end
-  end
-
-  @doc "True when no card is selected, or the group plays the selected card."
-  @spec match_card?(map(), nil | %{key: String.t(), label: String.t()}) :: boolean()
-  def match_card?(_group, nil), do: true
-  def match_card?(group, %{key: key}), do: MapSet.member?(group.card_names, key)
-
-  @doc "AND of the text query (`match_search?/2`) and the selected card (`match_card?/2`)."
-  @spec visible?(map(), %{query: String.t(), card: nil | %{key: String.t(), label: String.t()}}) ::
-          boolean()
-  def visible?(group, filter) do
-    match_search?(group, filter.query) and match_card?(group, filter.card)
+    %DeckSearch.Facets{names: [group.label | variant_names], card_keys: group.card_names}
   end
 
   @doc """
   Archetype suggestion candidates: one per distinct group label across all
-  tiers; count sums the decklists under that label.
+  tiers; count sums the decklists under that label. Corpus-specific — the
+  suggestion list stays at archetype granularity even though the query also
+  matches individual deck names.
   """
-  @spec archetype_candidates(map()) :: [map()]
+  @spec archetype_candidates(map()) :: [DeckSearch.candidate()]
   def archetype_candidates(catalog) do
     [catalog.buildable, catalog.craftable, catalog.short, catalog.incomplete]
     |> Enum.concat()
     |> Enum.group_by(& &1.label)
     |> Enum.map(fn {label, groups} ->
       %{key: label, label: label, count: groups |> Enum.map(& &1.list_count) |> Enum.sum()}
-    end)
-  end
-
-  @doc "Card suggestion candidates from the catalog's corpus-wide card index."
-  @spec card_candidates(map()) :: [map()]
-  def card_candidates(catalog) do
-    Enum.map(catalog.card_index, fn entry ->
-      %{key: entry.key, label: entry.name, count: entry.group_count}
     end)
   end
 

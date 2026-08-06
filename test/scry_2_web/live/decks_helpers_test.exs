@@ -3,6 +3,8 @@ defmodule Scry2Web.DecksHelpersTest do
 
   doctest Scry2Web.DecksHelpers
 
+  alias Scry2.Decks.DeckSummary
+  alias Scry2Web.DeckSearch
   alias Scry2Web.DecksHelpers
 
   describe "deck_colors/1" do
@@ -324,5 +326,69 @@ defmodule Scry2Web.DecksHelpersTest do
     test "returns nil for missing data" do
       assert DecksHelpers.match_score(%{}) == nil
     end
+  end
+
+  describe "search_facets/1" do
+    test "a deck answers to its name and its archetype, and plays its cards" do
+      summary = %DeckSummary{
+        deck: %{current_name: "Dimir Midrange", archetype_name: "Dimir Control"},
+        bo1: nil,
+        bo3: nil,
+        card_names: MapSet.new(["duress"])
+      }
+
+      facets = DecksHelpers.search_facets(summary)
+
+      assert facets.names == ["Dimir Midrange", "Dimir Control"]
+      assert facets.card_keys == MapSet.new(["duress"])
+
+      assert DeckSearch.match?(%DeckSearch{query: "midrange"}, facets)
+      assert DeckSearch.match?(%DeckSearch{query: "control"}, facets)
+      refute DeckSearch.match?(%DeckSearch{query: "izzet"}, facets)
+    end
+
+    test "an unnamed deck answers to the name the library shows for it" do
+      summary = %DeckSummary{
+        deck: %{current_name: nil, archetype_name: nil},
+        bo1: nil,
+        bo3: nil,
+        card_names: MapSet.new()
+      }
+
+      # Nils are allowed in facet names — `DeckSearch.match?/2` ignores them,
+      # so pages never have to strip them.
+      assert DecksHelpers.search_facets(summary).names == ["Unnamed Deck", nil]
+    end
+  end
+
+  describe "name_candidates/1" do
+    test "dedupes names by card identity and counts the decks answering to each" do
+      summaries = [
+        summary("Dimir Midrange", "Dimir Control"),
+        summary("dimir midrange", nil),
+        summary("Mono Red", "Mono Red Aggro")
+      ]
+
+      assert DecksHelpers.name_candidates(summaries) == [
+               %{key: "dimir control", label: "Dimir Control", count: 1},
+               %{key: "dimir midrange", label: "Dimir Midrange", count: 2},
+               %{key: "mono red", label: "Mono Red", count: 1},
+               %{key: "mono red aggro", label: "Mono Red Aggro", count: 1}
+             ]
+    end
+
+    test "counts a deck once when its name and archetype are the same" do
+      assert DecksHelpers.name_candidates([summary("Dimir Midrange", "Dimir Midrange")]) ==
+               [%{key: "dimir midrange", label: "Dimir Midrange", count: 1}]
+    end
+  end
+
+  defp summary(name, archetype) do
+    %DeckSummary{
+      deck: %{current_name: name, archetype_name: archetype},
+      bo1: nil,
+      bo3: nil,
+      card_names: MapSet.new()
+    }
   end
 end
