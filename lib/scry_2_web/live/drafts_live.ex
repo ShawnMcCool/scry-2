@@ -279,8 +279,8 @@ defmodule Scry2Web.DraftsLive do
                 <span class={["font-semibold tabular-nums", DraftsHelpers.record_color_class(draft)]}>
                   {DraftsHelpers.win_loss_label(draft.wins, draft.losses)}
                 </span>
-                <span :if={DraftsHelpers.trophy?(draft)} class="ml-1 badge badge-xs badge-warning">
-                  Trophy
+                <span :if={DraftsHelpers.trophy?(draft)} title="Trophy — 7 wins" class="ml-1">
+                  <.icon name="hero-trophy-micro" class="w-3.5 h-3.5 text-warning" />
                 </span>
               </td>
               <td class={[
@@ -324,7 +324,9 @@ defmodule Scry2Web.DraftsLive do
           ]}>
             {DraftsHelpers.win_loss_label(@draft.wins, @draft.losses)}
           </span>
-          <span :if={DraftsHelpers.trophy?(@draft)} class="badge badge-warning">Trophy</span>
+          <span :if={DraftsHelpers.trophy?(@draft)} title="Trophy — 7 wins">
+            <.icon name="hero-trophy-solid" class="w-5 h-5 text-warning" />
+          </span>
           <span class="text-sm text-base-content/50">{format_datetime(@draft.started_at)}</span>
           <span
             :if={is_nil(@draft.completed_at)}
