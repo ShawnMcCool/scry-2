@@ -11,6 +11,19 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Search your deck library.** The **Decks** page now has the same search the **Netdecks** page has: type a deck name or archetype to narrow the list, or start typing a card name to see only the decks that play it — maindeck or sideboard. Card suggestions show how many of your decks play each card, and the chosen card sits in a tag you can clear with one click. Search narrows whatever you have selected, so Active, Archived, All and Starred keep working as they did.
+
+### Improved
+
+- Netdeck pages now have a **View MTGA import text** section under the copy button, so you can read a decklist or copy it by hand without relying on the clipboard.
+- A trophy draft is marked with a trophy icon instead of a text badge on the **Drafts** page.
+
+### Fixed
+
+- Fixed the netdeck clipboard error telling you to select text that wasn't on the page. If a copy fails, the message now names the section that actually holds the decklist.
+
 ## v0.54.0 — 2026-08-01
 
 ### Fixed
