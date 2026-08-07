@@ -93,6 +93,9 @@ defmodule Scry2.Cards.MtgaClientData do
 
       count = import_rows(conn, statement, 0)
 
+      # cards_mtga_cards was just rewritten, so its cached on-disk size is stale.
+      Cards.invalidate_storage_stats()
+
       Log.info(:importer, "MTGA client data: imported #{count} cards")
       {:ok, %{imported: count}}
     after

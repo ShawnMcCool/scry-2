@@ -87,6 +87,9 @@ defmodule Scry2.Cards.Synthesize do
       synthesise_rotated(scryfall_rows, mtga_by_arena_id, set_ids_by_code, display_art_by_name)
 
     total = mtga_count + rotated_count
+
+    # cards_cards was just rewritten, so its cached on-disk size is stale.
+    Cards.invalidate_storage_stats()
     Topics.broadcast(Topics.cards_updates(), {:cards_refreshed, total})
 
     Log.info(

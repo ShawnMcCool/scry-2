@@ -4,6 +4,58 @@ defmodule Scry2.CardsTest do
   alias Scry2.Cards
   alias Scry2.TestFactory
 
+  describe "data_source_stats/0 storage caching" do
+    setup do
+      # The cache is process-independent (`:persistent_term`), so make sure a
+      # previous test's value can't be observed here, and don't leak ours.
+      Cards.invalidate_storage_stats()
+      on_exit(&Cards.invalidate_storage_stats/0)
+      :ok
+    end
+
+    test "returns every documented key" do
+      stats = Cards.data_source_stats()
+
+      for key <- [
+            :synthesized_count,
+            :synthesized_bytes,
+            :scryfall_count,
+            :scryfall_bytes,
+            :mtga_client_count,
+            :mtga_client_bytes,
+            :db_bytes,
+            :image_count,
+            :image_bytes
+          ] do
+        assert is_integer(Map.fetch!(stats, key)), "expected #{key} to be an integer"
+      end
+    end
+
+    # Summing `dbstat` walks every page of the table — ~48 ms for the real
+    # cards_scryfall_cards, on both the dead render and the connected mount.
+    # The figures only move when an import runs, so they are cached and the
+    # importers invalidate. Both halves of that contract are asserted here.
+    test "byte sizes are cached until invalidated, then recomputed" do
+      before_bytes = Cards.data_source_stats().scryfall_bytes
+
+      for index <- 1..300 do
+        TestFactory.create_scryfall_card(%{
+          arena_id: 800_000 + index,
+          name: "Cache Probe #{index}",
+          oracle_text: String.duplicate("padding to force new pages ", 20)
+        })
+      end
+
+      assert Cards.data_source_stats().scryfall_bytes == before_bytes,
+             "expected the cached byte size to be reused after the table grew"
+
+      Cards.invalidate_storage_stats()
+
+      assert Cards.data_source_stats().scryfall_bytes > before_bytes,
+             "expected invalidation to force a recompute reflecting the new rows"
+    end
+  end
+
   describe "upsert_set!/1" do
     test "creates a new set" do
       set = Cards.upsert_set!(%{code: "LCI", name: "Lost Caverns of Ixalan"})

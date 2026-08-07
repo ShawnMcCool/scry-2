@@ -48,6 +48,10 @@ defmodule Scry2.Cards.Scryfall do
       with {:ok, download_uri} <- fetch_download_uri(url, req_options),
            {:ok, ^tmp_path} <- download_to_temp(download_uri, req_options, tmp_path) do
         stats = process_stream(tmp_path)
+
+        # cards_scryfall_cards was just rewritten, so its cached on-disk size
+        # is stale.
+        Cards.invalidate_storage_stats()
         Topics.broadcast(Topics.cards_updates(), {:scryfall_imported, stats.persisted})
 
         Log.info(:importer, "scryfall: persisted #{stats.persisted}")

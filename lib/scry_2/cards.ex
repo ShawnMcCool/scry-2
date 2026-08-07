@@ -50,6 +50,10 @@ defmodule Scry2.Cards do
   @scryfall_refresh_key "cards_scryfall_last_refresh_at"
   @mtga_client_refresh_key "cards_mtga_client_last_refresh_at"
 
+  # Card tables whose on-disk size /cards reports. See `table_size_bytes/1`.
+  @sized_tables ["cards_cards", "cards_scryfall_cards", "cards_mtga_cards"]
+  @storage_bytes_key {__MODULE__, :table_size_bytes}
+
   # ── Booster collation ───────────────────────────────────────────────────
 
   @doc """
@@ -172,6 +176,9 @@ defmodule Scry2.Cards do
   Keys: `:synthesized_count`, `:synthesized_bytes`, `:scryfall_count`,
         `:scryfall_bytes`, `:mtga_client_count`, `:mtga_client_bytes`,
         `:db_bytes`, `:image_count`, `:image_bytes`.
+
+  The `*_bytes` figures come from a cache; see `table_size_bytes/1`. Counts
+  and file sizes are read live.
   """
   def data_source_stats do
     image_cache_dir = Scry2.Config.get(:image_cache_dir)
@@ -188,6 +195,19 @@ defmodule Scry2.Cards do
       image_count: image_count,
       image_bytes: image_bytes
     }
+  end
+
+  @doc """
+  Drops the cached card-table byte sizes so the next `data_source_stats/0`
+  recomputes them.
+
+  Call this after any import that rewrites a card table. It is the only way
+  the figures change — the tables are written by imports and nothing else.
+  """
+  @spec invalidate_storage_stats() :: :ok
+  def invalidate_storage_stats do
+    :persistent_term.erase(@storage_bytes_key)
+    :ok
   end
 
   @doc """
@@ -274,7 +294,33 @@ defmodule Scry2.Cards do
     end
   end
 
+  # `dbstat` is a virtual table: summing `pgsize` walks every page of the named
+  # table. For `cards_scryfall_cards` (227 MB) that is ~48 ms, and
+  # `data_source_stats/0` calls it three times on both the dead render and the
+  # connected mount — ~200 ms per /cards load for three numbers that only move
+  # when an import runs.
+  #
+  # So the sums are cached, and the imports that rewrite these tables call
+  # `invalidate_storage_stats/0`. `:persistent_term` fits: read-heavy, written
+  # a couple of times a day (its writes trigger a global GC scan, which is why
+  # it would be the wrong choice for anything written per-request).
   defp table_size_bytes(table_name) do
+    Map.get_lazy(cached_table_sizes(), table_name, fn -> read_table_size_bytes(table_name) end)
+  end
+
+  defp cached_table_sizes do
+    case :persistent_term.get(@storage_bytes_key, nil) do
+      nil ->
+        sizes = Map.new(@sized_tables, &{&1, read_table_size_bytes(&1)})
+        :persistent_term.put(@storage_bytes_key, sizes)
+        sizes
+
+      sizes ->
+        sizes
+    end
+  end
+
+  defp read_table_size_bytes(table_name) do
     result =
       Repo.query!("SELECT COALESCE(SUM(pgsize), 0) FROM dbstat WHERE name = ?", [table_name])
 
