@@ -108,6 +108,13 @@ journalctl --user -u scry-2 -f         # logs
 iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1   # REPL (Ctrl+\ to detach)
 ```
 
+**Never pipe or redirect stdin into `--remsh`.** With `--remsh` the IEx shell runs *on the remote node*, so when stdin hits EOF it halts `scry-2` itself — the service goes down, not just your shell. It is only safe interactively. To run code against the live instance non-interactively, connect as a separate node and use `:rpc`, which cannot take the target down:
+
+```bash
+elixir --name probe@127.0.0.1 --cookie "$(cat ~/.erlang.cookie)" probe.exs
+# inside probe.exs: Node.connect(:"scry_2_dev@127.0.0.1"); :rpc.call(target, Mod, :fun, args)
+```
+
 A bare `mix phx.server` (no `PORT`/`DATABASE_PATH`) still uses the throwaway dev defaults — port 4444 + `scry_2_dev.db` — for isolated development.
 
 **After changing code the running instance must pick up — migrations, deps, config, or supervised processes — restart `scry-2` and run `scripts/healthcheck`.** The probe (`GET /health`) returns 200 only when the database is reachable and every migration is applied, so "up but migrations pending" is caught rather than read as healthy. (Because this instance runs `MIX_ENV=dev`, the in-app self-updater is inert — update via `git pull` + restart.)
