@@ -2,6 +2,7 @@ defmodule Scry2.MtgaLogIngestionTest do
   use Scry2.DataCase, async: true
 
   alias Scry2.MtgaLogIngestion
+  alias Scry2.Repo
   alias Scry2.TestFactory
   alias Scry2.Topics
 
@@ -204,6 +205,45 @@ defmodule Scry2.MtgaLogIngestionTest do
 
     test "is a no-op for an empty list" do
       assert :ok = MtgaLogIngestion.bulk_mark_processed!([])
+    end
+  end
+
+  describe "count_errors/0" do
+    @tag capture_log: true
+    test "counts only events that errored and were not dismissed" do
+      clean = TestFactory.create_event_record()
+      errored = TestFactory.create_event_record()
+      dismissed = TestFactory.create_event_record()
+
+      :ok = MtgaLogIngestion.mark_error!(errored.id, %ArgumentError{message: "bad payload"})
+      :ok = MtgaLogIngestion.mark_error!(dismissed.id, %ArgumentError{message: "bad payload"})
+      :ok = MtgaLogIngestion.dismiss_error!(dismissed.id)
+
+      # `clean` has no processing_error; `dismissed` has one but is dismissed.
+      # Both predicate branches matter — the partial index backing this query
+      # is defined over exactly this WHERE clause.
+      assert MtgaLogIngestion.count_errors() == 1
+
+      :ok = MtgaLogIngestion.dismiss_error!(errored.id)
+      assert MtgaLogIngestion.count_errors() == 0
+
+      refute is_nil(MtgaLogIngestion.get_event!(clean.id))
+    end
+
+    # `mtga_logs_events` is the largest table in the database. Written the
+    # idiomatic way (`not is_nil(x)`), Ecto emits `NOT (x IS NULL)`, which
+    # SQLite does not match against the partial index's `x IS NOT NULL` — the
+    # query silently degrades to a full scan (~200 ms per call). Assert on the
+    # plan so that regression is caught here rather than in a page load.
+    test "unresolved_errors_query/0 is served by the partial index, not a table scan" do
+      {sql, params} =
+        Ecto.Adapters.SQL.to_sql(:all, Repo, MtgaLogIngestion.unresolved_errors_query())
+
+      %{rows: rows} = Repo.query!("EXPLAIN QUERY PLAN " <> sql, params)
+      plan = rows |> List.flatten() |> Enum.map_join(" ", &to_string/1)
+
+      assert plan =~ "mtga_logs_events_unresolved_errors_index",
+             "expected the partial index to be used, got plan: #{plan}"
     end
   end
 

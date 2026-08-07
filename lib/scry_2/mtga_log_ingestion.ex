@@ -331,20 +331,37 @@ defmodule Scry2.MtgaLogIngestion do
     |> Repo.aggregate(:count)
   end
 
+  @doc """
+  Events that failed processing and have not been dismissed.
+
+  The one definition of "unresolved error". `mtga_logs_events` is the largest
+  table in the database (~950k rows / 824 MB), so every caller here must be
+  served by `mtga_logs_events_unresolved_errors_index` — a partial index over
+  exactly this predicate.
+
+  The `fragment/1` is load-bearing. SQLite decides whether a partial index
+  applies by *syntactic* implication, and Ecto renders `not is_nil(x)` as
+  `NOT (x IS NULL)`, which it does not recognise as implying the index's
+  `x IS NOT NULL`. Written the idiomatic way this query silently falls back to
+  a full table scan (~200 ms per call, on a page that calls it twice). If you
+  change this predicate, change the migration's `where:` to match it verbatim.
+  """
+  def unresolved_errors_query do
+    from(r in EventRecord,
+      where: fragment("? IS NOT NULL", r.processing_error) and is_nil(r.dismissed_at)
+    )
+  end
+
   @doc "Returns the count of non-dismissed events with a non-nil processing_error."
   def count_errors do
-    from(r in EventRecord,
-      where: not is_nil(r.processing_error) and is_nil(r.dismissed_at)
-    )
-    |> Repo.aggregate(:count)
+    unresolved_errors_query() |> Repo.aggregate(:count)
   end
 
   @doc "Returns recent non-dismissed errored events, newest first."
   def list_errors(opts \\ []) do
     limit_count = Keyword.get(opts, :limit, 20)
 
-    from(r in EventRecord,
-      where: not is_nil(r.processing_error) and is_nil(r.dismissed_at),
+    from(r in unresolved_errors_query(),
       order_by: [desc: r.id],
       limit: ^limit_count
     )
@@ -457,9 +474,7 @@ defmodule Scry2.MtgaLogIngestion do
 
   @doc "Permanently dismisses all current processing errors."
   def dismiss_all_errors! do
-    from(r in EventRecord,
-      where: not is_nil(r.processing_error) and is_nil(r.dismissed_at)
-    )
+    unresolved_errors_query()
     |> Repo.update_all(set: [dismissed_at: DateTime.utc_now(:second)])
 
     :ok
