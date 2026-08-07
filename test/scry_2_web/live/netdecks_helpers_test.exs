@@ -4,12 +4,6 @@ defmodule Scry2Web.NetdecksHelpersTest do
   alias Scry2Web.DeckSearch
   alias Scry2Web.NetdecksHelpers
 
-  test "format_cost renders non-zero rarities compactly" do
-    assert NetdecksHelpers.format_cost(%{common: 0, uncommon: 2, rare: 1, mythic: 0}) == "2u 1r"
-    assert NetdecksHelpers.format_cost(%{common: 0, uncommon: 0, rare: 0, mythic: 0}) == "—"
-    assert NetdecksHelpers.format_cost(%{common: 1, uncommon: 0, rare: 0, mythic: 3}) == "1c 3m"
-  end
-
   test "format_owned_pct renders a whole-percent string" do
     assert NetdecksHelpers.format_owned_pct(1.0) == "100%"
     assert NetdecksHelpers.format_owned_pct(0.82) == "82%"
@@ -69,11 +63,6 @@ defmodule Scry2Web.NetdecksHelpersTest do
              []
   end
 
-  test "wildcard_balances orders the pool common → mythic" do
-    assert NetdecksHelpers.wildcard_balances(%{common: 214, uncommon: 180, rare: 12, mythic: 3}) ==
-             [{:common, 214}, {:uncommon, 180}, {:rare, 12}, {:mythic, 3}]
-  end
-
   test "cheapest_variant is the variant with the lowest wildcard sort key" do
     cheap = %{result: %{sort_key: {0, 1, 0, 0, 1}}}
     dear = %{result: %{sort_key: {2, 4, 0, 0, 6}}}
@@ -88,51 +77,6 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.medal_tone("8th") == :neutral
     assert NetdecksHelpers.medal_tone("14th of 42") == :neutral
     assert NetdecksHelpers.medal_tone(nil) == nil
-  end
-
-  describe "ownership_count_entry/1" do
-    # The count entry feeding the deck view's gutter rail / badge pill
-    # (UIDR-015): counts never cover the card; ownership carries the tone.
-
-    defp entry_for(rows, card), do: NetdecksHelpers.ownership_count_entry(rows).(card)
-
-    test "fully-owned single copies render nothing — blank means one" do
-      rows = %{1 => %{name: "Opt", free?: false, needed: 1, owned: 1, missing: 0}}
-
-      assert entry_for(rows, %{arena_id: 1, count: 1}) == nil
-    end
-
-    test "fully-owned piles render the count in the owned tone" do
-      rows = %{1 => %{name: "Opt", free?: false, needed: 4, owned: 4, missing: 0}}
-
-      assert %{label: "4", class: "text-success"} = entry_for(rows, %{arena_id: 1, count: 4})
-    end
-
-    test "missing cards always show their count, warning-toned, with the ownership tooltip" do
-      rows = %{1 => %{name: "Namor", free?: false, needed: 1, owned: 0, missing: 1}}
-
-      assert %{label: "1", class: "text-warning", title: "Namor — 0/1 owned"} =
-               entry_for(rows, %{arena_id: 1, count: 1})
-    end
-
-    test "partially-owned piles show the count in the partial tone" do
-      rows = %{1 => %{name: "Bolt", free?: false, needed: 4, owned: 2, missing: 2}}
-
-      assert %{label: "4", class: "text-base-content/60"} =
-               entry_for(rows, %{arena_id: 1, count: 4})
-    end
-
-    test "basic lands render dimmed with the basic-land tooltip" do
-      rows = %{1 => %{name: "Mountain", free?: true, needed: 18, owned: 0, missing: 0}}
-
-      assert %{label: "18", class: "text-base-content/30", title: "Mountain — basic land"} =
-               entry_for(rows, %{arena_id: 1, count: 18})
-    end
-
-    test "cards without an ownership row fall back to the plain count" do
-      assert entry_for(%{}, %{arena_id: 9, count: 1}) == nil
-      assert %{label: "3", class: nil, title: nil} = entry_for(%{}, %{arena_id: 9, count: 3})
-    end
   end
 
   describe "sole_variant_deck_id/1" do
@@ -254,81 +198,6 @@ defmodule Scry2Web.NetdecksHelpersTest do
     assert NetdecksHelpers.status_meta(:craftable).ordering == "ordered by cheapest build"
     assert NetdecksHelpers.status_meta(:short).ordering == "ordered by cheapest build"
     assert NetdecksHelpers.status_meta(:incomplete).definition =~ "missing from MTGA"
-  end
-
-  test "cost_pips returns non-zero rarities as {rarity, count} in common→mythic order" do
-    assert NetdecksHelpers.cost_pips(%{common: 0, uncommon: 2, rare: 1, mythic: 0}) ==
-             [{:uncommon, 2}, {:rare, 1}]
-
-    assert NetdecksHelpers.cost_pips(%{common: 0, uncommon: 0, rare: 0, mythic: 0}) == []
-  end
-
-  test "any_cost? reflects whether a cost map has non-zero rarities" do
-    assert NetdecksHelpers.any_cost?(%{common: 0, uncommon: 0, rare: 1, mythic: 0})
-    refute NetdecksHelpers.any_cost?(%{common: 0, uncommon: 0, rare: 0, mythic: 0})
-  end
-
-  test "rows_by_arena_id indexes main and sideboard rows by arena_id" do
-    main_rows = [
-      %{arena_id: 1, name: "Lightning Bolt", needed: 4, owned: 4, missing: 0, free?: false},
-      %{arena_id: 2, name: "Mountain", needed: 20, owned: 0, missing: 0, free?: true}
-    ]
-
-    side_rows = [
-      %{arena_id: 3, name: "Negate", needed: 2, owned: 0, missing: 2, free?: false}
-    ]
-
-    lookup = NetdecksHelpers.rows_by_arena_id(main_rows, side_rows)
-
-    assert map_size(lookup) == 3
-    assert lookup[1].name == "Lightning Bolt"
-    assert lookup[3].missing == 2
-  end
-
-  test "rows_by_arena_id skips rows without a resolved arena_id" do
-    main_rows = [%{arena_id: nil, name: "Unknown", needed: 1, owned: 0, missing: 1, free?: false}]
-
-    assert NetdecksHelpers.rows_by_arena_id(main_rows, []) == %{}
-  end
-
-  test "missing_row_class tints rows with unowned copies" do
-    assert NetdecksHelpers.missing_row_class(%{missing: 2}) == "text-warning"
-    assert NetdecksHelpers.missing_row_class(%{missing: 0}) == nil
-    assert NetdecksHelpers.missing_row_class(nil) == nil
-  end
-
-  test "ownership_title describes a row's ownership for tooltips" do
-    assert NetdecksHelpers.ownership_title(nil) == nil
-
-    assert NetdecksHelpers.ownership_title(%{
-             name: "Mountain",
-             free?: true,
-             owned: 0,
-             needed: 20
-           }) == "Mountain — basic land"
-
-    assert NetdecksHelpers.ownership_title(%{
-             name: "Lightning Bolt",
-             free?: false,
-             owned: 2,
-             needed: 4
-           }) == "Lightning Bolt — 2/4 owned"
-  end
-
-  test "card_row_state classifies a decklist row" do
-    assert NetdecksHelpers.card_row_state(%{free?: true, owned: 0, missing: 0}) == :free
-    assert NetdecksHelpers.card_row_state(%{free?: false, owned: 4, missing: 0}) == :owned
-    assert NetdecksHelpers.card_row_state(%{free?: false, owned: 0, missing: 4}) == :missing
-    assert NetdecksHelpers.card_row_state(%{free?: false, owned: 2, missing: 2}) == :partial
-  end
-
-  test "card_row_tone maps each state to a colour class" do
-    for state <- [:free, :owned, :missing, :partial] do
-      assert is_binary(NetdecksHelpers.card_row_tone(state))
-    end
-
-    assert NetdecksHelpers.card_row_tone(:owned) == "text-success"
-    assert NetdecksHelpers.card_row_tone(:missing) == "text-warning"
   end
 
   test "unresolved_count counts unresolved references on a deck" do

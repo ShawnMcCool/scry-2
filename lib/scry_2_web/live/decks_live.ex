@@ -5,15 +5,18 @@ defmodule Scry2Web.DecksLive do
   List view (`:index`) shows all constructed decks that have been played,
   with BO1 and BO3 win/loss records. Detail view (`:show`) has three tabs:
 
-  - **Overview** — performance stats at top, composition (mana curve, card
-    list, card image stacks) below, current sideboard as a horizontal splay
-    at the bottom.
+  - **Overview** — performance stats at top, then the composition (card
+    list and image stacks) beside a craft sidebar that scores the current
+    list against the collection: wildcard cost, wildcard balances, and the
+    mana curve. Cards the player is short of are dimmed and toned
+    throughout — see `Scry2Web.DeckRendering.Ownership`.
   - **Matches** — chronological match history for this deck.
   - **Changes** — timeline of DeckUpdated domain events showing how the deck
     has evolved over time.
   """
   use Scry2Web, :live_view
 
+  alias Scry2.Buildability
   alias Scry2.Cards
   alias Scry2.Decks
   alias Scry2.Decks.MtgaClipboardFormat
@@ -21,6 +24,7 @@ defmodule Scry2Web.DecksLive do
   alias Scry2Web.CardImages
   alias Scry2Web.Components.DeckExport
   alias Scry2Web.DeckRendering
+  alias Scry2Web.DeckRendering.Ownership
   alias Scry2Web.DeckRendering.ViewSpec
   alias Scry2Web.DecksAnalysisHelpers
   alias Scry2Web.DecksHelpers
@@ -31,7 +35,12 @@ defmodule Scry2Web.DecksLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    if connected?(socket), do: Topics.subscribe(Topics.decks_updates())
+    if connected?(socket) do
+      Topics.subscribe(Topics.decks_updates())
+      # A fresh collection read changes what the overview says the deck
+      # costs to finish, so re-score on it the way NetdecksLive does.
+      Topics.subscribe(Topics.collection_snapshots())
+    end
 
     {:ok,
      assign(socket,
@@ -52,6 +61,7 @@ defmodule Scry2Web.DecksLive do
        format_counts: %{bo1: 0, bo3: 0},
        active_format: nil,
        cards_by_arena_id: %{},
+       assessment: nil,
        cached_card_ids: CardImages.empty(),
        active_tab: :overview,
        mulligan_analytics: nil,
@@ -179,6 +189,10 @@ defmodule Scry2Web.DecksLive do
 
   @impl true
   def handle_info({:deck_updated, _}, socket) do
+    {:noreply, schedule_reload(socket)}
+  end
+
+  def handle_info({:snapshot_saved, _snapshot}, socket) do
     {:noreply, schedule_reload(socket)}
   end
 
@@ -493,6 +507,7 @@ defmodule Scry2Web.DecksLive do
             cached_ids={@cached_card_ids}
             winrate_period={@winrate_period}
             prefs={@deck_view_prefs}
+            assessment={@assessment}
           />
         <% :matches -> %>
           <.matches_tab
@@ -574,6 +589,7 @@ defmodule Scry2Web.DecksLive do
   attr :cached_ids, :any, required: true
   attr :winrate_period, :string, required: true
   attr :prefs, DeckRendering.CompositionPrefs, required: true
+  attr :assessment, :any, required: true
 
   defp overview_tab(assigns) do
     assigns =
@@ -588,22 +604,49 @@ defmodule Scry2Web.DecksLive do
       <%!-- Performance --%>
       <.performance_section performance={@performance} winrate_period={@winrate_period} />
 
-      <.standard_composition
-        :if={!@composition_empty?}
-        id="deck-overview"
-        main_deck={@deck.current_main_deck}
-        sideboard={@deck.current_sideboard}
-        cards_by_arena_id={@cards_by_arena_id}
-        cached_ids={@cached_ids}
-        prefs={@prefs}
-      />
-
       <.empty_state :if={@composition_empty?}>
         No composition data available. A DeckUpdated event is needed to show the current list.
       </.empty_state>
+
+      <%!-- Craft sidebar beside the list, matching the netdeck detail page:
+            what finishing this deck costs, next to the deck itself. --%>
+      <div :if={!@composition_empty?} class="grid lg:grid-cols-[20rem_1fr] gap-6">
+        <div class="space-y-4 self-start">
+          <div class="bg-base-200 rounded-xl p-5 space-y-4">
+            <Ownership.craft_summary assessment={@assessment} subject="this deck" />
+            <Ownership.unknown_collection_note :if={!collection_known?(@assessment)} />
+          </div>
+
+          <.mana_curve_chart
+            id="deck-overview-curve"
+            cards={@deck.current_main_deck}
+            cards_by_arena_id={@cards_by_arena_id}
+            class="w-full rounded-xl bg-base-200"
+          />
+        </div>
+
+        <%!-- min-w-0 keeps the 1fr track from growing to the splay's intrinsic
+             width — without it the DeckView hook and the track feed each other
+             and the layout blows out. --%>
+        <div class="min-w-0">
+          <.standard_composition
+            id="deck-overview"
+            main_deck={@deck.current_main_deck}
+            sideboard={@deck.current_sideboard}
+            cards_by_arena_id={@cards_by_arena_id}
+            cached_ids={@cached_ids}
+            show_curve={false}
+            prefs={@prefs}
+            ownership={@assessment}
+          />
+        </div>
+      </div>
     </div>
     """
   end
+
+  defp collection_known?(%{collection_known?: known?}), do: known?
+  defp collection_known?(_assessment), do: false
 
   attr :performance, :map, required: true
   attr :winrate_period, :string, required: true
@@ -1655,6 +1698,7 @@ defmodule Scry2Web.DecksLive do
     socket
     |> CardImages.request(arena_ids)
     |> assign(
+      assessment: overview_assessment(tab, deck, export_cards),
       deck: deck,
       performance: performance,
       match_count: match_count,
@@ -1675,6 +1719,16 @@ defmodule Scry2Web.DecksLive do
       export_text: export_text
     )
   end
+
+  # The current list weighed against the collection — only the Overview
+  # tab shows it, and only it pays for the collection read.
+  # `export_cards` is the card reference already widened to cover every
+  # card in the list, so no extra lookup is needed.
+  defp overview_assessment(:overview, deck, export_cards) do
+    Buildability.assess(deck.current_main_deck, deck.current_sideboard, export_cards)
+  end
+
+  defp overview_assessment(_tab, _deck, _export_cards), do: nil
 
   defp bar_height(_count, 0), do: 2
   defp bar_height(count, max_val), do: max(2, round(count / max_val * 24))

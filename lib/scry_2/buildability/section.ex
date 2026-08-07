@@ -1,4 +1,4 @@
-defmodule Scry2.NetDecking.Buildability.Section do
+defmodule Scry2.Buildability.Section do
   @moduledoc "Buildability result for one section (maindeck or sideboard)."
   @enforce_keys [:wildcard_cost, :shortfall, :owned_pct, :total_copies, :missing_copies]
   defstruct [:wildcard_cost, :shortfall, :owned_pct, :total_copies, :missing_copies]

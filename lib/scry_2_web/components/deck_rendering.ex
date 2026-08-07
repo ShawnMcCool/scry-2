@@ -45,14 +45,21 @@ defmodule Scry2Web.DeckRendering do
   `count_presentation/1` and UIDR-015.
 
   The optional `card_overlay` slot adds caller-specific annotation to
-  every card image (e.g. the netdeck ownership wash, draft pick rings).
-  It receives the resolved card, renders inside the card's
-  relatively-positioned wrapper, and never affects count presentation.
+  every card image (e.g. draft pick rings). It receives the resolved
+  card, renders inside the card's relatively-positioned wrapper, and
+  never affects count presentation.
 
   The optional `count_entry` function customizes how a card's count
   renders wherever the spec places it (gutter rail or badge pill):
   `resolved_card -> %{label, class, title} | nil` — nil hides the
   count. Omit it for the default presentation.
+
+  ## Ownership
+
+  `standard_composition/1` takes an `ownership` assessment and wires the
+  three hooks above from it, so every deck page shows what the player is
+  missing the same way. The layer itself lives in
+  `Scry2Web.DeckRendering.Ownership`.
   """
 
   use Phoenix.Component
@@ -62,6 +69,7 @@ defmodule Scry2Web.DeckRendering do
 
   alias Scry2.Cards.ImageCache
   alias Scry2Web.DeckRendering.CompositionPrefs
+  alias Scry2Web.DeckRendering.Ownership
   alias Scry2Web.DeckRendering.ViewSpec
 
   # ── Components ──────────────────────────────────────────────────────
@@ -176,17 +184,18 @@ defmodule Scry2Web.DeckRendering do
     default: true,
     doc: "Set false when the page places `mana_curve_chart/1` elsewhere."
 
-  attr :card_class, :any,
+  attr :ownership, :any,
     default: nil,
-    doc: "Forwarded to the text view — see `deck_view/1`."
+    doc: """
+    A `Scry2.Buildability.Assessment` (or nil). Tints, dims and tones
+    every card by what the player owns — see
+    `Scry2Web.DeckRendering.Ownership`. Ignored when the assessment says
+    the collection is unknown.
+    """
 
   attr :prefs, CompositionPrefs,
     default: %CompositionPrefs{},
     doc: "The global composition preference — see `Scry2Web.DeckViewScope`."
-
-  attr :count_entry, :any,
-    default: nil,
-    doc: "Forwarded to every image view — see `deck_view/1`."
 
   attr :main_label, :string,
     default: "main deck",
@@ -204,15 +213,18 @@ defmodule Scry2Web.DeckRendering do
     wash, since these are never fixable by crafting.
     """
 
-  slot :card_overlay, doc: "Forwarded to every image view — see `deck_view/1`."
-
   def standard_composition(assigns) do
+    ownership_rows = Ownership.rows_index(assigns.ownership)
+
     assigns =
       assign(assigns,
         main_total: card_count(assigns.main_deck),
         side_total: card_count(assigns.sideboard),
         section_order: CompositionPrefs.section_order(assigns.prefs),
-        show_swap: assigns.prefs.display_mode == :both
+        show_swap: assigns.prefs.display_mode == :both,
+        ownership_rows: ownership_rows,
+        card_class: Ownership.card_class(ownership_rows),
+        count_entry: Ownership.count_entry(ownership_rows)
       )
 
     ~H"""
@@ -258,7 +270,7 @@ defmodule Scry2Web.DeckRendering do
                 side_total={@side_total}
                 cards_by_arena_id={@cards_by_arena_id}
                 cached_ids={@cached_ids}
-                card_overlay={@card_overlay}
+                ownership_rows={@ownership_rows}
                 count_entry={@count_entry}
                 unresolved={@unresolved}
               />
@@ -322,7 +334,7 @@ defmodule Scry2Web.DeckRendering do
   attr :side_total, :integer, required: true
   attr :cards_by_arena_id, :map, required: true
   attr :cached_ids, :any, required: true
-  attr :card_overlay, :list, required: true
+  attr :ownership_rows, :map, required: true
   attr :count_entry, :any, required: true
   attr :unresolved, :list, required: true
 
@@ -354,8 +366,8 @@ defmodule Scry2Web.DeckRendering do
           cached_ids={@cached_ids}
           count_entry={@count_entry}
         >
-          <:card_overlay :let={card} :if={@card_overlay != []}>
-            {render_slot(@card_overlay, card)}
+          <:card_overlay :let={card} :if={@ownership_rows != %{}}>
+            <Ownership.wash row={Map.get(@ownership_rows, card.arena_id)} />
           </:card_overlay>
         </.deck_view>
         <.deck_view
@@ -368,8 +380,8 @@ defmodule Scry2Web.DeckRendering do
           count_entry={@count_entry}
           title={"sideboard (#{@side_total})"}
         >
-          <:card_overlay :let={card} :if={@card_overlay != []}>
-            {render_slot(@card_overlay, card)}
+          <:card_overlay :let={card} :if={@ownership_rows != %{}}>
+            <Ownership.wash row={Map.get(@ownership_rows, card.arena_id)} />
           </:card_overlay>
         </.deck_view>
       </.deck_view_group>

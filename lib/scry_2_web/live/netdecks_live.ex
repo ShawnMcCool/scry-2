@@ -24,12 +24,15 @@ defmodule Scry2Web.NetdecksLive do
   alias Scry2Web.CardImages
   alias Scry2Web.Components.DeckExport
   alias Scry2Web.DeckRendering
+  alias Scry2Web.DeckRendering.Ownership
   alias Scry2Web.DeckSearch
   alias Scry2Web.NetdecksHelpers
+  alias Scry2Web.WildcardCost
 
   import Scry2Web.Components.DeckExport
   import Scry2Web.Components.DeckSearchBar, only: [deck_search_bar: 1]
   import Scry2Web.Components.VariantMatrix, only: [variant_matrix: 1]
+  import Scry2Web.WildcardCost, only: [cost_pips: 1]
 
   @empty_catalog %{
     buildable: [],
@@ -982,7 +985,7 @@ defmodule Scry2Web.NetdecksLive do
     <span class={["inline-flex items-center gap-3", @class]} title="Your current wildcard pool">
       <span class="text-[10px] uppercase tracking-widest text-base-content/40">wildcards</span>
       <span
-        :for={{rarity, count} <- NetdecksHelpers.wildcard_balances(@wildcards)}
+        :for={{rarity, count} <- WildcardCost.balances(@wildcards)}
         class="inline-flex items-center gap-1 text-xs text-base-content/70"
       >
         <.wildcard_icon rarity={to_string(rarity)} class="size-3.5" />
@@ -1059,13 +1062,8 @@ defmodule Scry2Web.NetdecksLive do
         show_curve={false}
         prefs={@prefs}
         main_label="core"
-        card_class={missing_card_tint(@extras.core_rows_by_arena_id)}
-        count_entry={NetdecksHelpers.ownership_count_entry(@extras.core_rows_by_arena_id)}
-      >
-        <:card_overlay :let={card}>
-          <.ownership_wash row={Map.get(@extras.core_rows_by_arena_id, card.arena_id)} />
-        </:card_overlay>
-      </.standard_composition>
+        ownership={@extras.core_assessment}
+      />
     </div>
 
     <section :for={status <- NetdecksHelpers.status_order()} class="mb-2">
@@ -1185,7 +1183,7 @@ defmodule Scry2Web.NetdecksLive do
       </div>
 
       <span
-        :if={NetdecksHelpers.any_cost?(@variant.result.maindeck.wildcard_cost)}
+        :if={WildcardCost.any?(@variant.result.maindeck.wildcard_cost)}
         class="ml-auto lg:ml-0 shrink-0"
       >
         <.cost_pips cost={@variant.result.maindeck.wildcard_cost} size="size-3.5" />
@@ -1204,12 +1202,11 @@ defmodule Scry2Web.NetdecksLive do
   defp detail(assigns) do
     assigns =
       assign(assigns,
-        meta: NetdecksHelpers.status_meta(assigns.detail.result.status),
+        assessment: assigns.detail.assessment,
+        meta: NetdecksHelpers.status_meta(assigns.detail.assessment.result.status),
         unresolved: NetdecksHelpers.unresolved_count(assigns.detail.deck),
         unresolved_entries: NetdecksHelpers.unresolved_entries(assigns.detail.deck),
-        provenance_line: NetdecksHelpers.detail_provenance(assigns.detail),
-        rows_by_arena_id:
-          NetdecksHelpers.rows_by_arena_id(assigns.detail.main_rows, assigns.detail.side_rows)
+        provenance_line: NetdecksHelpers.detail_provenance(assigns.detail)
       )
 
     ~H"""
@@ -1259,77 +1256,8 @@ defmodule Scry2Web.NetdecksLive do
       <%!-- Craft summary + mana curve --%>
       <div class="space-y-4 self-start">
         <div class="bg-base-200 rounded-xl p-5 space-y-4">
-          <%!-- Craft cost is split maindeck vs. sideboard, both always shown
-                when present. Buildability status (short/craftable) keys off the
-                maindeck only, so the sideboard is purely informational. --%>
-          <div>
-            <h3 class="text-xs font-semibold text-base-content/40 uppercase tracking-widest mb-2">
-              Maindeck — to craft
-            </h3>
-            <div
-              :if={NetdecksHelpers.any_cost?(@detail.result.maindeck.wildcard_cost)}
-              class="flex items-center gap-3"
-            >
-              <.cost_pips cost={@detail.result.maindeck.wildcard_cost} size="size-5" />
-            </div>
-            <p
-              :if={!NetdecksHelpers.any_cost?(@detail.result.maindeck.wildcard_cost)}
-              class="text-sm text-success"
-            >
-              You own the full maindeck.
-            </p>
-            <p
-              :if={@detail.result.status == :short}
-              class="text-xs text-warning mt-2 flex items-center gap-2"
-            >
-              Still need <.cost_pips cost={@detail.result.maindeck.shortfall} />
-              beyond your wildcards.
-            </p>
-            <p :if={@detail.result.status == :craftable} class="text-xs text-info mt-2">
-              You have the wildcards to craft this now.
-            </p>
-            <p
-              :if={@detail.result.status == :incomplete}
-              class="text-xs text-warning mt-2 flex items-center gap-2"
-            >
-              <.icon name="hero-exclamation-triangle" class="size-3.5 shrink-0" />
-              {@unresolved} card(s) below aren't on MTGA — this decklist can't be fully built,
-              no matter your wildcards.
-            </p>
-          </div>
-
-          <div :if={@detail.result.sideboard.total_copies > 0}>
-            <h3 class="text-xs font-semibold text-base-content/40 uppercase tracking-widest mb-2">
-              Sideboard — to craft
-            </h3>
-            <.cost_pips
-              :if={NetdecksHelpers.any_cost?(@detail.result.sideboard.wildcard_cost)}
-              cost={@detail.result.sideboard.wildcard_cost}
-            />
-            <p
-              :if={!NetdecksHelpers.any_cost?(@detail.result.sideboard.wildcard_cost)}
-              class="text-sm text-success"
-            >
-              You own the full sideboard.
-            </p>
-          </div>
-
-          <div>
-            <h3 class="text-xs font-semibold text-base-content/40 uppercase tracking-widest mb-2">
-              Your wildcards
-            </h3>
-            <div class="flex items-center gap-3">
-              <span
-                :for={rarity <- ~w(common uncommon rare mythic)}
-                class="inline-flex items-center gap-1 text-sm text-base-content/70"
-              >
-                <.wildcard_icon rarity={rarity} class="size-4" />
-                <span class="tabular-nums">
-                  {Map.get(@detail.wildcards, String.to_existing_atom(rarity))}
-                </span>
-              </span>
-            </div>
-          </div>
+          <Ownership.craft_summary assessment={@assessment} subject="this decklist" />
+          <Ownership.unknown_collection_note :if={!@assessment.collection_known?} />
 
           <.copy_to_mtga_button export_text={@detail.export_text} class="w-full" />
           <.mtga_import_text export_text={@detail.export_text} class="mt-3" />
@@ -1367,14 +1295,9 @@ defmodule Scry2Web.NetdecksLive do
           cached_ids={@cached_ids}
           show_curve={false}
           prefs={@prefs}
-          card_class={missing_card_tint(@rows_by_arena_id)}
-          count_entry={NetdecksHelpers.ownership_count_entry(@rows_by_arena_id)}
+          ownership={@assessment}
           unresolved={@unresolved_entries}
-        >
-          <:card_overlay :let={card}>
-            <.ownership_wash row={Map.get(@rows_by_arena_id, card.arena_id)} />
-          </:card_overlay>
-        </.standard_composition>
+        />
 
         <.variants_list
           :if={length(@detail.variants) > 1}
@@ -1435,52 +1358,6 @@ defmodule Scry2Web.NetdecksLive do
         </.link>
       </div>
     </div>
-    """
-  end
-
-  # Row-tint function for the text deck listing: cards with unowned
-  # copies render in warning tone.
-  defp missing_card_tint(rows_by_arena_id) do
-    fn card ->
-      NetdecksHelpers.missing_row_class(Map.get(rows_by_arena_id, card.arena_id))
-    end
-  end
-
-  # Ownership annotation rendered over every card in the standard deck
-  # composition: unowned copies dim the card. Counts render in the deck
-  # view's gutter rail / splay badge via `ownership_count_entry` (UIDR-015)
-  # so nothing printed on the card is ever covered.
-  attr :row, :map, default: nil
-
-  defp ownership_wash(assigns) do
-    ~H"""
-    <div
-      :if={@row && @row.missing > 0}
-      class="absolute inset-0 rounded-sm bg-base-100/60 pointer-events-none"
-      title={NetdecksHelpers.ownership_title(@row)}
-    />
-    """
-  end
-
-  # ── Shared pip component ─────────────────────────────────────────────────
-
-  attr :cost, :map, required: true
-  attr :size, :string, default: "size-4"
-
-  defp cost_pips(assigns) do
-    assigns = assign(assigns, :pips, NetdecksHelpers.cost_pips(assigns.cost))
-
-    ~H"""
-    <span class="inline-flex items-center gap-2">
-      <span :if={@pips == []} class="text-xs text-base-content/40">—</span>
-      <span
-        :for={{rarity, count} <- @pips}
-        class="inline-flex items-center gap-0.5 text-xs text-base-content/70"
-      >
-        <span class="tabular-nums">{count}</span>
-        <.wildcard_icon rarity={to_string(rarity)} class={@size} />
-      </span>
-    </span>
     """
   end
 
@@ -1549,7 +1426,7 @@ defmodule Scry2Web.NetdecksLive do
   # not domain), mirroring DecksLive. Kept out of mount per the Phoenix Iron Law.
   defp assign_detail(socket, detail) do
     arena_ids =
-      (detail.main_rows ++ detail.side_rows)
+      (detail.assessment.main_rows ++ detail.assessment.side_rows)
       |> Enum.map(& &1.arena_id)
       |> Enum.uniq()
 

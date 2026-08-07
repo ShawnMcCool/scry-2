@@ -1,7 +1,7 @@
-defmodule Scry2.NetDecking.OwnedIdentityTest do
+defmodule Scry2.Buildability.OwnedIdentityTest do
   use ExUnit.Case, async: true
 
-  alias Scry2.NetDecking.OwnedIdentity
+  alias Scry2.Buildability.OwnedIdentity
 
   test "owned count for a deck card sums every printing the player owns" do
     # Deck references Roaring Furnace as arena_id 92326 (one printing).

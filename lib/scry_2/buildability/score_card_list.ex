@@ -1,16 +1,24 @@
-defmodule Scry2.NetDecking.Buildability do
+defmodule Scry2.Buildability.ScoreCardList do
   @moduledoc """
-  Pure, modular buildability engine. Each rule is an independently testable
-  function; `score/1` orchestrates them. No DB, no PubSub.
+  Stage 2 of the buildability pipeline: the pure rules. Each rule is an
+  independently testable function; `score/4` orchestrates them. No DB,
+  no PubSub.
 
   Pipeline (per section):
     card_shortage → rarity_buckets → affordability → (classify_status / sort_key)
 
-  The "free/infinite" policy (basic lands today) is injected as
-  `free_arena_ids`, never hardcoded into a rule.
+  `card_rows/3` is the same shortage arithmetic at per-card granularity —
+  the row the UI renders beside each card.
+
+  The "free/infinite" policy (basic lands today) is injected via the
+  position's `free_arena_ids`, never hardcoded into a rule.
   """
 
-  alias Scry2.NetDecking.Buildability.{Inputs, Result, Section}
+  alias Scry2.Buildability.CardRow
+  alias Scry2.Buildability.CollectionPosition
+  alias Scry2.Buildability.Result
+  alias Scry2.Buildability.Section
+  alias Scry2.DeckList
 
   @basic_land_names ~w(Plains Island Swamp Mountain Forest Wastes)
   @rarities [:common, :uncommon, :rare, :mythic]
@@ -83,19 +91,22 @@ defmodule Scry2.NetDecking.Buildability do
   end
 
   @doc """
-  Scores a deck against a collection. Status and sort_key derive from the
-  maindeck. A maindeck with any card missing from MTGA (`unresolved_count > 0`)
-  is always `:incomplete` — no wildcard count fixes a card the client
-  doesn't have, so this gates ahead of `classify_status/2` rather than
-  being folded into its cost/shortfall math.
+  Scores a maindeck/sideboard pair against the player's position. Both
+  accept any card-list snapshot `Scry2.DeckList` understands.
+
+  Status and sort_key derive from the maindeck. A maindeck with any card
+  missing from MTGA (`unresolved_count > 0`) is always `:incomplete` — no
+  wildcard count fixes a card the client doesn't have, so this gates
+  ahead of `classify_status/2` rather than being folded into its
+  cost/shortfall math.
   """
-  @spec score(Inputs.t()) :: Result.t()
-  def score(%Inputs{} = inputs) do
-    main = section(inputs.main_cards, inputs)
-    side = section(inputs.side_cards, inputs)
+  @spec score(CollectionPosition.t(), term(), term(), non_neg_integer()) :: Result.t()
+  def score(%CollectionPosition{} = position, main_deck, sideboard, unresolved_count) do
+    main = section(DeckList.entries(main_deck), position)
+    side = section(DeckList.entries(sideboard), position)
 
     status =
-      if inputs.unresolved_count > 0 do
+      if unresolved_count > 0 do
         :incomplete
       else
         classify_status(main.wildcard_cost, main.shortfall)
@@ -109,10 +120,43 @@ defmodule Scry2.NetDecking.Buildability do
     }
   end
 
-  defp section(cards, %Inputs{} = inputs) do
-    shortages = card_shortage(cards, inputs.owned, inputs.free_arena_ids)
-    cost = rarity_buckets(shortages, inputs.rarities)
-    shortfall = affordability(cost, inputs.wildcards)
+  @doc """
+  Per-card ownership rows for one card list — what the UI annotates each
+  card with. `cards_by_arena_id` supplies the display name.
+  """
+  @spec card_rows(CollectionPosition.t(), term(), %{optional(integer()) => map()}) :: [
+          CardRow.t()
+        ]
+  def card_rows(%CollectionPosition{} = position, card_list, cards_by_arena_id) do
+    card_list
+    |> DeckList.entries()
+    |> Enum.map(fn %{arena_id: arena_id, count: needed} ->
+      free? = MapSet.member?(position.free_arena_ids, arena_id)
+      owned = Map.get(position.owned, arena_id, 0)
+
+      %CardRow{
+        arena_id: arena_id,
+        name: display_name(cards_by_arena_id, arena_id),
+        rarity: Map.get(position.rarities, arena_id),
+        needed: needed,
+        owned: owned,
+        missing: if(free?, do: 0, else: max(0, needed - owned)),
+        free?: free?
+      }
+    end)
+  end
+
+  defp display_name(cards_by_arena_id, arena_id) do
+    case Map.get(cards_by_arena_id, arena_id) do
+      %{name: name} when is_binary(name) -> name
+      _other -> "#" <> Integer.to_string(arena_id)
+    end
+  end
+
+  defp section(cards, %CollectionPosition{} = position) do
+    shortages = card_shortage(cards, position.owned, position.free_arena_ids)
+    cost = rarity_buckets(shortages, position.rarities)
+    shortfall = affordability(cost, position.wildcards)
 
     total_copies = Enum.reduce(cards, 0, fn %{count: count}, acc -> acc + count end)
     missing_copies = Enum.reduce(shortages, 0, fn {_id, m}, acc -> acc + m end)

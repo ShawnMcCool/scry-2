@@ -3,39 +3,35 @@ defmodule Scry2.NetDecking do
   Public facade for the NetDecking context — a catalog of external reference
   decks scored against the user's collection.
 
-  Owns: `netdecking_decks`. Consumes `Cards` (identity/rarity), `Collection`
-  (owned counts + wildcards), and `Scry2.Decks.MtgaClipboardParser`/`...Format`
-  (clipboard text) through their public APIs only.
+  Owns: `netdecking_decks`. Consumes `Cards` (identity/rarity),
+  `Scry2.Buildability` (scoring against the collection), and
+  `Scry2.Decks.MtgaClipboardParser`/`...Format` (clipboard text) through
+  their public APIs only.
 
   Buildability is computed at read time against the most recent collection
   snapshot (`catalog/1`). The corpus is small and the collection changes
-  often, so no projection is stored (see the design spec).
+  often, so no projection is stored (see the design spec). Each read takes
+  one `Scry2.Buildability.position/1` and scores every deck against it.
   """
   import Ecto.Query
 
+  alias Scry2.Buildability
   alias Scry2.Cards
-  alias Scry2.Collection
-  alias Scry2.Collection.Snapshot
   alias Scry2.Config
   alias Scry2.DeckList
   alias Scry2.Decks.MtgaClipboardFormat
-  alias Scry2.Economy
   alias Scry2.Metagame
   alias Scry2.NetDecking.ArchetypeCatalog
-  alias Scry2.NetDecking.Buildability
-  alias Scry2.NetDecking.Buildability.Inputs
   alias Scry2.NetDecking.Deck
   alias Scry2.NetDecking.DeckClusters
   alias Scry2.NetDecking.DeckQualities
   alias Scry2.NetDecking.IngestDecklist
-  alias Scry2.NetDecking.OwnedIdentity
   alias Scry2.NetDecking.Provenance
   alias Scry2.NetDecking.VariantMatrix
   alias Scry2.NetDecking.Sources.{LocalJsonSource, MtgoSource}
   alias Scry2.Repo
   alias Scry2.Settings
 
-  @empty_wildcards %{common: 0, uncommon: 0, rare: 0, mythic: 0}
   @cluster_signature_cards 4
   @default_sources [LocalJsonSource, MtgoSource]
   @auto_fetch_setting_prefix "netdecking.auto_fetch."
@@ -187,21 +183,16 @@ defmodule Scry2.NetDecking do
         }
   def catalog(format \\ "Standard") do
     decks = list_decks(format)
-    snapshot = Collection.current()
-    {raw_owned, wildcards} = collection_context(snapshot)
-
     cards_by_arena_id = cards_for(decks)
-    owned = owned_by_identity(raw_owned, cards_by_arena_id)
-    rarities = Map.new(cards_by_arena_id, fn {id, card} -> {id, card_rarity(card)} end)
-    free_ids = Buildability.default_free_ids(cards_by_arena_id)
+    position = Buildability.position(cards_by_arena_id)
     sets = sets_by_id()
 
     scored =
       Enum.map(decks, fn deck ->
         %{
           deck: deck,
-          result: score_deck(deck, owned, wildcards, rarities, free_ids),
-          signature_set: nonland_signature(deck, cards_by_arena_id, free_ids)
+          result: score_deck(position, deck),
+          signature_set: nonland_signature(deck, cards_by_arena_id, position.free_arena_ids)
         }
       end)
 
@@ -218,7 +209,7 @@ defmodule Scry2.NetDecking do
       craftable: decorate_groups(annotated.craftable, cards_by_arena_id, sets, groups_playing),
       short: decorate_groups(annotated.short, cards_by_arena_id, sets, groups_playing),
       incomplete: decorate_groups(annotated.incomplete, cards_by_arena_id, sets, groups_playing),
-      wildcards: wildcards,
+      wildcards: position.wildcards,
       card_index: card_index(annotated, cards_by_arena_id)
     }
     |> disambiguate_slugs()
@@ -251,51 +242,55 @@ defmodule Scry2.NetDecking do
   @doc """
   Display extras for one archetype group's detail screen (UIDR-017):
 
-      %{core, core_rows_by_arena_id, deltas_by_deck_id, craft_by_deck_id,
+      %{core, core_assessment, deltas_by_deck_id, craft_by_deck_id,
         cards_by_arena_id}
 
   `core` is the archetype's typical list — every card in at least half the
   group's member lists, at its modal copy count — as `[%{arena_id, count}]`.
-  `core_rows_by_arena_id` overlays the player's ownership onto the core
-  (same row shape as `deck_detail`). `deltas_by_deck_id` maps each variant
-  representative's deck id to its differences from the core
-  (`[%{arena_id, delta}]`, additions first). `craft_by_deck_id` maps each
-  variant's deck id to `%{arena_id => missing}` — the copies short of that
-  variant's list (`needed − owned`, free lands excluded), driving the chip
-  strip's craft pip. `cards_by_arena_id` is the card reference lookup for
-  rendering. Takes a group from `catalog/1`.
+  `core_assessment` scores that core against the collection, the same
+  `Scry2.Buildability.Assessment` `deck_detail/1` returns.
+  `deltas_by_deck_id` maps each variant representative's deck id to its
+  differences from the core (`[%{arena_id, delta}]`, additions first).
+  `craft_by_deck_id` maps each variant's deck id to `%{arena_id => missing}`
+  — the copies short of that variant's list (`needed − owned`, free lands
+  excluded), driving the chip strip's craft pip; empty for every deck when
+  there is no collection snapshot, since "missing" would then be a guess.
+  `cards_by_arena_id` is the card reference lookup for rendering. Takes a
+  group from `catalog/1`.
   """
   @core_presence_threshold 0.5
 
   @spec archetype_detail(map()) :: map()
   def archetype_detail(group) do
-    snapshot = Collection.current()
-    {raw_owned, _wildcards} = collection_context(snapshot)
-
     cards_by_arena_id = cards_for(group.member_decks)
-    owned = owned_by_identity(raw_owned, cards_by_arena_id)
-    rarities = Map.new(cards_by_arena_id, fn {id, card} -> {id, card_rarity(card)} end)
-    free_ids = Buildability.default_free_ids(cards_by_arena_id)
+    position = Buildability.position(cards_by_arena_id)
 
     member_entries = Enum.map(group.member_decks, &DeckList.entries(&1.main_deck))
     core = DeckQualities.archetype_core(member_entries, @core_presence_threshold)
-    core_rows = card_rows(%{"cards" => core}, cards_by_arena_id, owned, rarities, free_ids)
 
     %{
       core: core,
-      core_rows_by_arena_id: Map.new(core_rows, fn row -> {row.arena_id, row} end),
+      core_assessment:
+        Buildability.assess(%{"cards" => core}, nil, cards_by_arena_id, position: position),
       deltas_by_deck_id:
         Map.new(group.variants, fn variant ->
           {variant.deck.id,
            DeckQualities.core_deltas(DeckList.entries(variant.deck.main_deck), core)}
         end),
-      craft_by_deck_id:
-        Map.new(group.variants, fn variant ->
-          rows = card_rows(variant.deck.main_deck, cards_by_arena_id, owned, rarities, free_ids)
-          {variant.deck.id, Map.new(rows, fn row -> {row.arena_id, row.missing} end)}
-        end),
+      craft_by_deck_id: craft_by_deck_id(group.variants, position, cards_by_arena_id),
       cards_by_arena_id: cards_by_arena_id
     }
+  end
+
+  defp craft_by_deck_id(variants, %{collection_known?: false}, _cards) do
+    Map.new(variants, fn variant -> {variant.deck.id, %{}} end)
+  end
+
+  defp craft_by_deck_id(variants, position, cards_by_arena_id) do
+    Map.new(variants, fn variant ->
+      rows = Buildability.card_rows(position, variant.deck.main_deck, cards_by_arena_id)
+      {variant.deck.id, Map.new(rows, fn row -> {row.arena_id, row.missing} end)}
+    end)
   end
 
   @doc """
@@ -327,19 +322,10 @@ defmodule Scry2.NetDecking do
       |> offset(^((page - 1) * per_page))
       |> Repo.all()
 
-    snapshot = Collection.current()
-    {raw_owned, wildcards} = collection_context(snapshot)
-
     cards_by_arena_id = cards_for(page_decks)
-    owned = owned_by_identity(raw_owned, cards_by_arena_id)
-    rarities = Map.new(cards_by_arena_id, fn {id, card} -> {id, card_rarity(card)} end)
-    free_ids = Buildability.default_free_ids(cards_by_arena_id)
+    position = Buildability.position(cards_by_arena_id)
 
-    entries =
-      Enum.map(
-        page_decks,
-        &decorate_recent(&1, cards_by_arena_id, owned, wildcards, rarities, free_ids)
-      )
+    entries = Enum.map(page_decks, &decorate_recent(&1, cards_by_arena_id, position))
 
     %{entries: entries, total: total, total_pages: total_pages, page: page}
   end
@@ -356,10 +342,10 @@ defmodule Scry2.NetDecking do
   @doc """
   Detailed view model for a single deck, scored against the current snapshot.
 
-  Returns `%{deck, result, wildcards, main_rows, side_rows, export_text,
-  label, variants, matrix, cards_by_arena_id}` where each row is
-  `%{arena_id, name, rarity, needed, owned, missing, free?}`. `wildcards`
-  are the player's current owned balances; `export_text` is the MTGA
+  Returns `%{deck, assessment, export_text, label, variants, matrix,
+  cards_by_arena_id}`. `assessment` is the
+  `Scry2.Buildability.Assessment` — status, wildcard cost, per-card rows
+  and the player's wildcard balances; `export_text` is the MTGA
   clipboard-import string; `label` is the archetype label (matches the
   catalog tile); `variants` lists every deck in this deck's cluster —
   `%{deck, finish, record, wildcard_cost, total_cost}`, best finish first
@@ -370,18 +356,11 @@ defmodule Scry2.NetDecking do
   @spec deck_detail(Deck.t()) :: map()
   def deck_detail(%Deck{} = deck) do
     decks = list_decks()
-    snapshot = Collection.current()
-    {raw_owned, wildcards} = collection_context(snapshot)
 
     # The whole corpus, not just this deck: clustering (variants) needs every
     # deck's nonland signature, and scoring the variants needs their cards.
     cards_by_arena_id = cards_for(decks)
-    owned = owned_by_identity(raw_owned, cards_by_arena_id)
-
-    rarities =
-      Map.new(cards_by_arena_id, fn {arena_id, card} -> {arena_id, card_rarity(card)} end)
-
-    free_ids = Buildability.default_free_ids(cards_by_arena_id)
+    position = Buildability.position(cards_by_arena_id)
 
     entries = DeckList.entries(deck.main_deck)
     colors = DeckQualities.deck_color_identity(entries, cards_by_arena_id)
@@ -389,15 +368,15 @@ defmodule Scry2.NetDecking do
     signature =
       DeckQualities.signature_arena_ids(entries, cards_by_arena_id, @cluster_signature_cards)
 
-    cluster_variants =
-      variants(deck, decks, cards_by_arena_id, owned, wildcards, rarities, free_ids)
+    cluster_variants = variants(deck, decks, cards_by_arena_id, position)
 
     %{
       deck: deck,
-      result: score_deck(deck, owned, wildcards, rarities, free_ids),
-      wildcards: wildcards,
-      main_rows: card_rows(deck.main_deck, cards_by_arena_id, owned, rarities, free_ids),
-      side_rows: card_rows(deck.sideboard, cards_by_arena_id, owned, rarities, free_ids),
+      assessment:
+        Buildability.assess(deck.main_deck, deck.sideboard, cards_by_arena_id,
+          position: position,
+          unresolved_count: unresolved_count(deck)
+        ),
       export_text:
         MtgaClipboardFormat.format_card_lists(deck.main_deck, deck.sideboard, cards_by_arena_id),
       label:
@@ -554,14 +533,14 @@ defmodule Scry2.NetDecking do
   # A recent-view row: this deck's own archetype stamp (or its own synthetic
   # label), not its cluster's majority — cheap (no corpus-wide clustering
   # pass) and correct for a flat per-deck list (UIDR-018).
-  defp decorate_recent(deck, cards, owned, wildcards, rarities, free_ids) do
+  defp decorate_recent(deck, cards, position) do
     entries = DeckList.entries(deck.main_deck)
     colors = DeckQualities.deck_color_identity(entries, cards)
     signature = DeckQualities.signature_arena_ids(entries, cards, @cluster_signature_cards)
 
     %{
       deck: deck,
-      result: score_deck(deck, owned, wildcards, rarities, free_ids),
+      result: score_deck(position, deck),
       color_identity: colors,
       signature_arena_ids: signature,
       label: deck.archetype_name || synthetic_label(colors, signature, cards),
@@ -586,12 +565,16 @@ defmodule Scry2.NetDecking do
 
   # All decks in the same near-duplicate cluster as `deck` (itself included),
   # scored and ordered best finish first, wildcard cost as tie-break.
-  defp variants(deck, decks, cards, owned, wildcards, rarities, free_ids) do
+  defp variants(deck, decks, cards, position) do
     threshold = Config.get(:netdecking_cluster_threshold) || 0.7
 
     items =
       Enum.map(decks, fn corpus_deck ->
-        %{id: corpus_deck.id, set: nonland_signature(corpus_deck, cards, free_ids), weight: 0}
+        %{
+          id: corpus_deck.id,
+          set: nonland_signature(corpus_deck, cards, position.free_arena_ids),
+          weight: 0
+        }
       end)
 
     member_ids =
@@ -607,7 +590,7 @@ defmodule Scry2.NetDecking do
     |> Enum.map(&Map.get(decks_by_id, &1))
     |> Enum.reject(&is_nil/1)
     |> Enum.map(fn member_deck ->
-      result = score_deck(member_deck, owned, wildcards, rarities, free_ids)
+      result = score_deck(position, member_deck)
 
       %{
         deck: member_deck,
@@ -622,20 +605,12 @@ defmodule Scry2.NetDecking do
     end)
   end
 
-  defp score_deck(deck, owned, wildcards, rarities, free_ids) do
-    Buildability.score(%Inputs{
-      main_cards: DeckList.entries(deck.main_deck),
-      side_cards: DeckList.entries(deck.sideboard),
-      owned: owned,
-      wildcards: wildcards,
-      rarities: rarities,
-      free_arena_ids: free_ids,
-      unresolved_count: unresolved_count(deck)
-    })
+  defp score_deck(position, deck) do
+    Buildability.score(position, deck.main_deck, deck.sideboard, unresolved_count(deck))
   end
 
   # Maindeck references that never resolved to an arena_id (cards missing
-  # from the local MTGA database) — see Buildability.Inputs.unresolved_count.
+  # from the local MTGA database) — see `Scry2.Buildability.score/4`.
   defp unresolved_count(%{unresolved_cards: %{"cards" => cards}}) when is_list(cards),
     do: length(cards)
 
@@ -669,89 +644,6 @@ defmodule Scry2.NetDecking do
     |> Map.new(fn set -> {set.id, %{code: set.code, released_at: set.released_at}} end)
   end
 
-  defp card_rows(card_list, cards_by_arena_id, owned, rarities, free_ids) do
-    card_list
-    |> DeckList.entries()
-    |> Enum.map(fn %{arena_id: arena_id, count: needed} ->
-      free? = MapSet.member?(free_ids, arena_id)
-      owned_count = Map.get(owned, arena_id, 0)
-      missing = if free?, do: 0, else: max(0, needed - owned_count)
-
-      %{
-        arena_id: arena_id,
-        name: card_name(cards_by_arena_id, arena_id),
-        rarity: Map.get(rarities, arena_id),
-        needed: needed,
-        owned: owned_count,
-        missing: missing,
-        free?: free?
-      }
-    end)
-  end
-
-  defp card_name(cards_by_arena_id, arena_id) do
-    case Map.get(cards_by_arena_id, arena_id) do
-      %{name: name} when is_binary(name) -> name
-      _other -> "#" <> Integer.to_string(arena_id)
-    end
-  end
-
-  # Aggregates raw arena_id-keyed ownership across printings onto each deck
-  # card's representative arena_id (card-name identity). Collector-less web
-  # sources resolve to one printing; the player may own another. See
-  # `Scry2.NetDecking.OwnedIdentity`.
-  defp owned_by_identity(raw_owned, cards_by_arena_id) do
-    names = cards_by_arena_id |> Map.values() |> Enum.map(& &1.name) |> Enum.uniq()
-    printings = Cards.printings_by_name(names)
-    OwnedIdentity.owned_by_representative(cards_by_arena_id, raw_owned, printings)
-  end
-
-  defp collection_context(nil), do: {%{}, economy_wildcards()}
-
-  defp collection_context(%Snapshot{} = snapshot) do
-    owned = snapshot.cards_json |> Snapshot.decode_entries() |> Map.new()
-    {owned, snapshot_wildcards(snapshot)}
-  end
-
-  # The memory walker stamps all four wildcard balances; the fallback scanner
-  # stamps none. A balance-less snapshot means "the reader couldn't see
-  # wildcards", not "zero wildcards" — the log-derived economy inventory is
-  # then the best available source.
-  defp snapshot_wildcards(%Snapshot{} = snapshot) do
-    balances = [
-      snapshot.wildcards_common,
-      snapshot.wildcards_uncommon,
-      snapshot.wildcards_rare,
-      snapshot.wildcards_mythic
-    ]
-
-    if Enum.all?(balances, &is_nil/1) do
-      economy_wildcards()
-    else
-      %{
-        common: snapshot.wildcards_common || 0,
-        uncommon: snapshot.wildcards_uncommon || 0,
-        rare: snapshot.wildcards_rare || 0,
-        mythic: snapshot.wildcards_mythic || 0
-      }
-    end
-  end
-
-  defp economy_wildcards do
-    case Economy.latest_inventory() do
-      nil ->
-        @empty_wildcards
-
-      inventory ->
-        %{
-          common: inventory.wildcards_common || 0,
-          uncommon: inventory.wildcards_uncommon || 0,
-          rare: inventory.wildcards_rare || 0,
-          mythic: inventory.wildcards_mythic || 0
-        }
-    end
-  end
-
   defp cards_for(decks) do
     decks
     |> Enum.flat_map(fn deck ->
@@ -761,7 +653,4 @@ defmodule Scry2.NetDecking do
     |> Enum.uniq()
     |> Cards.list_by_arena_ids()
   end
-
-  defp card_rarity(%{rarity: rarity}) when is_binary(rarity), do: rarity
-  defp card_rarity(_), do: nil
 end

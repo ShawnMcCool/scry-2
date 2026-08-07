@@ -590,7 +590,7 @@ defmodule Scry2.Cards do
   omitted. Single batch query — never N+1. Used to aggregate collection
   ownership across printings: a card owned under any printing's `arena_id`
   counts toward any deck listing that card by name (see
-  `Scry2.NetDecking.OwnedIdentity`).
+  `Scry2.Buildability.OwnedIdentity`).
   """
   @spec printings_by_name([String.t()]) :: %{String.t() => [integer()]}
   def printings_by_name(names) when is_list(names) do

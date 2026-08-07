@@ -4,9 +4,6 @@ defmodule Scry2Web.NetdecksHelpers do
   alias Scry2Web.DeckRendering
   alias Scry2Web.DeckSearch
 
-  @order [common: "c", uncommon: "u", rare: "r", mythic: "m"]
-  @rarity_order [:common, :uncommon, :rare, :mythic]
-
   # Presentation metadata per buildability status. `section` is the tier
   # heading in the catalog; `label` is the compact per-variant badge text;
   # `definition` and `ordering` are the tier subtitle — the ordering rule is
@@ -65,33 +62,6 @@ defmodule Scry2Web.NetdecksHelpers do
   @spec status_meta(:buildable | :craftable | :short | :incomplete) :: map()
   def status_meta(status), do: Map.fetch!(@statuses, status)
 
-  @doc """
-  Non-zero wildcard-cost entries as `{rarity, count}` in common→mythic order,
-  for rendering rarity-coloured pips.
-  """
-  @spec cost_pips(map()) :: [{atom(), integer()}]
-  def cost_pips(cost) do
-    for rarity <- @rarity_order, (count = Map.get(cost, rarity, 0)) > 0, do: {rarity, count}
-  end
-
-  @doc "True if a cost/shortfall map has any non-zero rarity."
-  @spec any_cost?(map()) :: boolean()
-  def any_cost?(cost), do: cost_pips(cost) != []
-
-  @doc ~s(Compact wildcard-cost label, e.g. "2u 1r". Returns "—" when zero.)
-  @spec format_cost(map()) :: String.t()
-  def format_cost(cost) do
-    parts =
-      for {rarity, suffix} <- @order,
-          (count = Map.get(cost, rarity, 0)) > 0,
-          do: "#{count}#{suffix}"
-
-    case parts do
-      [] -> "—"
-      _ -> Enum.join(parts, " ")
-    end
-  end
-
   @doc "Whole-percent label for an owned fraction (0.0–1.0), e.g. \"82%\"."
   @spec format_owned_pct(float()) :: String.t()
   def format_owned_pct(fraction), do: "#{round(fraction * 100)}%"
@@ -103,93 +73,6 @@ defmodule Scry2Web.NetdecksHelpers do
   """
   @spec fully_owned?(map()) :: boolean()
   def fully_owned?(%{maindeck: %{owned_pct: owned_pct}}), do: owned_pct >= 1.0
-
-  @doc """
-  Per-card ownership state for styling a decklist row:
-  `:free` (basic land), `:owned` (have all needed), `:missing` (own none),
-  `:partial` (own some but not all).
-  """
-  @spec card_row_state(map()) :: :free | :owned | :missing | :partial
-  def card_row_state(%{free?: true}), do: :free
-  def card_row_state(%{missing: 0}), do: :owned
-  def card_row_state(%{owned: 0}), do: :missing
-  def card_row_state(_row), do: :partial
-
-  @doc "Text-colour class for a decklist row's ownership state."
-  @spec card_row_tone(:free | :owned | :missing | :partial) :: String.t()
-  def card_row_tone(:free), do: "text-base-content/30"
-  def card_row_tone(:owned), do: "text-success"
-  def card_row_tone(:missing), do: "text-warning"
-  def card_row_tone(:partial), do: "text-base-content/60"
-
-  @doc """
-  The deck view's `count_entry` function for a netdeck's ownership overlay
-  (UIDR-015/017): counts render in the gutter rail (or splay badge), toned
-  by ownership, with the ownership tooltip. Blank means one fully-owned
-  copy; cards with missing copies always show their count. Cards without
-  an ownership row fall back to the plain count.
-  """
-  @spec ownership_count_entry(%{optional(integer()) => map()}) :: (map() -> map() | nil)
-  def ownership_count_entry(rows_by_arena_id) do
-    fn card ->
-      case Map.get(rows_by_arena_id, card.arena_id) do
-        nil ->
-          case count_label(card.count) do
-            nil -> nil
-            label -> %{label: label, class: nil, title: nil}
-          end
-
-        %{free?: true} = row ->
-          %{
-            label: to_string(card.count),
-            class: "text-base-content/30",
-            title: ownership_title(row)
-          }
-
-        %{missing: missing} = row when missing > 0 ->
-          %{
-            label: to_string(card.count),
-            class: row |> card_row_state() |> card_row_tone(),
-            title: ownership_title(row)
-          }
-
-        row ->
-          case count_label(card.count) do
-            nil -> nil
-            label -> %{label: label, class: "text-success", title: ownership_title(row)}
-          end
-      end
-    end
-  end
-
-  defp count_label(count) when is_integer(count) and count > 1, do: to_string(count)
-  defp count_label(_count), do: nil
-
-  @doc """
-  Indexes decklist rows (main + sideboard) by arena_id for the ownership
-  overlay on the standard deck composition. Rows without a resolved
-  arena_id are skipped — they can't be matched to a rendered card.
-  """
-  @spec rows_by_arena_id([map()], [map()]) :: %{integer() => map()}
-  def rows_by_arena_id(main_rows, side_rows) do
-    (main_rows ++ side_rows)
-    |> Enum.filter(&is_integer(&1.arena_id))
-    |> Map.new(fn row -> {row.arena_id, row} end)
-  end
-
-  @doc """
-  Row tint for the text deck listing: warning tone when the player is
-  missing copies of the card, nil (default color) otherwise.
-  """
-  @spec missing_row_class(map() | nil) :: String.t() | nil
-  def missing_row_class(%{missing: missing}) when missing > 0, do: "text-warning"
-  def missing_row_class(_row), do: nil
-
-  @doc "Tooltip text describing a decklist row's ownership, or nil without a row."
-  @spec ownership_title(map() | nil) :: String.t() | nil
-  def ownership_title(nil), do: nil
-  def ownership_title(%{free?: true} = row), do: "#{row.name} — basic land"
-  def ownership_title(row), do: "#{row.name} — #{row.owned}/#{row.needed} owned"
 
   @doc """
   References on a deck that never resolved to an arena_id, as
@@ -252,12 +135,6 @@ defmodule Scry2Web.NetdecksHelpers do
   @spec tally_parts(map()) :: [{atom(), pos_integer()}]
   def tally_parts(tally) do
     for status <- status_order(), (count = Map.get(tally, status, 0)) > 0, do: {status, count}
-  end
-
-  @doc "The player's wildcard pool as {rarity, count} in common → mythic order."
-  @spec wildcard_balances(map()) :: [{atom(), integer()}]
-  def wildcard_balances(wildcards) do
-    Enum.map(@rarity_order, fn rarity -> {rarity, Map.get(wildcards, rarity, 0)} end)
   end
 
   @doc "The group's cheapest variant — the build the tile's cost line quotes."

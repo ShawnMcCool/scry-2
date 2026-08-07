@@ -2,7 +2,7 @@ defmodule Scry2.NetDecking.ArchetypeCatalogTest do
   use ExUnit.Case, async: true
 
   alias Scry2.NetDecking.ArchetypeCatalog
-  alias Scry2.NetDecking.Buildability.{Result, Section}
+  alias Scry2.Buildability.{Result, Section}
   alias Scry2.NetDecking.Deck
 
   @threshold 0.7

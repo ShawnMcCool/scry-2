@@ -13,7 +13,7 @@ defmodule Scry2.DeckList do
   Purpose-specific outputs stay with their contexts:
   `Scry2.Decks.composition_hash/1` keeps the stored integer hash,
   `Scry2.NetDecking.CompositionKey` keeps the corpus dedup digest,
-  `Scry2.NetDecking.OwnedIdentity` keeps ownership aggregation.
+  `Scry2.Buildability.OwnedIdentity` keeps ownership aggregation.
 
   Pure functions — no DB, no PubSub, owned by no bounded context; any context
   may call it. Output here is load-bearing for persisted identities

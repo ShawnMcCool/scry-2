@@ -1,12 +1,12 @@
-defmodule Scry2.NetDecking.OwnedIdentity do
+defmodule Scry2.Buildability.OwnedIdentity do
   @moduledoc """
-  Collapses collection ownership across printings onto each deck card's
+  Collapses collection ownership across printings onto each list card's
   representative `arena_id`, keyed by card-name identity.
 
   Web sources (e.g. MTGO) carry no collector number, so a deck card resolves to
   one of a card's many printing `arena_id`s — possibly not the printing the
   player owns. MTGA treats a playset by card name, so ownership must be summed
-  across every printing of that name. The pure `Scry2.NetDecking.Buildability`
+  across every printing of that name. The pure `Scry2.Buildability.ScoreCardList`
   engine stays `arena_id`-keyed; this stage feeds it correctly aggregated
   counts.
 
@@ -17,7 +17,7 @@ defmodule Scry2.NetDecking.OwnedIdentity do
 
   Pure function — no DB. Inputs:
 
-    * `cards_by_arena_id` — `%{arena_id => %{name: ...}}` for the deck's cards
+    * `cards_by_arena_id` — `%{arena_id => %{name: ...}}` for the list's cards
     * `owned_by_arena_id` — the raw collection snapshot `%{arena_id => count}`
     * `printings`         — `%{downcased_name => [arena_id]}` (from
       `Scry2.Cards.printings_by_name/1`)

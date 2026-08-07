@@ -1,10 +1,10 @@
-defmodule Scry2.NetDecking.Buildability.Result do
+defmodule Scry2.Buildability.Result do
   @moduledoc """
   Top-level buildability result. `status` and `sort_key` are derived from
   the maindeck; `sideboard` cost is broken out separately (Bo3 needs it).
   The struct is the stable contract the UI depends on.
   """
-  alias Scry2.NetDecking.Buildability.Section
+  alias Scry2.Buildability.Section
 
   @enforce_keys [:status, :maindeck, :sideboard, :sort_key]
   defstruct [:status, :maindeck, :sideboard, :sort_key]

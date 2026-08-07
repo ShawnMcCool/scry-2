@@ -3,6 +3,7 @@ defmodule Scry2.NetDeckingTest do
 
   import ExUnit.CaptureLog
   import Scry2.TestFactory
+  alias Scry2.Buildability.Assessment
   alias Scry2.NetDecking
 
   test "catalog scores decks against the current snapshot and groups by status" do
@@ -102,17 +103,17 @@ defmodule Scry2.NetDeckingTest do
     detail = NetDecking.deck_detail(deck)
 
     # Own 2 of 4 rare Bolts, 5 rare wildcards on hand → craftable
-    assert detail.result.status == :craftable
-    assert detail.wildcards.rare == 5
+    assert detail.assessment.result.status == :craftable
+    assert detail.assessment.wildcards.rare == 5
 
-    bolt_row = Enum.find(detail.main_rows, &(&1.arena_id == bolt.arena_id))
+    bolt_row = Enum.find(detail.assessment.main_rows, &(&1.arena_id == bolt.arena_id))
     assert bolt_row.needed == 4
     assert bolt_row.owned == 2
     assert bolt_row.missing == 2
     assert bolt_row.rarity == "rare"
     refute bolt_row.free?
 
-    mountain_row = Enum.find(detail.main_rows, &(&1.name == "Mountain"))
+    mountain_row = Enum.find(detail.assessment.main_rows, &(&1.name == "Mountain"))
     assert mountain_row.free?
     assert mountain_row.missing == 0
 
@@ -426,7 +427,7 @@ defmodule Scry2.NetDeckingTest do
     create_collection_snapshot(entries: [{other_id, 4}])
 
     detail = NetDecking.deck_detail(deck)
-    row = Enum.find(detail.main_rows, &(&1.name == "Roaring Furnace"))
+    row = Enum.find(detail.assessment.main_rows, &(&1.name == "Roaring Furnace"))
 
     assert row.owned == 4
     assert row.missing == 0
@@ -536,8 +537,11 @@ defmodule Scry2.NetDeckingTest do
     assert %{count: 1} = Enum.find(detail.core, &(&1.arena_id == bear.arena_id))
 
     # The player owns the Bolts; the core rows carry that.
-    assert %{owned: 4, missing: 0} = detail.core_rows_by_arena_id[bolt.arena_id]
-    assert %{owned: 0, missing: 1} = detail.core_rows_by_arena_id[bear.arena_id]
+    assert %{owned: 4, missing: 0} =
+             Assessment.rows_by_arena_id(detail.core_assessment)[bolt.arena_id]
+
+    assert %{owned: 0, missing: 1} =
+             Assessment.rows_by_arena_id(detail.core_assessment)[bear.arena_id]
 
     # One clustered variant, represented by the cheaper Bear-less list —
     # its only difference from the core is the missing Bear.
@@ -589,10 +593,10 @@ defmodule Scry2.NetDeckingTest do
 
     detail = NetDecking.deck_detail(deck)
 
-    assert detail.wildcards.rare == 7
-    assert detail.wildcards.mythic == 2
+    assert detail.assessment.wildcards.rare == 7
+    assert detail.assessment.wildcards.mythic == 2
     # 4 rare Bolts owned 0, 7 rare wildcards on hand → craftable
-    assert detail.result.status == :craftable
+    assert detail.assessment.result.status == :craftable
   end
 
   test "snapshot wildcards win over the economy inventory when present" do
@@ -610,7 +614,7 @@ defmodule Scry2.NetDeckingTest do
 
     detail = NetDecking.deck_detail(deck)
 
-    assert detail.wildcards.rare == 1
+    assert detail.assessment.wildcards.rare == 1
   end
 
   test "catalog entries carry the cluster's best-finish provenance" do
