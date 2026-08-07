@@ -326,7 +326,6 @@ defmodule Scry2Web.MatchesLive do
   @impl true
   def render(%{match: nil} = assigns) do
     ~H"""
-    <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
       catch_up_status={@catch_up_status}
@@ -415,7 +414,6 @@ defmodule Scry2Web.MatchesLive do
 
   def render(%{match: _} = assigns) do
     ~H"""
-    <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
       catch_up_status={@catch_up_status}

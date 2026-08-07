@@ -133,7 +133,7 @@ defmodule Scry2.Topics do
 
   # ── Console ──────────────────────────────────────────────────────────────
   @doc """
-  Console log events. Subscribers (ConsoleLive, ConsolePageLive) receive:
+  Console log events. Subscribers (ConsolePageLive) receive:
     * `{:log_entry, %Scry2.Console.Entry{}}` — new entry appended
     * `:buffer_cleared` — buffer emptied by user
     * `{:buffer_resized, new_cap}` — buffer cap changed

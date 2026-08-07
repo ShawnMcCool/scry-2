@@ -486,7 +486,6 @@ defmodule Scry2Web.OperationsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
       catch_up_status={@catch_up_status}

@@ -19,7 +19,7 @@ defmodule Scry2.Diagnostics do
   them as a list of `%Scry2.Console.Entry{}`.
 
   Entries are returned newest-first. The printed format mirrors the
-  download/copy format used by the browser console drawer:
+  download/copy format used by the /console view:
 
       [HH:MM:SS.mmm] [level] [component] message
   """

@@ -80,6 +80,12 @@ config :scry_2, install_console_handler: false
 # wrapper is global state.
 config :scry_2, install_file_log_handler: false
 
+# Don't persist console filter/buffer-size preferences during tests. The write
+# is debounced 2s past the call that scheduled it, so it routinely outlives the
+# test's sandbox connection and shuts the (application-wide) buffer down
+# mid-write. See Scry2.Console.RecentEntries.persist_enabled?/0.
+config :scry_2, persist_console_settings: false
+
 # Initialize plugs at runtime for faster test compilation
 config :phoenix, :plug_init_mode, :runtime
 

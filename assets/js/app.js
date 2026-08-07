@@ -44,29 +44,6 @@ const liveSocket = new LiveSocket("/live", Socket, {
   hooks: {...colocatedHooks, Console, CardHover, Chart, SideboardSplay, DeckView, RangePreference, OperationsDownload, ClipboardCopy, RailTip, VariantMatrix},
 })
 
-// Global backtick hotkey to toggle the sticky console drawer. Registered in
-// the CAPTURE phase so it fires before any bubble-phase listeners elsewhere.
-// Skipped when focused in an input/textarea so the user can type backticks
-// in form fields normally.
-document.addEventListener(
-  "keydown",
-  (event) => {
-    if (event.key !== "`") return
-    if (event.ctrlKey || event.metaKey || event.altKey) return
-
-    const target = event.target
-    const tag = target?.tagName
-    if (tag === "INPUT" || tag === "TEXTAREA" || target?.isContentEditable) {
-      return
-    }
-
-    event.preventDefault()
-    event.stopPropagation()
-    window.dispatchEvent(new CustomEvent("scry2:console:toggle"))
-  },
-  {capture: true}
-)
-
 // Show progress bar on live navigation and form submits
 topbar.config({barColors: {0: "#29d"}, shadowColor: "rgba(0, 0, 0, .3)"})
 window.addEventListener("phx:page-loading-start", _info => topbar.show(300))

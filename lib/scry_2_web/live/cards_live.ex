@@ -186,7 +186,6 @@ defmodule Scry2Web.CardsLive do
   @impl true
   def render(assigns) do
     ~H"""
-    <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
       catch_up_status={@catch_up_status}

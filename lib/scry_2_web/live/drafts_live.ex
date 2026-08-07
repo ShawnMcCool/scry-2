@@ -157,7 +157,6 @@ defmodule Scry2Web.DraftsLive do
   @impl true
   def render(%{page: :list} = assigns) do
     ~H"""
-    <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
       catch_up_status={@catch_up_status}
@@ -301,7 +300,6 @@ defmodule Scry2Web.DraftsLive do
 
   def render(%{page: :detail} = assigns) do
     ~H"""
-    <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
       catch_up_status={@catch_up_status}

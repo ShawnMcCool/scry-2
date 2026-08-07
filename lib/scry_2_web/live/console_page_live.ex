@@ -1,11 +1,14 @@
 defmodule Scry2Web.ConsolePageLive do
   @moduledoc """
-  Full-page `/console` route. Same data and events as the sticky drawer,
-  different layout: full viewport instead of a half-height dropdown.
+  Full-page `/console` route — the only in-app view of the log buffer.
 
-  Shares filter/buffer state with `Scry2Web.ConsoleLive` via
-  `Scry2.Console.RecentEntries` (single source of truth in the supervision tree).
-  PubSub keeps both in sync.
+  Reads filter/buffer state from `Scry2.Console.RecentEntries` (single source
+  of truth in the supervision tree); PubSub keeps open tabs in sync.
+
+  Because this LiveView streams the entire buffer into the DOM (up to
+  `RecentEntries.max_cap/0` entries), it must stay scoped to its own route.
+  It was previously also embedded in every page as a sticky drawer, which
+  put ~2 MB of hidden log markup on every page load.
   """
   use Scry2Web, :live_view
 
@@ -32,9 +35,9 @@ defmodule Scry2Web.ConsolePageLive do
       |> assign(:buffer_size, snapshot.cap)
       |> assign(:app_components, EntryView.app_components())
       |> assign(:framework_components, EntryView.framework_components())
-      # See ConsoleLive.mount/3 — stream limit is pinned at max_cap and
-      # never reconfigured. Phoenix LV forbids stream_configure after the
-      # stream is populated.
+      # Stream limit is pinned at max_cap and never reconfigured. Phoenix LV
+      # forbids stream_configure/3 after the stream is populated, so a dynamic
+      # limit would crash on resize; the buffer itself enforces the user's cap.
       |> stream_configure(:entries,
         dom_id: &entry_dom_id/1,
         limit: -RecentEntries.max_cap()
@@ -55,7 +58,7 @@ defmodule Scry2Web.ConsolePageLive do
       active_player_id={@active_player_id}
       current_path={@player_scope_uri}
     >
-      <div class="console-fullpage-wrap" id="console-page">
+      <div class="console-fullpage-wrap" id="console-page" phx-hook="Console">
         <Scry2Web.ConsoleComponents.chip_row
           filter={@filter}
           app_components={@app_components}

@@ -224,8 +224,23 @@ defmodule Scry2.Console.RecentEntries do
       Process.cancel_timer(state.persist_ref)
     end
 
-    ref = Process.send_after(self(), :persist, @persist_debounce_ms)
-    %{state | persist_ref: ref}
+    if persist_enabled?() do
+      ref = Process.send_after(self(), :persist, @persist_debounce_ms)
+      %{state | persist_ref: ref}
+    else
+      %{state | persist_ref: nil}
+    end
+  end
+
+  # This GenServer is application-wide, but the debounced write lands two
+  # seconds after the call that scheduled it — by which point the test that
+  # triggered it has often exited and taken its `Ecto.Adapters.SQL.Sandbox`
+  # connection with it. DBConnection then shuts the buffer down mid-write, which
+  # `handle_info(:persist, …)`'s `rescue` cannot catch (it's an exit, not a raise).
+  # Persisting a UI preference is worthless in tests, so `config/test.exs` turns
+  # it off rather than leaving a timing-dependent crash in the suite.
+  defp persist_enabled? do
+    Application.get_env(:scry_2, :persist_console_settings, true)
   end
 
   defp broadcast(message) do

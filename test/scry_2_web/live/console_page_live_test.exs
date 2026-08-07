@@ -1,4 +1,4 @@
-defmodule Scry2Web.ConsoleLiveTest do
+defmodule Scry2Web.ConsolePageLiveTest do
   use Scry2Web.ConnCase
   import Phoenix.LiveViewTest
 
@@ -26,15 +26,23 @@ defmodule Scry2Web.ConsoleLiveTest do
     Entry.new(Map.merge(defaults, Map.new(overrides)))
   end
 
-  describe "sticky drawer embedded in parent LiveViews" do
-    test "dashboard embeds the console sticky root", %{conn: conn} do
+  # The log list was once embedded in every page as a sticky drawer, which put
+  # ~2 MB of markup and 8,000 DOM nodes on every page load — the dominant cost
+  # of a page render. It must stay scoped to /console.
+  describe "the log list is not embedded in ordinary pages" do
+    test "dashboard does not render the log list", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/")
-      assert has_element?(view, "#console-sticky-root")
+      refute has_element?(view, "#console-entries")
     end
 
-    test "matches page embeds the console sticky root", %{conn: conn} do
+    test "matches page does not render the log list", %{conn: conn} do
       {:ok, view, _html} = live(conn, ~p"/matches")
-      assert has_element?(view, "#console-sticky-root")
+      refute has_element?(view, "#console-entries")
+    end
+
+    test "decks page does not render the log list", %{conn: conn} do
+      {:ok, view, _html} = live(conn, ~p"/decks")
+      refute has_element?(view, "#console-entries")
     end
   end
 

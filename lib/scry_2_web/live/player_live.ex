@@ -82,7 +82,6 @@ defmodule Scry2Web.PlayerLive do
     assigns = assign(assigns, chart_series: chart_series)
 
     ~H"""
-    <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
       catch_up_status={@catch_up_status}

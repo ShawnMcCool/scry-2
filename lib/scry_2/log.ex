@@ -10,10 +10,9 @@ defmodule Scry2.Log do
       Log.warning(:watcher, "backlog: \#{count} events")
       Log.error(:importer, "failed to persist card: \#{inspect(reason)}")
 
-  Log visibility is controlled in the browser via the Console drawer
-  (press `` ` `` from any page) or the full-page `/console` route. All captured
-  entries land in `Scry2.Console.RecentEntries` and can be filtered at display
-  time by component, level, and text search.
+  Log visibility is controlled in the browser at the `/console` route. All
+  captured entries land in `Scry2.Console.RecentEntries` and can be filtered at
+  display time by component, level, and text search.
 
   ## Components
 

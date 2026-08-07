@@ -236,7 +236,6 @@ defmodule Scry2Web.DecksLive do
   @impl true
   def render(%{deck: nil} = assigns) do
     ~H"""
-    <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
       catch_up_status={@catch_up_status}
@@ -400,7 +399,6 @@ defmodule Scry2Web.DecksLive do
 
   def render(assigns) do
     ~H"""
-    <Layouts.console_mount socket={@socket} />
     <Layouts.app
       flash={@flash}
       catch_up_status={@catch_up_status}

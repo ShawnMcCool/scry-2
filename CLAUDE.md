@@ -379,7 +379,9 @@ All non-trivial logic in LiveViews and function components must be extracted int
 
 ## Thinking Logs
 
-The app has a component-tagged logging system for development visibility. All log entries flow through an Erlang `:logger` handler into an in-memory ring buffer (`Scry2.Console.RecentEntries`, default 2,000 entries) and are viewable in the browser via the Guake-style **Console** drawer (press `` ` `` backtick). Filter visibility is UI-driven — there is no source-level suppression.
+The app has a component-tagged logging system for development visibility. All log entries flow through an Erlang `:logger` handler into an in-memory ring buffer (`Scry2.Console.RecentEntries`, default 2,000 entries) and are viewable in the browser at the **`/console`** route. Filter visibility is UI-driven — there is no source-level suppression.
+
+**The log list belongs to `/console` only — never embed it in a shared layout.** It was once mounted on every page as a sticky drawer, which put ~2 MB of markup and 8,000 DOM nodes on every page load (95% of it Ecto query lines that the default filter hides anyway). That was the single largest cost in a page render. `test/scry_2_web/live/console_page_live_test.exs` guards against the regression.
 
 ### Usage
 
@@ -414,7 +416,7 @@ Framework components (`:phoenix`, `:ecto`, `:live_view`) default to HIDDEN in th
 
 ### Accessing the buffer
 
-- **Browser:** press `` ` `` from any page to open the sticky drawer, or navigate to `/console` for the full-page view. Filter chips, level segment, and text search are all live.
+- **Browser:** navigate to `/console`. Filter chips, level segment, and text search are all live.
 - **IEx/Remote shell:** `Scry2.Diagnostics.log_recent(20)` prints the 20 most recent entries. `Scry2.Console.recent_entries/1` returns them as `%Entry{}` structs.
 
 ### Architectural notes

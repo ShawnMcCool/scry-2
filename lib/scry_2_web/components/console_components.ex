@@ -1,7 +1,7 @@
 defmodule Scry2Web.ConsoleComponents do
   @moduledoc """
-  Shared HEEx function components used by both `Scry2Web.ConsoleLive`
-  (sticky drawer) and `Scry2Web.ConsolePageLive` (full-page `/console` route).
+  HEEx function components for `Scry2Web.ConsolePageLive` (the full-page
+  `/console` route).
 
   Pure render functions driven entirely by assigns — no state, no PubSub.
   """
