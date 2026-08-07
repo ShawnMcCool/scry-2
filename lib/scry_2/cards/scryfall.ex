@@ -150,7 +150,8 @@ defmodule Scry2.Cards.Scryfall do
       Keyword.merge([url: url, receive_timeout: 30_000, headers: @scryfall_headers], req_options)
 
     case Req.get(options) do
-      {:ok, %Req.Response{status: 200, body: %{"download_uri" => uri}}} when is_binary(uri) ->
+      {:ok, %Req.Response{status: 200, body: %{"jsonl_download_uri" => uri}}}
+      when is_binary(uri) ->
         {:ok, uri}
 
       {:ok, %Req.Response{status: 200, body: body}} when is_map(body) ->
@@ -191,10 +192,9 @@ defmodule Scry2.Cards.Scryfall do
     Scry2.Repo.transaction(
       fn ->
         tmp_path
-        |> File.read!()
-        |> Jason.decode!()
-        |> Enum.reduce(%{persisted: 0}, fn card_map, stats ->
-          case parse_card(card_map) do
+        |> jsonl_lines()
+        |> Enum.reduce(%{persisted: 0}, fn line, stats ->
+          case line |> Jason.decode!() |> parse_card() do
             nil ->
               stats
 
@@ -212,8 +212,51 @@ defmodule Scry2.Cards.Scryfall do
     end
   end
 
+  # Scryfall serves bulk data as a gzip *file* — `content-type: application/gzip`
+  # with no `content-encoding` — so Req hands us the compressed bytes and we
+  # inflate them here. Streamed rather than `File.read!/1 |> :zlib.gunzip/1`
+  # because the file is ~77 MB compressed and expands to several hundred MB.
+  defp jsonl_lines(path) do
+    path
+    |> File.stream!(262_144)
+    |> Stream.transform(&open_gzip/0, &inflate_chunk/2, &close_gzip/1)
+    # A JSONL file need not end with a newline, and the splitter below only
+    # emits on one — without this sentinel the last card would be dropped.
+    |> Stream.concat([<<?\n>>])
+    |> Stream.transform("", &split_lines/2)
+    |> Stream.reject(&(&1 == ""))
+  end
+
+  defp open_gzip do
+    stream = :zlib.open()
+    # 15 window bits + 16 to expect a gzip (rather than zlib) wrapper.
+    :ok = :zlib.inflateInit(stream, 31)
+    stream
+  end
+
+  # `inflate/2` returns nested iodata, not a binary — flatten it here so the
+  # line splitter can concatenate. (A small input happens to come back as a
+  # single flat binary, so this only shows up on realistically-sized files.)
+  defp inflate_chunk(chunk, stream) do
+    {[IO.iodata_to_binary(:zlib.inflate(stream, chunk))], stream}
+  end
+
+  # `close/1` rather than `inflateEnd/1` + `close/1`: `inflateEnd/1` raises on a
+  # truncated stream, which would mask the real download error.
+  defp close_gzip(stream), do: :zlib.close(stream)
+
+  # Inflated chunks do not align to line boundaries, so carry the trailing
+  # partial line forward as the accumulator.
+  defp split_lines(chunk, buffer) do
+    [partial | complete] = (buffer <> chunk) |> String.split("\n") |> Enum.reverse()
+    {Enum.reverse(complete), partial}
+  end
+
   defp tmp_path do
-    Path.join(System.tmp_dir!(), "scry2_scryfall_bulk_#{System.unique_integer([:positive])}.json")
+    Path.join(
+      System.tmp_dir!(),
+      "scry2_scryfall_bulk_#{System.unique_integer([:positive])}.jsonl.gz"
+    )
   end
 
   defp cleanup_temp(path) do
