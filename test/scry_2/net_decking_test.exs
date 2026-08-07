@@ -455,6 +455,19 @@ defmodule Scry2.NetDeckingTest do
         decklist_text: "Deck\n1 Gamma\n"
       })
 
+    # Backdate one mtgo deck so `latest` has a losing candidate to discard —
+    # otherwise "returns the max" and "returns any row's timestamp" look alike.
+    [older, newer] =
+      NetDecking.list_decks()
+      |> Enum.filter(&(&1.source_name == "mtgo"))
+      |> Enum.sort_by(& &1.name)
+
+    older_at = ~U[2020-01-01 00:00:00.000000Z]
+    newer_at = ~U[2030-06-01 12:30:45.000000Z]
+
+    Scry2.Repo.update!(Ecto.Changeset.change(older, fetched_at: older_at))
+    Scry2.Repo.update!(Ecto.Changeset.change(newer, fetched_at: newer_at))
+
     status = NetDecking.source_status()
 
     assert [
@@ -463,6 +476,9 @@ defmodule Scry2.NetDeckingTest do
            ] = status
 
     assert Enum.all?(status, &match?(%DateTime{}, &1.latest))
+
+    mtgo = Enum.find(status, &(&1.source_name == "mtgo"))
+    assert DateTime.compare(mtgo.latest, newer_at) == :eq
   end
 
   test "catalog collapses near-identical decks into one representative with a count" do

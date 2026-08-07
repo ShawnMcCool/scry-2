@@ -120,16 +120,20 @@ defmodule Scry2.NetDecking do
           %{source_name: String.t(), count: non_neg_integer(), latest: DateTime.t()}
         ]
   def source_status do
-    list_decks()
-    |> Enum.group_by(& &1.source_name)
-    |> Enum.map(fn {source_name, decks} ->
-      %{
-        source_name: source_name,
-        count: length(decks),
-        latest: decks |> Enum.map(& &1.fetched_at) |> Enum.max(DateTime)
-      }
-    end)
-    |> Enum.sort_by(& &1.source_name)
+    # Aggregated in SQL, not in Elixir. This reads three scalars per source;
+    # loading whole `Deck` structs to group them in memory pulled every corpus
+    # row — including each one's `main_deck` and `sideboard` JSON — and cost
+    # ~89 ms on the /netdecks render, which runs on both the dead render and
+    # the connected mount.
+    Deck
+    |> group_by([deck], deck.source_name)
+    |> order_by([deck], asc: deck.source_name)
+    |> select([deck], %{
+      source_name: deck.source_name,
+      count: count(deck.id),
+      latest: type(max(deck.fetched_at), deck.fetched_at)
+    })
+    |> Repo.all()
   end
 
   @spec get_deck(integer() | String.t()) :: Deck.t() | nil
