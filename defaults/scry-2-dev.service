@@ -21,7 +21,9 @@ Environment=PORT=6015
 Environment=DATABASE_PATH=%h/.local/share/scry_2/scry_2.db
 Environment=MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8
 Environment=ELIXIR_ERL_OPTIONS="-name scry_2_dev@127.0.0.1"
-Restart=on-failure
+# always, not on-failure: an external SIGTERM (e.g. a stray pkill) exits the BEAM
+# cleanly and must not leave the daemon dead. An explicit systemctl stop still stops.
+Restart=always
 RestartSec=5
 KillMode=mixed
 # Allow time for a cold compile + migrations on start.
