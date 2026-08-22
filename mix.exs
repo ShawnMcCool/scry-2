@@ -69,7 +69,6 @@ defmodule Scry2.MixProject do
       {:dns_cluster, "~> 0.2.0"},
       {:bandit, "~> 1.5"},
       # Scry2-specific
-      {:file_system, "~> 1.0"},
       # Pinned to 2.21.x — 2.22 added startup-time migration verification
       # that fights `Ecto.Adapters.SQL.Sandbox` ownership in tests.
       {:oban, "~> 2.21.0"},

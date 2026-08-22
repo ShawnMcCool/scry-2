@@ -23,7 +23,7 @@ Understand the project shape before diving into analysis.
 1. Read `mix.exs` to identify dependencies and the tech stack (Phoenix, Ecto, Oban, etc.).
 2. Read `CLAUDE.md` — it describes architecture, hot paths, and design principles.
 3. Identify the hot paths:
-   - **Log ingestion pipeline:** `MtgaLogIngestion.Watcher` (inotify loop) →
+   - **Log ingestion pipeline:** `MtgaLogIngestion.Watcher` (poll loop) →
      `ExtractEventsFromLog` → `IngestRawEvents` → `IdentifyDomainEvents` → domain event
      projectors (`Matches.Match`, `Drafts.Draft`, etc.)
    - **LiveView admin pages:** dashboard, matches, drafts, events, cards, stats, mulligans

@@ -84,8 +84,7 @@ Run through the full verification checklist against real systems:
 
 1. **MTGA log format stability** — monitored via `raw_json` preservation + reparse tooling.
 2. **Oban + SQLite cron** — verify `Oban.Engines.Lite` cron scheduling actually fires in dev.
-3. **`file_system` on Flatpak paths** — verify inotify works on Proton-flatpak dirs.
-4. **Draft ID correlation** — `BotDraftDraftPick` events use `EventName` as `mtga_draft_id`. Multiple drafts of the same format would collide. Acceptable for personal MVP; needs session tracking for correctness.
+3. **Draft ID correlation** — `BotDraftDraftPick` events use `EventName` as `mtga_draft_id`. Multiple drafts of the same format would collide. Acceptable for personal MVP; needs session tracking for correctness.
 
 ---
 

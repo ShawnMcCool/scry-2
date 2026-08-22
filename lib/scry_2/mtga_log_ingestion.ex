@@ -19,7 +19,7 @@ defmodule Scry2.MtgaLogIngestion do
   | Stage | Module                                         | Role                                             |
   |-------|------------------------------------------------|--------------------------------------------------|
   | 01    | `Scry2.MtgaLogIngestion.LocateLogFile`         | Find `Player.log` via override or candidate scan |
-  | 02    | `Scry2.MtgaLogIngestion.Watcher`               | Subscribe to inotify events, drive the pipeline  |
+  | 02    | `Scry2.MtgaLogIngestion.Watcher`               | Poll `Player.log` for new bytes, drive the pipeline  |
   | 03    | `Scry2.MtgaLogIngestion.ReadNewBytes`          | Read new bytes since the last cursor offset      |
   | 04    | `Scry2.MtgaLogIngestion.ExtractEventsFromLog`  | Extract `%Event{}` structs from raw log text     |
   | 05    | `Scry2.MtgaLogIngestion.insert_events!`        | Batch-persist raw events + signal `mtga_logs:events` |

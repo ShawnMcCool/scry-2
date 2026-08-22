@@ -2,26 +2,43 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
   @moduledoc """
   GenServer that tails MTGA's `Player.log` and persists raw events.
 
+  The tail is driven by a plain poll timer — every `poll_interval` ms
+  (default 500) we `stat` the file and read any new bytes. No filesystem
+  event subsystem is involved: inotify (via the `file_system` package)
+  required the `inotify-tools` system package on Linux and crashed the
+  whole application when it was absent (GitHub issue #1), while buying
+  no latency — drains were already debounced to `poll_interval`. A stat
+  on an unchanged file is a no-op cheap enough to run forever.
+
   ## Lifecycle
 
   1. `init/1` is intentionally lightweight — it stores options and
      schedules work via `handle_continue/2` so the supervisor doesn't
      block on file I/O at startup.
-  2. `handle_continue(:bootstrap, _)` resolves the log path, restores
-     the byte cursor from `mtga_logs_cursor`, and subscribes to
-     filesystem events via `FileSystem`.
-  3. On `:modified` events we read the new byte range, run it through
+  2. `handle_continue(:bootstrap, _)` runs the first poll tick: resolve
+     the log path, restore the byte cursor from `mtga_logs_cursor`, and
+     drain. Every subsequent tick re-drains from the current offset.
+  3. On each drain we read the new byte range, run it through
      `ExtractEventsFromLog`, persist each event via `Scry2.MtgaLogIngestion.insert_event!/1`,
      and advance the cursor.
-  4. On rotation (size shrinks or inode changes) we reset to offset 0.
+  4. On rotation (size shrinks) we reset to offset 0 and advance the
+     log epoch.
 
   ## Failure modes
 
-  * **No log file found.** We broadcast `{:status, :path_not_found}` to
-    `mtga_logs:status` and stay alive waiting for a settings update. We
-    don't crash — the user may start MTGA later.
-  * **Permission / I/O errors.** Logged, status broadcast, then retry
-    on the next tick.
+  The watcher never crashes on environmental problems — it degrades to
+  a status and keeps polling until the world improves:
+
+  * **No log file found** (`:path_not_found`): the path never resolved.
+    Each tick retries resolution, so starting MTGA later is picked up
+    automatically.
+  * **Tailed file disappeared** (`:path_missing`): the file we were
+    tailing was deleted or renamed. Each tick re-stats the same path;
+    when MTGA recreates it we resume as a rotation.
+  * **Permission / I/O errors**: logged, then retried on the next tick.
+
+  Status transitions are broadcast to `mtga_logs:status` (only on
+  change, never per tick).
 
   See ADR-012 (durable process design) and ADR-015 (raw event replay).
   """
@@ -97,9 +114,8 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
       log_epoch: 0,
       inode: nil,
       status: :starting,
-      fs_pid: nil,
       poll_interval: resolve_poll_interval(opts),
-      drain_timer: nil,
+      poll_timer: nil,
       override_path: Keyword.get(opts, :path)
     }
 
@@ -123,16 +139,7 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
 
   @impl true
   def handle_continue(:bootstrap, state) do
-    case resolve_path(state) do
-      {:ok, path} ->
-        state = start_watching(state, path)
-        {:noreply, state}
-
-      {:error, :not_found} ->
-        Log.warning(:watcher, "Player.log not found — watcher idle until settings update")
-        broadcast_status(:path_not_found)
-        {:noreply, %{state | status: :path_not_found}}
-    end
+    {:noreply, state |> poll_tick() |> schedule_poll()}
   end
 
   @impl true
@@ -148,42 +155,14 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
 
   @impl true
   def handle_cast(:reload_path, state) do
-    state = stop_fs(state)
-
-    case resolve_path(%{state | override_path: nil}) do
-      {:ok, path} ->
-        {:noreply, start_watching(state, path)}
-
-      {:error, :not_found} ->
-        broadcast_status(:path_not_found)
-        {:noreply, %{state | status: :path_not_found, path: nil}}
-    end
+    state = %{state | path: nil, offset: 0, log_epoch: 0, inode: nil, override_path: nil}
+    {:noreply, state |> poll_tick() |> schedule_poll()}
   end
 
   @impl true
-  def handle_info({:file_event, _fs_pid, {path, events}}, %{path: watched_path} = state)
-      when path == watched_path do
-    cond do
-      :modified in events or :created in events ->
-        {:noreply, schedule_drain(state)}
-
-      :deleted in events or :renamed in events ->
-        broadcast_status(:path_missing)
-        {:noreply, %{state | status: :path_missing}}
-
-      true ->
-        {:noreply, state}
-    end
-  end
-
-  @impl true
-  def handle_info({:file_event, _fs_pid, :stop}, state) do
-    {:noreply, stop_fs(state)}
-  end
-
-  @impl true
-  def handle_info(:drain, state) do
-    {:noreply, %{drain_file(state) | drain_timer: nil}}
+  def handle_info(:poll, state) do
+    state = %{state | poll_timer: nil}
+    {:noreply, state |> poll_tick() |> schedule_poll()}
   end
 
   @impl true
@@ -207,32 +186,39 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
 
   # ── Internals ───────────────────────────────────────────────────────────
 
+  defp schedule_poll(%{poll_timer: nil, poll_interval: interval} = state) do
+    %{state | poll_timer: Process.send_after(self(), :poll, interval)}
+  end
+
+  defp schedule_poll(state), do: state
+
+  # No path yet — retry resolution until Player.log shows up.
+  defp poll_tick(%{path: nil} = state) do
+    case resolve_path(state) do
+      {:ok, path} -> state |> begin_tailing(path) |> poll_tick()
+      {:error, :not_found} -> set_status(state, :path_not_found)
+    end
+  end
+
+  defp poll_tick(state) do
+    case drain_file(state) do
+      {:ok, state} -> set_status(state, :running)
+      {:error, :enoent, state} -> set_status(state, :path_missing)
+      {:error, _reason, state} -> state
+    end
+  end
+
   defp resolve_path(%{override_path: path}) when is_binary(path) do
     if File.regular?(path), do: {:ok, path}, else: {:error, :not_found}
   end
 
   defp resolve_path(_state), do: LocateLogFile.resolve()
 
-  defp start_watching(state, path) do
+  defp begin_tailing(state, path) do
     cursor = MtgaLogIngestion.get_cursor(path)
     {offset, inode, log_epoch} = cursor_initial(cursor)
 
-    {:ok, fs_pid} = FileSystem.start_link(dirs: [Path.dirname(path)])
-    FileSystem.subscribe(fs_pid)
-
-    state =
-      %{
-        state
-        | path: path,
-          offset: offset,
-          log_epoch: log_epoch,
-          inode: inode,
-          fs_pid: fs_pid,
-          status: :running
-      }
-
-    broadcast_status(:running)
-    drain_file(state)
+    %{state | path: path, offset: offset, log_epoch: log_epoch, inode: inode}
   end
 
   defp cursor_initial(nil), do: {0, nil, 0}
@@ -240,27 +226,10 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
   defp cursor_initial(%{byte_offset: offset, inode: inode, log_epoch: log_epoch}),
     do: {offset, inode, log_epoch || 0}
 
-  defp stop_fs(%{fs_pid: nil} = state), do: state
-
-  defp stop_fs(%{fs_pid: fs_pid} = state) do
-    if Process.alive?(fs_pid), do: Process.exit(fs_pid, :normal)
-    %{state | fs_pid: nil}
-  end
-
-  # Debounce drains: if a drain is already scheduled, let it fire; we
-  # coalesce rapid bursts of :modified events into a single drain pass.
-  defp schedule_drain(%{drain_timer: timer} = state) when is_reference(timer), do: state
-
-  defp schedule_drain(%{poll_interval: interval} = state) do
-    timer = Process.send_after(self(), :drain, interval)
-    %{state | drain_timer: timer}
-  end
-
-  defp drain_file(%{path: path, offset: offset, log_epoch: log_epoch} = state)
-       when is_binary(path) do
+  defp drain_file(%{path: path, offset: offset, log_epoch: log_epoch} = state) do
     case ReadNewBytes.read_since(path, offset) do
       {:ok, %{bytes: "", new_offset: new_offset, inode: inode}} ->
-        %{state | offset: new_offset, inode: inode}
+        {:ok, %{state | offset: new_offset, inode: inode}}
 
       {:ok, %{bytes: bytes, new_offset: new_offset, rotated?: rotated, inode: inode}} ->
         base_offset = if rotated, do: 0, else: offset
@@ -310,15 +279,33 @@ defmodule Scry2.MtgaLogIngestion.Watcher do
         # when invoked inside a transaction.
         MtgaLogIngestion.broadcast_inserted(inserted_count)
 
-        %{state | offset: new_offset, log_epoch: new_epoch, inode: inode}
+        {:ok, %{state | offset: new_offset, log_epoch: new_epoch, inode: inode}}
+
+      {:error, :enoent} ->
+        {:error, :enoent, state}
 
       {:error, reason} ->
         Log.warning(:watcher, "drain_file error: #{inspect(reason)}")
-        state
+        {:error, reason, state}
     end
   end
 
-  defp drain_file(state), do: state
+  defp set_status(%{status: status} = state, status), do: state
+
+  defp set_status(state, new_status) do
+    log_transition(new_status, state)
+    broadcast_status(new_status)
+    %{state | status: new_status}
+  end
+
+  defp log_transition(:path_not_found, _state),
+    do: Log.warning(:watcher, "Player.log not found — polling until it appears")
+
+  defp log_transition(:path_missing, %{path: path}),
+    do: Log.warning(:watcher, "#{path} disappeared — polling until it reappears")
+
+  defp log_transition(:running, %{path: path}),
+    do: Log.info(:watcher, "tailing #{path}")
 
   defp broadcast_status(status) do
     Topics.broadcast(Topics.mtga_logs_status(), {:status, status})

@@ -30,9 +30,9 @@ path = "~/.local/share/scry_2/scry_2.db"
 # If unset, Scry2 derives it from the MTGA installation path.
 # data_dir = "/home/you/.local/share/Steam/steamapps/common/MTGA/MTGA_Data/Downloads/Raw"
 
-# How often (ms) the tailer polls after a filesystem event, to catch
-# buffered writes. The watcher is event-driven (inotify) — this is a
-# debounce/flush interval, not a polling loop.
+# How often (ms) the watcher polls Player.log for new bytes. A stat on
+# an unchanged file is a no-op, so lower values cost little; 500 keeps
+# in-match data feeling live.
 poll_interval_ms = 500
 
 # Raw-event retention window, in days (ADR-039). Raw MTGA events are kept
