@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.56.0 — 2026-08-22
+
 ### New
 
 - **Deck pages now show what you're missing.** Every deck page lists the cards you don't own yet and the wildcards it would cost to craft them, so you can see at a glance how far a deck is from playable.
