@@ -11,6 +11,21 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### New
+
+- **Deck pages now show what you're missing.** Every deck page lists the cards you don't own yet and the wildcards it would cost to craft them, so you can see at a glance how far a deck is from playable.
+
+### Improved
+
+- Pages across the app load noticeably faster. The log console no longer loads invisibly on every page, and several slow database lookups behind the deck, match, and **Operations** pages have been sped up.
+- The **Netdecks** page loads faster.
+
+### Fixed
+
+- **Scry2 no longer crashes on startup on Linux machines without the `inotify-tools` package.** The log watcher now checks `Player.log` for new data on a simple timer instead of relying on filesystem notifications — it works on every system, and it now automatically recovers if the log file disappears and comes back.
+- Fixed card data imports failing after Scryfall changed the format of its bulk card data.
+- On Linux, the background service now restarts automatically if something outside Scry2 stops it, so your games keep being recorded instead of the app silently staying off.
+
 ## v0.55.0 — 2026-08-06
 
 ### New
