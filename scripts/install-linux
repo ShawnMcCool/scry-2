@@ -29,35 +29,18 @@ fi
 INSTALL_DIR="$HOME/.local/lib/scry_2"
 UNIT_PATH="$HOME/.config/systemd/user/scry-2.service"
 DESKTOP_PATH="$HOME/.local/share/applications/scry-2.desktop"
-LEGACY_AUTOSTART="$HOME/.config/autostart/scry2.desktop"
-LEGACY_UNIT_PATH="$HOME/.config/systemd/user/scry_2.service"
-LEGACY_DESKTOP_PATH="$HOME/.local/share/applications/scry_2.desktop"
 SERVICE="scry-2.service"
-LEGACY_SERVICE="scry_2.service"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # When run from the in-app self-updater, the BEAM spawns this script
 # under `env -i` with a small whitelist. systemctl --user works in
 # that whitelist (XDG_RUNTIME_DIR + DBUS_SESSION_BUS_ADDRESS + HOME
-# are present); xdg-open + browser launch don't run from this script
-# anymore, so we no longer need to rehydrate DISPLAY / WAYLAND_DISPLAY.
+# are present).
 
 echo "Installing Scry2 (systemd user service)..."
 
 # ── 1. Stop anything already running ────────────────────────────────
-# Old tray-based install: kill scry2-tray + autostart entry. Idempotent
-# — these run no-op on a fresh system.
-if pgrep -x scry2-tray &>/dev/null; then
-  echo "Stopping legacy Scry2 tray..."
-  pkill -x scry2-tray 2>/dev/null || true
-  sleep 1
-fi
-if [ -f "$LEGACY_AUTOSTART" ]; then
-  echo "Removing legacy autostart entry..."
-  rm -f "$LEGACY_AUTOSTART"
-fi
-
 # Stop the systemd unit if it's already running so file replacement
 # doesn't fight an active BEAM. `is-active` exits non-zero on
 # inactive — guard against set -e.
@@ -66,25 +49,8 @@ if systemctl --user is-active --quiet "$SERVICE" 2>/dev/null; then
   systemctl --user stop "$SERVICE"
 fi
 
-# v0.37.1 renamed the unit from scry_2.service to scry-2.service. On
-# upgrade from v0.36.x / v0.37.0, stop and remove the old unit so we
-# don't end up with two copies of Scry2 fighting for the same install
-# dir and port.
-if systemctl --user is-active --quiet "$LEGACY_SERVICE" 2>/dev/null; then
-  echo "Stopping legacy $LEGACY_SERVICE..."
-  systemctl --user stop "$LEGACY_SERVICE"
-fi
-systemctl --user disable "$LEGACY_SERVICE" 2>/dev/null || true
-if [ -f "$LEGACY_UNIT_PATH" ]; then
-  echo "Removing legacy $LEGACY_UNIT_PATH..."
-  rm -f "$LEGACY_UNIT_PATH"
-fi
-if [ -f "$LEGACY_DESKTOP_PATH" ]; then
-  rm -f "$LEGACY_DESKTOP_PATH"
-fi
-
 # Belt-and-braces: stop any orphaned BEAM that wasn't under systemd
-# (e.g. user started it manually before the systemd switch).
+# (e.g. user started it manually).
 if [ -x "$INSTALL_DIR/bin/scry_2" ]; then
   "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
 fi

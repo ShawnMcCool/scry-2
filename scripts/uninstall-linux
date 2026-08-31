@@ -4,48 +4,33 @@ set -euo pipefail
 INSTALL_DIR="$HOME/.local/lib/scry_2"
 UNIT_PATH="$HOME/.config/systemd/user/scry-2.service"
 DESKTOP_PATH="$HOME/.local/share/applications/scry-2.desktop"
-LEGACY_AUTOSTART="$HOME/.config/autostart/scry2.desktop"
-LEGACY_UNIT_PATH="$HOME/.config/systemd/user/scry_2.service"
-LEGACY_DESKTOP_PATH="$HOME/.local/share/applications/scry_2.desktop"
 DATA_DIR="$HOME/.local/share/scry_2"
 CONFIG_DIR="$HOME/.config/scry_2"
 DB_FILE="$DATA_DIR/scry_2.db"
 SERVICE="scry-2.service"
-LEGACY_SERVICE="scry_2.service"
 
 echo "Uninstalling Scry2..."
 
-# ── 1. Stop + disable systemd unit (current + legacy) ───────────────
+# ── 1. Stop + disable systemd unit ──────────────────────────────────
 if systemctl --user is-active --quiet "$SERVICE" 2>/dev/null; then
   systemctl --user stop "$SERVICE"
 fi
 systemctl --user disable "$SERVICE" 2>/dev/null || true
-if systemctl --user is-active --quiet "$LEGACY_SERVICE" 2>/dev/null; then
-  systemctl --user stop "$LEGACY_SERVICE"
-fi
-systemctl --user disable "$LEGACY_SERVICE" 2>/dev/null || true
 
-# ── 2. Stop legacy tray, if any (older installs) ────────────────────
-if pgrep -x scry2-tray &>/dev/null; then
-  pkill -x scry2-tray 2>/dev/null || true
-  sleep 1
-fi
-
-# ── 3. Belt-and-braces graceful BEAM stop ───────────────────────────
+# ── 2. Belt-and-braces graceful BEAM stop ───────────────────────────
 if [ -x "$INSTALL_DIR/bin/scry_2" ]; then
   "$INSTALL_DIR/bin/scry_2" stop 2>/dev/null || true
 fi
 
-# ── 4. Remove files ─────────────────────────────────────────────────
-rm -f "$UNIT_PATH" "$DESKTOP_PATH" "$LEGACY_AUTOSTART" \
-      "$LEGACY_UNIT_PATH" "$LEGACY_DESKTOP_PATH"
+# ── 3. Remove files ─────────────────────────────────────────────────
+rm -f "$UNIT_PATH" "$DESKTOP_PATH"
 
 if [ -d "$INSTALL_DIR" ]; then
   rm -rf "$INSTALL_DIR"
   echo "Removed $INSTALL_DIR"
 fi
 
-# ── 5. Reload systemd so the removed unit is forgotten ──────────────
+# ── 4. Reload systemd so the removed unit is forgotten ──────────────
 systemctl --user daemon-reload 2>/dev/null || true
 
 echo ""

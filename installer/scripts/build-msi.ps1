@@ -1,6 +1,6 @@
 #!/usr/bin/env pwsh
 #
-# Build the Scry2 MSI installer and Burn bootstrapper.
+# Build the Scry2 MSI installer.
 # Run from the repo root after building the Elixir release and tray binary.
 #
 # Usage:

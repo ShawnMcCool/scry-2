@@ -301,12 +301,6 @@ defmodule Scry2.SelfUpdate.Updater do
       String.ends_with?(archive, ".zip") ->
         DefaultStager.extract_zip(archive, dest, required: required_files(archive))
 
-      # Burn bootstrappers (.exe / .msi) are single-file installers — there is
-      # nothing to extract or validate, the spawned bootstrapper handles its
-      # own integrity.
-      String.ends_with?(archive, ".exe") ->
-        {:ok, Path.dirname(archive)}
-
       true ->
         {:error, {:unknown_archive, archive}}
     end

@@ -45,9 +45,6 @@ defmodule Scry2.Events.IdentifyDomainEvents do
      MTGA event type and produces the struct.
   3. Add a projector handler in whichever context owns the projection.
 
-  See `TODO.md` > "Match ingestion follow-ups" for the backlog of
-  event types waiting to be added.
-
   ## MTGA protocol pitfalls (learned the hard way)
 
   These are non-obvious behaviors in MTGA's wire format that caused

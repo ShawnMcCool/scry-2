@@ -14,9 +14,8 @@ defmodule Scry2.SelfUpdate.Handoff do
       newlines is just a (nonsensical) argv value; it is never parsed
       as shell.
     * On Windows, paths flow through `cmd /c start "" /B "<path>"`. We
-      always control the path (`Platform.data_dir() ++ install.bat` or
-      the bootstrapper basename validated against the archive), so the
-      attack surface is internal. The double-quoted `start ""` builtin
+      always control the path (the staged root plus `install.bat`), so
+      the attack surface is internal. The double-quoted `start ""` builtin
       treats the title arg as the first quoted token, so a stray `"` in
       the path is the only way to break framing — and our path source
       never produces that.
@@ -136,10 +135,6 @@ defmodule Scry2.SelfUpdate.Handoff do
         String.ends_with?(archive, ".zip") ->
           bat = Path.join(root, "install.bat")
           "start \"\" /B \"#{bat}\""
-
-        String.ends_with?(archive, ".exe") or String.ends_with?(archive, ".msi") ->
-          bootstrapper = Path.join(root, Path.basename(archive))
-          "start \"\" /B \"#{bootstrapper}\" /quiet /norestart"
 
         true ->
           "exit 1"

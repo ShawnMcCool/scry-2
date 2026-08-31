@@ -3,36 +3,47 @@
 ## Requirements
 
 - Elixir 1.18+ and Erlang/OTP 27+
-- Go 1.22+ (for the `scry2-tray` system tray binary)
-- [mise](https://mise.jdx.dev/) (recommended for toolchain management)
+- Rust (pinned in `.mise.toml`) for the `Scry2.Collection` NIF crate under
+  `native/scry2_collection_reader/`
+- Go 1.22+ only if you build the `scry2-tray` binary (Windows / macOS launcher)
+- [mise](https://mise.jdx.dev/) installs the pinned toolchains: `mise install`
 
 ## Setup
 
 ```bash
 mix setup          # install deps, create DB, build assets
-mix phx.server     # start dev server at http://localhost:4002
+mix phx.server     # isolated dev server at http://localhost:4444 (scry_2_dev.db)
 mix test           # run tests
 mix precommit      # compile --warnings-as-errors, format, test — run before committing
 ```
 
-## Dev Service
+## Local instance
 
-Install a persistent systemd user service so the dev server survives terminal sessions:
+`scripts/install-dev` installs the systemd user service `scry-2`, which runs
+the working tree on port 6015 against the real database
+(`~/.local/share/scry_2/scry_2.db`) and applies pending migrations on start.
+This is the everyday instance; a bare `mix phx.server` on 4444 is for
+isolated work.
 
 ```bash
-scripts/install-dev                               # install and start the service
-systemctl --user start scry-2-dev                 # start
-systemctl --user stop scry-2-dev                  # stop
-journalctl --user -u scry-2-dev -f                # logs
-iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1   # remote REPL
+scripts/install-dev                               # install/refresh the unit, start, health-check
+systemctl --user restart scry-2                   # after code changes the instance must pick up
+scripts/healthcheck                               # GET /health: 200 only when DB + migrations are ready
+journalctl --user -u scry-2 -f                    # logs
+iex --name repl@127.0.0.1 --remsh scry_2_dev@127.0.0.1   # remote REPL (interactive only)
 ```
 
-Disconnect the REPL with `Ctrl+\` (leaves the server running).
+Disconnect the REPL with `Ctrl+\` (leaves the server running). Never pipe
+stdin into `--remsh` — EOF on the remote shell halts the service. See
+`CLAUDE.md` → *Local instance* for the `:rpc` probe pattern.
 
 ## System Tray Binary
 
-The `scry2-tray` companion binary provides the system tray icon on Linux, macOS,
-and Windows. It lives in `tray/` as a separate Go module (`scry2/tray`, Go 1.22).
+The `scry2-tray` binary is the desktop launcher on Windows and macOS. It is
+**not packaged on Linux** — Linux runs the backend as the systemd user
+service above, and the release's `install` script sets that up. The Go
+module in `tray/` still compiles on Linux so its tests run on every CI
+platform.
 
 ### What it does
 
@@ -44,14 +55,14 @@ and Windows. It lives in `tray/` as a separate Go module (`scry2/tray`, Go 1.22)
   fresh, the watchdog skips the restart. This coordinates with the Elixir self-updater
   (see `Scry2.SelfUpdate` and ADR-033), which takes the backend down intentionally
   during an apply.
-- Manages login persistence on each platform (XDG `.desktop` on Linux, `LaunchAgent`
-  plist on macOS, Registry key on Windows)
+- Manages login persistence (`LaunchAgent` plist on macOS, Registry key on
+  Windows; the Linux `.desktop` autostart code exists but is unused in releases)
 
 **The tray has no update logic.** Self-update orchestration lives in the Elixir
 backend (`Scry2.SelfUpdate`) and is surfaced in the Settings LiveView.
 
-The tray binary is the **single entry point** for all platforms in a release install.
-Users never call `bin/scry_2` directly — the tray starts and supervises it.
+On Windows and macOS the tray is the entry point: users never call `bin/scry_2`
+directly. On Linux, systemd is.
 
 ### Communication with the Elixir backend
 
@@ -83,7 +94,7 @@ The watchdog interval and grace periods are configurable fields on `RealBackend`
 
 | Platform | Autostart mechanism | Build notes |
 |----------|-------------------|-------------|
-| Linux | `~/.config/autostart/scry2.desktop` | Requires `libayatana-appindicator3-dev` |
+| Linux (not shipped) | `~/.config/autostart/scry2.desktop` | Requires `libayatana-appindicator3-dev` to compile |
 | macOS | `~/Library/LaunchAgents/com.scry2.plist` | — |
 | Windows | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | Add `-ldflags="-H windowsgui"` to suppress console window |
 
@@ -114,7 +125,7 @@ itself — local Elixir development does not require the tray binary at all.
 For normal Elixir development, run the backend directly:
 
 ```bash
-mix phx.server    # or: systemctl --user start scry-2-dev
+mix phx.server    # or: systemctl --user restart scry-2
 ```
 
 The tray binary is only needed when testing the full install experience — i.e. the
@@ -171,7 +182,7 @@ Each platform's browser file exposes `browserCmdFn`, a variable that returns the
 `*exec.Cmd` to run. Tests inspect the returned command's `Args` without executing it:
 
 ```go
-cmd := browserCmdFn("http://localhost:4002")
+cmd := browserCmdFn("http://localhost:6015")
 // assert cmd.Args[0] == "xdg-open" (Linux), "open" (macOS), "cmd" (Windows)
 ```
 
@@ -255,12 +266,13 @@ that downloads the archive, verifies against `SHA256SUMS`, extracts with
 per-entry validation (rejects `..` traversal, symlinks, absolute paths), writes
 `$DATA_DIR/apply.lock`, spawns the detached installer, and calls
 `System.stop/0`. The installer replaces files, removes the apply lock, and
-relaunches the tray.
+restarts the app (the systemd unit on Linux; the tray on Windows and macOS).
 
 UI lives in Settings (`/settings` → Updates card). Live phase rendering is
 driven by PubSub broadcasts on `updates:progress`.
 
-The subsystem is compile-time gated on `:prod` — dev and test runs are inert.
+The subsystem is gated by `config :scry_2, Scry2.SelfUpdate, enabled:` (true
+only in `:prod`) — dev and test runs are inert.
 See ADR-033 and `specs/2026-04-20-elixir-self-update-design.md` for the full
 design, and `lib/scry_2/self_update/` for the modules.
 
@@ -283,24 +295,26 @@ tag in prod.
 
 ## Releasing
 
-Releases are built automatically by GitHub Actions when a version tag is pushed.
-Use the `scripts/tag-release` script to bump the version and trigger a release:
+Releases are built by GitHub Actions when a version tag is pushed. Use the
+`/ship` command in Claude Code (`.claude/commands/ship.md`):
 
-```bash
-scripts/tag-release 0.2.0
+```
+/ship patch       # x.y.Z → x.y.(Z+1)
+/ship minor       # x.Y.z → x.(Y+1).0
+/ship major       # X.y.z → (X+1).0.0
 ```
 
-This will:
-1. Validate the version is semver
-2. Bump `version:` in `mix.exs`
-3. Commit the release as `chore: release v0.2.0`
-4. Create a `v0.2.0` git tag
-5. Push main and the tag to the remote
+It drafts user-facing release notes from the commits since the last tag,
+writes them under `## [Unreleased]` in `CHANGELOG.md`, then runs
+`scripts/tag-release`, which runs `mix precommit`, bumps `version:` in
+`mix.exs`, rotates the changelog section, commits, tags, and pushes. Don't
+call `scripts/tag-release` directly — it has no notes-drafting step and
+produces an empty release body.
 
-GitHub Actions then builds Linux, macOS, and Windows release archives (including
-the tray binary for each platform), generates per-platform
-`scry_2-<tag>-<platform>-x86_64-SHA256SUMS` files consumed by the in-app
-updater, and publishes everything to the [Releases page](../../releases).
+GitHub Actions then builds the Linux, macOS, and Windows archives (plus the
+Windows MSI and the tray binary for Windows and macOS), generates per-platform
+`scry_2-<tag>-<platform>-SHA256SUMS` files consumed by the in-app updater,
+and publishes everything to the [Releases page](../../releases).
 
 To build a release locally (without publishing):
 

@@ -88,7 +88,7 @@ Run these checks. **Any failure is a hard halt** — print `UPGRADE SAFETY CHECK
    - `lib/scry_2/self_update/checker_job.ex` — cron expression. Changing it is fine; mention in the changelog if the user-facing "next check" time would shift noticeably.
    - `installer/install.sh` — the curl-pipe bootstrap. Argv contract: `--version vX.Y.Z`. Don't break.
    - `rel/overlays/install.bat`, `rel/overlays/uninstall.bat` — Windows installer scripts. Self-update spawns these via `cmd /c`. Renaming files or breaking exit-code conventions strands users on the old version.
-   - `installer/wix/` — MSI bootstrapper. Burn upgrade behavior depends on UpgradeCode stability. Don't change `UpgradeCode` GUID.
+   - `installer/wix/` — MSI. Major-upgrade behavior depends on UpgradeCode stability. Don't change the `UpgradeCode` GUID.
 
    Surface diffs in these files in the halt report if anything looks contract-breaking. If only formatting / comments / unrelated files change, pass.
 

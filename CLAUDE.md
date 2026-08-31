@@ -180,12 +180,14 @@ The always-on local instance (above) is the only long-running process needed. Fo
 
 Windows has two distribution paths, both built in CI (no local Windows build):
 
-| Path | Install location | Artifact | Installer |
-|------|-----------------|----------|-----------|
-| **Zip** | `%LOCALAPPDATA%\scry_2` | `.zip` archive | `install.bat` / `uninstall.bat` |
-| **MSI** | `C:\Program Files\Scry2` | `Scry2Setup-*.exe` (Burn bootstrapper) | WiX v5 MSI + bundled VC++ Redist |
+| Path | Install location | Artifact | Installer | Used by |
+|------|-----------------|----------|-----------|---------|
+| **Zip** | `%LOCALAPPDATA%\scry_2` | `scry_2-<tag>-windows-x86_64.zip` | `install.bat` / `uninstall.bat` | The in-app self-updater (`UpdateChecker.archive_name/2` always picks the zip on Windows) |
+| **MSI** | `C:\Program Files\Scry2` | `Scry2-<version>.msi` | WiX v5 (`installer/wix/`, built by `installer/scripts/build-msi.ps1`) | Fresh installs from the Releases page (the path the README documents) |
 
-The MSI path uses WiX v5 (config in `installer/wix/`, build script `installer/scripts/build-msi.ps1`). The Burn bootstrapper wraps the MSI and auto-installs the Visual C++ Redistributable if missing. It also creates Windows Firewall rules for EPMD and the Erlang VM, and handles legacy cleanup from older zip-based installs.
+The MSI creates Windows Firewall rules for EPMD and the Erlang VM and, via `LegacyCleanup.wxs`, deletes any `%LOCALAPPDATA%\scry_2` install it finds. There is no Burn bootstrapper and no bundled VC++ Redistributable — `Bundle.wxs` was never built by CI and was removed.
+
+**Known inconsistency:** an MSI install that later self-updates ends up with the zip layout in `%LOCALAPPDATA%` *and* the MSI in `Program Files`, and the next MSI run deletes the `%LOCALAPPDATA%` copy. A silent `msiexec` upgrade into `Program Files` needs elevation, so "just have the updater run the MSI" is not a fix on its own; the likely resolution is a per-user MSI. Unresolved as of 2026-08-31.
 
 Both paths register autostart via `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` and start the tray binary, which launches the Elixir backend.
 
@@ -201,7 +203,7 @@ Both paths register autostart via `HKCU\Software\Microsoft\Windows\CurrentVersio
 
 ### Lifecycle: Linux is systemd; Windows + macOS use the tray
 
-**Linux** runs the Elixir backend as a **systemd user service** (`scry-2.service`, installed at `~/.config/systemd/user/scry-2.service`). The tray binary is **not packaged on Linux** — `systemctl --user start/stop scry-2` is the supported control surface, and a `.desktop` launcher in `~/.local/share/applications/scry-2.desktop` opens the dashboard at `http://localhost:6015`. `loginctl enable-linger` keeps the unit running across logout. The unit + desktop templates live at `defaults/scry-2.service` and `defaults/scry-2.desktop`; `scripts/install-linux` materialises them with the install dir patched in (and migrates legacy pre-v0.37.1 `scry_2.service` installs by stopping/disabling/removing the old unit before installing the new one).
+**Linux** runs the Elixir backend as a **systemd user service** (`scry-2.service`, installed at `~/.config/systemd/user/scry-2.service`). The tray binary is **not packaged on Linux** — `systemctl --user start/stop scry-2` is the supported control surface, and a `.desktop` launcher in `~/.local/share/applications/scry-2.desktop` opens the dashboard at `http://localhost:6015`. `loginctl enable-linger` keeps the unit running across logout. The unit + desktop templates live at `defaults/scry-2.service` and `defaults/scry-2.desktop`; `scripts/install-linux` materialises them with the install dir patched in.
 
 **Windows + macOS** run the system tray binary (`tray/`, Go) as a thin desktop launcher. It:
 
@@ -221,14 +223,14 @@ The tray has **no update logic**. Self-update is entirely in Elixir (see Self-Up
 3. **`Updater`** (GenServer) — state machine `idle → preparing → downloading → extracting → handing_off → done/failed`, serializes applies, trap-exit.
 4. **`Downloader`** — streams archive + fetches `scry_2-<tag>-<platform>-x86_64-SHA256SUMS`, verifies with `Plug.Crypto.secure_compare/2`.
 5. **`Stager`** — pre-extraction per-entry validation (rejects `..`, absolute paths, symlinks, oversize) before any `:erl_tar`/`:zip` extract call.
-6. **`Handoff`** — platform-dispatched detached spawn: `setsid sh install-linux` / `nohup install-macos` / `cmd /c install.bat` / `cmd /c Scry2Setup-*.exe /quiet /norestart`.
+6. **`Handoff`** — platform-dispatched detached spawn: `setsid sh install-linux` / `nohup install-macos` / `cmd /c install.bat`.
 7. **`ApplyLock`** — writes `$DATA_DIR/apply.lock` (JSON with pid, version, phase, started_at) before handoff; tray watchdog reads this and skips restart while fresh (<15 min). Installer script removes the lock before relaunching the tray.
 
 User surface: **Settings → Updates** card in the LiveView UI (version, last check, "Check now", "Apply update", live phase progress via `updates:progress` PubSub).
 
 Security posture: strict tag regex at every interpolation boundary; download URLs are built from a fixed template and never extracted from API response fields; archives are SHA256-verified with constant-time comparison before extraction; detached installer spawn uses minimal env (`env -i`, whitelist keys).
 
-Gated on `Mix.env() == :prod` at compile time (`@enabled` in `Scry2.SelfUpdate`). In dev/test the subsystem is inert — no cron firings.
+Gated by `config :scry_2, Scry2.SelfUpdate, enabled:` (true only when `config_env() == :prod`, set in `config/config.exs`; read at runtime by `Scry2.SelfUpdate.enabled?/0`). In dev/test the subsystem is inert.
 
 ### CI Workflows
 

@@ -257,5 +257,13 @@ runtime based on `:os.type/0`.
 ## References
 
 - Design spec: `specs/2026-04-20-elixir-self-update-design.md`
-- Implementation plan: `specs/2026-04-20-elixir-self-update-plan.md`
 - Reference implementation: `~/src/media-centarr/media-centarr/lib/media_centarr/self_update/`
+
+## Revision 2026-08-31
+
+The Burn bootstrapper (`Scry2Setup-*.exe`) described above was never built
+by CI; the published Windows artifacts are the zip (consumed by the
+self-updater via `install.bat`) and a bare `Scry2-<version>.msi` for fresh
+installs. `Bundle.wxs` and the `.exe`/`.msi` handoff branches were removed.
+The zip-vs-MSI install-location split is recorded as a known
+inconsistency in `CLAUDE.md` → *Windows Installation*.

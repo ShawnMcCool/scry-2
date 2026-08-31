@@ -250,20 +250,4 @@ defmodule Scry2.SelfUpdate.HandoffTest do
       assert cmd =~ "C:\\staged"
     end
   end
-
-  describe "windows msi handoff" do
-    test "invokes the bootstrapper with /quiet /norestart" do
-      :ok =
-        Handoff.spawn_detached(
-          %{staged_root: "C:\\staged", archive_filename: "Scry2Setup-0.15.0.exe"},
-          os_type: {:win32, :nt},
-          spawner: capture_spawner()
-        )
-
-      assert_receive {:spawn, "cmd.exe", ["/c", cmd], _env}
-      assert cmd =~ "Scry2Setup-0.15.0.exe"
-      assert cmd =~ "/quiet"
-      assert cmd =~ "/norestart"
-    end
-  end
 end
