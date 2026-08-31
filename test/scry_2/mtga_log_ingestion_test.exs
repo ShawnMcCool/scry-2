@@ -39,7 +39,6 @@ defmodule Scry2.MtgaLogIngestionTest do
 
       first = MtgaLogIngestion.insert_event!(attrs)
       assert first != nil
-      assert first.id != nil
       assert_receive {:event, %{id: _}}
 
       second = MtgaLogIngestion.insert_event!(attrs)

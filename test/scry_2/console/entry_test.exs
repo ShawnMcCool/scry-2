@@ -59,9 +59,12 @@ defmodule Scry2.Console.EntryTest do
     end
 
     test "raises KeyError when a required key is missing" do
-      assert_raise KeyError, fn ->
-        Entry.new(%{id: 1, timestamp: DateTime.utc_now(), level: :info, component: :http})
-      end
+      missing_message =
+        %{id: 1, timestamp: DateTime.utc_now(), level: :info, component: :http, message: "x"}
+        |> Enum.reject(fn {key, _value} -> key == :message end)
+        |> Map.new()
+
+      assert_raise KeyError, fn -> Entry.new(missing_message) end
     end
   end
 end

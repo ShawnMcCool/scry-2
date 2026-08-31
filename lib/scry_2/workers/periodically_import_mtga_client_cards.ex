@@ -34,9 +34,6 @@ defmodule Scry2.Workers.PeriodicallyImportMtgaClientCards do
         # installed (or with the path unset) shouldn't see retry storms.
         Log.info(:importer, "mtga client import skipped: client database not found")
         :ok
-
-      {:error, reason} ->
-        {:error, reason}
     end
   end
 end

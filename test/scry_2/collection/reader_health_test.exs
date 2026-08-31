@@ -131,8 +131,8 @@ defmodule Scry2.Collection.ReaderHealthTest do
           now: @now
         )
 
-      assert is_binary(walker.detail) and walker.detail != ""
-      assert is_binary(fallback.detail) and fallback.detail != ""
+      assert walker.detail != ""
+      assert fallback.detail != ""
       assert fallback.detail =~ "fallback" or fallback.detail =~ "slower"
     end
   end

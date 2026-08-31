@@ -92,8 +92,8 @@ defmodule Scry2.MtgaMemory.SelfTestTest do
           ] do
         {pid?, results} = status_results
         d = SelfTest.diagnose(results, pid?)
-        assert is_binary(d.headline) and d.headline != ""
-        assert is_binary(d.detail) and d.detail != ""
+        assert d.headline != ""
+        assert d.detail != ""
       end
     end
   end

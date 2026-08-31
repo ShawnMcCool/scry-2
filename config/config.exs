@@ -23,6 +23,10 @@ config :scry_2, Scry2.MtgaMemory, impl: Scry2.MtgaMemory.Nif
 # also having to drop the level floor to :debug.
 config :scry_2, Scry2.Repo, log: :info
 
+# Self-update runs only in production builds; dev and test are inert.
+# Read at runtime by Scry2.SelfUpdate.enabled?/0.
+config :scry_2, Scry2.SelfUpdate, enabled: config_env() == :prod
+
 # Oban (SQLite backend via Oban.Engines.Lite)
 config :scry_2, Oban,
   engine: Oban.Engines.Lite,

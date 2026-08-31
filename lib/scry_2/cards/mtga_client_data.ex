@@ -26,7 +26,7 @@ defmodule Scry2.Cards.MtgaClientData do
 
   require Scry2.Log, as: Log
 
-  @type run_result :: {:ok, %{imported: non_neg_integer()}} | {:error, term()}
+  @type run_result :: {:ok, %{imported: non_neg_integer()}} | {:error, :database_not_found}
 
   @doc """
   Imports all cards from the MTGA client database.

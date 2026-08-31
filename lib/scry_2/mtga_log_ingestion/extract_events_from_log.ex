@@ -141,10 +141,10 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
       #   {JSON body}                             ← payload on next line
       :skip ->
         case parse_response_line(remainder) do
-          {:ok, type, timestamp, rest} ->
+          {:ok, type, rest} ->
             case grab_json_block(rest) do
               {:ok, json_string} ->
-                resolved_ts = timestamp || parse_timestamp_from_header(header_line)
+                resolved_ts = parse_timestamp_from_header(header_line)
                 {payload, decode_warnings} = decode_json_with_warnings(json_string, file_offset)
 
                 {:ok,
@@ -204,7 +204,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
       end
 
     if type != "" do
-      {:ok, type, nil, json_rest}
+      {:ok, type, json_rest}
     else
       :skip
     end
@@ -272,11 +272,11 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
 
   defp scan_identifier(string, pos) do
     case string do
-      <<_::binary-size(pos), c, _::binary>>
+      <<_::binary-size(^pos), c, _::binary>>
       when c in ?A..?Z or c in ?a..?z or c in ?0..?9 or c == ?_ or c == ?. ->
         scan_identifier(string, pos + 1)
 
-      <<head::binary-size(pos), _::binary>> ->
+      <<head::binary-size(^pos), _::binary>> ->
         head
     end
   end
@@ -368,8 +368,7 @@ defmodule Scry2.MtgaLogIngestion.ExtractEventsFromLog do
   #
   # MTGA writes timestamps in local time with no zone annotation. We
   # tag them as UTC for now and accept the drift. Fixing this properly
-  # requires either sniffing the OS timezone or a config entry — see
-  # `TODO.md` > "Match ingestion follow-ups" > timezone handling.
+  # requires either sniffing the OS timezone or a config entry.
   defp parse_timestamp(""), do: nil
 
   defp parse_timestamp(string) when is_binary(string) do

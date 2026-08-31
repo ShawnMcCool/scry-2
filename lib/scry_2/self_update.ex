@@ -2,9 +2,10 @@ defmodule Scry2.SelfUpdate do
   @moduledoc """
   Public facade for the self-update subsystem.
 
-  The subsystem runs unconditionally in `:prod`; in `:dev` and `:test` it
-  is inert (no cron firings, `apply_pending/0` still callable for test
-  injection). `enabled?/0` is the single compile-time gate.
+  The subsystem runs in `:prod`; in `:dev` and `:test` it is inert
+  (`apply_pending/0` still callable for test injection). `enabled?/0` is
+  the single gate, read from `config :scry_2, Scry2.SelfUpdate, enabled:`
+  (set per environment in `config/config.exs`).
 
   ## Surface
 
@@ -16,7 +17,7 @@ defmodule Scry2.SelfUpdate do
     - `current_status/0` — Updater state machine status
     - `subscribe_status/0` — subscribe to check-result broadcasts
     - `subscribe_progress/0` — subscribe to apply-phase broadcasts
-    - `enabled?/0` — true iff prod build
+    - `enabled?/0` — true iff the subsystem is enabled (prod builds)
     - `boot!/0` — called from Application.start; hydrates cache + clears stale locks
   """
 
@@ -28,11 +29,10 @@ defmodule Scry2.SelfUpdate do
   alias Scry2.Topics
   alias Scry2.Version
 
-  @enabled Mix.env() == :prod
   @stale_lock_seconds 900
 
   @spec enabled?() :: boolean()
-  def enabled?, do: @enabled
+  def enabled?, do: Application.get_env(:scry_2, __MODULE__, [])[:enabled] == true
 
   @spec current_version() :: String.t()
   def current_version, do: Version.current()

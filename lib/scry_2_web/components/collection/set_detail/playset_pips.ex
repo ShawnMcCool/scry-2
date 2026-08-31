@@ -14,8 +14,8 @@ defmodule Scry2Web.Collection.SetDetail.PlaysetPips do
     ~H"""
     <div
       class={["inline-flex items-center gap-0.5", @class]}
-      aria-label={"#{min(@count, @playset)} of #{@playset}"}
-      title={"#{min(@count, @playset)} of #{@playset}"}
+      aria-label={"#{shown(@count, @playset)} of #{@playset}"}
+      title={"#{shown(@count, @playset)} of #{@playset}"}
       data-role="playset-pips"
       data-count={@count}
     >
@@ -29,4 +29,7 @@ defmodule Scry2Web.Collection.SetDetail.PlaysetPips do
     </div>
     """
   end
+
+  defp shown(count, playset) when is_integer(count) and is_integer(playset),
+    do: min(count, playset)
 end

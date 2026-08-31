@@ -224,7 +224,6 @@ defmodule Scry2Web.SetupLive do
   defp next_label(:card_status), do: "Continue"
   defp next_label(:verify_events), do: "Continue"
   defp next_label(:memory_reading), do: "Continue"
-  defp next_label(_), do: "Continue"
 
   # Dispatch to the right step component based on current state.
   defp render_step(%{state: %SetupFlow.State{step: :welcome}} = assigns) do
