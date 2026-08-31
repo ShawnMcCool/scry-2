@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.57.0 — 2026-08-31
+
 ### Improved
 
 - **README** rewritten to say plainly what Scry 2 is and where it runs: Linux is the supported platform, Windows is experimental and does not have the Collection, wildcard-craft, or NetDecks ownership features, and macOS is not supported. It now lists every outbound network connection the app makes and the exact uninstall steps per platform.
