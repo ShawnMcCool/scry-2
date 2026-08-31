@@ -1,247 +1,265 @@
 # Scry 2
 
-**Your own private MTG Arena stats tracker — running quietly in your system tray.**
+A local match, draft, and collection tracker for Magic: The Gathering Arena.
 
-Scry 2 watches MTGA's log file on your own machine, parses every match and draft
-as you play, and serves a personal analytics dashboard at `http://localhost:6015`.
-Nothing leaves your computer. No accounts, no sign-up, no telemetry. Just the
-history you'd keep yourself, if you had the time.
+Scry 2 reads the `Player.log` file that MTGA writes on your machine, records
+each match and draft as it finishes, and serves a dashboard at
+`http://localhost:6015`. Your game data stays in a SQLite database on your
+disk. There are no accounts and no upload.
 
-Inspired by [17lands.com](https://17lands.com), but self-hosted and
-Constructed-first.
+It is inspired by [17lands](https://17lands.com), but it is self-hosted,
+tracks one player, and is built around Constructed play.
+
+**Linux only.** A Windows build exists and installs, but it is experimental
+and lacks the collection features. macOS is not supported. See
+[Platform support](#platform-support).
 
 ---
 
-## What you get
+## Features
 
-- **Live match history.** Every ranked, Bo1, Bo3, and casual match you play, with
-  the deck you brought, the format, your opponent's colors, and the result —
-  written to your local database the moment the match ends. No imports, no
-  uploads.
-- **Rank climb charts.** Your Constructed and Limited ranks plotted over time, per
-  season. See when you spiked, when you stalled, and when the algorithm decided
-  you were Silver-shaped for three weeks.
-- **Deck-level win rates.** Sliced by format, season, and play/draw. Every version
-  of a deck tracked separately so you can actually compare the Tuesday build to
-  the Friday build.
-- **Per-card performance.** For every card you own: games drawn, games in opening
-  hand, games won with it in your deck. Your own data, not the population's.
-- **Draft history.** Every pick, every pack, plus the deck you actually submitted.
-  Re-read your drafts like replays.
-- **Card browser.** Full MTGA card database, searchable and filterable. Card
-  images are fetched from Scryfall on demand and cached locally.
-- **Collection snapshot.** A read of your current MTGA card collection, refreshed
-  automatically whenever you launch the game.
-- **One-click updates.** When a new release ships, the app downloads and verifies
-  it in-place. A progress modal shows each step; you can cancel mid-download.
+### Play
+
+- **Matches** — every match, with the deck you played, the format, the
+  opponent's colours, the result, and (for Standard) a label for the
+  opponent's archetype. Summary stats: matches, win rate, average turns,
+  average mulligans.
+- **Decks** — one entry per deck in MTGA, with win rate, games played,
+  Best-of-1 and Best-of-3 split, and a history of every version you saved.
+  Per deck: hand profile and keep rate, per-card win rate and impact, and
+  on-the-play versus on-the-draw results.
+- **Drafts** — every pick in every pack, and the deck you submitted.
+- **NetDecks** — Standard decklists fetched daily from MTGO tournament
+  results, grouped by archetype and scored against your collection:
+  buildable now, craftable with your wildcards, or short. Each list has an
+  MTGA import string. Scoring requires the collection reader (Linux only);
+  without it, lists show without ownership information.
+
+### Profile
+
+- **Player** — matches, record, win rate, average turns, current streak.
+- **Ranks** — rank over time, one chart per format, selectable by season.
+- **Home** — a small set of observations computed from your own data
+  (Bo1 versus Bo3 gap, on-play versus on-draw, mulligan outcomes, rank
+  milestones, deck colour outliers, and similar). The wording is fixed per
+  observation; only the numbers come from your data.
+
+### Economy
+
+- **Economy** — gold, gems, wildcards, and vault progress, with the event
+  entries and inventory changes they came from.
+- **Wildcard crafts** — which cards each wildcard spend went to, derived
+  from collection snapshots (Linux only).
+
+### Collection
+
+- **Collection** — a snapshot of your MTGA collection, read from the running
+  MTGA process's memory, refreshed automatically when log activity shows the
+  game is running. Set completion per set. The reader can be turned off in
+  Settings. Linux only.
+
+### Cards
+
+- **Cards** — the MTGA card database, searchable. Card data comes from your
+  local MTGA install joined with Scryfall bulk data; images come from
+  Scryfall on demand and are cached on disk.
+
+### Maintenance
+
+- **Updates** — an hourly check against GitHub Releases. Applying an update
+  downloads the archive, verifies it against the published SHA-256 sum,
+  and hands off to the bundled installer. You can cancel before the
+  installer starts.
+- **Operations** — rebuild any projection from the stored event log,
+  re-ingest the log, export errors, and open a pre-filled GitHub issue.
+  Nothing is sent to GitHub until you confirm in your browser.
+- **Console** — a filterable view of the app's own log output.
 
 ---
 
 ## Platform support
 
-| Platform | Status | Notes |
+| Platform | Status | What works |
 |---|---|---|
-| **Linux** (x86_64, glibc) | **Primary** — fully supported and actively developed | Ubuntu / Arch / Fedora / any mainstream distro with `glibc` |
-| **Windows** 10 / 11 (x86_64) | **Experimental** | MSI installer works; some edge cases still being smoothed. Use at your own pace. |
-| **macOS** (Apple Silicon) | **Planned, not yet supported** | Release archives are produced but the installer story isn't ready. If you're excited about macOS, star the repo and check back. |
+| **Linux** x86_64, glibc, systemd | Supported | Everything above |
+| **Windows** 10 / 11 x86_64 | Experimental | Matches, decks, drafts, ranks, economy, cards, updates. Collection reading is not implemented on Windows, so Collection, wildcard crafts, and NetDecks ownership scoring are absent |
+| **macOS** Apple Silicon | Not supported | CI produces an archive, but there is no installer, autostart, or first-run path. Do not use it |
 
-Scry 2 runs MTGA through Steam/Proton on Linux. No native Linux MTGA build
-exists, but Proton handles it transparently — the watcher just reads the
-`Player.log` that Proton writes.
+MTGA has no native Linux build. Scry 2 finds `Player.log` under Steam
+(native or Flatpak) with Proton, and under Lutris. Any other Wine prefix
+can be set by hand in Settings or during first-run setup.
+
+Linux needs a musl-free (glibc) distribution and a systemd user session.
+Alpine and other musl distributions are not supported.
 
 ---
 
 ## Before you install
 
-Scry 2 needs MTGA's **Detailed Logs** setting enabled. This is MTGA's built-in
-debug-event stream; without it, the log file only contains plain-text entries
-and there's nothing to parse.
+Scry 2 needs MTGA's **Detailed Logs** setting. Without it, `Player.log`
+contains only plain-text lines and there is nothing to parse.
 
 In MTGA:
 
-1. Open **Options → View Account**
-2. Enable **Detailed Logs (Plugin Support)**
-3. Restart MTGA if it was already running
+1. Open **Options → View Account**.
+2. Enable **Detailed Logs (Plugin Support)**.
+3. Restart MTGA if it was already running.
 
-Scry 2 will warn you on its dashboard if it notices Detailed Logs is off.
+The dashboard warns you if Detailed Logs is off.
 
 ---
 
 ## Install
 
-### Linux — one command
+### Linux
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/ShawnMcCool/scry-2/main/installer/install.sh | sh
 ```
 
-That's it. The script resolves the latest release, verifies the download
-against its published SHA-256 checksum, and hands off to the bundled
-installer. Autostart is wired up via XDG, the tray icon appears, and the
-dashboard becomes available at `http://localhost:6015`.
+The script resolves the latest release, downloads the Linux archive,
+verifies it against the published SHA-256 sum, and runs the bundled
+installer. The installer:
 
-Want a specific version? `… | sh -s -- --version v0.20.0`.
+- copies the release to `~/.local/lib/scry_2`
+- installs and starts the systemd user service `scry-2`
+- enables lingering so the service keeps running after you log out
+- adds a **Scry 2** entry to your application menu that opens
+  `http://localhost:6015`
 
-> **GNOME users:** install the AppIndicator extension if the tray icon
-> doesn't appear. Most other desktops show it out of the box.
+There is no tray icon on Linux. The service is controlled with systemd:
 
-### Windows — experimental
+```sh
+systemctl --user status scry-2
+systemctl --user stop scry-2
+systemctl --user start scry-2
+journalctl --user -u scry-2 -f
+```
 
-Download **`Scry2Setup-*.exe`** from the
-[Releases page](../../releases/latest) and run it. The bundled Burn
-installer handles the MSI and the Visual C++ Redistributable. Scry 2
-will start on login and surface its tray icon.
+To install a specific version: `… | sh -s -- --version v0.20.0`.
 
-> **Firewall:** on first launch Windows may prompt to allow
-> **epmd** and **erlang** through — these are components of the bundled
-> runtime. Allow both.
+The first time you open the dashboard, a setup page checks that
+`Player.log` was found and that events are arriving, and lets you set
+the path by hand if detection failed.
 
-The Windows build is newer and less battle-tested than the Linux build.
-If something breaks, the "Report to developer" button in
-**Settings → Operations** opens a pre-filled GitHub issue with a
-scrubbed error log. That's by far the fastest way to get it fixed.
+### Windows (experimental)
 
-### macOS — coming later
+1. Download `Scry2-<version>.msi` from the
+   [Releases page](../../releases/latest).
+2. Run it. It installs to `C:\Program Files\Scry2`, adds Windows Firewall
+   rules for the bundled Erlang runtime (`epmd.exe` and `erl.exe`), and
+   registers the tray program to start on login.
+3. The tray icon's menu has **Open**, **Open Settings**, **Auto-start on
+   login**, and **Quit**. The tray starts and stops the backend and
+   restarts it if it crashes.
 
-Release archives are produced on every version bump but the macOS
-installer experience (LaunchAgent, first-run prompts, code signing)
-isn't finished yet. There's no shell installer and no DMG. Track
-progress on the repo; this section will become actionable when the work
-lands.
+In-app updates on Windows do not update the MSI install. Applying an
+update installs the new version to `%LOCALAPPDATA%\scry_2`, points the
+login autostart at it, and starts it from there; the copy in
+`C:\Program Files\Scry2` stays behind until you uninstall it from
+**Settings → Apps**. Running a newer MSI later removes the
+`%LOCALAPPDATA%` copy. This is a known defect of the experimental build.
 
----
+The Windows build gets far less use than the Linux build. If something
+breaks, **Operations → Report to developer** opens a pre-filled GitHub
+issue with a scrubbed error log.
 
-## Using Scry 2
+### macOS
 
-After install, open `http://localhost:6015`. The tray menu has an
-**Open** shortcut that does the same thing.
-
-- **Matches** — your game history, filterable by format, season, and deck.
-  Click any match for a full play-by-play.
-- **Decks** — one row per deck you've registered in MTGA. Win rate,
-  games played, and version history.
-- **Drafts** — every draft you've done, pick by pick.
-- **Cards** — the full MTGA card database. Your own per-card stats are
-  overlaid on each card.
-- **Player** — global summary: total matches, overall win rate, most-played
-  deck, longest streak.
-- **Ranks** — rank timeline with a chart per format per season.
-- **Economy** — gem/gold/wildcard history inferred from log events.
-- **Collection** — auto-refreshed snapshot of your MTGA collection.
-- **Settings** (gear icon, top right) — three tabs:
-  - **System** — health checks, log watcher status, app version,
-    one-click "Apply update" when a new release is out.
-  - **Operations** — backend restart/stop, projection rebuilds,
-    error export.
-  - **Settings** — MTGA paths, 17lands refresh schedule, advanced config.
-
----
-
-## Updates
-
-Scry 2 checks GitHub for new releases once an hour and shows a badge on
-**Settings → System** when one is available. Click **Apply update** and
-the app will:
-
-1. Download the new archive.
-2. Verify it against the published SHA-256 checksum (refuses to install
-   on mismatch).
-3. Extract, hand off to the installer, and restart itself.
-
-A progress modal shows each phase. You can cancel any time before the
-installer is actually spawned.
-
-If an update ever fails, the running install is untouched — Scry 2 is
-conservative about that. Re-running the shell installer at any time is
-always safe and also preserves your data.
-
----
-
-## Your data
-
-Scry 2 writes everything to a local SQLite database. Nothing is uploaded
-anywhere. The database is yours to keep, move, back up, inspect, or
-delete.
-
-| Platform | Database location |
-|---|---|
-| Linux   | `~/.local/share/scry_2/scry_2.db` |
-| Windows | `%APPDATA%\scry_2\scry_2.db` |
-| macOS   | `~/Library/Application Support/scry_2/scry_2.db` *(location reserved; installer TBD)* |
-
-Config lives alongside the database at `~/.config/scry_2/config.toml`
-(Linux) or `%APPDATA%\scry_2\config.toml` (Windows), but most settings
-are editable from the UI — you shouldn't need to touch these files.
+Not supported. There is nothing to install.
 
 ---
 
 ## Uninstall
 
-Scry 2's uninstaller removes the application binaries and the autostart
-entry. **It never touches your database.** Uninstall, then decide
-separately what to do with your history.
+The uninstaller removes the program and its autostart entry. It does not
+delete your database or config.
 
-- **Linux:**   `~/.local/lib/scry_2/uninstall`
-- **Windows:** `%LOCALAPPDATA%\scry_2\uninstall.bat`
-- **macOS:**   `~/.local/lib/scry_2/uninstall` *(once supported)*
+| Platform | Command |
+|---|---|
+| Linux | `~/.local/lib/scry_2/uninstall` |
+| Windows, MSI install | **Settings → Apps → Scry 2 → Uninstall** |
+| Windows, after an in-app update | `%LOCALAPPDATA%\scry_2\uninstall.bat` as well |
 
-After uninstalling, the script prints the path + size of your database so
-you can decide whether to keep it. To remove everything including
-history, delete the database directory (shown above) by hand.
+On Linux the uninstaller prints the database path and size, and the exact
+`rm -rf` command that removes the database and config if you want them gone
+too.
+
+---
+
+## Your data
+
+Everything Scry 2 records is in one SQLite database. You can copy, back up,
+inspect, or delete it.
+
+| Platform | Database | Config |
+|---|---|---|
+| Linux | `~/.local/share/scry_2/scry_2.db` | `~/.config/scry_2/config.toml` |
+| Windows | `%APPDATA%\scry_2\scry_2.db` | `%APPDATA%\scry_2\config.toml` |
+
+The config file is optional; the settings it holds are also editable in the
+UI. Card images are cached next to the database under `cache/`.
+
+Scry 2 never writes to any MTGA file. It reads `Player.log`, the MTGA card
+database in your MTGA install, and (on Linux) the running MTGA process's
+memory for the collection snapshot.
+
+### Network connections
+
+Scry 2 makes these outbound requests. None of them carry your game data.
+
+| Destination | When | Purpose |
+|---|---|---|
+| `api.github.com` | Hourly | Check for a new release |
+| `github.com` | When you apply an update | Download the release archive and checksum file |
+| `api.scryfall.com` | On card refresh (scheduled; interval in Settings) | Scryfall bulk card data |
+| `api.scryfall.com` | When a card image is first shown | Card images, then cached |
+| `github.com/Badaro/MTGOFormatData` | Daily | Archetype definitions for deck labels |
+| `mtgo.com/decklists` | Daily | Tournament decklists for NetDecks |
+
+**Report to developer** opens a pre-filled GitHub issue in your browser.
+You see the contents before anything is submitted.
 
 ---
 
 ## Getting help
 
-- Something parsed wrong? **Settings → Operations → Report to developer**
-  opens a pre-filled GitHub issue with a scrubbed error log.
-- Feature idea or bug not tied to a specific event?
-  [Open an issue](../../issues) directly.
+- Something parsed wrong or a page errored: **Operations → Report to
+  developer**.
+- Anything else: [open an issue](../../issues).
 
 ---
 
 ## Acknowledgements
 
-Scry 2 stands on other people's generous work.
-
-- **[Beleren](https://www.delvefonts.com)** by Delve Fonts — the official
-  MTG card-title typeface, commissioned by Wizards of the Coast. Used for
-  headings. Proprietary; used here under Wizards'
+- **[Beleren](https://www.delvefonts.com)** by Delve Fonts — the MTG
+  card-title typeface, commissioned by Wizards of the Coast. Used for
+  headings. Proprietary; used under Wizards'
   [Fan Content Policy](https://company.wizards.com/en/legal/fancontentpolicy).
-- **MPlantin** — the MTG rules-and-flavor-text typeface, derived from the
-  Plantin family. Used for card text rendering. Proprietary to Wizards of
-  the Coast.
-- **[Mana font](https://github.com/andrewgioia/mana)** by Andrew Gioia —
-  the mana, set, and loyalty symbols. Licensed under SIL OFL 1.1 (font)
-  and MIT (CSS).
-- **[17lands](https://17lands.com)** — for the public card reference
-  datasets that make card-aware analytics possible without scraping, and
-  for setting the standard on what self-service MTGA stats should feel
-  like. Card data is licensed
-  [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
-- **[Scryfall](https://scryfall.com)** — for the card image API that
-  powers Scry 2's card browser. Please respect their
-  [rate limits and guidelines](https://scryfall.com/docs/api) if you fork
-  this project.
+- **MPlantin** — the MTG rules-text typeface. Used for card text.
+  Proprietary to Wizards of the Coast.
+- **[Mana](https://github.com/andrewgioia/mana)** and
+  **[Keyrune](https://github.com/andrewgioia/keyrune)** by Andrew Gioia —
+  mana, loyalty, and set symbols. SIL OFL 1.1 (fonts) and MIT (CSS).
+- **[Scryfall](https://scryfall.com)** — bulk card data and card images,
+  used under their [API terms](https://scryfall.com/docs/api). If you fork
+  this project, keep within their rate limits.
+- **[MTGOFormatData](https://github.com/Badaro/MTGOFormatData)** by Badaro —
+  archetype definitions used to label decks.
+- **[17lands](https://17lands.com)** — the model for what a personal MTGA
+  tracker should show.
 - **[Wizards of the Coast](https://magic.wizards.com)** — Magic: The
-  Gathering, MTG Arena, mana symbols, set symbols, and all card text and
-  imagery are property of Wizards of the Coast LLC. Scry 2 is an
-  independent, unofficial tool and is not affiliated with, endorsed, or
-  sponsored by Wizards of the Coast. See Wizards'
-  [Fan Content Policy](https://company.wizards.com/en/legal/fancontentpolicy)
-  for how fan projects like this one are permitted to exist.
-- **The Elixir and Phoenix communities** — for building a stack where a
-  single-developer project can credibly take on real-time ingestion,
-  event sourcing, and a live admin UI without a team behind it.
+  Gathering, MTG Arena, mana and set symbols, and all card text and imagery
+  are property of Wizards of the Coast LLC. Scry 2 is an independent,
+  unofficial tool and is not affiliated with, endorsed, or sponsored by
+  Wizards of the Coast. It exists under their
+  [Fan Content Policy](https://company.wizards.com/en/legal/fancontentpolicy).
 
 ---
 
 ## License
 
-Scry 2 itself is licensed under the MIT License — see [LICENSE](LICENSE).
+MIT — see [LICENSE](LICENSE). Third-party assets keep their own licenses as
+listed above.
 
-Third-party assets retain their original licenses as noted above.
-
----
-
-Contributing or building from source? See [DEVELOPMENT.md](DEVELOPMENT.md).
+To build from source or contribute, see [DEVELOPMENT.md](DEVELOPMENT.md).
