@@ -7,8 +7,8 @@ each match and draft as it finishes, and serves a dashboard at
 `http://localhost:6015`. Your game data stays in a SQLite database on your
 disk. There are no accounts and no upload.
 
-It is inspired by [17lands](https://17lands.com), but it is self-hosted,
-tracks one player, and is built around Constructed play.
+It is inspired by [17lands](https://17lands.com), but it is self-hosted and
+tracks one player, across both Constructed and Limited.
 
 **Linux only.** A Windows build exists and installs, but it is experimental
 and lacks the collection features. macOS is not supported. See
