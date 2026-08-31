@@ -11,6 +11,16 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **README** rewritten to say plainly what Scry 2 is and where it runs: Linux is the supported platform, Windows is experimental and does not have the Collection, wildcard-craft, or NetDecks ownership features, and macOS is not supported. It now lists every outbound network connection the app makes and the exact uninstall steps per platform.
+- **Windows updates** are documented honestly: an in-app update installs to `%LOCALAPPDATA%\scry_2` and leaves the MSI copy in `Program Files` behind. This is a known defect of the experimental Windows build, not yet fixed.
+- **Linux installer** no longer carries clean-up steps for installs older than v0.37.1. If you are upgrading from a version that old, uninstall it first.
+
+### Fixed
+
+- The app now builds cleanly on Elixir 1.20. No behaviour change for players; this keeps future releases shipping.
+
 ## v0.56.0 — 2026-08-22
 
 ### New
