@@ -11,6 +11,39 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Revealed cards section on a match no longer invents cards.** It was
+  showing cards that were never in the match — sometimes cards from a deck you
+  had merely been looking at, sometimes cards that are not even legal in the
+  format you were playing. Scry 2 was reading the card pictures MTGA had drawn
+  on screen, and MTGA reuses those, so leftovers from earlier games leaked in.
+  It now reads the game's own record of what was revealed, so a card can only
+  appear if MTGA actually said it was there.
+- **Revealed cards work again after the latest MTGA update.** The previous
+  approach stopped reporting your hand, graveyard and exile entirely when MTGA
+  changed its internals. The new one does not depend on MTGA's internals at all.
+- **"You" and "Opponent" are now correct on the Revealed cards section.** Which
+  side of the table you sit on changes between matches, and Scry 2 had been
+  assuming it never did — so on roughly a quarter of matches the two players
+  were labelled the wrong way round.
+- **Cards you drew are told apart from cards your opponent drew.** This had
+  never worked, which also meant the draw statistics on a deck were empty.
+- **Scry 2 no longer stops silently on Linux.** If the background service fails
+  to start it now gives up rather than retrying forever, and tells you on the
+  desktop instead of disappearing without a word.
+
+### Improved
+
+- **Revealed cards now covers the whole match rather than one moment.** A card
+  revealed on turn three and exiled on turn five is still listed, with the zone
+  it ended up in. More of your history is covered too — this release reports
+  revealed cards for noticeably more of your past matches than before.
+
+> This release rebuilds the Revealed cards data from your stored match history
+> on first launch. It may take a minute or two, and the dashboard will be
+> briefly unavailable while it runs. No match, draft or collection data is lost.
+
 ## v0.57.0 — 2026-08-31
 
 ### Improved
