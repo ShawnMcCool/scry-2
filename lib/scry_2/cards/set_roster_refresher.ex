@@ -40,10 +40,24 @@ defmodule Scry2.Cards.SetRosterRefresher do
     DBConnection.OwnershipError -> {:noreply, state}
   catch
     # Same test-harness race, other timing: the sandbox owner exits while
-    # the refresh query is in flight, and DBConnection exits the client
-    # instead of raising.
-    :exit, {_reason, %DBConnection.ConnectionError{}} -> {:noreply, state}
+    # the refresh query is in flight and DBConnection exits the client
+    # instead of raising. Anything that is not that race is re-raised —
+    # this must not become a blanket exit swallower.
+    :exit, reason ->
+      if sandbox_teardown?(reason), do: {:noreply, state}, else: exit(reason)
   end
 
   def handle_info(_other, state), do: {:noreply, state}
+
+  # The exit reason arrives in two shapes depending on whether the client
+  # was inside a checkout call when the owner went away:
+  #
+  #     {:shutdown, %DBConnection.ConnectionError{}}
+  #     {{:shutdown, %DBConnection.ConnectionError{}}, {Mod, :fun, args}}
+  #
+  # The earlier clause matched only the first, so a mid-checkout teardown
+  # still killed this GenServer and intermittently failed `mix precommit`.
+  defp sandbox_teardown?({_reason, %DBConnection.ConnectionError{}}), do: true
+  defp sandbox_teardown?({{_reason, %DBConnection.ConnectionError{}}, _mfa}), do: true
+  defp sandbox_teardown?(_other), do: false
 end
