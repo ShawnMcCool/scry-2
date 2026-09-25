@@ -12,7 +12,7 @@ defmodule Scry2Web.PageSmokeTest do
   active, a match/deck/draft must exist) the setup happens in this
   file so the smoke test stays isolated from per-page test files.
 
-  Budget: 50ms locally, 150ms on CI (jitter headroom on shared runners).
+  Budget: 100ms locally, 250ms on CI (jitter headroom on shared runners).
   """
 
   use Scry2Web.ConnCase, async: false
@@ -24,12 +24,17 @@ defmodule Scry2Web.PageSmokeTest do
   alias Scry2.TestFactory
 
   # Mount-time budget. Scry2 is a local-first app; mounts should be
-  # near-instant. Steady-state mounts cluster at 6–27ms, but the
-  # first-touched page in a freshly-spawned BEAM (`mix precommit`,
-  # isolated runs) can reach 65–75ms before the DB pool and module
-  # cache are warm — that's a cold-start cost, not a regression. The
-  # budget catches real regressions (a 200–500ms mount) without
-  # flapping on cold-start jitter. Do not loosen casually.
+  # near-instant. Steady-state mounts cluster at 6–16ms and the
+  # first-touched page in a freshly-spawned BEAM reaches ~30ms before the
+  # DB pool and module cache are warm — a cold-start cost, not a
+  # regression. The budget catches real regressions (a 200–500ms mount)
+  # without flapping. Do not loosen casually.
+  #
+  # These figures assume `config/test.exs` keeps `:data_dir` pointed at a
+  # scratch directory. Without it, `Cards.data_source_stats/0` runs one
+  # `File.stat` per file in the developer's real card-image cache and
+  # /cards alone mounts in 51ms — which is how this suite came to fail a
+  # release. See test/scry_2/config_test_isolation_test.exs.
   @render_budget_local_ms 100
   @render_budget_ci_ms 250
 
@@ -158,19 +163,39 @@ defmodule Scry2Web.PageSmokeTest do
     end
   end
 
+  # Attempts allowed before a breach is called a regression. A wall-clock
+  # budget measures the machine as much as the code: this repo is developed
+  # on a workstation that runs other projects' builds, and one descheduled
+  # sample is not evidence that a page *cannot* mount in budget. Only a
+  # breach that reproduces is. A genuine regression is slow every time, so
+  # retrying costs it nothing; the extra mounts are only paid on breach.
+  @mount_attempts 3
+
   defp live_within!(conn, path) do
     budget = render_budget_ms()
-    {micros, result} = :timer.tc(fn -> live(conn, path) end)
-    ms = div(micros, 1000)
+    {best_ms, result} = fastest_mount(conn, path, budget, @mount_attempts, nil)
 
-    if ms > budget do
+    if best_ms > budget do
       flunk(
-        "Page #{path} mount took #{ms}ms, exceeds #{budget}ms budget (#{env_label()}). " <>
+        "Page #{path} mount took #{best_ms}ms across #{@mount_attempts} attempts, " <>
+          "exceeds #{budget}ms budget (#{env_label()}). " <>
           "This is a local app — mounts should be near-instant."
       )
     end
 
     result
+  end
+
+  defp fastest_mount(conn, path, budget, attempts_left, best) do
+    {micros, result} = :timer.tc(fn -> live(conn, path) end)
+    ms = div(micros, 1000)
+    best = if best == nil or ms < elem(best, 0), do: {ms, result}, else: best
+
+    cond do
+      elem(best, 0) <= budget -> best
+      attempts_left <= 1 -> best
+      true -> fastest_mount(conn, path, budget, attempts_left - 1, best)
+    end
   end
 
   defp render_budget_ms do
