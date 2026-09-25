@@ -93,7 +93,18 @@ defmodule Scry2.Config do
     Application.get_env(:scry_2, :config_path_override) || Scry2.Platform.config_path()
   end
 
-  defp platform_data_dir, do: Scry2.Platform.data_dir()
+  # The data directory every default path is derived from. An
+  # `Application.get_env(:scry_2, :data_dir)` override exists so the test
+  # environment can point at a scratch directory instead of the user's
+  # real one — `config/test.exs` already isolates the TOML lookup, the
+  # file log handler and console-setting persistence, and this completes
+  # that isolation. Without it `cache_dir`/`image_cache_dir` resolved to
+  # the developer's live install, and `Cards.data_source_stats/0` stats
+  # one file per cached card image, so page-mount timings scaled with
+  # whatever the developer happened to have downloaded.
+  defp platform_data_dir do
+    Application.get_env(:scry_2, :data_dir) || Scry2.Platform.data_dir()
+  end
 
   # ── Config loading ───────────────────────────────────────────────────────
 

@@ -56,6 +56,14 @@ config :scry_2, :auto_check_updates_on_mount, false
 # unless a test explicitly opts in via Application.put_env/3.
 config :scry_2, skip_user_config: true
 
+# Derive every default path from a scratch directory rather than the
+# user's real install. Skipping the TOML above only stopped tests reading
+# the user's *config*; without this they still resolved cache_dir and
+# image_cache_dir to ~/.local/share/scry_2, so Cards.data_source_stats/0
+# stat'd the developer's real card-image cache on every /cards mount.
+# Guarded by test/scry_2/config_test_isolation_test.exs.
+config :scry_2, data_dir: Path.expand("../tmp/test_data_dir", __DIR__)
+
 # Swap MtgaMemory's backend for the in-memory fixture in tests so
 # reader/walker/live-state unit tests don't need a live MTGA. See ADR 034.
 config :scry_2, Scry2.MtgaMemory, impl: Scry2.MtgaMemory.TestBackend
