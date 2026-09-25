@@ -1,0 +1,19 @@
+[Unit]
+# Desktop notification when a scry-2 unit enters the failed state.
+#
+# Instantiated by `OnFailure=scry-2-failure-notify@%n.service` on the unit
+# that should report. The %i instance name is the failing unit's name, so
+# one template covers every unit that opts in.
+#
+# Exists because scry-2 crash-looped for 14 days in September 2026 with no
+# signal at all — the cause (ADR-047 session) was a one-line unit bug, but
+# the reason it went unnoticed for two weeks was that nothing ever said so.
+Description=Notify desktop that %i failed
+
+[Service]
+Type=oneshot
+
+# DISPLAY/DBUS come from the user session; notify-send needs the bus.
+# A missing bus must not turn a notification failure into a cascade, so
+# the whole command is best-effort.
+ExecStart=/bin/sh -c '/usr/bin/notify-send --urgency=critical --icon=dialog-error "Scry2 stopped" "%i entered the failed state. Check: journalctl --user -u %i -n 50" || true'

@@ -18,6 +18,8 @@ banner() { echo "==> $1"; }
 source_dir="$(pwd)"
 unit_src="defaults/scry-2-dev.service"
 unit_dst="$HOME/.config/systemd/user/scry-2.service"
+notify_src="defaults/scry-2-failure-notify@.service"
+notify_dst="$HOME/.config/systemd/user/scry-2-failure-notify@.service"
 service_name="scry-2"
 
 # 1. Install patched systemd unit
@@ -26,6 +28,12 @@ mkdir -p "$(dirname "$unit_dst")"
 sed \
   -e "s|WorkingDirectory=.*|WorkingDirectory=$source_dir|" \
   "$unit_src" > "$unit_dst"
+
+# 1b. Install the OnFailure notifier the unit above references. Without it
+# a failed start would log an unresolvable dependency instead of telling
+# the user anything.
+banner "Installing failure notifier to $notify_dst"
+cp "$notify_src" "$notify_dst"
 
 # 2. Reload systemd and enable at login
 banner "Reloading systemd"

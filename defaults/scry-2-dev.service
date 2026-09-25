@@ -2,6 +2,15 @@
 Description=Scry2 — always-on local instance (dev code, port 6015, real data)
 After=network-online.target
 Wants=network-online.target
+# Say so on the desktop when this lands in `failed`, rather than dying quietly.
+OnFailure=scry-2-failure-notify@%n.service
+# Stop restarting after 5 failures in 5 minutes and sit in `failed` instead of
+# looping forever. A genuine crash-loop is a bug to look at, not something to
+# retry 12,964 times — which is what happened over 14 unnoticed days in
+# September 2026. A healthy unit never reaches this. (StartLimit* belongs in
+# [Unit]; systemd ignores it under [Service].)
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=exec
@@ -19,7 +28,13 @@ Environment=MIX_ENV=dev
 # defaults (4444 + scry_2_dev.db) for throwaway local development.
 Environment=PORT=6015
 Environment=DATABASE_PATH=%h/.local/share/scry_2/scry_2.db
-Environment=MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8
+# NOT set here: MIX_OS_DEPS_COMPILE_PARTITION_COUNT. The partition
+# dependency compiler spawns one BEAM per partition, and every one of them
+# inherits ELIXIR_ERL_OPTIONS below — so all N try to register the same
+# distributed node name, collide, and `mix deps.compile` dies with
+# "the name scry_2_dev@127.0.0.1 seems to be in use by another Erlang node".
+# That fails ExecStartPre, which under Restart=always is an unbounded crash
+# loop. Use the partition count for interactive compiles, never in this unit.
 Environment=ELIXIR_ERL_OPTIONS="-name scry_2_dev@127.0.0.1"
 # always, not on-failure: an external SIGTERM (e.g. a stray pkill) exits the BEAM
 # cleanly and must not leave the daemon dead. An explicit systemctl stop still stops.
