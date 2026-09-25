@@ -29,8 +29,6 @@
 pub mod account;
 pub mod boosters;
 pub mod build_hint;
-pub mod card_holder;
-pub mod card_layout_data;
 pub mod chain;
 pub mod class_lookup;
 pub mod cosmetics;
@@ -47,7 +45,6 @@ pub mod limits;
 pub mod list_t;
 pub mod mastery;
 pub mod match_info;
-pub mod match_scene;
 pub mod mono;
 pub mod mono_array;
 pub mod object;

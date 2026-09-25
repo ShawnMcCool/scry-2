@@ -22,9 +22,10 @@ This is a brainstorm tracker, not a commitment. Order is not priority.
 - `.claude/skills/mono-memory-reader/SKILL.md` — every walker offset, the
   verification recipe (via `offsets_probe/`), and live-disassembly
   evidence.
-- `native/scry2_collection_reader/src/bin/class_fields_probe.rs` — dumps
-  a class's field manifest by name, or walks Chain 2 to real battlefield
-  cards; use it to confirm runtime class/field names before coding.
+- `Scry2.MtgaMemory.Nif.walker_debug_class_fields/2` — dumps a class's
+  field manifest by name from a live MTGA process; use it to confirm
+  runtime class/field names before coding. (It replaced the
+  `class_fields_probe` binary, deleted with Chain 2 in ADR-047.)
 
 ## Active campaigns
 
@@ -74,10 +75,6 @@ This is a brainstorm tracker, not a commitment. Order is not priority.
 - Real-time mana / card-advantage tracker — **live** + **reader+**
 - Opponent disconnect / concede early-detection — **live** + **reader+**
 - Active-screen detection (lobby / deckbuilder / match / store) — **live** + **reader+**
-- Backfill: historical `live_match_revealed_cards` rows with `arena_id=0`
-  (pre-2026-07-21 reveal-filter bug) and battlefield rows at `seat_id=0`
-  (pre-2026-07-22 ownership bug) were left as-is; a rebuild is only
-  possible from new captures — **today**, low value
 
 ## E. Forecasting (snapshot-stream analytics)
 

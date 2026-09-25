@@ -1,23 +1,41 @@
 defmodule Scry2.Matches.ClassifyOpponentArchetype do
   @moduledoc """
-  Subscribes to `Topics.live_match_board_final/0` and classifies the
-  opponent's archetype from their revealed cards whenever a match's
-  final board snapshot lands, via
-  `Scry2.Matches.classify_opponent_archetype/1`.
+  Classifies the opponent's archetype from their revealed cards once a
+  match completes, via `Scry2.Matches.classify_opponent_archetype/1`.
 
-  Stateless. Mirrors `Scry2.Matches.MergeOpponentObservation` — same
-  memory-observation scaffold, different enrichment.
+  Subscribes to `domain:events` and reacts to `match_completed`. It used
+  to react to the memory walker's final board snapshot, but revealed
+  cards now come from the domain event log (ADR-047) — so the trigger is
+  the match ending in that same log, not a memory observation.
+
+  Match completion is the right moment: the revealed-cards projection has
+  by then seen every disclosure in the match, so the classifier reads a
+  complete card set rather than a partial one.
+
+  Stateless.
   """
 
-  use Scry2.Events.MemoryObservationConsumer, topic: Scry2.Topics.live_match_board_final()
+  use GenServer
 
-  alias Scry2.LiveState
-  alias Scry2.LiveState.BoardSnapshot
+  alias Scry2.Events.Match.MatchCompleted
   alias Scry2.Matches
+  alias Scry2.Topics
+
+  @doc false
+  def start_link(opts \\ []) do
+    {name, opts} = Keyword.pop(opts, :name, __MODULE__)
+    GenServer.start_link(__MODULE__, opts, name: name)
+  end
 
   @impl true
-  def handle_info({:final_board, %BoardSnapshot{} = board}, state) do
-    case LiveState.match_id_for_board(board) do
+  def init(_opts) do
+    Topics.subscribe(Topics.domain_events())
+    {:ok, %{}}
+  end
+
+  @impl true
+  def handle_info({:domain_event, _id, "match_completed", %MatchCompleted{} = event}, state) do
+    case event.mtga_match_id do
       nil -> :ok
       mtga_match_id -> Matches.classify_opponent_archetype(mtga_match_id)
     end

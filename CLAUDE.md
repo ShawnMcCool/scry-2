@@ -264,6 +264,7 @@ Every system — Elixir, JavaScript, or otherwise — must be designed so that C
 - **Event sourcing is the core architecture for MTGA ingestion.** Raw events → IdentifyDomainEvents (anti-corruption layer) → domain events → projections. See [ADR-017](decisions/architecture/2026-04-05-017-event-sourcing-core-architecture.md) and [ADR-018](decisions/architecture/2026-04-05-018-anti-corruption-layer-mtga-domain.md).
 - **MTGA wire format lives in exactly one module: `Scry2.Events.IdentifyDomainEvents`.** Every downstream consumer works with typed domain event structs under `Scry2.Events.*` and subscribes to `domain:events`. No downstream context touches `mtga_logs_events` directly.
 - **Projections are disposable read models.** `matches_*` and `drafts_*` tables can be dropped and rebuilt from the domain event log at any time via `Scry2.Events.replay_projections!/0`.
+- **In-match facts come from the domain event log, never from process memory.** The GRE stream states which cards were revealed, in which zone, owned by which seat — and it is preserved raw, so anything derived from it is rebuildable. The memory reader is for what the log cannot answer: the collection, mastery, cosmetics, environment, and Chain-1 match metadata (rank, screen names, seats). Reading MTGA's card-display objects to learn what the client was told is reading the shadow instead of the object; it produced phantom cards and broke outright on an MTGA update. See [ADR-047](decisions/architecture/2026-09-25-047-revealed-cards-from-domain-events.md).
 - **`Scry2.DeckList` is the shared kernel for card-list representation.** Pure, no DB, owned by no context. It owns entry parsing, the card-identity rule (downcased trimmed name), printing collapse, and name facets. Purpose-specific outputs (`composition_hash`, `composition_key`, ownership sums) stay in their contexts. Golden tests (`test/scry_2/deck_list_golden_test.exs`) freeze persisted identity values — never update those literals; fix the code. See [ADR-045](decisions/architecture/2026-07-30-045-decklist-shared-kernel.md).
 - **Every deck surface scores ownership through `Scry2.Buildability` and renders it through `Scry2Web.DeckRendering.Ownership`.** Pass an `Assessment` to `standard_composition/1`'s `ownership` attr — it wires the tint, the toned count, and the wash itself. Never re-implement "what am I missing" per page. With no collection snapshot, `collection_known?` is false and nothing is annotated: an absent snapshot means unknown ownership, not zero. See [ADR-046](decisions/architecture/2026-08-07-046-buildability-shared-context.md).
 
@@ -310,7 +311,7 @@ Each context owns its tables and communicates only via PubSub events. No context
 |---|---|---|---|
 | **MtgaLogIngestion** | `mtga_logs_` | raw log events (`mtga_logs_events`), parser cursor (`mtga_logs_cursor`) | Broadcasts `mtga_logs:events` (raw) and `mtga_logs:status` |
 | **Events** | `domain_events` | domain event log, IdentifyDomainEvents (anti-corruption layer), IngestRawEvents | Subscribes `mtga_logs:events`; broadcasts `domain:events` |
-| **Matches** | `matches_` | matches, games, deck submissions (projection) | Subscribes `domain:events` via `Matches.Match`; broadcasts `matches:updates` |
+| **Matches** | `matches_` | matches, games, deck submissions, revealed cards (projections) | Subscribes `domain:events` via `Matches.Match` and `Matches.RevealedCardsProjection`; broadcasts `matches:updates` |
 | **Drafts** | `drafts_` | drafts, draft picks (projection) | Subscribes `domain:events` via `Drafts.Draft`; broadcasts `drafts:updates` |
 | **Cards** | `cards_` | cards (synthesised), sets, MTGA + Scryfall mirrors | Broadcasts `cards:updates` |
 | **Decks** | `decks_` | decks (with `starred` / `archived` flags + MTGA clipboard-format export for deck-collection re-import), deck versions, game submissions, match results, mulligan hands, cards drawn (projection) | Subscribes `domain:events` via `Decks.DeckProjection`; broadcasts `decks:updates` |
@@ -415,7 +416,7 @@ The handler classifies every entry into one component:
 | `:ingester` | Explicit — raw-event persistence, downstream dispatch |
 | `:importer` | Explicit — MTGA + Scryfall imports, card synthesis  |
 | `:http` | Explicit — API calls, rate limiting, fetch results |
-| `:live_state` | Explicit + Automatic — in-match memory polling (Chain-1 / Chain-2). Auto-classified for any log from `Scry2.LiveState.*` |
+| `:live_state` | Explicit + Automatic — in-match memory polling (Chain-1: rank, screen names, seats). Auto-classified for any log from `Scry2.LiveState.*` |
 | `:system` | Fallback — any log without a component tag and no framework prefix |
 | `:phoenix` | Automatic — logs from `Phoenix.*` modules |
 | `:ecto` | Automatic — logs from `Ecto.*`, `Exqlite.*`, `DBConnection.*` |

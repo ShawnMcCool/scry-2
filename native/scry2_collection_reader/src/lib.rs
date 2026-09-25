@@ -837,66 +837,6 @@ fn walk_cosmetics(pid: i32) -> Result<Option<WireCosmeticsSummary>, WalkErrorWir
 }
 
 // ============================================================
-// walk_match_board NIF — Chain 2 (per-zone visible card arena_ids)
-// per specs/2026-05-03-chain-2-board-state-design.md
-// ============================================================
-
-/// One (seat, zone, arena_ids) row in [`WireBoardSnapshot.zones`].
-#[derive(NifMap)]
-pub struct WireZoneCards {
-    pub seat_id: i32,
-    pub zone_id: i32,
-    pub arena_ids: Vec<i32>,
-}
-
-/// Wire shape returned to Elixir for one board-state read. `nil` when
-/// `MatchSceneManager.Instance` is null (no active match scene).
-#[derive(NifMap)]
-pub struct WireBoardSnapshot {
-    pub zones: Vec<WireZoneCards>,
-    pub reader_version: String,
-}
-
-fn board_snapshot_to_wire(v: walker::run::BoardSnapshot) -> WireBoardSnapshot {
-    WireBoardSnapshot {
-        zones: v
-            .zones
-            .into_iter()
-            .map(|z| WireZoneCards {
-                seat_id: z.seat_id,
-                zone_id: z.zone_id,
-                arena_ids: z.arena_ids,
-            })
-            .collect(),
-        reader_version: READER_VERSION.to_string(),
-    }
-}
-
-/// Read one board-state snapshot from the target MTGA process.
-///
-/// Returns `{:ok, nil}` when MTGA is reachable but there is no active
-/// match scene — the duel UI hasn't loaded or has torn down. Returns
-/// `{:ok, %{...}}` populated with per-zone arena_id lists otherwise.
-#[rustler::nif(schedule = "DirtyIo")]
-fn walk_match_board(pid: i32) -> Result<Option<WireBoardSnapshot>, WalkErrorWire> {
-    let maps = platform::list_maps(pid).map_err(|_| WalkErrorWire::MonoDllReadFailed)?;
-    let counter = AtomicU64::new(0);
-    let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-    let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
-    let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
-    let result = walker::run::walk_match_board_cached(pid as u32, &maps, read_mem);
-    let snap = retry_invalidating_on_chain_failure(pid as u32, result, || {
-        let counter = AtomicU64::new(0);
-        let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-        let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
-        let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
-        walker::run::walk_match_board_cached(pid as u32, &maps, read_mem)
-    })
-    .map_err(WalkErrorWire::from)?;
-    Ok(snap.map(board_snapshot_to_wire))
-}
-
-// ============================================================
 // Stats variants — return (result, reads_used, budget) so callers
 // can measure how close each walk is to the read-budget ceiling.
 // Used by the Settings → Memory reading "Run diagnostic capture"
@@ -927,34 +867,6 @@ fn walker_debug_walk_match_info_with_stats(
             let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
             walker::run::walk_match_info_cached(pid as u32, &maps, read_mem)
                 .map(|opt| opt.map(match_info_to_wire))
-                .map_err(WalkErrorWire::from)
-        }
-        Err(_) => Err(WalkErrorWire::MonoDllReadFailed),
-    };
-    let stats = WireWalkStats {
-        reads_used: counter.load(Ordering::Relaxed),
-        budget: WALK_READ_BUDGET,
-    };
-    (result, stats)
-}
-
-/// `walk_match_board_cached` + reads_used / budget. Same shape as the
-/// match-info variant.
-#[rustler::nif(schedule = "DirtyIo")]
-fn walker_debug_walk_match_board_with_stats(
-    pid: i32,
-) -> (
-    Result<Option<WireBoardSnapshot>, WalkErrorWire>,
-    WireWalkStats,
-) {
-    let counter = AtomicU64::new(0);
-    let result = match platform::list_maps(pid) {
-        Ok(maps) => {
-            let inner = |addr: u64, len: usize| platform::read_bytes(pid, addr, len).ok();
-            let deadline = Instant::now() + WALK_WALL_CLOCK_BUDGET;
-            let read_mem = bounded_with_deadline(&counter, WALK_READ_BUDGET, deadline, inner);
-            walker::run::walk_match_board_cached(pid as u32, &maps, read_mem)
-                .map(|opt| opt.map(board_snapshot_to_wire))
                 .map_err(WalkErrorWire::from)
         }
         Err(_) => Err(WalkErrorWire::MonoDllReadFailed),

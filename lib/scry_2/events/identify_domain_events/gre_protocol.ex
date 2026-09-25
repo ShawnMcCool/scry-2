@@ -50,11 +50,6 @@ defmodule Scry2.Events.IdentifyDomainEvents.GREProtocol do
 
   # ── Zone helpers ─────────────────────────────────────────────────────
 
-  @doc "Maps zone IDs to readable names."
-  def zone_name(nil), do: nil
-  def zone_name(id) when is_integer(id) and id > 0, do: "zone_#{id}"
-  def zone_name(_), do: nil
-
   # ── Annotation detail extraction ─────────────────────────────────────
 
   @doc "Finds a string detail value by key from an annotation details list."

@@ -1,14 +1,11 @@
 defmodule Scry2Web.Components.RevealedCardsCard do
   @moduledoc """
-  Renders the per-match Chain-2 revealed-cards section on the match
-  detail page.
+  Renders the per-match revealed-cards section on the match detail page.
 
   Per-seat groups (You / Opponent / others), each with per-zone rows
   (Battlefield first; followed by Hand, Graveyard, and Exile). The zone
   headers are domain chrome; each zone's card row is a
-  `Scry2Web.DeckRendering.deck_view/1` in memory order (`order:
-  :natural` — the reader reports cards as they sit in MTGA's process
-  memory).
+  `Scry2Web.DeckRendering.deck_view/1`.
 
   Hidden when `groups` is empty.
 
@@ -40,7 +37,7 @@ defmodule Scry2Web.Components.RevealedCardsCard do
           Revealed cards
         </h3>
         <p class="text-xs opacity-60 -mt-1 mb-2">
-          Cards visible in MTGA's process memory at end-of-match.
+          Cards MTGA revealed to you during this match.
         </p>
 
         <div class="flex flex-col gap-4">
@@ -73,13 +70,13 @@ defmodule Scry2Web.Components.RevealedCardsCard do
         <div class="flex items-baseline gap-2">
           <span class="text-xs font-semibold opacity-70">{zone.label}</span>
           <span class="text-xs opacity-50 tabular-nums">({length(zone.arena_ids)})</span>
-          <span :if={zone.zone_id == 3} class="text-xs opacity-50 italic">
+          <span :if={zone.zone == "hand"} class="text-xs opacity-50 italic">
             revealed only
           </span>
         </div>
 
         <.deck_view
-          id={"revealed-#{@group_idx}-#{zone.zone_id}"}
+          id={"revealed-#{@group_idx}-#{zone.zone || "unknown"}"}
           spec={%ViewSpec{piling: :spread, order: :natural, card_width: "3.5rem"}}
           cards={zone.arena_ids}
           cards_by_arena_id={@cards_by_arena_id}

@@ -90,23 +90,6 @@ defmodule Scry2Web.MtgaMemoryHelpersTest do
     end
   end
 
-  describe "match_board_summary/1" do
-    test "sums arena ids across zones" do
-      board = %{
-        zones: [
-          %{arena_ids: [1, 2, 3]},
-          %{arena_ids: [4, 5]}
-        ]
-      }
-
-      assert H.match_board_summary({:ok, board}) == "zones=2, cards=5"
-    end
-
-    test "no match scene for ok-nil" do
-      assert H.match_board_summary({:ok, nil}) == "no match scene"
-    end
-  end
-
   describe "format_elapsed_ms/1" do
     test "renders sub-ms as <1 ms" do
       assert H.format_elapsed_ms(0) == "<1 ms"

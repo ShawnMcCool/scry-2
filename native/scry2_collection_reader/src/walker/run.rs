@@ -21,9 +21,7 @@
 //! (no /proc, no syscalls) so unit tests can drive it with a
 //! `FakeMem`-style fixture.
 
-use std::collections::BTreeMap;
 
-use super::card_holder;
 use super::chain;
 use super::class_lookup;
 use super::dict::DictEntry;
@@ -32,7 +30,6 @@ use super::field;
 use super::image_lookup;
 use super::inventory::InventoryValues;
 use super::match_info::{self, MatchInfoValues};
-use super::match_scene;
 use super::mono::{self, MonoOffsets};
 use super::vtable;
 use crate::discovery_cache::{self, AnchorKind};
@@ -249,166 +246,6 @@ where
         &papa_bytes,
         read_mem,
     ))
-}
-
-/// One (seat, zone, arena_ids) triple in [`BoardSnapshot`]. `seat_id`
-/// and `zone_id` are MTGA's own enum integers — keep them opaque at
-/// the walker boundary; symbolic translation is the caller's job.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ZoneCards {
-    pub seat_id: i32,
-    pub zone_id: i32,
-    pub arena_ids: Vec<i32>,
-}
-
-/// Snapshot of every readable card across every zone in the active
-/// match. Returned by [`walk_match_board`].
-///
-/// Populates entries for Hand (3), Battlefield (4), Graveyard (5),
-/// and Exile (6). Stack and Command are intentionally not walked.
-/// Empty zones are omitted from the result entirely (no zero-length
-/// `ZoneCards` rows reach the wire).
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct BoardSnapshot {
-    pub zones: Vec<ZoneCards>,
-}
-
-/// Push one or more [`ZoneCards`] rows for a single `(seat, zone)`
-/// entry from the seat→zone map.
-///
-/// Battlefield is special-cased: its holder is not split by player
-/// (see the `card_holder` module doc — `PlayerTypeMap` holds exactly
-/// one battlefield holder, keyed `0`), so seat is resolved per card
-/// via [`card_holder::read_battlefield_cards`] and one row is emitted
-/// per distinct resolved seat — overriding `outer_seat_id`, which is
-/// meaningless for this zone. Every other zone keeps the outer
-/// `PlayerTypeMap` seat as-is.
-fn push_zone_cards<F>(
-    zones: &mut Vec<ZoneCards>,
-    offsets: &MonoOffsets,
-    outer_seat_id: i32,
-    zone_id: i32,
-    holder_addr: u64,
-    read_mem: F,
-) where
-    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
-{
-    if zone_id == card_holder::ZONE_BATTLEFIELD {
-        let Some(cards) = card_holder::read_battlefield_cards(offsets, holder_addr, read_mem)
-        else {
-            return;
-        };
-        let mut by_seat: BTreeMap<i32, Vec<i32>> = BTreeMap::new();
-        for (seat_id, arena_id) in cards {
-            by_seat.entry(seat_id).or_default().push(arena_id);
-        }
-        for (seat_id, arena_ids) in by_seat {
-            zones.push(ZoneCards {
-                seat_id,
-                zone_id,
-                arena_ids,
-            });
-        }
-        return;
-    }
-
-    if let Some(arena_ids) =
-        card_holder::read_zone_arena_ids(offsets, holder_addr, zone_id, read_mem)
-    {
-        if !arena_ids.is_empty() {
-            zones.push(ZoneCards {
-                seat_id: outer_seat_id,
-                zone_id,
-                arena_ids,
-            });
-        }
-    }
-}
-
-/// Run the board-state walker (Chain 2) against a target process.
-///
-/// Resolves `MatchSceneManager.Instance` (the static singleton),
-/// walks to its `PlayerTypeMap`, then for every (seat, zone) entry
-/// drills the holder for arena_ids across Hand (3), Battlefield (4),
-/// Graveyard (5), and Exile (6).
-///
-/// Returns `Ok(None)` when MTGA is reachable but
-/// `MatchSceneManager.Instance` is null — i.e. no active match scene
-/// (the duel UI hasn't loaded, or it's torn down). Treat as the
-/// authoritative "wind down polling" signal.
-pub fn walk_match_board<F>(
-    maps: &[MapEntry],
-    read_mem: F,
-) -> Result<Option<BoardSnapshot>, WalkError>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
-{
-    let offsets = MonoOffsets::mtga_default();
-
-    let (mono_base, mono_bytes) =
-        read_mono_image(maps, &read_mem).ok_or(WalkError::MonoDllReadFailed)?;
-    if mono_bytes.is_empty() {
-        return Err(WalkError::MonoDllNotFound);
-    }
-
-    let domain_addr = domain::find_root_domain(&mono_bytes, mono_base, read_mem)
-        .ok_or(WalkError::RootDomainNotFound)?;
-
-    let images = image_lookup::list_all_images(&offsets, domain_addr, read_mem)
-        .ok_or(WalkError::RootDomainNotFound)?;
-    if images.is_empty() {
-        return Err(WalkError::RootDomainNotFound);
-    }
-
-    let scene_class_addr = find_class_in_images(&offsets, &images, "MatchSceneManager", read_mem)
-        .ok_or(WalkError::ClassNotFound("MatchSceneManager"))?;
-    let scene_class_bytes = read_mem(scene_class_addr, CLASS_DEF_BLOB_LEN)
-        .ok_or(WalkError::ClassReadFailed("MatchSceneManager"))?;
-
-    let scene_singleton = match match_scene::find_scene_singleton(
-        &offsets,
-        scene_class_addr,
-        &scene_class_bytes,
-        domain_addr,
-        read_mem,
-    ) {
-        Some(addr) => addr,
-        None => return Ok(None), // No active match scene — normal state.
-    };
-
-    let (ptm_addr, ptm_class_bytes) =
-        match match_scene::walk_to_player_type_map(&offsets, scene_singleton, read_mem) {
-            Some(p) => p,
-            None => return Ok(None),
-        };
-
-    let seat_zone_map =
-        match match_scene::read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, read_mem) {
-            Some(m) => m,
-            None => return Ok(None),
-        };
-
-    let mut zones = Vec::new();
-    for seat in &seat_zone_map.seats {
-        for zone in &seat.zones {
-            if !card_holder::READABLE_ZONES.contains(&zone.zone_id) {
-                continue;
-            }
-            if zone.holder_addr == 0 {
-                continue;
-            }
-            push_zone_cards(
-                &mut zones,
-                &offsets,
-                seat.seat_id,
-                zone.zone_id,
-                zone.holder_addr,
-                read_mem,
-            );
-        }
-    }
-
-    Ok(Some(BoardSnapshot { zones }))
 }
 
 // ============================================================
@@ -785,81 +622,6 @@ where
         &papa.class_bytes,
         read_mem,
     ))
-}
-
-/// Cached variant of [`walk_match_board`]. See module-level cache
-/// rationale and the note on stale-entry handling.
-pub fn walk_match_board_cached<F>(
-    pid: u32,
-    maps: &[MapEntry],
-    read_mem: F,
-) -> Result<Option<BoardSnapshot>, WalkError>
-where
-    F: Fn(u64, usize) -> Option<Vec<u8>> + Copy,
-{
-    let offsets = MonoOffsets::mtga_default();
-
-    let mono_image =
-        discovery_cache::get_mono_image(pid, maps, read_mem).ok_or(WalkError::MonoDllReadFailed)?;
-    let domain_addr = discovery_cache::get_root_domain(pid, &mono_image, read_mem)
-        .ok_or(WalkError::RootDomainNotFound)?;
-    let images = discovery_cache::get_all_images(pid, &offsets, domain_addr, read_mem)
-        .ok_or(WalkError::RootDomainNotFound)?;
-    let scene = discovery_cache::get_anchor(
-        pid,
-        AnchorKind::Scene,
-        &offsets,
-        &images,
-        "MatchSceneManager",
-        CLASS_DEF_BLOB_LEN,
-        read_mem,
-    )
-    .ok_or(WalkError::ClassNotFound("MatchSceneManager"))?;
-
-    let scene_singleton = match match_scene::find_scene_singleton(
-        &offsets,
-        scene.class_addr,
-        &scene.class_bytes,
-        domain_addr,
-        read_mem,
-    ) {
-        Some(addr) => addr,
-        None => return Ok(None),
-    };
-
-    let (ptm_addr, ptm_class_bytes) =
-        match match_scene::walk_to_player_type_map(&offsets, scene_singleton, read_mem) {
-            Some(p) => p,
-            None => return Ok(None),
-        };
-
-    let seat_zone_map =
-        match match_scene::read_seat_zone_map(&offsets, ptm_addr, &ptm_class_bytes, read_mem) {
-            Some(m) => m,
-            None => return Ok(None),
-        };
-
-    let mut zones = Vec::new();
-    for seat in &seat_zone_map.seats {
-        for zone in &seat.zones {
-            if !card_holder::READABLE_ZONES.contains(&zone.zone_id) {
-                continue;
-            }
-            if zone.holder_addr == 0 {
-                continue;
-            }
-            push_zone_cards(
-                &mut zones,
-                &offsets,
-                seat.seat_id,
-                zone.zone_id,
-                zone.holder_addr,
-                read_mem,
-            );
-        }
-    }
-
-    Ok(Some(BoardSnapshot { zones }))
 }
 
 /// Cached variant of [`walk_collection`]. See module-level cache

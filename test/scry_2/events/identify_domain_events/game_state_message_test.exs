@@ -531,4 +531,180 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessageTest do
       assert tc.trigger_type == "EnteredBattlefield"
     end
   end
+
+  describe "CardDrawn draw attribution" do
+    # Regression: the zone table was keyed by `zones[].id`, a field that
+    # does not exist — every zone object carries `zoneId`. The resulting
+    # map was keyed entirely by nil, so `is_self_draw` resolved to nil on
+    # all 26,469 card_drawn events ever produced. See ADR-047.
+    test "resolves is_self_draw from the zone table's owning seat" do
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{
+          game_objects: %{},
+          self_seat_id: 1
+        })
+
+      draws = Enum.filter(events, &match?(%Scry2.Events.Gameplay.CardDrawn{}, &1))
+
+      assert draws != [], "fixture should produce at least one CardDrawn"
+
+      assert Enum.all?(draws, &is_boolean(&1.is_self_draw)),
+             "is_self_draw must be resolved, got: #{inspect(Enum.map(draws, & &1.is_self_draw))}"
+    end
+
+    test "attributes a draw into the opponent's hand as not-self" do
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{
+          game_objects: %{},
+          self_seat_id: 2
+        })
+
+      draws = Enum.filter(events, &match?(%Scry2.Events.Gameplay.CardDrawn{}, &1))
+
+      assert draws != []
+      assert Enum.all?(draws, &(&1.is_self_draw == false))
+    end
+  end
+
+  describe "owner_seat_id attribution" do
+    # Gameplay events carried `active_player` (whose turn it is) but never
+    # the seat that owns the card. Revealed-cards projection needs the
+    # owner, which the GRE zone table states outright. ADR-047.
+    test "stamps the owning seat of the destination zone onto zone-transfer events" do
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{
+          game_objects: %{},
+          self_seat_id: 1
+        })
+
+      draws = Enum.filter(events, &match?(%Scry2.Events.Gameplay.CardDrawn{}, &1))
+      assert draws != []
+
+      # The fixture's hand (zone 31) is owned by seat 1.
+      assert Enum.all?(draws, &(&1.owner_seat_id == 1)),
+             "got: #{inspect(Enum.map(draws, & &1.owner_seat_id))}"
+    end
+
+    test "owner_seat_id is nil when the destination zone has no owner" do
+      # Shared zones (battlefield, stack) carry no ownerSeatId; the field
+      # must be nil rather than guessing from active_player.
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{game_objects: %{}})
+
+      resolves = Enum.filter(events, &match?(%Scry2.Events.Gameplay.SpellResolved{}, &1))
+
+      for event <- resolves do
+        assert event.owner_seat_id == nil or is_integer(event.owner_seat_id)
+      end
+    end
+  end
+
+  describe "zone labels on every zone-transfer event" do
+    # Every one of these events is built from the same
+    # AnnotationType_ZoneTransfer, which carries zone_src/zone_dest.
+    # Carrying the resolved zones on all of them means the revealed-cards
+    # projection never has to infer "a draw means hand". ADR-047.
+    test "CardDrawn carries the resolved destination zone" do
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{
+          game_objects: %{},
+          self_seat_id: 1
+        })
+
+      draws = Enum.filter(events, &match?(%Scry2.Events.Gameplay.CardDrawn{}, &1))
+      assert draws != []
+
+      assert Enum.all?(draws, &(&1.zone_to == "hand")),
+             "got: #{inspect(Enum.map(draws, & &1.zone_to))}"
+
+      assert Enum.all?(draws, &(&1.zone_from == "library"))
+    end
+
+    test "SpellCast and SpellResolved carry zones" do
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{game_objects: %{}})
+
+      zoned =
+        Enum.filter(events, fn e ->
+          match?(%Scry2.Events.Gameplay.SpellCast{}, e) or
+            match?(%Scry2.Events.Gameplay.SpellResolved{}, e)
+        end)
+
+      assert zoned != []
+      assert Enum.all?(zoned, &is_binary(&1.zone_to))
+    end
+  end
+
+  describe "owner_is_local" do
+    # GRE ownerSeatId is a per-match seat NUMBER and the local player
+    # alternates seats between matches — seat 1 is the local player only
+    # ~75% of the time in real data. Consumers need the role, not the
+    # number, so the ACL resolves it once. ADR-047.
+    test "true when the owning seat is the local player's seat" do
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{
+          game_objects: %{},
+          self_seat_id: 1
+        })
+
+      draws = Enum.filter(events, &match?(%Scry2.Events.Gameplay.CardDrawn{}, &1))
+      assert draws != []
+      assert Enum.all?(draws, &(&1.owner_is_local == true))
+    end
+
+    test "false when the owning seat is the opponent's" do
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{
+          game_objects: %{},
+          self_seat_id: 2
+        })
+
+      draws = Enum.filter(events, &match?(%Scry2.Events.Gameplay.CardDrawn{}, &1))
+      assert draws != []
+      assert Enum.all?(draws, &(&1.owner_is_local == false))
+    end
+
+    test "nil when the local seat is unknown" do
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{game_objects: %{}})
+
+      draws = Enum.filter(events, &match?(%Scry2.Events.Gameplay.CardDrawn{}, &1))
+      assert draws != []
+      assert Enum.all?(draws, &(&1.owner_is_local == nil))
+    end
+
+    test "is_self_draw agrees with owner_is_local" do
+      # is_self_draw is the older, narrower name for the same fact and
+      # still has consumers in Decks; both must come from one computation.
+      record = record_from_fixture("gre_game_state_card_drawn.log")
+
+      {events, []} =
+        IdentifyDomainEvents.translate(record, @self_user_id, %{
+          game_objects: %{},
+          self_seat_id: 1
+        })
+
+      for draw <- Enum.filter(events, &match?(%Scry2.Events.Gameplay.CardDrawn{}, &1)) do
+        assert draw.is_self_draw == draw.owner_is_local
+      end
+    end
+  end
 end

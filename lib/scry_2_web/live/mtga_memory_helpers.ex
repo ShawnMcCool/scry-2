@@ -113,21 +113,6 @@ defmodule Scry2Web.MtgaMemoryHelpers do
   end
 
   @doc """
-  Summarise a `walk_match_board` payload. Returns "zones=N, cards=M"
-  or a "no scene" string when MatchSceneManager.Instance was nil
-  (post-match teardown).
-  """
-  @spec match_board_summary(any()) :: String.t()
-  def match_board_summary({:ok, nil}), do: "no match scene"
-
-  def match_board_summary({:ok, %{zones: zones}}) when is_list(zones) do
-    cards = Enum.reduce(zones, 0, fn z, acc -> acc + length(z.arena_ids) end)
-    "zones=#{length(zones)}, cards=#{cards}"
-  end
-
-  def match_board_summary(_), do: ""
-
-  @doc """
   Format an elapsed time in milliseconds with a sensible unit. Sub-ms
   values still render as `<1 ms` so the UI stays consistent.
   """

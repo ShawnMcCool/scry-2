@@ -5,7 +5,7 @@ defmodule Scry2Web.MtgaMemoryLive do
 
   This page is the single window into what the walker is doing right
   now: which MTGA process it sees, what its last `walk_match_info` /
-  `walk_match_board` call cost (reads_used, elapsed time), what the
+  `walk_match_info` call cost (reads_used, elapsed time), what the
   per-pid discovery cache holds, and ad-hoc class/field probes for
   reverse-engineering future builds.
 
@@ -173,7 +173,6 @@ defmodule Scry2Web.MtgaMemoryLive do
 
   defp perform_walker_run(pid) do
     {info_t0, info_result, info_stats} = time_walk(:info, pid)
-    {board_t0, board_result, board_stats} = time_walk(:board, pid)
 
     %{
       ts: System.system_time(:millisecond),
@@ -182,11 +181,6 @@ defmodule Scry2Web.MtgaMemoryLive do
         result: info_result,
         stats: info_stats,
         elapsed_ms: info_t0
-      },
-      board: %{
-        result: board_result,
-        stats: board_stats,
-        elapsed_ms: board_t0
       }
     }
   end
@@ -194,12 +188,6 @@ defmodule Scry2Web.MtgaMemoryLive do
   defp time_walk(:info, pid) do
     t0 = System.monotonic_time(:millisecond)
     {result, stats} = Nif.walker_debug_walk_match_info_with_stats(pid)
-    {System.monotonic_time(:millisecond) - t0, result, stats}
-  end
-
-  defp time_walk(:board, pid) do
-    t0 = System.monotonic_time(:millisecond)
-    {result, stats} = Nif.walker_debug_walk_match_board_with_stats(pid)
     {System.monotonic_time(:millisecond) - t0, result, stats}
   end
 
@@ -515,11 +503,6 @@ defmodule Scry2Web.MtgaMemoryLive do
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
         <.walker_chain_row label="match_info" chain={@run.info} summarise={&H.match_info_summary/1} />
-        <.walker_chain_row
-          label="match_board"
-          chain={@run.board}
-          summarise={&H.match_board_summary/1}
-        />
       </div>
     </div>
     """

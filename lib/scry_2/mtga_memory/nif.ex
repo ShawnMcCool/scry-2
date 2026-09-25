@@ -69,9 +69,6 @@ defmodule Scry2.MtgaMemory.Nif do
   def walk_match_info(_pid), do: :erlang.nif_error(:nif_not_loaded)
 
   @impl true
-  def walk_match_board(_pid), do: :erlang.nif_error(:nif_not_loaded)
-
-  @impl true
   def walk_mastery(_pid), do: :erlang.nif_error(:nif_not_loaded)
 
   @impl true

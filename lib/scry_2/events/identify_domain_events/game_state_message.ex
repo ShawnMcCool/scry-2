@@ -30,6 +30,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
   }
 
   alias Scry2.Events.IdentifyDomainEvents.GREProtocol
+  alias Scry2.Events.IdentifyDomainEvents.ZoneTable
   alias Scry2.Events.Match.{DieRolled, GameCompleted}
   alias Scry2.Events.Permanent.{PermanentStatsChanged, PermanentTapped, PermanentUntapped}
   alias Scry2.Events.Priority.PriorityAssigned
@@ -442,8 +443,12 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     cached_objects = match_context[:game_objects] || %{}
     game_number = match_context[:current_game_number]
 
+    # The zone table accumulates across the batch: only some
+    # GameStateMessages carry a `zones` array, and a message that omits
+    # it must inherit the zone semantics established earlier rather than
+    # fall back to an empty table. See ADR-047.
     messages
-    |> Enum.flat_map(fn msg ->
+    |> Enum.map_reduce(ZoneTable.new(), fn msg, zone_table ->
       if GREProtocol.game_state_message?(msg) do
         gsm = GREProtocol.extract_game_state(msg)
         turn_info = gsm["turnInfo"] || %{}
@@ -457,8 +462,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
         # Merge with cached objects for resolution
         objects = Map.merge(GREProtocol.cached_objects_to_map(cached_objects), local_objects)
 
-        # Build zone_id → ownerSeatId map for draw attribution
-        zone_owners = Map.new(gsm["zones"] || [], &{&1["id"], &1["ownerSeatId"]})
+        zone_table = ZoneTable.merge(zone_table, ZoneTable.from_game_state(gsm))
         self_seat_id = match_context[:self_seat_id]
 
         all_annotations = annotations ++ persistent_annotations
@@ -472,14 +476,17 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
             occurred_at,
             objects,
             game_number,
-            zone_owners,
+            zone_table,
             self_seat_id
           )
         )
+        |> then(&{&1, zone_table})
       else
-        []
+        {[], zone_table}
       end
     end)
+    |> elem(0)
+    |> List.flatten()
   end
 
   defp annotation_to_turn_actions(
@@ -489,7 +496,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          occurred_at,
          objects,
          game_number,
-         zone_owners,
+         zone_table,
          self_seat_id
        ) do
     details = ann["details"] || []
@@ -500,13 +507,31 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
     zone_from = GREProtocol.find_detail_int(details, "zone_src")
     zone_to = GREProtocol.find_detail_int(details, "zone_dest")
 
+    owner_seat_id =
+      ZoneTable.owner_seat(zone_table, zone_to) || ZoneTable.owner_seat(zone_table, zone_from)
+
+    owner_is_local =
+      if is_integer(owner_seat_id) and is_integer(self_seat_id) do
+        owner_seat_id == self_seat_id
+      end
+
     common = %{
       mtga_match_id: match_id,
       game_number: game_number,
       turn_number: turn_info["turnNumber"],
       phase: turn_info["phase"],
       active_player: turn_info["activePlayer"],
+      # The seat that owns the card, per the GRE zone table: the
+      # destination zone's owner, falling back to the source zone for
+      # transfers into a shared zone. Never guessed from active_player.
+      owner_seat_id: owner_seat_id,
+      # GRE seat ids are per-match numbers and the local player alternates
+      # seats, so resolve the role here once rather than making every
+      # consumer re-derive it from a seat number it cannot interpret.
+      owner_is_local: owner_is_local,
       card_arena_id: grp_id,
+      zone_from: ZoneTable.label(zone_table, zone_from),
+      zone_to: ZoneTable.label(zone_table, zone_to),
       occurred_at: occurred_at
     }
 
@@ -522,14 +547,10 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
           struct(SpellResolved, common)
 
         "Draw" ->
-          drawer_seat_id = Map.get(zone_owners, zone_to)
-
-          is_self_draw =
-            if is_integer(drawer_seat_id) && is_integer(self_seat_id) do
-              drawer_seat_id == self_seat_id
-            end
-
-          struct(CardDrawn, Map.put(common, :is_self_draw, is_self_draw))
+          # is_self_draw is the older, narrower name for owner_is_local and
+          # still has consumers in Decks; one computation, two names, until
+          # those consumers migrate.
+          struct(CardDrawn, Map.put(common, :is_self_draw, owner_is_local))
 
         "Destroy" ->
           struct(PermanentDestroyed, common)
@@ -538,9 +559,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
           struct(
             ZoneChanged,
             Map.merge(common, %{
-              reason: "sacrifice",
-              zone_from: GREProtocol.zone_name(zone_from),
-              zone_to: GREProtocol.zone_name(zone_to)
+              reason: "sacrifice"
             })
           )
 
@@ -551,9 +570,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
           struct(
             ZoneChanged,
             Map.merge(common, %{
-              reason: "discard",
-              zone_from: GREProtocol.zone_name(zone_from),
-              zone_to: GREProtocol.zone_name(zone_to)
+              reason: "discard"
             })
           )
 
@@ -561,9 +578,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
           struct(
             ZoneChanged,
             Map.merge(common, %{
-              reason: "return",
-              zone_from: GREProtocol.zone_name(zone_from),
-              zone_to: GREProtocol.zone_name(zone_to)
+              reason: "return"
             })
           )
 
@@ -577,9 +592,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
           struct(
             ZoneChanged,
             Map.merge(common, %{
-              reason: "put",
-              zone_from: GREProtocol.zone_name(zone_from),
-              zone_to: GREProtocol.zone_name(zone_to)
+              reason: "put"
             })
           )
 
@@ -597,7 +610,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          occurred_at,
          objects,
          game_number,
-         _zone_owners,
+         _zone_table,
          _self_seat_id
        ) do
     details = ann["details"] || []
@@ -626,7 +639,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          occurred_at,
          _objects,
          game_number,
-         _zone_owners,
+         _zone_table,
          _self_seat_id
        ) do
     details = ann["details"] || []
@@ -654,7 +667,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          occurred_at,
          objects,
          game_number,
-         _zone_owners,
+         _zone_table,
          _self_seat_id
        ) do
     instance_id = ann["affectedIds"] |> List.wrap() |> List.first()
@@ -680,7 +693,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          occurred_at,
          objects,
          game_number,
-         _zone_owners,
+         _zone_table,
          _self_seat_id
        ) do
     details = ann["details"] || []
@@ -709,7 +722,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          occurred_at,
          objects,
          game_number,
-         _zone_owners,
+         _zone_table,
          _self_seat_id
        ) do
     spell_instance_id = ann["affectorId"]
@@ -739,7 +752,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          occurred_at,
          objects,
          game_number,
-         _zone_owners,
+         _zone_table,
          _self_seat_id
        ) do
     source_instance_id = ann["affectorId"]
@@ -765,7 +778,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          occurred_at,
          objects,
          game_number,
-         _zone_owners,
+         _zone_table,
          _self_seat_id
        ) do
     details = ann["details"] || []
@@ -795,7 +808,7 @@ defmodule Scry2.Events.IdentifyDomainEvents.GameStateMessage do
          _occurred_at,
          _objects,
          _game_number,
-         _zone_owners,
+         _zone_table,
          _self_seat_id
        ),
        do: []

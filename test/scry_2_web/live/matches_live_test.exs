@@ -19,11 +19,14 @@ defmodule Scry2Web.MatchesLiveTest do
       {:ok, _snapshot} =
         Scry2.LiveState.record_final("revealed-images-1", %{reader_version: "0.0.1"})
 
-      {:ok, _board} =
-        Scry2.LiveState.record_final_board("revealed-images-1", %{
-          reader_version: "0.0.1",
-          zones: [%{seat_id: 2, zone_id: 4, arena_ids: [999_991, 999_992]}]
+      for arena_id <- [999_991, 999_992] do
+        Scry2.Matches.record_revealed_card!(%{
+          mtga_match_id: "revealed-images-1",
+          seat_id: 2,
+          arena_id: arena_id,
+          current_zone: "battlefield"
         })
+      end
 
       {:ok, view, html} = live(conn, ~p"/matches/#{match.id}")
       assert html =~ "Revealed cards"

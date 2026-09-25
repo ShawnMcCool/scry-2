@@ -219,7 +219,27 @@ Commander commander identity.
 
 Source: `ScryIpcHandler-x0rjOwCx/src/scry/readers/mtga/ScryMtgaMatchInfo.ts`.
 
-### Chain 2 — board state (every card, every zone, both players) — VERIFIED
+### Chain 2 — board state — RETIRED 2026-09-25 (ADR-047)
+
+> **This chain is no longer walked and its code is deleted.** Revealed
+> cards now come from the GRE `GameStateMessage` in the domain event log
+> (`zones[]` + `gameObjects[]`), which states zone type, visibility,
+> `grpId` and `ownerSeatId` authoritatively and is preserved for replay.
+>
+> Two independent failures drove the retirement: the non-battlefield path
+> read `CardHolderBase._previousLayoutData`, a recycled Unity layout
+> buffer that reported cards from other matches entirely (GitHub #3); and
+> the whole path returned nothing at all after the MTGA build
+> `ca505c18e9` update, with every struct it depends on still present.
+>
+> The chain is documented below as **historical reference** — it is
+> accurate for builds up to `8da7e26e8d` and is useful if you ever need
+> to walk MTGA's card-display objects again. `card_holder.rs`,
+> `card_layout_data.rs` and `match_scene.rs` are in git history.
+>
+> Lesson worth keeping: MTGA's memory is a *rendering* layer. If the log
+> already carries a fact, read the log — the renderer's caches can lag,
+> recycle, or stop being populated across a client update.
 
 Anchored at the `MatchSceneManager` class's static `Instance` field —
 distinct from the PAPA anchor used by Chain 1.
@@ -894,7 +914,7 @@ Mono images), a single walk costs:
 | Walker | reads_used |
 |---|---:|
 | `walk_match_info` (Chain-1) | ~69,000 |
-| `walk_match_board` (Chain-2) | ~64,000 |
+| `walk_match_board` (Chain-2) | ~64,000 — retired, ADR-047 |
 
 Both chains scale with the image count, since `find_class_in_images`
 iterates every image looking for the target class. Class lookup
@@ -956,9 +976,9 @@ completely different locator strategy.
   (`build_change_banner.ex`, which delegates via `translate_error/1`)
   and the reader self-test depend on this single point.
 - `lib/scry_2/mtga_memory/self_test.ex` — **after an MTGA update, run
-  the reader self-test to see which walks broke.** Runs all 8 walks
-  (collection, match_info, match_board, mastery, events, account,
-  cosmetics, environment), classifies each `:ok | :empty | :error`, and
+  the reader self-test to see which walks broke.** Runs all 7 walks
+  (collection, match_info, mastery, events, account, cosmetics,
+  environment — match_board was retired by ADR-047), classifies each `:ok | :empty | :error`, and
   `diagnose/2` derives an overall verdict (`:healthy | :runtime_not_ready
   | :deep_break | :partial | :mtga_not_running`). `:empty` (a walk that
   returned `{:ok, nil}`) is NOT a failure — don't treat it as one.

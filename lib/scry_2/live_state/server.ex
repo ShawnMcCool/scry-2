@@ -1,7 +1,7 @@
 defmodule Scry2.LiveState.Server do
   @moduledoc """
   Live-polling state machine for in-match memory reads (Chain 1
-  rank/screen-name + Chain 2 board state).
+  rank/screen-name).
 
   ```text
   IDLE
@@ -10,7 +10,6 @@ defmodule Scry2.LiveState.Server do
   POLLING
     • every @poll_interval_ms:
         - walk_match_info(pid)              [Chain 1, authoritative]
-        - walk_match_board(pid)             [Chain 2, best-effort]
     •   {:ok, snap} → broadcast {:tick, snap} on live_match:updates
     •   {:ok, nil}  → MatchSceneManager.Instance NULL → WINDING_DOWN
     •   {:error, _} → MTGA gone or memory layout broken → WINDING_DOWN
@@ -19,14 +18,12 @@ defmodule Scry2.LiveState.Server do
                          ↓
   WINDING_DOWN
     • persist last in-flight snapshot via LiveState.record_final/2
-    • if any board snapshot was captured: persist via
-      LiveState.record_final_board/2 (broadcasts on live_match:board_final)
     • broadcast {:final, %Snapshot{}} on live_match:final
     • return to IDLE
   ```
 
   Chain-2 reads are best-effort: errors / `nil` results from
-  `walk_match_board` are logged at INFO level and the previous good
+  walk failures are logged at INFO level and the previous good
   snapshot is kept. Only `walk_match_info` failures wind down the
   polling loop.
 
@@ -69,7 +66,6 @@ defmodule Scry2.LiveState.Server do
               mtga_match_id: nil,
               mtga_pid: nil,
               last_snapshot: nil,
-              last_board_snapshot: nil,
               poll_interval_ms: nil,
               match_timeout_ms: nil,
               memory: nil,
@@ -78,11 +74,7 @@ defmodule Scry2.LiveState.Server do
               info_ok_count: 0,
               info_nil_count: 0,
               info_err_count: 0,
-              board_ok_some_count: 0,
-              board_ok_none_count: 0,
-              board_err_count: 0,
-              last_info_err: nil,
-              last_board_err: nil
+              last_info_err: nil
   end
 
   def start_link(opts \\ []) do
@@ -169,17 +161,14 @@ defmodule Scry2.LiveState.Server do
 
       {:ok, snap} when is_map(snap) ->
         LiveState.broadcast_tick(snap)
-        {board_outcome, board} = read_board_safely(state)
 
         new_state =
           state
           |> Map.put(:info_ok_count, state.info_ok_count + 1)
-          |> bump_board_counter(board_outcome)
           |> Map.put(:last_snapshot, snap)
-          |> Map.put(:last_board_snapshot, board || state.last_board_snapshot)
           |> Map.put(:poll_timer, schedule_poll(state))
 
-        log_per_tick(snap, board_outcome, board)
+        log_per_tick(snap)
 
         {:noreply, new_state}
 
@@ -232,53 +221,14 @@ defmodule Scry2.LiveState.Server do
         mtga_match_id: match_id,
         mtga_pid: pid,
         last_snapshot: nil,
-        last_board_snapshot: nil,
         info_ok_count: 0,
         info_nil_count: 0,
         info_err_count: 0,
-        board_ok_some_count: 0,
-        board_ok_none_count: 0,
-        board_err_count: 0,
         last_info_err: nil,
-        last_board_err: nil,
         poll_timer: schedule_poll(state),
         timeout_timer: Process.send_after(self(), :match_timeout, state.match_timeout_ms)
     }
   end
-
-  # Chain-2 read tolerated as best-effort — Chain-1 owns the
-  # wind-down decision. Returns `{outcome, snap_or_nil}`:
-  #   - `{:ok_some, %{}}` — chain reached PlayerTypeMap and produced cards
-  #   - `{:ok_none, nil}` — chain reachable but every zone returned empty/None
-  #   - `{:error, reason}` — chain unreachable (MatchSceneManager.Instance
-  #     null, deref failed, etc.)
-  # The caller bumps the matching counter and falls back to the previous
-  # successful snapshot when no new one arrived.
-  defp read_board_safely(state) do
-    case state.memory.walk_match_board(state.mtga_pid) do
-      {:ok, snap} when is_map(snap) ->
-        {:ok_some, snap}
-
-      {:ok, nil} ->
-        {:ok_none, nil}
-
-      {:error, reason} ->
-        {{:error, reason}, nil}
-    end
-  end
-
-  defp bump_board_counter(state, :ok_some),
-    do: %{state | board_ok_some_count: state.board_ok_some_count + 1}
-
-  defp bump_board_counter(state, :ok_none),
-    do: %{state | board_ok_none_count: state.board_ok_none_count + 1}
-
-  defp bump_board_counter(state, {:error, reason}),
-    do: %{
-      state
-      | board_err_count: state.board_err_count + 1,
-        last_board_err: reason
-    }
 
   defp wind_down(state, _reason) do
     cancel_timers(state)
@@ -289,22 +239,7 @@ defmodule Scry2.LiveState.Server do
 
     case LiveState.record_final(state.mtga_match_id, snapshot_attrs) do
       {:ok, _snapshot} ->
-        # Chain-1 persistence succeeded — try Chain-2 too, but only
-        # if we actually captured a board snapshot at some point. The
-        # board persistence depends on the parent snapshot existing,
-        # which it now does.
-        if state.last_board_snapshot do
-          case LiveState.record_final_board(state.mtga_match_id, state.last_board_snapshot) do
-            {:ok, _board} ->
-              :ok
-
-            {:error, reason} ->
-              Log.error(
-                :live_state,
-                "live_state: failed to persist final board snapshot: #{inspect(reason)}"
-              )
-          end
-        end
+        :ok
 
       {:error, changeset} ->
         Log.error(
@@ -318,7 +253,6 @@ defmodule Scry2.LiveState.Server do
       mtga_match_id: nil,
       mtga_pid: nil,
       last_snapshot: nil,
-      last_board_snapshot: nil,
       poll_interval_ms: state.poll_interval_ms,
       match_timeout_ms: state.match_timeout_ms,
       memory: state.memory,
@@ -335,24 +269,8 @@ defmodule Scry2.LiveState.Server do
     info_part =
       "info reads: ok=#{state.info_ok_count} nil=#{state.info_nil_count} err=#{state.info_err_count} (last_err=#{format_last_err(state.last_info_err)})"
 
-    board_part =
-      "board reads: ok_some=#{state.board_ok_some_count} ok_none=#{state.board_ok_none_count} err=#{state.board_err_count} (last_err=#{format_last_err(state.last_board_err)})"
-
-    captured = chain_2_capture_summary(state.last_board_snapshot)
-
-    "live_state: wind-down — #{info_part}; #{board_part}; chain-2 captured: #{captured}"
+    "live_state: wind-down — #{info_part}"
   end
-
-  defp chain_2_capture_summary(nil), do: "none"
-
-  defp chain_2_capture_summary(%{zones: []}), do: "snapshot present but empty"
-
-  defp chain_2_capture_summary(%{zones: zones}) when is_list(zones) do
-    card_count = Enum.reduce(zones, 0, fn z, acc -> acc + length(z.arena_ids) end)
-    "zones=#{length(zones)}, cards=#{card_count}"
-  end
-
-  defp chain_2_capture_summary(_other), do: "snapshot present but unrecognized shape"
 
   defp format_last_err(nil), do: "none"
   defp format_last_err(reason), do: inspect(reason)
@@ -361,26 +279,10 @@ defmodule Scry2.LiveState.Server do
   # the `live_state.verbose_diagnostics` setting so prod stays at
   # warning by default. The verbose toggle is intended for
   # active debugging sessions; leave it off in normal play.
-  defp log_per_tick(snap, board_outcome, board) do
+  defp log_per_tick(snap) do
     if LiveState.verbose_diagnostics?() do
       Log.info(:live_state, fn ->
-        info_part =
-          "info=ok(opp=#{format_opponent_label(snap)})"
-
-        board_part =
-          case {board_outcome, board} do
-            {:ok_some, %{zones: zones}} when is_list(zones) ->
-              card_count = Enum.reduce(zones, 0, fn z, acc -> acc + length(z.arena_ids) end)
-              "board=ok_some(zones=#{length(zones)},cards=#{card_count})"
-
-            {:ok_none, _} ->
-              "board=ok_none"
-
-            {{:error, reason}, _} ->
-              "board=err(#{inspect(reason)})"
-          end
-
-        "live_state: tick — #{info_part}, #{board_part}"
+        "live_state: tick — info=ok(opp=#{format_opponent_label(snap)})"
       end)
     end
   end

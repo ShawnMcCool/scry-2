@@ -29,6 +29,8 @@ defmodule Scry2.Matches.ClassifyOpponentArchetypeTest do
     %{bolt: bolt, mountain: mountain}
   end
 
+  # Revealed cards are a projection of the domain event log (ADR-047);
+  # the test seeds it through the same public API the projector uses.
   defp record_boards(mtga_match_id, opponent_arena_ids) do
     {:ok, _snapshot} =
       LiveState.record_final(mtga_match_id, %{
@@ -37,16 +39,23 @@ defmodule Scry2.Matches.ClassifyOpponentArchetypeTest do
         opponent_seat_id: 2
       })
 
-    {:ok, board} =
-      LiveState.record_final_board(mtga_match_id, %{
-        reader_version: "0.0.1",
-        zones: [
-          %{seat_id: 1, zone_id: 4, arena_ids: [999_999]},
-          %{seat_id: 2, zone_id: 4, arena_ids: opponent_arena_ids}
-        ]
-      })
+    Matches.record_revealed_card!(%{
+      mtga_match_id: mtga_match_id,
+      seat_id: 1,
+      arena_id: 999_999,
+      current_zone: "battlefield"
+    })
 
-    board
+    for arena_id <- opponent_arena_ids do
+      Matches.record_revealed_card!(%{
+        mtga_match_id: mtga_match_id,
+        seat_id: 2,
+        arena_id: arena_id,
+        current_zone: "battlefield"
+      })
+    end
+
+    :ok
   end
 
   describe "classify_opponent_archetype/1" do
@@ -128,7 +137,7 @@ defmodule Scry2.Matches.ClassifyOpponentArchetypeTest do
   end
 
   describe "consumer" do
-    test "classifies when the final board broadcast arrives", context do
+    test "classifies when the match completes", context do
       match = create_match(%{mtga_match_id: "OA-7", format_type: "Constructed"})
 
       name = :"classify_opponent_archetype_#{System.unique_integer([:positive])}"
@@ -138,6 +147,17 @@ defmodule Scry2.Matches.ClassifyOpponentArchetypeTest do
         context.bolt.arena_id,
         context.mountain.arena_id
       ])
+
+      send(
+        pid,
+        {:domain_event, 1, "match_completed",
+         %Scry2.Events.Match.MatchCompleted{
+           mtga_match_id: "OA-7",
+           won: true,
+           num_games: 2,
+           occurred_at: DateTime.utc_now()
+         }}
+      )
 
       :sys.get_state(pid)
 

@@ -30,7 +30,6 @@ defmodule Scry2Web.MatchesLive do
       Topics.subscribe(Topics.matches_updates())
       Topics.subscribe(LiveState.updates_topic())
       Topics.subscribe(LiveState.final_topic())
-      Topics.subscribe(Topics.live_match_board_final())
     end
 
     {:ok,
@@ -105,35 +104,7 @@ defmodule Scry2Web.MatchesLive do
     {:noreply, assign(socket, live_match_tick: nil, live_match_commander_names: %{})}
   end
 
-  def handle_info({:final_board, board}, socket) do
-    socket =
-      case socket.assigns[:match] do
-        %{mtga_match_id: mtga_match_id} ->
-          # The board snapshot belongs to the parent live_state_snapshot,
-          # which carries the mtga_match_id; just reload the displayed
-          # cards if we're showing the matching detail page. Looking up
-          # via the facade keeps the FK lookup in one place.
-          if board_belongs_to_displayed_match?(board, mtga_match_id) do
-            assign_revealed_cards(socket, mtga_match_id)
-          else
-            socket
-          end
-
-        _ ->
-          socket
-      end
-
-    {:noreply, socket}
-  end
-
   def handle_info(_other, socket), do: {:noreply, socket}
-
-  defp board_belongs_to_displayed_match?(board, mtga_match_id) do
-    case LiveState.get_board_by_match_id(mtga_match_id) do
-      nil -> false
-      %{id: id} -> id == board.id
-    end
-  end
 
   # ── Live-match tick ──────────────────────────────────────────────────
 
@@ -275,7 +246,7 @@ defmodule Scry2Web.MatchesLive do
     deck_arena_ids =
       if deck_submission, do: extract_arena_ids(deck_submission), else: []
 
-    revealed_rows = LiveState.get_revealed_cards_by_match_id(match.mtga_match_id)
+    revealed_rows = Matches.revealed_cards(match.mtga_match_id)
     revealed_arena_ids = MatchBoardView.revealed_arena_ids(revealed_rows)
     revealed_groups = MatchBoardView.group_by_seat_and_zone(revealed_rows)
 
@@ -296,32 +267,6 @@ defmodule Scry2Web.MatchesLive do
     )
     |> CardImages.request(Enum.uniq(deck_arena_ids ++ revealed_arena_ids))
   end
-
-  defp assign_revealed_cards(socket, mtga_match_id) do
-    revealed_rows = LiveState.get_revealed_cards_by_match_id(mtga_match_id)
-    revealed_arena_ids = MatchBoardView.revealed_arena_ids(revealed_rows)
-    revealed_groups = MatchBoardView.group_by_seat_and_zone(revealed_rows)
-
-    # Merge any new arena_ids into the existing card map without
-    # re-querying for ones already loaded.
-    existing = socket.assigns[:cards_by_arena_id] || %{}
-    missing_ids = Enum.reject(revealed_arena_ids, &Map.has_key?(existing, &1))
-
-    cards_by_arena_id =
-      case missing_ids do
-        [] -> existing
-        ids -> Map.merge(existing, Cards.list_by_arena_ids(ids))
-      end
-
-    socket
-    |> assign(
-      revealed_groups: revealed_groups,
-      cards_by_arena_id: cards_by_arena_id
-    )
-    |> CardImages.request(revealed_arena_ids)
-  end
-
-  # ── Index render ─────────────────────────────────────────────────────
 
   @impl true
   def render(%{match: nil} = assigns) do

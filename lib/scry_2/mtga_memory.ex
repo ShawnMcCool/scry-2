@@ -173,46 +173,6 @@ defmodule Scry2.MtgaMemory do
   @callback walk_match_info(pid_int()) :: {:ok, match_info() | nil} | {:error, term()}
 
   @typedoc """
-  One (seat, zone) entry in [`board_snapshot/0`]. `seat_id` and
-  `zone_id` are MTGA's own enum integers — symbolic translation is
-  the caller's job (see `Scry2.LiveState.SeatId` / `Scry2.LiveState.ZoneId`).
-  """
-  @type seat_zone_cards :: %{
-          required(:seat_id) => integer(),
-          required(:zone_id) => integer(),
-          required(:arena_ids) => [integer()]
-        }
-
-  @typedoc """
-  Board-state snapshot returned by `walk_match_board/1`. Surfaces
-  the cards visible in each (seat, zone) at the moment of the read.
-
-  Returned as `nil` (`{:ok, nil}`) when MTGA is running but
-  `MatchSceneManager.Instance` is null — i.e. no active match scene
-  (the duel UI hasn't loaded, or it's torn down). This is the
-  authoritative signal for `Scry2.LiveState.Server` to wind down.
-  """
-  @type board_snapshot :: %{
-          required(:zones) => [seat_zone_cards()],
-          required(:reader_version) => String.t()
-        }
-
-  @doc """
-  Read one board-state snapshot (per-zone arena_ids per seat) from
-  the target MTGA process via the Chain-2 walker.
-
-  Returns:
-    * `{:ok, %{...}}` when a match scene is active.
-    * `{:ok, nil}` when no active match scene — normal, not an error.
-    * `{:error, reason}` for upstream walker failures.
-
-  `Scry2.LiveState.Server` calls this on the same poll cadence as
-  `walk_match_info/1`; the last successful read is persisted at
-  wind-down.
-  """
-  @callback walk_match_board(pid_int()) :: {:ok, board_snapshot() | nil} | {:error, term()}
-
-  @typedoc """
   Battle-pass / mastery-pass snapshot returned by `walk_mastery/1`.
   Surfaces the player's current pass tier, XP toward the next tier,
   mastery orb count, and the live season identifier + expiration.
@@ -310,7 +270,7 @@ defmodule Scry2.MtgaMemory do
     * `{:error, reason}` for upstream walker failures (mono DLL
       missing, PAPA class not found, etc.).
 
-  Unlike Chain 1 (`walk_match_info`) and Chain 2 (`walk_match_board`),
+  Unlike Chain 1 (`walk_match_info`),
   this chain is stable across match boundaries — it does NOT need to
   be polled within an active match. A periodic refresh on the
   collection-reader cadence is sufficient.

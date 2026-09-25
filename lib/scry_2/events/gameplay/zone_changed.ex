@@ -20,11 +20,22 @@ defmodule Scry2.Events.Gameplay.ZoneChanged do
   - `turn_number` — turn number when the card changed zones
   - `phase` — game phase during which the zone change occurred
   - `active_player` — seat ID of the player whose turn it is
+  - `owner_seat_id` — seat that owns the zone the card moved into,
+    from the GRE zone table. `nil` for shared zones (battlefield,
+    stack) which have no owner. Distinct from `active_player`,
+    which is merely whose turn it is.
+  - `owner_is_local` — whether `owner_seat_id` is the local player's seat.
+    GRE seat ids are per-match numbers and the local player alternates
+    seats, so consumers need this role rather than the raw number.
+    `nil` when the local seat is unknown.
   - `card_arena_id` — arena_id of the card that moved
   - `card_name` — resolved card name (enriched at ingestion)
   - `reason` — raw MTGA category string describing the cause of the zone change
-  - `zone_from` — zone the card moved from (e.g. `"Battlefield"`, `"Hand"`)
-  - `zone_to` — zone the card moved to (e.g. `"Graveyard"`, `"Library"`)
+  - `zone_from` — semantic zone the card moved from (`"battlefield"`,
+    `"hand"`, `"graveyard"`, …), resolved through
+    `Scry2.Events.IdentifyDomainEvents.ZoneTable`. Falls back to
+    `"zone_<id>"` when the GRE zone table has not yet described that id.
+  - `zone_to` — semantic zone the card moved to, same resolution
 
   ## Slug
 
@@ -42,6 +53,8 @@ defmodule Scry2.Events.Gameplay.ZoneChanged do
     :turn_number,
     :phase,
     :active_player,
+    :owner_seat_id,
+    :owner_is_local,
     :card_arena_id,
     :card_name,
     :reason,
@@ -56,6 +69,8 @@ defmodule Scry2.Events.Gameplay.ZoneChanged do
           turn_number: non_neg_integer() | nil,
           phase: String.t() | nil,
           active_player: integer() | nil,
+          owner_seat_id: integer() | nil,
+          owner_is_local: boolean() | nil,
           card_arena_id: integer() | nil,
           card_name: String.t() | nil,
           reason: String.t() | nil,
@@ -71,6 +86,8 @@ defmodule Scry2.Events.Gameplay.ZoneChanged do
       turn_number: payload["turn_number"],
       phase: payload["phase"],
       active_player: payload["active_player"],
+      owner_seat_id: payload["owner_seat_id"],
+      owner_is_local: payload["owner_is_local"],
       card_arena_id: payload["card_arena_id"],
       card_name: payload["card_name"],
       reason: payload["reason"],

@@ -17,7 +17,7 @@ defmodule Scry2.Matches do
   alias Scry2.Analytics.RollingWindow
   alias Scry2.LiveState
   alias Scry2.LiveState.{RankClass, Snapshot}
-  alias Scry2.Matches.{DeckSubmission, Game, Match}
+  alias Scry2.Matches.{DeckSubmission, Game, Match, RevealedCard}
   alias Scry2.Ranks.Format, as: RankFormat
   alias Scry2.Repo
   alias Scry2.Topics
@@ -226,11 +226,13 @@ defmodule Scry2.Matches do
   end
 
   defp observed_opponent_cards(mtga_match_id, opponent_seat_id) do
+    # Revealed cards come from the domain event log (ADR-047); the
+    # projection already collapses repeat sightings of one card onto a
+    # single row, so `copies_seen` is the count.
     mtga_match_id
-    |> LiveState.get_revealed_cards_by_match_id()
+    |> revealed_cards()
     |> Enum.filter(&(&1.seat_id == opponent_seat_id))
-    |> Enum.frequencies_by(& &1.arena_id)
-    |> Enum.map(fn {arena_id, count} -> %{arena_id: arena_id, count: count} end)
+    |> Enum.map(fn card -> %{arena_id: card.arena_id, count: card.copies_seen} end)
   end
 
   defp stamp_opponent_archetype(%Match{} = match, classification) do
@@ -603,5 +605,100 @@ defmodule Scry2.Matches do
     unless Scry2.Events.SilentMode.silent?() do
       Topics.broadcast(Topics.matches_updates(), {:match_updated, match_id})
     end
+  end
+
+  # ── Revealed cards (ADR-047) ───────────────────────────────────────
+
+  @doc """
+  Record one card-identity disclosure, collapsing repeat sightings of the
+  same `(match, seat, arena_id)` onto a single row.
+
+  `copies_seen` counts every sighting. `current_zone` advances to the
+  newest **known** zone — a `nil` zone (a bookkeeping transfer through
+  limbo or pending) still counts as a sighting but never erases a zone we
+  already resolved. `first_seen_turn` keeps the earliest turn observed.
+
+  Called only by `Scry2.Matches.RevealedCardsProjection`.
+  """
+  @spec record_revealed_card!(map()) :: RevealedCard.t()
+  def record_revealed_card!(attrs) do
+    zone = attrs[:current_zone]
+    turn = attrs[:turn_number]
+    is_local = attrs[:is_local]
+    now = DateTime.utc_now()
+
+    row = %{
+      mtga_match_id: attrs.mtga_match_id,
+      seat_id: attrs.seat_id,
+      is_local: is_local,
+      arena_id: attrs.arena_id,
+      current_zone: zone,
+      copies_seen: 1,
+      first_seen_turn: turn,
+      last_seen_turn: turn,
+      inserted_at: now,
+      updated_at: now
+    }
+
+    update = [
+      inc: [copies_seen: 1],
+      set: [updated_at: now]
+    ]
+
+    {_count, _} =
+      Repo.insert_all(RevealedCard, [row],
+        on_conflict:
+          from(existing in RevealedCard,
+            update: ^update,
+            update: [
+              set: [
+                # Every pinned value inside a fragment must carry its type.
+                # Without `type/2` Ecto has no schema context, so Exqlite
+                # encodes an Elixir boolean as the TEXT "true"/"false" while
+                # the insert path writes SQLite's 0/1 — two representations
+                # of one column, in one table.
+                current_zone:
+                  fragment("COALESCE(?, ?)", type(^zone, :string), existing.current_zone),
+                is_local:
+                  fragment("COALESCE(?, ?)", type(^is_local, :boolean), existing.is_local),
+                first_seen_turn:
+                  fragment(
+                    "MIN(COALESCE(?, ?), ?)",
+                    existing.first_seen_turn,
+                    type(^turn, :integer),
+                    type(^turn, :integer)
+                  ),
+                last_seen_turn:
+                  fragment(
+                    "MAX(COALESCE(?, ?), ?)",
+                    existing.last_seen_turn,
+                    type(^turn, :integer),
+                    type(^turn, :integer)
+                  )
+              ]
+            ]
+          ),
+        conflict_target: [:mtga_match_id, :seat_id, :arena_id]
+      )
+
+    Repo.one!(
+      from card in RevealedCard,
+        where:
+          card.mtga_match_id == ^attrs.mtga_match_id and card.seat_id == ^attrs.seat_id and
+            card.arena_id == ^attrs.arena_id
+    )
+  end
+
+  @doc """
+  Every revealed card for a match, ordered by seat then zone then
+  arena_id so callers can group directly.
+  """
+  @spec revealed_cards(String.t()) :: [RevealedCard.t()]
+  def revealed_cards(mtga_match_id) when is_binary(mtga_match_id) do
+    Repo.all(
+      from card in RevealedCard,
+        where: card.mtga_match_id == ^mtga_match_id,
+        order_by: [asc: card.seat_id, asc: card.current_zone, asc: card.arena_id]
+    )
   end
 end

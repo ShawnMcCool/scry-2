@@ -20,7 +20,7 @@ defmodule Scry2.MtgaMemory.SelfTestTest do
     }
   end
 
-  @all_walks ~w(collection match_info match_board mastery events account cosmetics environment)a
+  @all_walks ~w(collection match_info mastery events account cosmetics environment)a
 
   describe "diagnose/2" do
     test "no MTGA process → :mtga_not_running" do
@@ -42,7 +42,6 @@ defmodule Scry2.MtgaMemory.SelfTestTest do
       results = [
         wr(:collection, :ok),
         wr(:match_info, :empty),
-        wr(:match_board, :empty),
         wr(:mastery, :empty),
         wr(:events, :empty),
         wr(:account, :ok),
@@ -67,7 +66,6 @@ defmodule Scry2.MtgaMemory.SelfTestTest do
       results = [
         wr(:collection, :error, {:class_not_found, "InventoryManager"}),
         wr(:match_info, :ok),
-        wr(:match_board, :empty),
         wr(:mastery, :error, :chain_failed),
         wr(:events, :empty),
         wr(:account, :ok),
@@ -81,7 +79,6 @@ defmodule Scry2.MtgaMemory.SelfTestTest do
       assert :mastery in diagnosis.broken
       refute :match_info in diagnosis.broken
       assert :match_info in diagnosis.working
-      assert :match_board in diagnosis.working
     end
 
     test "diagnosis always carries a non-empty headline + detail" do
@@ -176,7 +173,6 @@ defmodule Scry2.MtgaMemory.SelfTestTest do
           cards_version: 1
         },
         match_info: nil,
-        board_snapshot: nil,
         mastery_info: {:error, {:class_not_found, "AwsSetMasteryStrategy"}},
         event_list: nil,
         account_identity: %{display_name: "Tester", external_id: "x"},
@@ -219,7 +215,6 @@ defmodule Scry2.MtgaMemory.SelfTestTest do
           cards_version: 1
         },
         match_info: nil,
-        board_snapshot: nil,
         mastery_info: nil,
         event_list: nil,
         account_identity: ok_map,

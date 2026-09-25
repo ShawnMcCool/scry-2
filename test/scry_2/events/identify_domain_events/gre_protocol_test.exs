@@ -84,19 +84,6 @@ defmodule Scry2.Events.IdentifyDomainEvents.GREProtocolTest do
     end
   end
 
-  describe "zone_name/1" do
-    test "maps a positive id to a string" do
-      assert GREProtocol.zone_name(7) == "zone_7"
-    end
-
-    test "returns nil for nil and non-positive values" do
-      assert GREProtocol.zone_name(nil) == nil
-      assert GREProtocol.zone_name(0) == nil
-      assert GREProtocol.zone_name(-1) == nil
-      assert GREProtocol.zone_name("not a zone") == nil
-    end
-  end
-
   describe "find_detail_string/2" do
     test "returns the first valueString head for the matching key" do
       details = [

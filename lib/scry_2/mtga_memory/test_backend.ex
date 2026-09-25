@@ -31,7 +31,6 @@ defmodule Scry2.MtgaMemory.TestBackend do
           optional(:processes) => [Scry2.MtgaMemory.process_info()],
           optional(:walker_snapshot) => Scry2.MtgaMemory.walker_snapshot() | {:error, term()},
           optional(:match_info) => Scry2.MtgaMemory.match_info() | nil | {:error, term()},
-          optional(:board_snapshot) => Scry2.MtgaMemory.board_snapshot() | nil | {:error, term()},
           optional(:mastery_info) => Scry2.MtgaMemory.mastery_info() | nil | {:error, term()},
           optional(:event_list) => Scry2.MtgaMemory.event_list() | nil | {:error, term()}
         }
@@ -125,18 +124,6 @@ defmodule Scry2.MtgaMemory.TestBackend do
     with {:ok, fixture} <- fetch_fixture() do
       case Map.fetch(fixture, :match_info) do
         :error -> {:error, :no_match_info}
-        {:ok, {:error, _} = err} -> err
-        {:ok, nil} -> {:ok, nil}
-        {:ok, snap} -> {:ok, snap}
-      end
-    end
-  end
-
-  @impl true
-  def walk_match_board(_pid) do
-    with {:ok, fixture} <- fetch_fixture() do
-      case Map.fetch(fixture, :board_snapshot) do
-        :error -> {:error, :no_board_snapshot}
         {:ok, {:error, _} = err} -> err
         {:ok, nil} -> {:ok, nil}
         {:ok, snap} -> {:ok, snap}

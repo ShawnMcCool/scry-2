@@ -4,7 +4,7 @@ defmodule Scry2.MtgaMemory.SelfTest do
   produces a "what works / what doesn't" report.
 
   The reader is not monolithic — it's eight independent walks
-  (`walk_collection`, `walk_match_info`, `walk_match_board`,
+  (`walk_collection`, `walk_match_info`,
   `walk_mastery`, `walk_events`, `walk_account`, `walk_cosmetics`,
   `walk_environment`) over a shared discovery base (Mono DLL → root
   domain → image enumeration → class anchors → chain traversal). After
@@ -28,7 +28,7 @@ defmodule Scry2.MtgaMemory.SelfTest do
   alias Scry2.MtgaMemory.SelfTest.{Diagnosis, Report, WalkResult}
   alias Scry2.MtgaMemory.WalkError
 
-  @walks ~w(collection match_info match_board mastery events account cosmetics environment)a
+  @walks ~w(collection match_info mastery events account cosmetics environment)a
 
   @doc "The fixed list of walks the self-test exercises, in report order."
   @spec walks() :: [atom()]
@@ -103,7 +103,6 @@ defmodule Scry2.MtgaMemory.SelfTest do
 
   defp apply_walk(:collection, mem, pid), do: mem.walk_collection(pid, [])
   defp apply_walk(:match_info, mem, pid), do: mem.walk_match_info(pid)
-  defp apply_walk(:match_board, mem, pid), do: mem.walk_match_board(pid)
   defp apply_walk(:mastery, mem, pid), do: mem.walk_mastery(pid)
   defp apply_walk(:events, mem, pid), do: mem.walk_events(pid)
   defp apply_walk(:account, mem, pid), do: mem.walk_account(pid)

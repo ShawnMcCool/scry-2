@@ -1,27 +1,32 @@
 defmodule Scry2Web.Live.MatchBoardView do
   @moduledoc """
-  Pure helpers for rendering the per-match Chain-2 revealed-cards
-  section on the match detail page.
+  Pure helpers for rendering the per-match revealed-cards section on the
+  match detail page.
 
-  Logic-bearing functions live here (and are unit-tested) per
-  ADR-013; the LiveView template only wires them in. The functions
-  take plain data (lists of `%RevealedCard{}`) and return display-
-  ready shapes — no Ecto queries, no PubSub, no template rendering.
+  Logic-bearing functions live here (and are unit-tested) per ADR-013;
+  the LiveView template only wires them in. The functions take plain data
+  (lists of `%Scry2.Matches.RevealedCard{}`) and return display-ready
+  shapes — no Ecto queries, no PubSub, no template rendering.
 
   ## Shape
 
-  `group_by_seat_and_zone/1` returns a list of `%{seat_id, zones:
-  [%{zone_id, label, arena_ids}]}` maps. Empty seats are omitted;
-  empty zones within a present seat are omitted. The list is ordered
-  with the local player first (`seat_id == 1`), the opponent second
-  (`seat_id == 2`), and any other seats in numeric order after that.
+  `group_by_seat_and_zone/1` returns a list of `%{seat_id, label, zones:
+  [%{zone, label, arena_ids}]}` maps. Empty seats are omitted; empty
+  zones within a present seat are omitted. The list is ordered with the
+  local player first, the opponent second, and any seat whose role could
+  not be resolved after that — by role, never by GRE seat number, which
+  alternates between matches.
+
+  Zones are semantic slugs from the GRE zone table (`"battlefield"`,
+  `"hand"`, …) rather than MTGA `CardHolderType` integers — the data now
+  comes from the domain event log, not process memory. See ADR-047.
   """
 
-  alias Scry2.LiveState.RevealedCard
+  alias Scry2.Matches.RevealedCard
 
   @typedoc "Per-(seat, zone) display row."
   @type zone_row :: %{
-          zone_id: integer(),
+          zone: String.t() | nil,
           label: String.t(),
           arena_ids: [integer()]
         }
@@ -29,21 +34,22 @@ defmodule Scry2Web.Live.MatchBoardView do
   @typedoc "Per-seat group of zone rows."
   @type seat_group :: %{
           seat_id: integer(),
+          is_local: boolean() | nil,
           label: String.t(),
           zones: [zone_row()]
         }
 
-  @local_seat_id 1
-  @opponent_seat_id 2
+  # Display order for the zones a player actually looks at, then
+  # everything else alphabetically after.
+  @zone_order ~w(battlefield hand graveyard exile stack library command sideboard revealed)
 
   @doc """
   Group revealed-card rows into per-seat, per-zone display rows.
 
-  Input: `[%RevealedCard{}]` from `LiveState.get_revealed_cards_by_match_id/1`
-  (already ordered by seat_id, zone_id, position).
+  Input: `[%RevealedCard{}]` from `Scry2.Matches.revealed_cards/1`.
 
-  Output: `[seat_group()]` ordered local first, opponent second,
-  others in seat-id order.
+  Output: `[seat_group()]` ordered local first, opponent second, others
+  in seat-id order.
   """
   @spec group_by_seat_and_zone([RevealedCard.t()]) :: [seat_group()]
   def group_by_seat_and_zone([]), do: []
@@ -52,9 +58,14 @@ defmodule Scry2Web.Live.MatchBoardView do
     rows
     |> Enum.group_by(& &1.seat_id)
     |> Enum.map(fn {seat_id, seat_rows} ->
+      # find_value/2 would return nil for an all-false seat (the opponent),
+      # so find the first NON-NIL value rather than the first truthy one.
+      is_local = seat_rows |> Enum.map(& &1.is_local) |> Enum.find(&(not is_nil(&1)))
+
       %{
         seat_id: seat_id,
-        label: seat_label(seat_id),
+        is_local: is_local,
+        label: seat_label(seat_id, is_local),
         zones: build_zones(seat_rows)
       }
     end)
@@ -72,54 +83,68 @@ defmodule Scry2Web.Live.MatchBoardView do
   end
 
   @doc """
-  Symbolic name for an MTGA seat-id enum value. Falls back to
-  `"Seat <n>"` for unknown values so the UI never shows a bare
-  integer.
+  Name for a seat, from its resolved role rather than its number.
+
+  GRE seat ids are per-match numbers and the local player alternates
+  seats between matches — seat 1 is the local player in only about 75%
+  of real matches — so the number alone cannot say "You". `is_local`
+  comes from the domain event log; when it is `nil` (the local seat was
+  never resolved for that match) the seat number is shown rather than
+  guessing. See ADR-047.
   """
-  @spec seat_label(integer()) :: String.t()
-  def seat_label(@local_seat_id), do: "You"
-  def seat_label(@opponent_seat_id), do: "Opponent"
-  def seat_label(0), do: "Unknown"
-  def seat_label(3), do: "Teammate"
-  def seat_label(other) when is_integer(other), do: "Seat #{other}"
+  @spec seat_label(integer(), boolean() | nil) :: String.t()
+  def seat_label(_seat_id, true), do: "You"
+  def seat_label(_seat_id, false), do: "Opponent"
+  def seat_label(seat_id, _unknown) when is_integer(seat_id), do: "Seat #{seat_id}"
 
   @doc """
-  Symbolic name for an MTGA zone-id enum value (CardHolderType
-  enum). Falls back to `"Zone <n>"` for unknown values.
-
-  Per the Chain-2 spec v1, only Battlefield (zone 4) is populated;
-  this helper still names every documented zone so v2 lands
-  cleanly.
+  Display name for a semantic zone slug. An unresolved zone (one MTGA
+  described with a type we have no mapping for) is titlecased rather than
+  hidden, so a new zone is visible in the UI instead of silently dropped.
   """
-  @spec zone_label(integer()) :: String.t()
-  def zone_label(1), do: "Library"
-  def zone_label(2), do: "Off-camera Library"
-  def zone_label(3), do: "Hand"
-  def zone_label(4), do: "Battlefield"
-  def zone_label(5), do: "Graveyard"
-  def zone_label(6), do: "Exile"
-  def zone_label(9), do: "Stack"
-  def zone_label(10), do: "Command"
-  def zone_label(other) when is_integer(other), do: "Zone #{other}"
+  @spec zone_label(String.t() | nil) :: String.t()
+  def zone_label(nil), do: "Unknown zone"
+
+  def zone_label(zone) when is_binary(zone) do
+    case zone do
+      "battlefield" -> "Battlefield"
+      "hand" -> "Hand"
+      "graveyard" -> "Graveyard"
+      "exile" -> "Exile"
+      "stack" -> "Stack"
+      "library" -> "Library"
+      "command" -> "Command"
+      "sideboard" -> "Sideboard"
+      "revealed" -> "Revealed"
+      other -> other |> String.replace("_", " ") |> String.capitalize()
+    end
+  end
 
   defp build_zones(rows) do
     rows
-    |> Enum.group_by(& &1.zone_id)
-    |> Enum.map(fn {zone_id, zone_rows} ->
+    |> Enum.group_by(& &1.current_zone)
+    |> Enum.map(fn {zone, zone_rows} ->
       %{
-        zone_id: zone_id,
-        label: zone_label(zone_id),
-        arena_ids: zone_rows |> Enum.sort_by(& &1.position) |> Enum.map(& &1.arena_id)
+        zone: zone,
+        label: zone_label(zone),
+        arena_ids: zone_rows |> Enum.sort_by(& &1.arena_id) |> Enum.map(& &1.arena_id)
       }
     end)
     |> Enum.reject(&(&1.arena_ids == []))
-    |> Enum.sort_by(& &1.zone_id)
+    |> Enum.sort_by(&zone_sort_key/1)
   end
 
-  # Local first (1), opponent second (2), then others in numeric order.
-  # Use a tuple sort key so 0 ("Invalid"), 3 ("Teammate"), etc. sort
-  # cleanly after the two main seats.
-  defp seat_sort_key(%{seat_id: @local_seat_id}), do: {0, 0}
-  defp seat_sort_key(%{seat_id: @opponent_seat_id}), do: {0, 1}
+  defp zone_sort_key(%{zone: zone}) do
+    case Enum.find_index(@zone_order, &(&1 == zone)) do
+      nil -> {1, to_string(zone)}
+      index -> {0, index}
+    end
+  end
+
+  # Local player first, opponent second, unresolved seats after — by role,
+  # never by seat number (which does not mean what it used to; see
+  # seat_label/2).
+  defp seat_sort_key(%{is_local: true}), do: {0, 0}
+  defp seat_sort_key(%{is_local: false}), do: {0, 1}
   defp seat_sort_key(%{seat_id: other}), do: {1, other}
 end
