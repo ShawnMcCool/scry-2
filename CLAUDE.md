@@ -84,7 +84,7 @@ The notes flow into both the GitHub Release body and the in-app **Settings → U
 
 ```bash
 mix setup              # install deps, create DB, run migrations, build assets
-mix phx.server         # start dev server (http://localhost:4444)
+mix phx.server         # start the local instance in the foreground (http://localhost:6015)
 mix test               # run tests (creates and migrates test DB automatically)
 mix precommit          # compile --warning-as-errors, unlock unused deps, format, test
 ```
@@ -98,7 +98,7 @@ The `Scry2.Collection` context (ADR 034) links a Rustler NIF crate under
 
 ### Local instance (always-on)
 
-`scripts/install-dev` installs the systemd user service `scry-2`, which runs the working-tree code as the everyday local instance on **port 6015 against the real database** (`~/.local/share/scry_2/scry_2.db`). It applies pending migrations on start (`mix ecto.migrate`), so a restart picks up new code and schema together. This replaces the old split of a separate dev server (4444) plus a packaged release (6015) — one always-current instance now serves real gameplay data. (The `scry-2` name is the single per-machine service; a dev machine installs it from the working tree via `scripts/install-dev`, an end user from a built release via `scripts/install-linux` — never both on one machine.)
+`scripts/install-dev` installs the systemd user service `scry-2`, which runs the working-tree code as the everyday local instance on **port 6015 against the real database** (`~/.local/share/scry_2/scry_2.db`). It applies pending migrations on start (`mix ecto.migrate`), so a restart picks up new code and schema together. It replaced a split between a throwaway dev server and a packaged release — one always-current instance now serves real gameplay data, and `config/dev.exs` points every dev entry point at it. (The `scry-2` name is the single per-machine service; a dev machine installs it from the working tree via `scripts/install-dev`, an end user from a built release via `scripts/install-linux` — never both on one machine.)
 
 ```bash
 scripts/install-dev                    # install/refresh the unit, start, health-check
@@ -115,7 +115,7 @@ elixir --name probe@127.0.0.1 --cookie "$(cat ~/.erlang.cookie)" probe.exs
 # inside probe.exs: Node.connect(:"scry_2_dev@127.0.0.1"); :rpc.call(target, Mod, :fun, args)
 ```
 
-A bare `mix phx.server` (no `PORT`/`DATABASE_PATH`) still uses the throwaway dev defaults — port 4444 + `scry_2_dev.db` — for isolated development.
+There is only one dev configuration. `config/dev.exs` points dev at port 6015 and the real database, so a bare `mix phx.server` is the same app the unit runs — which means **never start one while the service is up**: two processes writing one SQLite file is exactly what the single-writer rule forbids. Stop the service first (`systemctl --user stop scry-2`), or leave it running and reach the live node with `:rpc` as shown above.
 
 **After changing code the running instance must pick up — migrations, deps, config, or supervised processes — restart `scry-2` and run `scripts/healthcheck`.** The probe (`GET /health`) returns 200 only when the database is reachable and every migration is applied, so "up but migrations pending" is caught rather than read as healthy. (Because this instance runs `MIX_ENV=dev`, the in-app self-updater is inert — update via `git pull` + restart.)
 
@@ -172,9 +172,11 @@ Migrations run automatically at startup via `Ecto.Migrator` in the application s
 
 > Note: When compiling, always use the environment variable `MIX_OS_DEPS_COMPILE_PARTITION_COUNT=8` to parallelize and speed up compilation.
 
-### Isolated dev alongside the local instance
+### One instance, one database
 
-The always-on local instance (above) is the only long-running process needed. For one-off isolated work, a bare `mix phx.server` runs on port 4444 against its own `scry_2_dev.db` — independent of the 6015 instance and its real database, so the two never conflict. Don't run a second process against the real database: SQLite tolerates one writer.
+The `scry-2` service is the only Scry2 process that should be running. `config/dev.exs` is the single source of truth for what dev runs against — port 6015, `~/.local/share/scry_2/scry_2.db` — and the unit sets no `PORT` or `DATABASE_PATH` of its own. A bare `mix phx.server`, `iex -S mix`, or `mix run` in dev therefore opens the **real** database; don't do it while the service is up. `mix test` is unaffected — `config/test.exs` has its own database and its own scratch data directory.
+
+`PORT` and `DATABASE_PATH` still override, the same escape hatch prod has, for the occasional run against a copy of the database.
 
 ### Windows Installation
 

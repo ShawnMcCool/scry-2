@@ -90,10 +90,13 @@ if config_env() == :prod do
 end
 
 if config_env() == :dev do
-  # The always-on local instance (systemd) runs dev code as the user's
-  # production app by overriding the port + database via env vars. A bare
-  # `mix phx.server` with neither var set keeps the safe defaults from
-  # config/dev.exs (port 4444 + scry_2_dev.db), so isolated dev is unchanged.
+  # config/dev.exs already points dev at the local instance (6015 + the real
+  # database), so neither var is needed in the normal case — the systemd unit
+  # sets neither. These stay as the same escape hatch prod has, for the
+  # occasional run against a copy of the database.
+  #
+  # Nothing here may call into the application: Mix evaluates this file
+  # before compiling, so `Scry2.Platform` and friends may not exist yet.
   if port = System.get_env("PORT") do
     config :scry_2, Scry2Web.Endpoint,
       url: [host: "localhost", port: String.to_integer(port), scheme: "http"],

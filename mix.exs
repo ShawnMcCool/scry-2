@@ -91,7 +91,10 @@ defmodule Scry2.MixProject do
     [
       setup: ["deps.get", "ecto.setup", "assets.setup", "assets.build"],
       "ecto.setup": ["ecto.create", "ecto.migrate", "run priv/repo/seeds.exs"],
-      "ecto.reset": ["ecto.drop", "ecto.setup"],
+      # No `ecto.reset` alias. In dev, `config/dev.exs` points the Repo at the
+      # user's real database, so a one-word alias wrapping `ecto.drop` would
+      # destroy irreplaceable gameplay data. Rebuild a broken test database by
+      # deleting `scry_2_test*.db`; `mix test` recreates and migrates it.
       test: ["ecto.create --quiet", "ecto.migrate --quiet", "test"],
       "test.prod_smoke": ["ecto.create --quiet", "ecto.migrate --quiet", "test --only prod_smoke"],
       # SERVER-tier tests (Postgres). Bring up `docker compose up -d` first, then

@@ -205,7 +205,7 @@ that indicate a feature is not yet complete.
 ### Pass 6 — Live visual inspection (opportunistic)
 
 This pass is **optional and runs only if** chrome-devtools MCP is available
-**and** the dev server is reachable at `http://127.0.0.1:4444`.
+**and** the local instance is reachable at `http://127.0.0.1:6015`.
 
 **Availability probe.** Attempt `mcp__chrome-devtools__list_pages`. If the
 tool is unavailable or the call fails, skip the entire pass and record a single

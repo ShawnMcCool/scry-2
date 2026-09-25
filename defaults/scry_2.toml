@@ -94,9 +94,9 @@ start_importer = true
 
 # ── Server ────────────────────────────────────────────────────────────────
 [server]
-# HTTP port the web UI listens on. Change this if running a production
-# release alongside a dev server on the same machine (dev uses 4444 by
-# default, so they do not conflict).
+# HTTP port the web UI listens on. Change it only if something else on
+# the machine already owns 6015 — a dev machine's working-tree instance
+# serves the same port, and a machine runs one or the other, never both.
 port = 6015
 
 # ── NetDecking ──────────────────────────────────────────────────────────────

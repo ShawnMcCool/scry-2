@@ -23,11 +23,10 @@ WorkingDirectory=/path/to/scry_2
 ExecStartPre=/usr/bin/mise exec -- mix ecto.migrate
 ExecStart=/usr/bin/mise exec -- mix phx.server
 Environment=MIX_ENV=dev
-# Run as the user's everyday instance: production port + the real database.
-# A bare `mix phx.server` (no PORT/DATABASE_PATH) still uses the safe dev
-# defaults (4444 + scry_2_dev.db) for throwaway local development.
-Environment=PORT=6015
-Environment=DATABASE_PATH=%h/.local/share/scry_2/scry_2.db
+# No PORT / DATABASE_PATH here. config/dev.exs is the single source of
+# truth for both, and it points dev at the local instance — port 6015 and
+# the real database. This unit and a bare `mix phx.server` are the same
+# thing, which is the point: there is only one dev setup.
 # NOT set here: MIX_OS_DEPS_COMPILE_PARTITION_COUNT. The partition
 # dependency compiler spawns one BEAM per partition, and every one of them
 # inherits ELIXIR_ERL_OPTIONS below — so all N try to register the same

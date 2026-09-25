@@ -12,7 +12,7 @@
 
 ```bash
 mix setup          # install deps, create DB, build assets
-mix phx.server     # isolated dev server at http://localhost:4444 (scry_2_dev.db)
+mix phx.server     # the local instance in the foreground — 6015, real database
 mix test           # run tests
 mix precommit      # compile --warnings-as-errors, format, test — run before committing
 ```
@@ -22,8 +22,10 @@ mix precommit      # compile --warnings-as-errors, format, test — run before c
 `scripts/install-dev` installs the systemd user service `scry-2`, which runs
 the working tree on port 6015 against the real database
 (`~/.local/share/scry_2/scry_2.db`) and applies pending migrations on start.
-This is the everyday instance; a bare `mix phx.server` on 4444 is for
-isolated work.
+This is the everyday instance, and the only one. `config/dev.exs` holds
+both settings, so a bare `mix phx.server` is the same app — don't start one
+while the service is running, or two processes end up writing one SQLite
+file.
 
 ```bash
 scripts/install-dev                               # install/refresh the unit, start, health-check

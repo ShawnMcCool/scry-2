@@ -12,8 +12,18 @@ config :scry_2, Scry2.ServerRepo,
   pool_size: 5
 
 # Configure your database
+#
+# Dev *is* the local instance. `scripts/install-dev` runs this
+# configuration as the user's everyday app — port 6015, the real
+# database — and a bare `mix phx.server` is the same thing. There is no
+# second, throwaway dev database. Only ever run one process against it:
+# SQLite tolerates one writer. See DEVELOPMENT.md.
+#
+# The path spells out `Scry2.Platform.data_dir/0`'s Linux branch rather
+# than calling it: Mix evaluates config before compiling, so config files
+# cannot reach into the application. Keep the two in step.
 config :scry_2, Scry2.Repo,
-  database: Path.expand("../scry_2_dev.db", __DIR__),
+  database: Path.expand("~/.local/share/scry_2/scry_2.db"),
   pool_size: 5,
   journal_mode: :wal,
   busy_timeout: 30_000,
@@ -40,8 +50,8 @@ config :scry_2, Scry2.Repo,
 config :scry_2, Scry2Web.Endpoint,
   # Binding to loopback ipv4 address prevents access from other machines.
   # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  # Port 4444 — media-centaur uses 4001, leave room for coexistence.
-  http: [ip: {127, 0, 0, 1}, port: 4444],
+  # Port 6015 — the local instance's port, and the only one Scry2 serves.
+  http: [ip: {127, 0, 0, 1}, port: 6015],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,
