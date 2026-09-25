@@ -5,7 +5,7 @@ allowed-tools: Bash, Read, Write, Edit
 
 You are shipping changes for Scry2, and optionally tagging a release that the in-app self-updater (`Scry2.SelfUpdate`) will deliver to end users. Scry2's end users are Magic: The Gathering Arena players — not engineers. The release notes they read in **Settings → Updates → "What's new in vX.Y.Z"** and on the GitHub Releases page must be written for them.
 
-> This skill supersedes the global `/ship` (`~/.claude/commands/ship.md`) when invoked from the Scry2 repo. Both share the same arg modes (`/ship` / `patch` / `minor` / `major`), the same halt-on-failure discipline, the same end-user changelog voice, and the same tag flow. This local version delegates the actual tagging mechanics to `scripts/tag-release` (which runs `mix precommit`, bumps `mix.exs`, rotates `## [Unreleased]`, commits the release, and pushes the tag) and adds Scry2-specific safety checks for the self-updater contract.
+> This command supersedes the user-level `ship` skill (`~/.claude/skills/ship/SKILL.md`) when invoked from the Scry2 repo. That skill drives a `scripts/ship` contract (`prepare`/`check`/`release`/`verify`); Scry2 has not adopted it, so this local version stays authoritative until `scripts/tag-release` is conformed. Both share the same arg modes (`/ship` / `patch` / `minor` / `major`), the same halt-on-failure discipline, the same end-user changelog voice, and the same tag flow. This local version delegates the actual tagging mechanics to `scripts/tag-release` (which runs `mix precommit`, bumps `mix.exs`, rotates `## [Unreleased]`, commits the release, and pushes the tag) and adds Scry2-specific safety checks for the self-updater contract.
 
 ## Autonomy
 
