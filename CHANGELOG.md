@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.58.1 — 2026-09-25
+
 ### Improved
 
 - **The Cards page opens faster.** It used to count and measure every card
