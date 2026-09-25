@@ -11,6 +11,8 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+## v0.58.0 — 2026-09-25
+
 ### Fixed
 
 - **The Revealed cards section on a match no longer invents cards.** It was
