@@ -11,6 +11,15 @@ renames that section on tag and the release workflow extracts it.
 
 ## [Unreleased]
 
+### Improved
+
+- **The Cards page opens faster.** It used to count and measure every card
+  image on disk each time you opened it, so it grew slower the more card art
+  you had downloaded — on a well-stocked image cache it was the slowest page
+  in the dashboard. Scry 2 now keeps a running total of the card-image
+  storage shown under **Data Sources**, so opening the page no longer waits
+  on it.
+
 ## v0.58.0 — 2026-09-25
 
 ### Fixed
