@@ -9,10 +9,14 @@ defmodule Scry2.ConfigTestIsolationTest do
   so `cache_dir` and `image_cache_dir` pointed at the developer's live
   `~/.local/share/scry_2`.
 
-  That made test timing depend on machine state: `Cards.data_source_stats/0`
-  runs one `File.stat` per cached card image, so `/cards` mounted in 51ms
-  on a machine with 3,826 cached images and would mount in milliseconds on
-  a fresh clone. It flaked `PageSmokeTest` and failed a release.
+  That first surfaced as timing: `Cards.data_source_stats/0` used to run
+  one `File.stat` per cached card image, so `/cards` mounted in 51ms on a
+  machine with 3,826 cached images and in milliseconds on a fresh clone.
+  It flaked `PageSmokeTest` and failed a release. That walk is gone — the
+  cache reports its own size now (`Scry2.Cards.ImageCache.DiskUsage`) —
+  but the isolation matters for a blunter reason: the suite exercises
+  `ImageCache`, whose version turnover *deletes* every image in the
+  configured directory.
   """
   use ExUnit.Case, async: true
 

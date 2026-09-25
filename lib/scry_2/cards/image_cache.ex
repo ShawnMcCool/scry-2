@@ -38,14 +38,25 @@ defmodule Scry2.Cards.ImageCache do
   the semantics, in caller processes that always have DB access — so
   the clear fires exactly once, on the first image use after the new
   semantics are in force.
+
+  ## Reported size
+
+  The cache tracks its own file count and total bytes as it writes, and
+  `usage/0` hands them out in constant time. `Scry2.Cards` reports them
+  on the /cards Data Sources panel. See
+  `Scry2.Cards.ImageCache.DiskUsage` for why the reader does not derive
+  them from the directory.
   """
 
   use GenServer
 
   alias Scry2.Cards
+  alias Scry2.Cards.ImageCache.DiskUsage
   alias Scry2.Config
 
   require Scry2.Log, as: Log
+
+  @empty_stats %{cached: 0, downloaded: 0, failed: 0}
 
   @scryfall_headers [
     {"user-agent", "Scry2/0.1.0 (personal project; no bulk scraping)"},
@@ -78,7 +89,7 @@ defmodule Scry2.Cards.ImageCache do
     marker = Path.join(cache_dir, "cache-version")
 
     if File.read(marker) != {:ok, @cache_version} do
-      stale = Path.wildcard(Path.join(cache_dir, "*.jpg"))
+      stale = DiskUsage.image_files(cache_dir)
       # Non-bang rm: concurrent ensure_cached callers may race the clear.
       Enum.each(stale, &File.rm/1)
 
@@ -87,6 +98,7 @@ defmodule Scry2.Cards.ImageCache do
       end
 
       File.write!(marker, @cache_version)
+      GenServer.cast(__MODULE__, {:cleared, cache_dir})
     end
 
     :ok
@@ -109,6 +121,16 @@ defmodule Scry2.Cards.ImageCache do
   def url_for(arena_id, variant \\ :full) when is_integer(arena_id) do
     "/images/cards/#{arena_id}#{suffix(variant)}.jpg"
   end
+
+  @doc """
+  The cache's current file count and total bytes on disk.
+
+  Read from the running total the cache maintains as it writes — see
+  `Scry2.Cards.ImageCache.DiskUsage`. Constant time regardless of how
+  many images are cached.
+  """
+  @spec usage() :: %{count: non_neg_integer(), bytes: non_neg_integer()}
+  def usage, do: GenServer.call(__MODULE__, :usage)
 
   @doc "Returns true if the image for this arena_id is cached on disk."
   @spec cached?(integer(), :full | :art, String.t()) :: boolean()
@@ -135,21 +157,22 @@ defmodule Scry2.Cards.ImageCache do
     File.mkdir_p!(cache_dir)
     maybe_turn_over_cache(cache_dir)
 
-    stats =
-      Enum.reduce(arena_ids, %{cached: 0, downloaded: 0, failed: 0}, fn arena_id, stats ->
+    {stats, downloaded_bytes} =
+      Enum.reduce(arena_ids, {@empty_stats, 0}, fn arena_id, {stats, bytes} ->
         path = path_for(arena_id, variant, cache_dir)
 
         if File.exists?(path) do
-          %{stats | cached: stats.cached + 1}
+          {%{stats | cached: stats.cached + 1}, bytes}
         else
           case download_image(arena_id, path, variant, req_options) do
-            :ok -> %{stats | downloaded: stats.downloaded + 1}
-            :error -> %{stats | failed: stats.failed + 1}
+            {:ok, size} -> {%{stats | downloaded: stats.downloaded + 1}, bytes + size}
+            :error -> {%{stats | failed: stats.failed + 1}, bytes}
           end
         end
       end)
 
     if stats.downloaded > 0 do
+      GenServer.cast(__MODULE__, {:downloaded, cache_dir, stats.downloaded, downloaded_bytes})
       Log.info(:importer, "image cache: downloaded #{stats.downloaded} #{variant} card images")
     end
 
@@ -158,15 +181,39 @@ defmodule Scry2.Cards.ImageCache do
 
   # ── GenServer callbacks ─────────────────────────────────────────────────
 
+  # The startup scan is the one authoritative measurement of the cache
+  # directory; `handle_continue` runs it before any other message, so a
+  # `usage/0` call can never observe a half-built total. It is deferred out
+  # of `init/1` so a large cache does not hold up the supervision tree.
   @impl true
   def init(_opts) do
     cache_dir = Config.get(:image_cache_dir)
     File.mkdir_p!(cache_dir)
-    {:ok, %{cache_dir: cache_dir}}
+    {:ok, DiskUsage.empty(cache_dir), {:continue, :scan}}
+  end
+
+  @impl true
+  def handle_continue(:scan, usage), do: {:noreply, DiskUsage.scan(usage.dir)}
+
+  @impl true
+  def handle_call(:usage, _from, usage) do
+    {:reply, %{count: usage.count, bytes: usage.bytes}, usage}
+  end
+
+  @impl true
+  def handle_cast({:downloaded, cache_dir, count, bytes}, usage) do
+    {:noreply, DiskUsage.add(usage, cache_dir, count, bytes)}
+  end
+
+  def handle_cast({:cleared, cache_dir}, usage) do
+    {:noreply, DiskUsage.reset(usage, cache_dir)}
   end
 
   # ── Internals ───────────────────────────────────────────────────────────
 
+  @typep download :: {:ok, non_neg_integer()} | :error
+
+  @spec download_image(integer(), String.t(), :full | :art, keyword()) :: download()
   defp download_image(arena_id, path, :art, req_options) do
     case Cards.get_art_url_for_arena_id(arena_id) do
       nil -> :error
@@ -236,7 +283,7 @@ defmodule Scry2.Cards.ImageCache do
     case Req.get(options) do
       {:ok, %Req.Response{status: 200, body: body}} when is_binary(body) ->
         File.write!(path, body)
-        :ok
+        {:ok, byte_size(body)}
 
       {:ok, %Req.Response{status: status}} ->
         Log.warning(

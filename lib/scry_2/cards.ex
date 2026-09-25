@@ -42,7 +42,7 @@ defmodule Scry2.Cards do
 
   import Ecto.Query
 
-  alias Scry2.Cards.{BoosterCollation, Card, MtgaCard, ScryfallCard, Set}
+  alias Scry2.Cards.{BoosterCollation, Card, ImageCache, MtgaCard, ScryfallCard, Set}
   alias Scry2.Repo
   alias Scry2.Settings
 
@@ -177,12 +177,14 @@ defmodule Scry2.Cards do
         `:scryfall_bytes`, `:mtga_client_count`, `:mtga_client_bytes`,
         `:db_bytes`, `:image_count`, `:image_bytes`.
 
-  The `*_bytes` figures come from a cache; see `table_size_bytes/1`. Counts
-  and file sizes are read live.
+  The card-table `*_bytes` figures come from a cache; see
+  `table_size_bytes/1`. Row counts and the database file size are read
+  live. The image figures come from the image cache's own running total
+  — see `Scry2.Cards.ImageCache.DiskUsage`; this context reports them,
+  it does not derive them.
   """
   def data_source_stats do
-    image_cache_dir = Scry2.Config.get(:image_cache_dir)
-    {image_count, image_bytes} = image_cache_stats(image_cache_dir)
+    %{count: image_count, bytes: image_bytes} = ImageCache.usage()
 
     %{
       synthesized_count: Repo.aggregate(Card, :count),
@@ -272,28 +274,6 @@ defmodule Scry2.Cards do
     end
   end
 
-  defp image_cache_stats(nil), do: {0, 0}
-
-  defp image_cache_stats(dir) do
-    case File.ls(dir) do
-      {:ok, files} ->
-        {count, total_bytes} =
-          Enum.reduce(files, {0, 0}, fn file, {count, bytes} ->
-            path = Path.join(dir, file)
-
-            case File.stat(path) do
-              {:ok, %File.Stat{type: :regular, size: size}} -> {count + 1, bytes + size}
-              _ -> {count, bytes}
-            end
-          end)
-
-        {count, total_bytes}
-
-      {:error, _} ->
-        {0, 0}
-    end
-  end
-
   # `dbstat` is a virtual table: summing `pgsize` walks every page of the named
   # table. For `cards_scryfall_cards` (227 MB) that is ~48 ms, and
   # `data_source_stats/0` calls it three times on both the dead render and the
@@ -304,6 +284,12 @@ defmodule Scry2.Cards do
   # `invalidate_storage_stats/0`. `:persistent_term` fits: read-heavy, written
   # a couple of times a day (its writes trigger a global GC scan, which is why
   # it would be the wrong choice for anything written per-request).
+  #
+  # This strategy is correct *here* because these tables only ever change on
+  # import. Do not extend it to the image cache: that directory grows as the
+  # user browses, so a cache-until-invalidated figure would silently go stale.
+  # Its size is maintained by its owner instead — see
+  # `Scry2.Cards.ImageCache.DiskUsage`.
   defp table_size_bytes(table_name) do
     Map.get_lazy(cached_table_sizes(), table_name, fn -> read_table_size_bytes(table_name) end)
   end

@@ -30,11 +30,14 @@ defmodule Scry2Web.PageSmokeTest do
   # regression. The budget catches real regressions (a 200–500ms mount)
   # without flapping. Do not loosen casually.
   #
-  # These figures assume `config/test.exs` keeps `:data_dir` pointed at a
-  # scratch directory. Without it, `Cards.data_source_stats/0` runs one
-  # `File.stat` per file in the developer's real card-image cache and
-  # /cards alone mounts in 51ms — which is how this suite came to fail a
-  # release. See test/scry_2/config_test_isolation_test.exs.
+  # These figures once depended on `config/test.exs` keeping `:data_dir`
+  # pointed at a scratch directory: `Cards.data_source_stats/0` ran one
+  # `File.stat` per file in the developer's real card-image cache, and
+  # /cards alone mounted in 51ms — which is how this suite came to fail a
+  # release. The image cache now reports its own size in constant time
+  # (`Scry2.Cards.ImageCache.DiskUsage`), so no mount scales with the
+  # developer's cache. The isolation still stands for other reasons; see
+  # test/scry_2/config_test_isolation_test.exs.
   @render_budget_local_ms 100
   @render_budget_ci_ms 250
 

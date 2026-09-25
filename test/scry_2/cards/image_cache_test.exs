@@ -229,4 +229,44 @@ defmodule Scry2.Cards.ImageCacheTest do
                )
     end
   end
+
+  describe "usage/0" do
+    test "reports the configured cache directory's totals" do
+      assert %{count: count, bytes: bytes} = ImageCache.usage()
+      assert is_integer(count) and count >= 0
+      assert is_integer(bytes) and bytes >= 0
+    end
+
+    test "a download into another directory leaves the totals alone", %{cache_dir: cache_dir} do
+      Scry2.Cards.synthesize_card!(%{
+        arena_id: 94_001,
+        name: "Elsewhere",
+        image_url: "http://stub.test/image.jpg"
+      })
+
+      Req.Test.stub(ImageCache, fn conn -> Plug.Conn.resp(conn, 200, "jpeg bytes") end)
+
+      before = ImageCache.usage()
+
+      assert {:ok, %{downloaded: 1}} =
+               ImageCache.ensure_cached([94_001],
+                 cache_dir: cache_dir,
+                 req_options: [plug: {Req.Test, ImageCache}]
+               )
+
+      assert ImageCache.usage() == before
+    end
+
+    test "a version turnover in another directory leaves the totals alone", %{
+      cache_dir: cache_dir
+    } do
+      File.write!(Path.join(cache_dir, "91001.jpg"), "stale art")
+
+      before = ImageCache.usage()
+
+      ImageCache.ensure_version!(cache_dir)
+
+      assert ImageCache.usage() == before
+    end
+  end
 end

@@ -2,6 +2,7 @@ defmodule Scry2.CardsTest do
   use Scry2.DataCase, async: true
 
   alias Scry2.Cards
+  alias Scry2.Cards.ImageCache
   alias Scry2.TestFactory
 
   describe "data_source_stats/0 storage caching" do
@@ -53,6 +54,17 @@ defmodule Scry2.CardsTest do
 
       assert Cards.data_source_stats().scryfall_bytes > before_bytes,
              "expected invalidation to force a recompute reflecting the new rows"
+    end
+
+    # The image cache changes continuously as the user browses, so its figures
+    # cannot use the cache-until-invalidated strategy above. They are owned and
+    # maintained by `ImageCache` itself; this context only reports them.
+    test "image figures come from the image cache's own running total" do
+      %{count: count, bytes: bytes} = ImageCache.usage()
+      stats = Cards.data_source_stats()
+
+      assert stats.image_count == count
+      assert stats.image_bytes == bytes
     end
   end
 
